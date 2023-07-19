@@ -1,0 +1,13 @@
+.bin
+.vscode/*.log
+.env
+scrolls-registry/.builds
+.builds
+*.tar.gz
+
+scrolls
+
+scroll-cwd
+
+druid**
+dlv.log

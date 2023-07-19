@@ -1,0 +1,27 @@
+{
+  "name": "daemon",
+  "targets": {
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          {
+            "command": "yarn start"
+          }
+        ]
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          {
+            "command": "yarn build"
+          }
+        ]
+      }
+    }
+  },
+  "tags": ["type:app", "scope:auth", "lang:node"],
+  "implicitDependencies": ["shared-proto"]
+}
