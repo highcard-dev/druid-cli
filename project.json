@@ -2,22 +2,14 @@
   "name": "daemon",
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "targets": {
-    "dev": {
-      "executor": "nx:run-commands",
-      "options": {
-        "commands": [
-          {
-            "command": "yarn start"
-          }
-        ]
-      }
-    },
     "build": {
       "executor": "nx:run-commands",
+      "cwd": "apps/deployment/daemon",
       "options": {
+        "cwd": "apps/deployment/daemon",
         "commands": [
           {
-            "command": "yarn build"
+            "command": "go build -o ./bin/daemon"
           }
         ]
       }
