@@ -1,5 +1,6 @@
 {
   "name": "daemon",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "targets": {
     "dev": {
       "executor": "nx:run-commands",
@@ -19,6 +20,12 @@
             "command": "yarn build"
           }
         ]
+      }
+    },
+    "version": {
+      "executor": "@jscutlery/semver:version",
+      "options": {
+        "preset": "conventional"
       }
     }
   },
