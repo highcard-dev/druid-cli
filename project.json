@@ -22,14 +22,11 @@
         "postTargets": ["daemon:update-deployment"]
       }
     },
-    "update-deployment": {
-      "executor": "nx:run-commands",
+    "github": {
+      "executor": "@jscutlery/semver:github",
       "options": {
-        "commands": [
-          {
-            "command": "./scripts/update-deployments.sh ${version} daemon"
-          }
-        ]
+        "tag": "${tag}",
+        "notes": "${notes}"
       }
     }
   },
