@@ -27,7 +27,7 @@
       "options": {
         "commands": [
           {
-            "command": "echo daemon=${version} >> \"$GITHUB_OUTPUT\""
+            "command": "./scripts/update-deployments.sh ${version} daemon"
           }
         ]
       }
