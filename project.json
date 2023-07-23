@@ -20,6 +20,16 @@
         "baseBranch": "master",
         "preset": "conventional"
       }
+    },
+    "update-deployment": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          {
+            "command": "echo daemon=${version} >> \"$GITHUB_OUTPUT\""
+          }
+        ]
+      }
     }
   },
   "tags": ["type:app", "scope:auth", "lang:node"],
