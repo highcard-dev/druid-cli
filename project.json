@@ -19,7 +19,7 @@
       "options": {
         "baseBranch": "master",
         "preset": "conventional",
-        "postTargets": ["update-deployment"]
+        "postTargets": ["daemon:update-deployment"]
       }
     },
     "update-deployment": {
