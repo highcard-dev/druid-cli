@@ -21,7 +21,7 @@
         "preset": "conventional",
         "postTargets": ["daemon:github"],
         "push": true,
-        "files": ["apps/deployment/daemon/bin/daemon"]
+        "files": ["apps/deployment/daemon/bin/daemon", "./bin/daemon"]
       }
     },
     "github": {
