@@ -20,7 +20,8 @@
         "baseBranch": "master",
         "preset": "conventional",
         "postTargets": ["daemon:github"],
-        "push": true
+        "push": true,
+        "files": ["apps/deployment/daemon/bin/daemon"]
       }
     },
     "github": {
