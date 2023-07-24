@@ -19,7 +19,8 @@
       "options": {
         "baseBranch": "master",
         "preset": "conventional",
-        "postTargets": ["daemon:github"]
+        "postTargets": ["daemon:github"],
+        "push": true
       }
     },
     "github": {
