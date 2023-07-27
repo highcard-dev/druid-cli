@@ -1,11 +1,14 @@
 FROM golang:bullseye AS build
 
 COPY . .
-COPY cmd/daemon/.docker/entrypoint.sh /entrypoint.sh
+COPY /apps/deployment/daemon/.docker/entrypoint.sh /entrypoint.sh
 
-RUN make build-daemon
+WORKDIR /go/apps/deployment/daemon
+
+RUN make build
 RUN make build-plugins
 
-RUN cp druid* /usr/bin/
+RUN cp ./bin/druid* /usr/bin/
+
 
 ENTRYPOINT [ "/entrypoint.sh" ]

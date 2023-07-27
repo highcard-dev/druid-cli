@@ -7,11 +7,11 @@ help: ## Prints the help about targets.
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf " \033[34m%-17s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST) | sort
 
 build: ## Build Daemon
-	go build -o ./druid ./cmd/daemon
+	go build -o ./bin/druid
 
 build-plugins: ## Build Plugins
-	go build -o ./druid_rcon ./pkg/plugin/rcon/rcon.go
-	go build -o ./druid_rcon_web_rust ./pkg/plugin/rcon_web_rust/rcon_web_rust.go
+	go build -o ./bin/druid_rcon ./plugins/rcon/rcon.go
+	go build -o ./bin/druid_rcon_web_rust ./plugins/rcon_web_rust/rcon_web_rust.go
 
 proto:
 	protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative internal/plugin/commons/proto/kv.proto
