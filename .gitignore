@@ -1,7 +1,5 @@
 .bin
 .vscode/*.log
-.env
-scrolls-registry/.builds
 .builds
 *.tar.gz
 
