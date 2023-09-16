@@ -41,7 +41,9 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]]; then
         fi
     fi
     
-    args=(serve "${logargs[@]}")
+
+    #ignore-version-check otherwise we have missmatch after update
+    args=(serve --ignore-version-check "${logargs[@]}")
 
     if [ ! -z "${artifact}" ];
     then

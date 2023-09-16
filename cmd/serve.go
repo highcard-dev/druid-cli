@@ -126,4 +126,6 @@ func init() {
 
 	ServeCommand.Flags().StringVarP(&userId, "user-id", "u", "", "Allowed user id")
 
+	ServeCommand.Flags().BoolVarP(&ignoreVersionCheck, "ignore-version-check", "", false, "Ignore version check")
+
 }

@@ -42,3 +42,7 @@ var RunCmd = &cobra.Command{
 		return err
 	},
 }
+
+func init() {
+	RunCmd.Flags().BoolVarP(&ignoreVersionCheck, "ignore-version-check", "", false, "Ignore version check")
+}
