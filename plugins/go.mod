@@ -6,7 +6,6 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/hashicorp/go-plugin v1.4.8
 	github.com/highcard-dev/gorcon v1.3.9
-	github.com/highcard-dev/proto v1.5.13
 	golang.org/x/net v0.10.0
 	google.golang.org/grpc v1.56.1
 	gopkg.in/yaml.v2 v2.4.0

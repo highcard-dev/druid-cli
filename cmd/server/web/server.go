@@ -10,9 +10,8 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	jwtware "github.com/gofiber/jwt/v3"
 	"github.com/gofiber/swagger"
-	middleware "github.com/highcard-dev/daemon/cmd/server/web/middlewares"
+	"github.com/highcard-dev/daemon/cmd/server/web/middlewares"
 	"github.com/highcard-dev/daemon/internal/core/ports"
-	"github.com/highcard-dev/instance/cmd/server/web/middlewares"
 	"github.com/highcard-dev/logger"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
@@ -49,7 +48,7 @@ func NewServer(
 		scrollLogHandler:              scrollLogHandler,
 		scrollMetricHandler:           scrollMetricHandler,
 		websocketHandler:              websocketHandler,
-		tokenAuthenticationMiddleware: middleware.TokenAuthentication(authorizerService),
+		tokenAuthenticationMiddleware: middlewares.TokenAuthentication(authorizerService),
 	}
 
 	if jwlsUrl != "" {

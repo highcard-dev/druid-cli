@@ -1,9 +1,10 @@
-package middleware
+package middlewares
 
 import (
 	"errors"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/logger"
 	"go.uber.org/zap"
@@ -39,6 +40,20 @@ func TokenAuthentication(authorizerService ports.AuthorizerServiceInterface) fib
 			)
 			return errors.New("401 - Your spell has no permission to cast that magic!")
 		}
+		return ctx.Next()
+	}
+}
+
+func NewUserInjector() fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+
+		user := ctx.Locals("user").(*jwt.Token)
+
+		userId, ok := user.Claims.(jwt.MapClaims)["sub"]
+		if !ok {
+			return fiber.NewError(fiber.StatusBadRequest, "Invalid user id in jwt sub field")
+		}
+		ctx.Context().SetUserValue("userID", userId)
 		return ctx.Next()
 	}
 }
