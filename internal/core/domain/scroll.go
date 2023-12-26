@@ -13,7 +13,7 @@ type File struct {
 	Name       string                       `yaml:"name" json:"name"`
 	Desc       string                       `yaml:"desc" json:"desc"`
 	Version    *semver.Version              `yaml:"version" json:"version"`
-	AppVersion string                       `yaml:"app_version" json:"app_version"`
+	AppVersion *semver.Version              `yaml:"app_version" json:"app_version"`
 	Init       string                       `yaml:"init" json:"init"`
 	Processes  map[string]*ProcessCommand   `yaml:"processes" json:"processes"`
 	Plugins    map[string]map[string]string `yaml:"plugins" json:"plugins"`

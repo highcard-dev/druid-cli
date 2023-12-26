@@ -15,27 +15,6 @@
           }
         ]
       }
-    },
-    "version": {
-      "executor": "@jscutlery/semver:version",
-      "options": {
-        "baseBranch": "master",
-        "preset": "conventional",
-        "postTargets": ["daemon:github"],
-        "push": true
-      }
-    },
-    "github": {
-      "executor": "@jscutlery/semver:github",
-      "options": {
-        "tag": "${tag}",
-        "notes": "${notes}",
-        "files": [
-          "apps/deployment/daemon/bin/druid",
-          "apps/deployment/daemon/bin/druid_rcon",
-          "apps/deployment/daemon/bin/druid_rcon_web_rust"
-        ]
-      }
     }
   },
   "tags": ["type:app", "scope:auth", "lang:node"],

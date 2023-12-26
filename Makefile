@@ -18,3 +18,6 @@ proto:
 
 generate-swagger:
 	swag init --parseDependency -g ./cmd/server/web/server.go
+
+run: ## Run Daemon
+	go run main.go

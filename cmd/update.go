@@ -31,7 +31,7 @@ var UpdateCommand = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			artifact = scroll.Name + ":" + scroll.AppVersion
+			artifact = scroll.Name + ":" + scroll.AppVersion.String()
 		}
 
 		repo, tag := utils.SplitArtifact(artifact)

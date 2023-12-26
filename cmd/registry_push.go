@@ -101,10 +101,10 @@ var PushCommand = &cobra.Command{
 			}),
 		}
 
-		if err = fs.Tag(ctx, manifestDescriptor, tag); err != nil {
+		if err = fs.Tag(ctx, manifestDescriptor, tag.String()); err != nil {
 			return err
 		}
-		_, err = oras.Copy(ctx, fs, tag, repoInstance, tag, oras.DefaultCopyOptions)
+		_, err = oras.Copy(ctx, fs, tag.String(), repoInstance, tag.String(), oras.DefaultCopyOptions)
 		if err != nil {
 			return err
 		}

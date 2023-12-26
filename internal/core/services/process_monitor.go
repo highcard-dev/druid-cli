@@ -82,7 +82,7 @@ func (po *ProcessMonitor) RefreshMetrics() {
 
 func (po *ProcessMonitor) GetProcessMetric(process *domain.Process) (*domain.ProcessMonitorMetrics, error) {
 
-	if process.Cmd != nil {
+	if process.Cmd != nil && process.Cmd.Process != nil {
 		p, err := processutil.NewProcess(int32(process.Cmd.Process.Pid))
 		if err != nil {
 			return nil, err

@@ -37,7 +37,7 @@ type view struct {
 
 var maxLines = 15
 
-//This is an ugly hack. I am a bad programmer for this, but bubbletea is weird
+// This is an ugly hack. I am a bad programmer for this, but bubbletea is weird
 var Exit chan os.Signal
 
 func newView() *view {
@@ -69,6 +69,7 @@ func (e view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		if msg.Type == tea.KeyCtrlC {
+			println("Exiting...")
 			Exit <- os.Interrupt
 			return e, tea.Quit
 		}

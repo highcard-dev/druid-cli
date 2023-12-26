@@ -34,7 +34,7 @@ func init() {
 	c, _ := os.Getwd()
 
 	RootCmd.PersistentFlags().StringVarP(&cwd, "cwd", "", c, "Path to environment file (.env)")
-	RootCmd.PersistentFlags().StringVarP(&loggerFormat, "log-format", "", "cli", "Log format (structured, cli)")
+	RootCmd.PersistentFlags().StringVarP(&loggerFormat, "log-format", "", "structured", "Log format (structured, cli)") //cli is buggy atm
 
 	RootCmd.PersistentFlags().StringVarP(&envPath, "env-file", "e", "./.env", "Path to environment file (.env)")
 	RootCmd.PersistentFlags().BoolVar(&ignoreVersionCheck, "ignore-version-check", false, "Ignore version check between scroll.yaml and scroll-lock.json")
