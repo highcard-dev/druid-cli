@@ -38,8 +38,14 @@ var SemverCmd = &cobra.Command{
 
 		// If no args, just print the version
 		if len(args) == 0 {
-			print(scroll.AppVersion.String())
+			print(scroll.AppVersion)
 			return nil
+		}
+
+		semverAppVersion, err := semver.NewVersion(scroll.AppVersion)
+
+		if err != nil {
+			return fmt.Errorf("error parsing application version as semver: %w", err)
 		}
 
 		// If one arg, check if it's equal to the version
@@ -49,7 +55,7 @@ var SemverCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("error parsing application version: %w", err)
 			}
-			if scroll.AppVersion.Equal(compareVersionSemver) {
+			if semverAppVersion.Equal(compareVersionSemver) {
 				return nil
 			} else {
 				os.Exit(1)
@@ -66,42 +72,42 @@ var SemverCmd = &cobra.Command{
 		}
 
 		if args[0] == "eq" || len(args) == 1 {
-			if scroll.AppVersion.Equal(compareVersionSemver) {
+			if semverAppVersion.Equal(compareVersionSemver) {
 				return nil
 			} else {
 				os.Exit(1)
 			}
 		}
 		if compare == "lt" {
-			if scroll.AppVersion.LessThan(compareVersionSemver) {
+			if semverAppVersion.LessThan(compareVersionSemver) {
 				return nil
 			} else {
 				os.Exit(1)
 			}
 		}
 		if compare == "gt" {
-			if scroll.AppVersion.GreaterThan(compareVersionSemver) {
+			if semverAppVersion.GreaterThan(compareVersionSemver) {
 				return nil
 			} else {
 				os.Exit(1)
 			}
 		}
 		if compare == "ne" {
-			if !scroll.AppVersion.Equal(compareVersionSemver) {
+			if !semverAppVersion.Equal(compareVersionSemver) {
 				return nil
 			} else {
 				os.Exit(1)
 			}
 		}
 		if compare == "le" {
-			if scroll.AppVersion.LessThan(compareVersionSemver) || scroll.AppVersion.Equal(compareVersionSemver) {
+			if semverAppVersion.LessThan(compareVersionSemver) || semverAppVersion.Equal(compareVersionSemver) {
 				return nil
 			} else {
 				os.Exit(1)
 			}
 		}
 		if compare == "ge" {
-			if scroll.AppVersion.GreaterThan(compareVersionSemver) || scroll.AppVersion.Equal(compareVersionSemver) {
+			if semverAppVersion.GreaterThan(compareVersionSemver) || semverAppVersion.Equal(compareVersionSemver) {
 				return nil
 			} else {
 				os.Exit(1)

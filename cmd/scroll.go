@@ -15,5 +15,4 @@ var ScrollCmd = &cobra.Command{
 }
 
 func init() {
-	ScrollCmd.AddCommand(ScrollAppVersionCmd)
 }
