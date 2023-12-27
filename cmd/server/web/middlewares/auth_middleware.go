@@ -4,7 +4,7 @@ import (
 	"errors"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/logger"
 	"go.uber.org/zap"
