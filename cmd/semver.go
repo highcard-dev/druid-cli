@@ -16,7 +16,7 @@ var SemverCmd = &cobra.Command{
 	Use:   "app_version [semver1 string] [lt|gt|eq|ne|le|ge] [semver2 string]",
 	Short: "Show or compare active app version",
 	Long:  "This command shows the active app version. If a comparison operator and semver string are provided, the command will compare the active app version to the semver string. If the comparison is true, the command will exit with a 0 exit code. If the comparison is false, the command will exit with a 1 exit code.",
-	Args:  cobra.ExactArgs(3),
+	Args:  cobra.MaximumNArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger.Log()
 		host := viper.GetString("registry.host")
@@ -30,7 +30,7 @@ var SemverCmd = &cobra.Command{
 		processManager := services.NewProcessManager(logManager, hub)
 		scrollService := services.NewScrollService(cwd, client, logManager, processManager, hub, services.NewPluginManager())
 
-		scroll, err := scrollService.Load(ignoreVersionCheck)
+		scroll, err := scrollService.LoadScrollWithLockfile()
 
 		if err != nil {
 			return fmt.Errorf("error loading scroll: %w", err)
@@ -62,52 +62,66 @@ var SemverCmd = &cobra.Command{
 			}
 		}
 
-		// If two args, check the comparison
-		compare := args[0]
-		compareVersionSemverString := args[1]
+		var compare string
+		var semver1, semver2 *semver.Version
 
-		compareVersionSemver, err := semver.NewVersion(compareVersionSemverString)
-		if err != nil {
-			return fmt.Errorf("error parsing application version: %w", err)
+		if len(args) == 2 {
+			compare = args[0]
+			semver1 = semverAppVersion
+			semver2, err = semver.NewVersion(args[1])
+			if err != nil {
+				return fmt.Errorf("error parsing application version (argument 2): %w", err)
+			}
+		} else {
+			compare = args[1]
+			semver1, err = semver.NewVersion(args[0])
+			if err != nil {
+				return fmt.Errorf("error parsing application version (argument 1): %w", err)
+			}
+			semver2, err = semver.NewVersion(args[2])
+			if err != nil {
+				return fmt.Errorf("error parsing application version (argument 3): %w", err)
+			}
+
 		}
 
-		if args[0] == "eq" || len(args) == 1 {
-			if semverAppVersion.Equal(compareVersionSemver) {
+		if compare == "eq" {
+			if semver1.Equal(semver2) {
 				return nil
 			} else {
 				os.Exit(1)
 			}
 		}
 		if compare == "lt" {
-			if semverAppVersion.LessThan(compareVersionSemver) {
+			if semver1.LessThan(semver2) {
 				return nil
 			} else {
 				os.Exit(1)
 			}
 		}
 		if compare == "gt" {
-			if semverAppVersion.GreaterThan(compareVersionSemver) {
+			if semver1.GreaterThan(semver2) {
 				return nil
 			} else {
 				os.Exit(1)
 			}
 		}
 		if compare == "ne" {
-			if !semverAppVersion.Equal(compareVersionSemver) {
+			if !semver1.Equal(semver2) {
 				return nil
 			} else {
 				os.Exit(1)
 			}
 		}
 		if compare == "le" {
-			if semverAppVersion.LessThan(compareVersionSemver) || semverAppVersion.Equal(compareVersionSemver) {
+			if semver1.LessThan(semver2) || semver1.Equal(semver2) {
 				return nil
 			} else {
 				os.Exit(1)
 			}
 		}
 		if compare == "ge" {
-			if semverAppVersion.GreaterThan(compareVersionSemver) || semverAppVersion.Equal(compareVersionSemver) {
+			if semver1.GreaterThan(semver2) || semver1.Equal(semver2) {
 				return nil
 			} else {
 				os.Exit(1)

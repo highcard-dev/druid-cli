@@ -18,6 +18,7 @@ type ScrollServiceInterface interface {
 	Run(commandId string, processId string, changeStatus bool) error
 	RunProcedure(*domain.Procedure, string, bool) (string, error)
 	GetCurrent() *domain.Scroll
+	LoadScrollWithLockfile() (*domain.Scroll, error)
 	GetFile() *domain.File
 	GetRunningProcesses() map[string]*domain.Process
 }

@@ -87,7 +87,7 @@ to interact and monitor the Scroll Application`,
 
 		signals.SetupSignals(scrollService, a, shutdownWait)
 
-		currentScroll, err := scrollService.Load(ignoreVersionCheck)
+		currentScroll, err := scrollService.Bootstrap(ignoreVersionCheck)
 
 		if err != nil {
 			return err

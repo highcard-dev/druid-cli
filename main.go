@@ -15,7 +15,6 @@ func main() {
 	cmd.RootCmd.AddCommand(cmd.RunCmd)
 	cmd.RootCmd.AddCommand(cmd.RegistryCmd)
 	cmd.RootCmd.AddCommand(cmd.UpdateCommand)
-	cmd.RootCmd.AddCommand(cmd.ScrollCmd)
 	cmd.RootCmd.AddCommand(cmd.SemverCmd)
 	if err := cmd.RootCmd.Execute(); err != nil {
 		// log it, then

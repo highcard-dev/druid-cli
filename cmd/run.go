@@ -28,7 +28,7 @@ var RunCmd = &cobra.Command{
 		processManager := services.NewProcessManager(logManager, hub)
 		scrollService := services.NewScrollService(cwd, client, logManager, processManager, hub, services.NewPluginManager())
 
-		_, err := scrollService.Load(ignoreVersionCheck)
+		_, err := scrollService.Bootstrap(ignoreVersionCheck)
 
 		if err != nil {
 			return fmt.Errorf("error loading scroll: %w", err)

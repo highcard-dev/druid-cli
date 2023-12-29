@@ -56,27 +56,28 @@ func NewScrollService(
 	return s
 }
 
+func (sc *ScrollService) LoadScrollWithLockfile() (*domain.Scroll, error) {
+	// TODO: better templating for scrolls in next version or so
+	os.Setenv("SCROLL_DIR", sc.GetDir())
+	scroll, err := domain.NewScroll(sc.GetDir())
+
+	return scroll, err
+}
+
 // return at first
 // TODO implement multiple scroll support
 // To do this, best is to loop over activescrolldir and read every scroll
 // TODO: remove initCommandsIdentifiers
-func (sc *ScrollService) Load(ignoreVersionCheck bool) (*domain.Scroll, error) {
-	lockFilePath := sc.GetDir() + "/scroll-lock.json"
+func (sc *ScrollService) Bootstrap(ignoreVersionCheck bool) (*domain.Scroll, error) {
 
-	//TODO: better templating for scrolls in next version or so
-	os.Setenv("SCROLL_DIR", sc.GetDir())
-	scroll, err := domain.NewScroll(sc.GetDir())
-
-	if err != nil {
-		return nil, err
-	}
+	scroll, err := sc.LoadScrollWithLockfile()
 
 	if scroll == nil {
 		return nil, errors.New("scroll not found")
 	}
 
 	sc.scroll = scroll
-	err = sc.CheckAndCreateLockFile(ignoreVersionCheck, lockFilePath)
+	err = sc.CheckAndCreateLockFile(ignoreVersionCheck)
 
 	if err != nil {
 		return nil, err
@@ -128,7 +129,7 @@ func (sc *ScrollService) StartLockfile() error {
 	return nil
 }
 
-func (sc *ScrollService) CheckAndCreateLockFile(ignoreVersionCheck bool, lockFile string) error {
+func (sc *ScrollService) CheckAndCreateLockFile(ignoreVersionCheck bool) error {
 	exist := sc.lock.LockExists()
 	if !exist {
 		sc.lock.Statuses = make(map[string]string)
