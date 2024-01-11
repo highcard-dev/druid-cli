@@ -1,31 +1,28 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
-	"os"
-	"path/filepath"
+	"path"
+	"strings"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	logger "github.com/highcard-dev/daemon/internal/core/services/log"
+	"github.com/highcard-dev/daemon/internal/core/services/registry"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-
-	v1 "github.com/opencontainers/image-spec/specs-go/v1"
-	"oras.land/oras-go/v2"
-	"oras.land/oras-go/v2/content/file"
-	"oras.land/oras-go/v2/registry/remote"
-	"oras.land/oras-go/v2/registry/remote/auth"
-	"oras.land/oras-go/v2/registry/remote/retry"
 )
+
+var minRam string
+var minCpu string
+var minDisk string
+var image string
+var ports []string
 
 var PushCommand = &cobra.Command{
 	Use:   "push",
 	Short: "Generate OCI Artifacts and push to a remote registry",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-
-		ctx := context.Background()
 
 		user := viper.GetString("registry.user")
 		password := viper.GetString("registry.password")
@@ -40,71 +37,41 @@ var PushCommand = &cobra.Command{
 			folder = args[0]
 		}
 
-		scroll, err := domain.NewScroll(folder)
+		fullPath := path.Join(cwd, folder)
+
+		scroll, err := domain.NewScroll(fullPath)
 
 		if err != nil {
 			return err
 		}
+
+		ociClient := registry.NewOciClient(host, user, password)
 
 		repo := scroll.Name
 
 		tag := scroll.AppVersion
 
-		// 0. Create a file store
-		fs, err := file.New(folder)
-		if err != nil {
-			return err
-		}
-		defer fs.Close()
+		ps := make(map[string]string, len(ports))
 
-		mediaType := "druid/scroll"
-		fileNames := []string{"init-files", "init-files-template", "scroll-switch", "update", "scroll.yaml"}
+		for _, p := range ports {
 
-		filesToPush := []string{}
-
-		for _, d := range fileNames {
-			if _, err := os.Stat(filepath.Join(folder, d)); !os.IsNotExist(err) {
-				filesToPush = append(filesToPush, d)
+			parts := strings.Split(p, "=")
+			name := parts[0]
+			port := "0"
+			if len(parts) == 2 {
+				port = parts[1]
 			}
+			ps[name] = port
 		}
 
-		fileDescriptors := make([]v1.Descriptor, 0, len(filesToPush))
-		for _, name := range filesToPush {
-			fileDescriptor, err := fs.Add(ctx, name, mediaType, "")
-			if err != nil {
-				return err
-			}
-			fileDescriptors = append(fileDescriptors, fileDescriptor)
-			logger.Log().Info(fmt.Sprintf("file descriptor for %s: %v\n", name, fileDescriptor.Digest))
-		}
-
-		artifactType := "druid/scroll"
-		manifestDescriptor, err := oras.Pack(ctx, fs, artifactType, fileDescriptors, oras.PackOptions{
-			PackImageManifest:   true,
-			ManifestAnnotations: map[string]string{},
+		_, err = ociClient.Push(fullPath, repo, tag, registry.AnnotationInfo{
+			MinRam:  minRam,
+			MinCpu:  minCpu,
+			MinDisk: minDisk,
+			Image:   image,
+			Ports:   ps,
 		})
-		if err != nil {
-			return err
-		}
 
-		repoInstance, err := remote.NewRepository(repo)
-		if err != nil {
-			return err
-		}
-		// Note: The below code can be omitted if authentication is not required
-		repoInstance.Client = &auth.Client{
-			Client: retry.DefaultClient,
-			Cache:  auth.DefaultCache,
-			Credential: auth.StaticCredential(host, auth.Credential{
-				Username: user,
-				Password: password,
-			}),
-		}
-
-		if err = fs.Tag(ctx, manifestDescriptor, tag); err != nil {
-			return err
-		}
-		_, err = oras.Copy(ctx, fs, tag, repoInstance, tag, oras.DefaultCopyOptions)
 		if err != nil {
 			return err
 		}
@@ -112,4 +79,16 @@ var PushCommand = &cobra.Command{
 		logger.Log().Info("Pushed to registry")
 		return nil
 	},
+}
+
+func init() {
+	PushCommand.AddCommand(PushMetaCommand)
+
+	PushCommand.Flags().StringVarP(&minRam, "min-ram", "r", minRam, "Minimum RAM required to run the application. (Will be added as a manifest annotation gg.druid.scroll.minRam)")
+	PushCommand.Flags().StringVarP(&minCpu, "min-cpu", "c", minCpu, "Minimum CPU required to run the application. (Will be added as a manifest annotation gg.druid.scroll.minCpu)")
+	PushCommand.Flags().StringVarP(&minDisk, "min-disk", "d", minDisk, "Minimum Disk required to run the application. (Will be added as a manifest annotation gg.druid.scroll.minDisk)")
+
+	PushCommand.Flags().StringVarP(&image, "image", "i", image, "Image to use for the scroll. (Will be added as a manifest annotation gg.druid.scroll.image)")
+
+	PushCommand.Flags().StringSliceVarP(&ports, "port", "p", ports, "Ports to expose. Format webserver=80, dns=53/udp or just ftp (Will be added as a manifest annotation gg.druid.scroll.ports.<name>)")
 }

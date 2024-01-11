@@ -18,18 +18,62 @@ import (
 	"oras.land/oras-go/v2/registry/remote/retry"
 )
 
+type ArtifactType string
+
+const (
+	ArtifactTypeScrollRoot ArtifactType = "application/vnd.highcard.druid.scroll.config.v1+json"
+	ArtifactTypeScrollFs   ArtifactType = "application/vnd.highcard.druid.scroll-fs.config.v1+json"
+	ArtifactTypeScrollMeta ArtifactType = "application/vnd.highcard.druid.scroll-meta.config.v1+json"
+)
+
 type OciClient struct {
-	repo     string
+	host     string
 	username string
 	password string
 }
 
-func NewOciClient(repo string, username string, password string) *OciClient {
+type AnnotationInfo struct {
+	MinRam  string
+	MinDisk string
+	MinCpu  string
+	Image   string
+	Ports   map[string]string
+}
+
+func NewOciClient(host string, username string, password string) *OciClient {
 	return &OciClient{
-		repo:     repo,
+		host:     host,
 		username: username,
 		password: password,
 	}
+}
+
+func (c *OciClient) GetRepo(repoUrl string) (*remote.Repository, error) {
+
+	repo, err := remote.NewRepository(repoUrl)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if c.host == "" {
+		return nil, fmt.Errorf("registry host must be set. Please use `druid registry login` to set them")
+	}
+
+	if c.username == "" || c.password == "" {
+		logger.Log().Warn("No registry credentials found. Trying to pull anonymously")
+	} else {
+		repo.Client = &auth.Client{
+			Client: retry.DefaultClient,
+			Cache:  auth.DefaultCache,
+			Credential: auth.StaticCredential(c.host, auth.Credential{
+				Username: c.username,
+				Password: c.password,
+			}),
+		}
+	}
+
+	return repo, nil
 }
 
 func (c *OciClient) Pull(dir string, artifact string) error {
@@ -42,25 +86,11 @@ func (c *OciClient) Pull(dir string, artifact string) error {
 
 	// 1. Connect to a remote repository
 	ctx := context.Background()
-	repoInstance, err := remote.NewRepository(repo)
+
+	repoInstance, err := c.GetRepo(repo)
+
 	if err != nil {
 		return err
-	}
-	if c.repo == "" {
-		return fmt.Errorf("registry host must be set. Please use `druid registry login` to set them")
-	}
-
-	if c.username == "" || c.password == "" {
-		logger.Log().Warn("No registry credentials found. Trying to pull anonymously")
-	} else {
-		repoInstance.Client = &auth.Client{
-			Client: retry.DefaultClient,
-			Cache:  auth.DefaultCache,
-			Credential: auth.StaticCredential(c.repo, auth.Credential{
-				Username: c.username,
-				Password: c.password,
-			}),
-		}
 	}
 
 	fs, err := file.New(filepath.Join(dir))
@@ -69,7 +99,6 @@ func (c *OciClient) Pull(dir string, artifact string) error {
 		return err
 	}
 
-	// 2. Copy from the remote repository to the OCI layout store
 	manifestDescriptor, err := oras.Copy(ctx, repoInstance, tag, fs, tag, oras.DefaultCopyOptions)
 	if err != nil {
 		return err
@@ -111,4 +140,131 @@ func (c *OciClient) CanUpdateTag(current v1.Descriptor, r string, tag string) (b
 
 	return false, nil
 
+}
+
+func (c *OciClient) PackFolders(fs *file.Store, dirs []string, artifactType ArtifactType) (v1.Descriptor, error) {
+
+	ctx := context.Background()
+
+	artifactTypeString := string(artifactType)
+
+	fileDescriptors := make([]v1.Descriptor, 0, len(dirs))
+	for _, name := range dirs {
+		fileDescriptor, err := fs.Add(ctx, name, string(artifactType), "")
+		if err != nil {
+			return v1.Descriptor{}, err
+		}
+		fileDescriptors = append(fileDescriptors, fileDescriptor)
+		logger.Log().Info(fmt.Sprintf("file descriptor for %s: %v\n", name, fileDescriptor.Digest))
+	}
+
+	artifactDescriptor, err := oras.Pack(ctx, fs, artifactTypeString, fileDescriptors, oras.PackOptions{
+		PackImageManifest:   true,
+		ManifestAnnotations: map[string]string{},
+	})
+
+	return artifactDescriptor, err
+}
+
+// the root has to leaves, one is the real scroll (fs) and the other is meta information about the scroll
+func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo AnnotationInfo) (v1.Descriptor, error) {
+
+	fs, err := file.New(folder)
+	if err != nil {
+		return v1.Descriptor{}, err
+	}
+	defer fs.Close()
+
+	repoInstance, err := c.GetRepo(repo)
+
+	if err != nil {
+		return v1.Descriptor{}, err
+	}
+
+	fsFileNames := []string{"init-files", "init-files-template", "scroll-switch", "update", "scroll.yaml"}
+	scrollFsManifestDescriptor, err := c.PackFolders(fs, fsFileNames, ArtifactTypeScrollFs)
+
+	if err != nil {
+		return v1.Descriptor{}, err
+	}
+
+	ctx := context.Background()
+
+	annotations := map[string]string{}
+	if annotationInfo.MinRam != "" {
+		annotations["gg.druid.scroll.minRam"] = annotationInfo.MinRam
+	}
+	if annotationInfo.MinDisk != "" {
+		annotations["gg.druid.scroll.minDisk"] = annotationInfo.MinDisk
+	}
+	if annotationInfo.MinCpu != "" {
+		annotations["gg.druid.scroll.minCpu"] = annotationInfo.MinCpu
+	}
+	if annotationInfo.Image != "" {
+		annotations["gg.druid.scroll.image"] = annotationInfo.Image
+	}
+
+	for name, port := range annotationInfo.Ports {
+		annotations[fmt.Sprintf("gg.druid.scroll.port.%s", name)] = port
+	}
+
+	//Pack everything together
+	rootManifestDescriptor, err := oras.Pack(ctx, fs, string(ArtifactTypeScrollRoot), []v1.Descriptor{scrollFsManifestDescriptor}, oras.PackOptions{
+		ManifestAnnotations: annotations,
+		PackImageManifest:   true,
+	})
+
+	if err != nil {
+		return v1.Descriptor{}, err
+	}
+
+	logger.Log().Info(fmt.Sprintf("root manifest descriptor: %v\n", rootManifestDescriptor.Digest))
+
+	if err = fs.Tag(ctx, rootManifestDescriptor, tag); err != nil {
+		return v1.Descriptor{}, err
+	}
+	_, err = oras.Copy(ctx, fs, tag, repoInstance, tag, oras.DefaultCopyOptions)
+
+	return rootManifestDescriptor, err
+}
+
+func (c *OciClient) PushMeta(folder string, repo string) (v1.Descriptor, error) {
+
+	fs, err := file.New(folder)
+	if err != nil {
+		return v1.Descriptor{}, err
+	}
+	defer fs.Close()
+
+	repoInstance, err := c.GetRepo(repo)
+
+	if err != nil {
+		return v1.Descriptor{}, err
+	}
+
+	fsFileNames := []string{}
+
+	subitems, _ := ioutil.ReadDir(folder)
+	for _, subitem := range subitems {
+		fsFileNames = append(fsFileNames, subitem.Name())
+
+	}
+	ctx := context.Background()
+
+	rootManifestDescriptor, err := c.PackFolders(fs, fsFileNames, ArtifactTypeScrollMeta)
+
+	if err != nil {
+		return v1.Descriptor{}, err
+	}
+
+	logger.Log().Info(fmt.Sprintf("Meta manifest descriptor: %v\n", rootManifestDescriptor.Digest))
+
+	tag := "meta"
+
+	if err = fs.Tag(ctx, rootManifestDescriptor, tag); err != nil {
+		return v1.Descriptor{}, err
+	}
+	_, err = oras.Copy(ctx, fs, tag, repoInstance, tag, oras.DefaultCopyOptions)
+
+	return rootManifestDescriptor, err
 }

@@ -3,9 +3,5 @@
 .builds
 *.tar.gz
 
-scrolls
-
-scroll-cwd
-
 druid**
 dlv.log
