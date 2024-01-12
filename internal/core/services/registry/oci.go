@@ -175,8 +175,10 @@ func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo 
 	//check if files exisits (file or folder) and remove from slice if not
 	for _, fileName := range availableFileNames {
 		exists, _ := utils.FileExists(filepath.Join(folder, fileName))
-		if !exists {
+		if exists {
 			fsFileNames = append(fsFileNames, fileName)
+		} else {
+			logger.Log().Warn(fmt.Sprintf("path %s does not exist, skipping", fileName))
 		}
 	}
 
