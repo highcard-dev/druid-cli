@@ -169,6 +169,21 @@ func (c *OciClient) PackFolders(fs *file.Store, dirs []string, artifactType Arti
 // the root has to leaves, one is the real scroll (fs) and the other is meta information about the scroll
 func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo AnnotationInfo) (v1.Descriptor, error) {
 
+	availableFileNames := []string{"init-files", "init-files-template", "scroll-switch", "update", "scroll.yaml"}
+	fsFileNames := []string{}
+
+	//check if files exisits (file or folder) and remove from slice if not
+	for _, fileName := range availableFileNames {
+		exists, _ := utils.FileExists(filepath.Join(folder, fileName))
+		if !exists {
+			fsFileNames = append(fsFileNames, fileName)
+		}
+	}
+
+	if len(fsFileNames) == 0 {
+		return v1.Descriptor{}, fmt.Errorf("no files found to push")
+	}
+
 	fs, err := file.New(folder)
 	if err != nil {
 		return v1.Descriptor{}, err
@@ -181,7 +196,6 @@ func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo 
 		return v1.Descriptor{}, err
 	}
 
-	fsFileNames := []string{"init-files", "init-files-template", "scroll-switch", "update", "scroll.yaml"}
 	scrollFsManifestDescriptor, err := c.PackFolders(fs, fsFileNames, ArtifactTypeScrollFs)
 
 	if err != nil {
