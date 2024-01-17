@@ -29,3 +29,11 @@ require (
 	google.golang.org/protobuf v1.31.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )
+
+require github.com/highcard-dev/proto v0.0.0 // indirect
+
+require github.com/highcard-dev/logger v0.0.0
+
+replace github.com/highcard-dev/logger => ../../../shared/golang/logger
+
+replace github.com/highcard-dev/proto => ../../../shared/proto
