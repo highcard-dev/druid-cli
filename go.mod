@@ -16,7 +16,7 @@ require (
 	github.com/gofiber/swagger v0.1.14
 	github.com/golang-jwt/jwt/v4 v4.5.0
 	github.com/hashicorp/go-plugin v1.6.0
-	github.com/opencontainers/image-spec v1.1.0-rc5
+	github.com/opencontainers/image-spec v1.1.0-rc6
 	github.com/prometheus/client_golang v1.18.0
 	github.com/shirou/gopsutil v3.21.11+incompatible
 	github.com/spf13/cobra v1.8.0
