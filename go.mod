@@ -1,11 +1,13 @@
 module github.com/highcard-dev/daemon
 
-go 1.18
+go 1.21
+
+toolchain go1.21.6
 
 require (
 	github.com/Masterminds/semver/v3 v3.2.1
 	github.com/Masterminds/sprig v2.22.0+incompatible
-	github.com/MicahParks/keyfunc v1.9.0
+	github.com/MicahParks/keyfunc/v3 v3.2.4
 	github.com/charmbracelet/bubbles v0.17.1
 	github.com/charmbracelet/bubbletea v0.25.0
 	github.com/charmbracelet/lipgloss v0.9.1
@@ -119,7 +121,10 @@ require (
 
 require github.com/highcard-dev/logger v0.0.0
 
-require github.com/highcard-dev/plugin v0.0.0
+require (
+	github.com/MicahParks/keyfunc v1.9.0
+	github.com/highcard-dev/plugin v0.0.0
+)
 
 replace github.com/highcard-dev/logger => ../../../shared/golang/logger
 
