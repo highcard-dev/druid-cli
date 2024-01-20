@@ -125,7 +125,7 @@ require (
 	github.com/gofiber/jwt/v3 v3.3.10
 	github.com/golang-jwt/jwt/v5 v5.2.0
 	github.com/highcard-dev/plugin v0.0.0
-	gopkg.in/yaml.v2 v2.4.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 replace github.com/highcard-dev/logger => ../../../shared/golang/logger
