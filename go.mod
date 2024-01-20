@@ -25,7 +25,7 @@ require (
 	github.com/spf13/viper v1.18.2
 	github.com/swaggo/swag v1.16.2
 	go.uber.org/zap v1.26.0
-	gopkg.in/yaml.v2 v2.4.0
+	gopkg.in/yaml.v3 v3.0.1
 	oras.land/oras-go/v2 v2.3.1
 )
 
@@ -101,7 +101,6 @@ require (
 	google.golang.org/grpc v1.60.1 // indirect
 	google.golang.org/protobuf v1.32.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 require github.com/highcard-dev/proto v0.0.0 // indirect
@@ -124,8 +123,9 @@ require github.com/highcard-dev/logger v0.0.0
 require (
 	github.com/MicahParks/keyfunc v1.9.0
 	github.com/gofiber/jwt/v3 v3.3.10
-	github.com/golang-jwt/jwt/v5 v5.2.0
+	github.com/golang-jwt/jwt/v4 v4.5.0
 	github.com/highcard-dev/plugin v0.0.0
+	gopkg.in/yaml.v2 v2.4.0
 )
 
 replace github.com/highcard-dev/logger => ../../../shared/golang/logger
