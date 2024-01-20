@@ -16,7 +16,7 @@ require (
 	github.com/gofiber/fiber/v2 v2.52.0
 	github.com/gofiber/jwt/v3 v3.3.10
 	github.com/gofiber/swagger v0.1.14
-	github.com/golang-jwt/jwt/v4 v4.5.0
+	github.com/golang-jwt/jwt/v5 v5.2.0
 	github.com/hashicorp/go-plugin v1.6.0
 	github.com/opencontainers/image-spec v1.1.0-rc6
 	github.com/prometheus/client_golang v1.18.0
@@ -123,6 +123,7 @@ require github.com/highcard-dev/logger v0.0.0
 
 require (
 	github.com/MicahParks/keyfunc v1.9.0
+	github.com/golang-jwt/jwt/v4 v4.5.0
 	github.com/highcard-dev/plugin v0.0.0
 )
 
