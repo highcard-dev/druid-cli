@@ -35,11 +35,14 @@ require (
 	go.uber.org/zap v1.26.0 // indirect
 )
 
-require github.com/highcard-dev/logger v0.0.0
+require (
+	github.com/highcard-dev/logger v0.0.0
+	gopkg.in/yaml.v2 v2.4.0
+)
 
 require (
 	github.com/highcard-dev/env v0.0.0 // indirect
-	gopkg.in/yaml.v2 v2.4.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 replace github.com/highcard-dev/logger => ../../../../shared/golang/logger

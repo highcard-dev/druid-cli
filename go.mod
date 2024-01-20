@@ -22,7 +22,7 @@ require (
 	github.com/spf13/viper v1.18.2
 	github.com/swaggo/swag v1.16.2
 	go.uber.org/zap v1.26.0
-	gopkg.in/yaml.v3 v3.0.1 // indirect
+	gopkg.in/yaml.v3 v3.0.1
 	oras.land/oras-go/v2 v2.3.1
 )
 
