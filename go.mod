@@ -22,7 +22,7 @@ require (
 	github.com/spf13/viper v1.18.2
 	github.com/swaggo/swag v1.16.2
 	go.uber.org/zap v1.26.0
-	gopkg.in/yaml.v3 v3.0.1
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 	oras.land/oras-go/v2 v2.3.1
 )
 
@@ -118,8 +118,7 @@ require github.com/highcard-dev/logger v0.0.0
 require (
 	github.com/MicahParks/keyfunc v1.9.0
 	github.com/gofiber/jwt/v3 v3.3.10
-	github.com/golang-jwt/jwt/v5 v5.2.0
-	github.com/golang-jwt/jwt/v5 v5.2.0
+	github.com/golang-jwt/jwt/v4 v4.5.0
 	github.com/highcard-dev/plugin v0.0.0
 	gopkg.in/yaml.v2 v2.4.0
 )
