@@ -73,7 +73,7 @@ func (sc *ScrollService) Bootstrap(ignoreVersionCheck bool) (*domain.Scroll, err
 	scroll, err := sc.LoadScrollWithLockfile()
 
 	if scroll == nil {
-		return nil, errors.New("scroll not found")
+		return nil, err
 	}
 
 	sc.scroll = scroll

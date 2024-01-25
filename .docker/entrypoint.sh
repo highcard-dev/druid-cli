@@ -30,14 +30,20 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]]; then
     #Run command
     if [ ! -z "${artifact}" ] && [ -f "${SD}/scroll.yaml" ];
     then
-        current=$(cat ${SD}/scroll.yaml | yq .name):$(cat ${SD}/scroll.yaml | yq .app_version)
-        #compare desired artifact with current installed
-        if [ "$current" != "$artifact" ];
+        if ! command -v yq &> /dev/null
         then
-            echo "Switching from $current to $artifact"
-            druid run scroll-switch.$artifact "${logargs[@]}"
+            echo "WARN: yq not installed, skipping artifact check"
         else
-            echo "Desired artifact $artifact already installed"
+            current=$(cat ${SD}/scroll.yaml | yq .name):$(cat ${SD}/scroll.yaml | yq .app_version)
+            #compare desired artifact with current installed
+
+            if [ "$current" != "$artifact" ];
+            then
+                echo "Switching from $current to $artifact"
+                druid run scroll-switch.$artifact "${logargs[@]}"
+            else
+                echo "Desired artifact $artifact already installed"
+            fi
         fi
     fi
     
