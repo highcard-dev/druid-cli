@@ -167,7 +167,7 @@ func (c *OciClient) PackFolders(fs *file.Store, dirs []string, artifactType Arti
 }
 
 // the root has to leaves, one is the real scroll (fs) and the other is meta information about the scroll
-func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo AnnotationInfo) (v1.Descriptor, error) {
+func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo AnnotationInfo, packMeta bool) (v1.Descriptor, error) {
 
 	availableFileNames := []string{"init-files", "init-files-template", "scroll-switch", "update", "scroll.yaml"}
 	fsFileNames := []string{}
@@ -203,6 +203,21 @@ func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo 
 	if err != nil {
 		return v1.Descriptor{}, err
 	}
+	descriptorsForRoot := []v1.Descriptor{scrollFsManifestDescriptor}
+
+	if packMeta {
+		metaPath := filepath.Join(folder, ".meta")
+		exists, _ := utils.FileExists(metaPath)
+		if !exists {
+			return v1.Descriptor{}, fmt.Errorf("meta file not found")
+		}
+
+		scrollMetaManifestDescriptor, err := c.PackFolders(fs, []string{metaPath}, ArtifactTypeScrollMeta)
+		if err != nil {
+			return v1.Descriptor{}, err
+		}
+		descriptorsForRoot = append(descriptorsForRoot, scrollMetaManifestDescriptor)
+	}
 
 	ctx := context.Background()
 
@@ -225,7 +240,7 @@ func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo 
 	}
 
 	//Pack everything together
-	rootManifestDescriptor, err := oras.Pack(ctx, fs, string(ArtifactTypeScrollRoot), []v1.Descriptor{scrollFsManifestDescriptor}, oras.PackOptions{
+	rootManifestDescriptor, err := oras.Pack(ctx, fs, string(ArtifactTypeScrollRoot), descriptorsForRoot, oras.PackOptions{
 		ManifestAnnotations: annotations,
 		PackImageManifest:   true,
 	})

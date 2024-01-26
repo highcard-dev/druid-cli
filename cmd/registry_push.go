@@ -17,6 +17,7 @@ var minCpu string
 var minDisk string
 var image string
 var ports []string
+var packMeta bool
 
 var PushCommand = &cobra.Command{
 	Use:   "push",
@@ -70,7 +71,7 @@ var PushCommand = &cobra.Command{
 			MinDisk: minDisk,
 			Image:   image,
 			Ports:   ps,
-		})
+		}, packMeta)
 
 		if err != nil {
 			return err
@@ -91,4 +92,6 @@ func init() {
 	PushCommand.Flags().StringVarP(&image, "image", "i", image, "Image to use for the scroll. (Will be added as a manifest annotation gg.druid.scroll.image)")
 
 	PushCommand.Flags().StringSliceVarP(&ports, "port", "p", ports, "Ports to expose. Format webserver=80, dns=53/udp or just ftp (Will be added as a manifest annotation gg.druid.scroll.ports.<name>)")
+
+	PushCommand.Flags().BoolVarP(&packMeta, "pack-meta", "m", packMeta, "Pack the meta folder into the scroll.")
 }
