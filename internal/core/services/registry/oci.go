@@ -212,7 +212,7 @@ func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo 
 			return v1.Descriptor{}, fmt.Errorf("meta file not found")
 		}
 
-		scrollMetaManifestDescriptor, err := c.PackFolders(fs, []string{metaPath}, ArtifactTypeScrollMeta)
+		scrollMetaManifestDescriptor, err := c.CreateMetaDescriptors(fs, metaPath)
 		if err != nil {
 			return v1.Descriptor{}, err
 		}
@@ -273,16 +273,9 @@ func (c *OciClient) PushMeta(folder string, repo string) (v1.Descriptor, error) 
 		return v1.Descriptor{}, err
 	}
 
-	fsFileNames := []string{}
+	rootManifestDescriptor, err := c.CreateMetaDescriptors(fs, folder)
 
-	subitems, _ := ioutil.ReadDir(folder)
-	for _, subitem := range subitems {
-		fsFileNames = append(fsFileNames, subitem.Name())
-
-	}
 	ctx := context.Background()
-
-	rootManifestDescriptor, err := c.PackFolders(fs, fsFileNames, ArtifactTypeScrollMeta)
 
 	if err != nil {
 		return v1.Descriptor{}, err
@@ -298,4 +291,16 @@ func (c *OciClient) PushMeta(folder string, repo string) (v1.Descriptor, error) 
 	_, err = oras.Copy(ctx, fs, tag, repoInstance, tag, oras.DefaultCopyOptions)
 
 	return rootManifestDescriptor, err
+}
+
+func (c *OciClient) CreateMetaDescriptors(fs *file.Store, folder string) (v1.Descriptor, error) {
+
+	fsFileNames := []string{}
+	subitems, _ := ioutil.ReadDir(folder)
+	for _, subitem := range subitems {
+		fsFileNames = append(fsFileNames, subitem.Name())
+
+	}
+
+	return c.PackFolders(fs, fsFileNames, ArtifactTypeScrollMeta)
 }
