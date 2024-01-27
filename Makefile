@@ -9,6 +9,9 @@ help: ## Prints the help about targets.
 build: ## Build Daemon
 	go build -o ./bin/druid
 
+install: ## Install Daemon
+	cp ./bin/druid /usr/local/bin/druid
+
 build-plugins: ## Build Plugins
 	go build -o ./bin/druid_rcon ./plugins/rcon/rcon.go
 	go build -o ./bin/druid_rcon_web_rust ./plugins/rcon_web_rust/rcon_web_rust.go

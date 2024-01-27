@@ -142,7 +142,7 @@ func (c *OciClient) CanUpdateTag(current v1.Descriptor, r string, tag string) (b
 
 }
 
-func (c *OciClient) PackFolders(fs *file.Store, dirs []string, artifactType ArtifactType) (v1.Descriptor, error) {
+func (c *OciClient) PackFolders(fs *file.Store, dirs []string, artifactType ArtifactType, path string) (v1.Descriptor, error) {
 
 	ctx := context.Background()
 
@@ -150,7 +150,10 @@ func (c *OciClient) PackFolders(fs *file.Store, dirs []string, artifactType Arti
 
 	fileDescriptors := make([]v1.Descriptor, 0, len(dirs))
 	for _, name := range dirs {
-		fileDescriptor, err := fs.Add(ctx, name, string(artifactType), "")
+
+		fullPath := filepath.Join(path, name)
+
+		fileDescriptor, err := fs.Add(ctx, name, string(artifactType), fullPath)
 		if err != nil {
 			return v1.Descriptor{}, err
 		}
@@ -198,7 +201,7 @@ func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo 
 		return v1.Descriptor{}, err
 	}
 
-	scrollFsManifestDescriptor, err := c.PackFolders(fs, fsFileNames, ArtifactTypeScrollFs)
+	scrollFsManifestDescriptor, err := c.PackFolders(fs, fsFileNames, ArtifactTypeScrollFs, "")
 
 	if err != nil {
 		return v1.Descriptor{}, err
@@ -206,13 +209,8 @@ func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo 
 	descriptorsForRoot := []v1.Descriptor{scrollFsManifestDescriptor}
 
 	if packMeta {
-		metaPath := filepath.Join(folder, ".meta")
-		exists, _ := utils.FileExists(metaPath)
-		if !exists {
-			return v1.Descriptor{}, fmt.Errorf("meta file not found")
-		}
 
-		scrollMetaManifestDescriptor, err := c.CreateMetaDescriptors(fs, metaPath)
+		scrollMetaManifestDescriptor, err := c.CreateMetaDescriptors(fs, folder, ".meta")
 		if err != nil {
 			return v1.Descriptor{}, err
 		}
@@ -273,7 +271,7 @@ func (c *OciClient) PushMeta(folder string, repo string) (v1.Descriptor, error) 
 		return v1.Descriptor{}, err
 	}
 
-	rootManifestDescriptor, err := c.CreateMetaDescriptors(fs, folder)
+	rootManifestDescriptor, err := c.CreateMetaDescriptors(fs, folder, "")
 
 	ctx := context.Background()
 
@@ -293,14 +291,18 @@ func (c *OciClient) PushMeta(folder string, repo string) (v1.Descriptor, error) 
 	return rootManifestDescriptor, err
 }
 
-func (c *OciClient) CreateMetaDescriptors(fs *file.Store, folder string) (v1.Descriptor, error) {
+func (c *OciClient) CreateMetaDescriptors(fs *file.Store, folder string, fsPath string) (v1.Descriptor, error) {
 
+	metaPath := filepath.Join(folder, fsPath)
+	exists, _ := utils.FileExists(metaPath)
+	if !exists {
+		return v1.Descriptor{}, fmt.Errorf("meta file not found")
+	}
 	fsFileNames := []string{}
-	subitems, _ := ioutil.ReadDir(folder)
+	subitems, _ := ioutil.ReadDir(metaPath)
 	for _, subitem := range subitems {
 		fsFileNames = append(fsFileNames, subitem.Name())
-
 	}
 
-	return c.PackFolders(fs, fsFileNames, ArtifactTypeScrollMeta)
+	return c.PackFolders(fs, fsFileNames, ArtifactTypeScrollMeta, fsPath)
 }
