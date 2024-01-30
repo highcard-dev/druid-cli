@@ -161,7 +161,7 @@ func (sc *ScrollService) CheckAndCreateLockFile(ignoreVersionCheck bool) error {
 						return err
 					}
 
-					return ioutil.WriteFile(realPath, b, 0644)
+					return os.WriteFile(realPath, b, f.Mode())
 				}
 
 				return err
@@ -191,6 +191,9 @@ func (sc *ScrollService) CheckAndCreateLockFile(ignoreVersionCheck bool) error {
 			})
 			if len(files) == 0 {
 				return nil
+			}
+			if err != nil {
+				return err
 			}
 
 			err = sc.templateRenderer.RenderScrollTemplateFiles(files, sc.scroll, sc.processCwd)
@@ -399,7 +402,7 @@ func (s ScrollService) Initalize() error {
 func (s ScrollService) RenderCwdTemplates() error {
 	cwd := s.processCwd
 
-	libRegEx, err := regexp.Compile("^.+\\.(scroll_template)$")
+	libRegEx, err := regexp.Compile(`^.+\.(scroll_template)$`)
 	if err != nil {
 		return err
 	}
@@ -432,7 +435,7 @@ func (s ScrollService) GetScrollConfig() interface{} {
 
 	var data interface{}
 
-	content, err := ioutil.ReadFile(path)
+	content, err := os.ReadFile(path)
 
 	if err != nil {
 		return data
@@ -447,7 +450,7 @@ func (s ScrollService) GetScrollConfig() interface{} {
 func (s ScrollService) GetScrollConfigRawYaml() string {
 	path := s.processCwd + "/.scroll_config.yml"
 
-	content, err := ioutil.ReadFile(path)
+	content, err := os.ReadFile(path)
 
 	if err != nil {
 		return ""
