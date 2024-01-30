@@ -143,9 +143,17 @@ func (sc *ScrollService) CheckAndCreateLockFile(ignoreVersionCheck bool) error {
 		exist, _ := utils.FileExists(initPath)
 		if exist {
 			err := filepath.Walk(initPath, func(path string, f os.FileInfo, err error) error {
-				if !f.IsDir() {
-					strippedPath := strings.TrimPrefix(filepath.Clean(path), filepath.Clean(initPath))
-					realPath := filepath.Join(sc.processCwd, strippedPath)
+				strippedPath := strings.TrimPrefix(filepath.Clean(path), filepath.Clean(initPath))
+				realPath := filepath.Join(sc.processCwd, strippedPath)
+				if f.IsDir() {
+					if strippedPath == "" {
+						return nil
+					}
+					err := os.MkdirAll(realPath, f.Mode())
+					if err != nil {
+						return err
+					}
+				} else {
 
 					b, err := ioutil.ReadFile(path)
 
@@ -170,7 +178,12 @@ func (sc *ScrollService) CheckAndCreateLockFile(ignoreVersionCheck bool) error {
 
 		if exist {
 			err := filepath.Walk(initPath, func(path string, f os.FileInfo, err error) error {
-				if !f.IsDir() {
+				if f.IsDir() {
+					err := os.MkdirAll(path, f.Mode())
+					if err != nil {
+						return err
+					}
+				} else {
 					files = append(files, path)
 				}
 
