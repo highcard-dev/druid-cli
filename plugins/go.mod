@@ -7,7 +7,7 @@ require (
 	github.com/hashicorp/go-plugin v1.6.0
 	github.com/highcard-dev/gorcon v1.3.10
 	golang.org/x/net v0.20.0
-	google.golang.org/grpc v1.60.1
+	google.golang.org/grpc v1.61.0
 )
 
 require (
