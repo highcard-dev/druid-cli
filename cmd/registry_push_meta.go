@@ -40,7 +40,7 @@ var PushMetaCommand = &cobra.Command{
 			return err
 		}
 
-		logger.Log().Info("Pushed to registry")
+		logger.Log().Info("Pushed " + artifact + " to registry")
 		return nil
 	},
 }

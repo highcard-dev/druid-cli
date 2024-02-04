@@ -77,7 +77,7 @@ var PushCommand = &cobra.Command{
 			return err
 		}
 
-		logger.Log().Info("Pushed to registry")
+		logger.Log().Info("Pushed " + scroll.Name + " to registry")
 		return nil
 	},
 }
