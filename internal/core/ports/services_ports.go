@@ -1,6 +1,7 @@
 package ports
 
 import (
+	"io"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -15,12 +16,18 @@ type AuthorizerServiceInterface interface {
 }
 
 type ScrollServiceInterface interface {
+	GetCurrent() *domain.Scroll
+	GetFile() *domain.File
+	GetScrollConfigRawYaml() string
+	GetDir() string
+	ChangeLockStatus(process string, status string) error
+	GetCwd() string
+	GetLock() *domain.ScrollLock
+}
+
+type ProcessLauchnerInterface interface {
 	Run(commandId string, processId string, changeStatus bool) error
 	RunProcedure(*domain.Procedure, string, bool) (string, error)
-	GetCurrent() *domain.Scroll
-	LoadScrollWithLockfile() (*domain.Scroll, error)
-	GetFile() *domain.File
-	GetRunningProcesses() map[string]*domain.Process
 }
 
 type PluginManagerInterface interface {
@@ -34,13 +41,31 @@ type LogManagerInterface interface {
 
 type ProcessManagerInterface interface {
 	GetRunningProcesses() map[string]*domain.Process
-	Launch(process *domain.Process, command []string, dir string) error
+	GetRunningProcess(processName string) *domain.Process
+	Run(process string, command []string, dir string) error
+	RunTty(process string, command []string, dir string) error
 	WriteStdin(process *domain.Process, data string) error
+}
+
+type BroadcastChannelInterface interface {
+	NewHub() *domain.BroadcastChannel
+	Run()
+}
+
+type ConsoleManagerInterface interface {
+	GetSubscription(consoleId string) chan *[]byte
+	DeleteSubscription(consoleId string, subscription chan *[]byte)
+	GetConsoles() map[string]*domain.Console
+	RemoveConsole(consoleId string)
+	AddConsole(consoleId string, consoleType string, console io.Reader) *domain.Console
+	AddConsoleWithChannel(consoleId string, consoleType string, channel chan string) *domain.Console
 }
 
 type ProcessMonitorInterface interface {
 	GetAllProcessesMetrics() map[string]*domain.ProcessMonitorMetrics
 	GetPsTrees() map[string]*domain.ProcessTreeRoot
+	AddProcess(pid int32, name string)
+	RemoveProcess(name string)
 }
 
 type LogDriverInterface interface {

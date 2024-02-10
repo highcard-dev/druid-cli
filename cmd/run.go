@@ -24,9 +24,10 @@ var RunCmd = &cobra.Command{
 		client := registry.NewOciClient(host, user, password)
 
 		logManager := services.NewLogManager()
-		hub := services.NewHub()
-		processManager := services.NewProcessManager(logManager, hub)
-		scrollService := services.NewScrollService(cwd, client, logManager, processManager, hub, services.NewPluginManager())
+		consoleService := services.NewConsoleManager()
+		processManager := services.NewProcessManager(logManager, consoleService, services.NewProcessMonitor())
+		scrollService := services.NewScrollService(cwd)
+		processLauncher := services.NewProcessLauncher(client, processManager, services.NewPluginManager(), consoleService, logManager, scrollService)
 
 		_, err := scrollService.Bootstrap(ignoreVersionCheck)
 
@@ -38,7 +39,7 @@ var RunCmd = &cobra.Command{
 
 		command := strings.TrimPrefix(args[0], parts[0]+".")
 
-		err = scrollService.Run(command, parts[0], false)
+		err = processLauncher.Run(command, parts[0], false)
 		return err
 	},
 }

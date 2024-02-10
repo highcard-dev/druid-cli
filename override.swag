@@ -1,0 +1,5 @@
+replace semver.Version string
+replace processutil.MemoryInfoStat string
+replace processutil.MemoryInfoExStat string
+replace processutil.Process string
+replace processutil.IOCountersStat string

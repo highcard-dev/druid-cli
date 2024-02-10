@@ -46,6 +46,32 @@
                 }
             }
         },
+        "/api/v1/consoles": {
+            "get": {
+                "description": "Get List of all consoles",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "druid",
+                    "daemon",
+                    "console"
+                ],
+                "summary": "Get All Consoles",
+                "operationId": "getConsoles",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ConsolesResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/logs": {
             "get": {
                 "consumes": [
@@ -264,6 +290,31 @@
                 }
             }
         },
+        "Console": {
+            "type": "object",
+            "required": [
+                "type"
+            ],
+            "properties": {
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "ConsolesResponse": {
+            "type": "object",
+            "required": [
+                "consoles"
+            ],
+            "properties": {
+                "consoles": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/Console"
+                    }
+                }
+            }
+        },
         "Procedure": {
             "type": "object",
             "properties": {
@@ -332,19 +383,19 @@
                     }
                 },
                 "io_counters": {
-                    "$ref": "#/definitions/process.IOCountersStat"
+                    "type": "string"
                 },
                 "memory": {
-                    "$ref": "#/definitions/process.MemoryInfoStat"
+                    "type": "string"
                 },
                 "memory_ex": {
-                    "$ref": "#/definitions/process.MemoryInfoExStat"
+                    "type": "string"
                 },
                 "name": {
                     "type": "string"
                 },
                 "process": {
-                    "$ref": "#/definitions/process.Process"
+                    "type": "string"
                 },
                 "username": {
                     "type": "string"
@@ -390,6 +441,7 @@
             "type": "object",
             "properties": {
                 "app_version": {
+                    "description": "don't make this a semver, it's not allways",
                     "type": "string"
                 },
                 "desc": {
@@ -417,7 +469,7 @@
                     }
                 },
                 "version": {
-                    "$ref": "#/definitions/semver.Version"
+                    "type": "string"
                 }
             }
         },
@@ -494,70 +546,6 @@
                     "type": "boolean"
                 }
             }
-        },
-        "process.IOCountersStat": {
-            "type": "object",
-            "properties": {
-                "readBytes": {
-                    "type": "integer"
-                },
-                "readCount": {
-                    "type": "integer"
-                },
-                "writeBytes": {
-                    "type": "integer"
-                },
-                "writeCount": {
-                    "type": "integer"
-                }
-            }
-        },
-        "process.MemoryInfoExStat": {
-            "type": "object"
-        },
-        "process.MemoryInfoStat": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "description": "bytes",
-                    "type": "integer"
-                },
-                "hwm": {
-                    "description": "bytes",
-                    "type": "integer"
-                },
-                "locked": {
-                    "description": "bytes",
-                    "type": "integer"
-                },
-                "rss": {
-                    "description": "bytes",
-                    "type": "integer"
-                },
-                "stack": {
-                    "description": "bytes",
-                    "type": "integer"
-                },
-                "swap": {
-                    "description": "bytes",
-                    "type": "integer"
-                },
-                "vms": {
-                    "description": "bytes",
-                    "type": "integer"
-                }
-            }
-        },
-        "process.Process": {
-            "type": "object",
-            "properties": {
-                "pid": {
-                    "type": "integer"
-                }
-            }
-        },
-        "semver.Version": {
-            "type": "object"
         }
     }
 }

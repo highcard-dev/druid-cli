@@ -7,9 +7,7 @@ import (
 	semver "github.com/Masterminds/semver/v3"
 	"github.com/highcard-dev/daemon/internal/core/services"
 	logger "github.com/highcard-dev/daemon/internal/core/services/log"
-	"github.com/highcard-dev/daemon/internal/core/services/registry"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var SemverCmd = &cobra.Command{
@@ -19,16 +17,8 @@ var SemverCmd = &cobra.Command{
 	Args:  cobra.MaximumNArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger.Log()
-		host := viper.GetString("registry.host")
-		user := viper.GetString("registry.user")
-		password := viper.GetString("registry.password")
 
-		client := registry.NewOciClient(host, user, password)
-
-		logManager := services.NewLogManager()
-		hub := services.NewHub()
-		processManager := services.NewProcessManager(logManager, hub)
-		scrollService := services.NewScrollService(cwd, client, logManager, processManager, hub, services.NewPluginManager())
+		scrollService := services.NewScrollService(cwd)
 
 		scroll, err := scrollService.LoadScrollWithLockfile()
 

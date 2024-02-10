@@ -9,8 +9,9 @@ import (
 )
 
 type ScrollHandler struct {
-	ScrollService ports.ScrollServiceInterface
-	PluginManager ports.PluginManagerInterface
+	ScrollService   ports.ScrollServiceInterface
+	PluginManager   ports.PluginManagerInterface
+	ProcessLauncher ports.ProcessLauchnerInterface
 }
 
 type StartScrollRequestBody struct {
@@ -26,8 +27,8 @@ type StartProcedureRequestBody struct {
 	Sync    bool   `json:"sync"`
 }
 
-func NewScrollHandler(scrollService ports.ScrollServiceInterface, pluginManager ports.PluginManagerInterface) *ScrollHandler {
-	return &ScrollHandler{ScrollService: scrollService, PluginManager: pluginManager}
+func NewScrollHandler(scrollService ports.ScrollServiceInterface, pluginManager ports.PluginManagerInterface, processLauncher ports.ProcessLauchnerInterface) *ScrollHandler {
+	return &ScrollHandler{ScrollService: scrollService, PluginManager: pluginManager, ProcessLauncher: processLauncher}
 }
 
 // @Summary Get current scroll
@@ -62,7 +63,7 @@ func (sl ScrollHandler) RunCommand(c *fiber.Ctx) error {
 	}
 
 	if requestBody.Sync {
-		err = sl.ScrollService.Run(requestBody.CommandId, requestBody.ProcessId, true)
+		err = sl.ProcessLauncher.Run(requestBody.CommandId, requestBody.ProcessId, true)
 		if err != nil {
 			logger.Log().Error("Error running command (sync)", zap.Error(err))
 			return c.SendStatus(500)
@@ -70,7 +71,7 @@ func (sl ScrollHandler) RunCommand(c *fiber.Ctx) error {
 		return c.SendStatus(200)
 	} else {
 		go func() {
-			err = sl.ScrollService.Run(requestBody.CommandId, requestBody.ProcessId, true)
+			err = sl.ProcessLauncher.Run(requestBody.CommandId, requestBody.ProcessId, true)
 			if err != nil {
 				logger.Log().Error("Error running command (async)", zap.Error(err))
 			}
@@ -112,10 +113,10 @@ func (sl ScrollHandler) RunProcedure(c *fiber.Ctx) error {
 	}
 	if !requestBody.Sync {
 
-		go sl.ScrollService.RunProcedure(&procedure, requestBody.Process, true)
+		go sl.ProcessLauncher.RunProcedure(&procedure, requestBody.Process, true)
 		return c.SendStatus(201)
 	} else {
-		res, err := sl.ScrollService.RunProcedure(&procedure, requestBody.Process, true)
+		res, err := sl.ProcessLauncher.RunProcedure(&procedure, requestBody.Process, true)
 		if err != nil {
 			c.SendString(err.Error())
 			return c.SendStatus(400)

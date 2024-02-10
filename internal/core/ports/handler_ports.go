@@ -24,4 +24,5 @@ type ScrollMetricHandlerInterface interface {
 type WebsocketHandlerInterface interface {
 	CreateToken(c *fiber.Ctx) error
 	HandleProcess(c *websocket.Conn)
+	Consoles(c *fiber.Ctx) error
 }

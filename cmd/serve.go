@@ -45,16 +45,17 @@ to interact and monitor the Scroll Application`,
 
 		client := registry.NewOciClient(host, user, password)
 		logManager := services.NewLogManager()
-		hub := services.NewHub()
-		processManager := services.NewProcessManager(logManager, hub)
-		processMonitor := services.NewProcessMonitor(processManager)
+		consoleService := services.NewConsoleManager()
+		processMonitor := services.NewProcessMonitor()
+		processManager := services.NewProcessManager(logManager, consoleService, processMonitor)
 
 		pluginManager := services.NewPluginManager()
 
 		logger.Log().Info("Starting Process Monitor")
 		go processMonitor.StartMonitoring()
 
-		scrollService := services.NewScrollService(cwd, client, logManager, processManager, hub, pluginManager)
+		scrollService := services.NewScrollService(cwd)
+		processLauncher := services.NewProcessLauncher(client, processManager, services.NewPluginManager(), consoleService, logManager, scrollService)
 
 		if !scrollService.ScrollExists() {
 
@@ -76,16 +77,16 @@ to interact and monitor the Scroll Application`,
 			logger.Log().Info("Installed scroll " + artifact)
 		}
 
-		scrollHandler := handler.NewScrollHandler(scrollService, pluginManager)
-		scrollLogHandler := handler.NewScrollLogHandler(scrollService, logManager)
+		scrollHandler := handler.NewScrollHandler(scrollService, pluginManager, processLauncher)
+		scrollLogHandler := handler.NewScrollLogHandler(scrollService, logManager, processManager)
 		scrollMetricHandler := handler.NewScrollMetricHandler(scrollService, processMonitor)
-		websocketHandler := handler.NewWebsocketHandler(authorizer, scrollService, hub)
+		websocketHandler := handler.NewWebsocketHandler(authorizer, scrollService, consoleService)
 
 		s := web.NewServer(jwksUrl, scrollHandler, scrollLogHandler, scrollMetricHandler, websocketHandler, authorizer)
 
 		a := s.Initialize()
 
-		signals.SetupSignals(scrollService, a, shutdownWait)
+		signals.SetupSignals(processLauncher, processManager, a, shutdownWait)
 
 		currentScroll, err := scrollService.Bootstrap(ignoreVersionCheck)
 
@@ -93,7 +94,7 @@ to interact and monitor the Scroll Application`,
 			return err
 		}
 
-		err = scrollService.StartLockfile()
+		err = processLauncher.StartLockfile()
 
 		if err != nil {
 			return err
@@ -106,7 +107,7 @@ to interact and monitor the Scroll Application`,
 
 		if !scrollService.GetLock().Initialized {
 			logger.Log().Info("Running init-command command")
-			scrollService.Initalize()
+			processLauncher.Initalize()
 		}
 
 		logger.Log().Info("Bootstrapping done")

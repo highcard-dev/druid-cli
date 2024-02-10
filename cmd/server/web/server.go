@@ -112,7 +112,8 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 	dispatcherRoutes.Get("/pstree", s.scrollMetricHandler.PsTree).Name("scrolls.pstree")
 
 	//Websocket Group
-	wsRoutes.Get("/serve", websocket.New(s.websocketHandler.HandleProcess)).Name("ws.serve")
+	dispatcherRoutes.Get("/consoles", s.websocketHandler.Consoles).Name("consoles.list")
+	wsRoutes.Get("/serve/:console", websocket.New(s.websocketHandler.HandleProcess)).Name("ws.serve")
 
 	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler())).Name("metrics")
 

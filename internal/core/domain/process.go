@@ -21,11 +21,10 @@ type StreamCommand struct {
 }
 
 type Process struct {
-	Cmd    *exec.Cmd
-	Name   string
-	StdIn  io.WriteCloser
-	StdOut io.ReadCloser
-	StdErr io.ReadCloser
+	Cmd   *exec.Cmd
+	Name  string
+	Type  string
+	StdIn io.WriteCloser
 }
 
 type Log struct {

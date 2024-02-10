@@ -10,8 +10,9 @@ import (
 )
 
 type ScrollLogHandler struct {
-	scrollService ports.ScrollServiceInterface
-	logManager    ports.LogManagerInterface
+	scrollService  ports.ScrollServiceInterface
+	logManager     ports.LogManagerInterface
+	processManager ports.ProcessManagerInterface
 }
 
 type ScrollLogStream struct {
@@ -19,8 +20,8 @@ type ScrollLogStream struct {
 	Log []domain.StreamCommand `json:"log" validate:"required"`
 } // @name ScrollLogStream
 
-func NewScrollLogHandler(scrollService ports.ScrollServiceInterface, logManager ports.LogManagerInterface) *ScrollLogHandler {
-	return &ScrollLogHandler{scrollService: scrollService, logManager: logManager}
+func NewScrollLogHandler(scrollService ports.ScrollServiceInterface, logManager ports.LogManagerInterface, processManager ports.ProcessManagerInterface) *ScrollLogHandler {
+	return &ScrollLogHandler{scrollService: scrollService, logManager: logManager, processManager: processManager}
 }
 
 // @Summary List all logs
@@ -32,7 +33,7 @@ func NewScrollLogHandler(scrollService ports.ScrollServiceInterface, logManager 
 // @Router /api/v1/logs [get]
 func (sl ScrollLogHandler) ListAllLogs(c *fiber.Ctx) error {
 
-	processes := sl.scrollService.GetRunningProcesses()
+	processes := sl.processManager.GetRunningProcesses()
 
 	responseData := make([]ScrollLogStream, 0, len(processes))
 	mutex := sync.Mutex{}

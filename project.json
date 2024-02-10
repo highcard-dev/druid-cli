@@ -15,8 +15,19 @@
           }
         ]
       }
+    },
+    "codegen": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/deployment/daemon",
+        "commands": [
+          {
+            "command": "swag init -g ./cmd/server/web/server.go --overridesFile override.swag"
+          }
+        ]
+      }
     }
   },
-  "tags": ["type:app", "scope:auth", "lang:node"],
+  "tags": ["type:app", "scope:daemon", "lang:golang"],
   "implicitDependencies": ["shared-proto"]
 }

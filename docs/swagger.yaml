@@ -8,6 +8,22 @@ definitions:
       should_change_status:
         type: string
     type: object
+  Console:
+    properties:
+      type:
+        type: string
+    required:
+    - type
+    type: object
+  ConsolesResponse:
+    properties:
+      consoles:
+        additionalProperties:
+          $ref: '#/definitions/Console'
+        type: object
+    required:
+    - consoles
+    type: object
   Procedure:
     properties:
       data: {}
@@ -53,15 +69,15 @@ definitions:
           type: integer
         type: array
       io_counters:
-        $ref: '#/definitions/process.IOCountersStat'
+        type: string
       memory:
-        $ref: '#/definitions/process.MemoryInfoStat'
+        type: string
       memory_ex:
-        $ref: '#/definitions/process.MemoryInfoExStat'
+        type: string
       name:
         type: string
       process:
-        $ref: '#/definitions/process.Process'
+        type: string
       username:
         type: string
     type: object
@@ -91,6 +107,7 @@ definitions:
   ScrollFile:
     properties:
       app_version:
+        description: don't make this a semver, it's not allways
         type: string
       desc:
         type: string
@@ -109,7 +126,7 @@ definitions:
           $ref: '#/definitions/ProcessCommand'
         type: object
       version:
-        $ref: '#/definitions/semver.Version'
+        type: string
     type: object
   ScrollLogStream:
     properties:
@@ -159,50 +176,6 @@ definitions:
       sync:
         type: boolean
     type: object
-  process.IOCountersStat:
-    properties:
-      readBytes:
-        type: integer
-      readCount:
-        type: integer
-      writeBytes:
-        type: integer
-      writeCount:
-        type: integer
-    type: object
-  process.MemoryInfoExStat:
-    type: object
-  process.MemoryInfoStat:
-    properties:
-      data:
-        description: bytes
-        type: integer
-      hwm:
-        description: bytes
-        type: integer
-      locked:
-        description: bytes
-        type: integer
-      rss:
-        description: bytes
-        type: integer
-      stack:
-        description: bytes
-        type: integer
-      swap:
-        description: bytes
-        type: integer
-      vms:
-        description: bytes
-        type: integer
-    type: object
-  process.Process:
-    properties:
-      pid:
-        type: integer
-    type: object
-  semver.Version:
-    type: object
 info:
   contact: {}
 paths:
@@ -234,6 +207,24 @@ paths:
       - scroll
       - druid
       - daemon
+  /api/v1/consoles:
+    get:
+      consumes:
+      - application/json
+      description: Get List of all consoles
+      operationId: getConsoles
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ConsolesResponse'
+      summary: Get All Consoles
+      tags:
+      - druid
+      - daemon
+      - console
   /api/v1/logs:
     get:
       consumes:

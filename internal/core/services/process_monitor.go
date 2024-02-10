@@ -1,7 +1,6 @@
 package services
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -16,7 +15,7 @@ import (
 
 type ProcessMonitor struct {
 	exportedMetrics *ProcessMonitorMetricsExported
-	processManager  *ProcessManager
+	processes       map[string]*processutil.Process
 }
 
 type ProcessMonitorMetricsExported struct {
@@ -25,10 +24,10 @@ type ProcessMonitorMetricsExported struct {
 	prometheusConnectionCount *prometheus.GaugeVec
 }
 
-func NewProcessMonitor(pm *ProcessManager) *ProcessMonitor {
+func NewProcessMonitor() *ProcessMonitor {
 	return &ProcessMonitor{
 		exportedMetrics: NewProcessMonitorMetricsExported(),
-		processManager:  pm,
+		processes:       make(map[string]*processutil.Process),
 	}
 }
 
@@ -68,8 +67,8 @@ func (po *ProcessMonitor) StartMonitoring() {
 }
 
 func (po *ProcessMonitor) RefreshMetrics() {
-	for name, process := range po.processManager.GetRunningProcesses() {
-		_, err := po.GetProcessMetric(process)
+	for name, process := range po.processes {
+		_, err := po.GetProcessMetric(name, process)
 		if err != nil {
 			logger.Log().Error("Error when retrieving process Metrics",
 				zap.String(logger.LogKeyContext, logger.LogContextMonitor),
@@ -80,32 +79,45 @@ func (po *ProcessMonitor) RefreshMetrics() {
 	}
 }
 
-func (po *ProcessMonitor) GetProcessMetric(process *domain.Process) (*domain.ProcessMonitorMetrics, error) {
+func (po *ProcessMonitor) GetProcessMetric(name string, p *processutil.Process) (*domain.ProcessMonitorMetrics, error) {
 
-	if process.Cmd != nil && process.Cmd.Process != nil {
-		p, err := processutil.NewProcess(int32(process.Cmd.Process.Pid))
-		if err != nil {
-			return nil, err
-		}
-		running, _ := p.IsRunning()
-		if running {
-			memory, cpu, cons := calcUsageOfProcess(p, true)
-
-			po.exportedMetrics.prometheusCpuUsage.With(prometheus.Labels{"process": process.Name}).Set(cpu)
-			po.exportedMetrics.prometheusMemoryUsage.With(prometheus.Labels{"process": process.Name}).Set(float64(memory))
-			po.exportedMetrics.prometheusConnectionCount.With(prometheus.Labels{"process": process.Name}).Set(float64(len(cons)))
-			return &domain.ProcessMonitorMetrics{
-				Cpu:         cpu,
-				Memory:      memory,
-				Connections: cons,
-				Pid:         int(p.Pid),
-			}, nil
-		} else {
-			process.Stop()
-			return &domain.ProcessMonitorMetrics{}, nil
-		}
+	running, err := p.IsRunning()
+	if err != nil {
+		return nil, err
 	}
-	return nil, errors.New("process not running")
+	if running {
+		memory, cpu, cons := calcUsageOfProcess(p, true)
+
+		po.exportedMetrics.prometheusCpuUsage.With(prometheus.Labels{"process": name}).Set(cpu)
+		po.exportedMetrics.prometheusMemoryUsage.With(prometheus.Labels{"process": name}).Set(float64(memory))
+		po.exportedMetrics.prometheusConnectionCount.With(prometheus.Labels{"process": name}).Set(float64(len(cons)))
+		return &domain.ProcessMonitorMetrics{
+			Cpu:         cpu,
+			Memory:      memory,
+			Connections: cons,
+			Pid:         int(p.Pid),
+		}, nil
+	} else {
+
+		return nil, fmt.Errorf("process not running")
+	}
+}
+
+func (po *ProcessMonitor) AddProcess(pid int32, name string) {
+	process, err := processutil.NewProcess(pid)
+	if err != nil {
+		logger.Log().Error("Error when adding process",
+			zap.String(logger.LogKeyContext, logger.LogContextMonitor),
+			zap.Int32("pid", pid),
+			zap.Error(err),
+		)
+		return
+	}
+	po.processes[name] = process
+}
+
+func (po *ProcessMonitor) RemoveProcess(name string) {
+	delete(po.processes, name)
 }
 
 func calcUsageOfProcess(p *processutil.Process, excludePrivateIP bool) (int, float64, []string) {
@@ -154,8 +166,8 @@ func (p ProcessMonitor) GetAllProcessesMetrics() map[string]*domain.ProcessMonit
 
 	metrics := make(map[string]*domain.ProcessMonitorMetrics)
 
-	for key, process := range p.processManager.GetRunningProcesses() {
-		m, _ := p.GetProcessMetric(process)
+	for key, process := range p.processes {
+		m, _ := p.GetProcessMetric(key, process)
 		metrics[key] = m
 	}
 	return metrics
@@ -165,17 +177,8 @@ func (p ProcessMonitor) GetPsTrees() map[string]*domain.ProcessTreeRoot {
 
 	trees := make(map[string]*domain.ProcessTreeRoot)
 
-	for key, process := range p.processManager.GetRunningProcesses() {
-		p, err := process.GetProcess()
-		if err != nil {
-			logger.Log().Warn("Error when retrieving process Metrics",
-				zap.String(logger.LogKeyContext, logger.LogContextMonitor),
-				zap.String("processName", key),
-				zap.Error(err),
-			)
-			continue
-		}
-		tree := GetTree(p)
+	for key, process := range p.processes {
+		tree := GetTree(process)
 		trees[key] = tree
 	}
 
