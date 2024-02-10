@@ -35,6 +35,12 @@ var RunCmd = &cobra.Command{
 			return fmt.Errorf("error loading scroll: %w", err)
 		}
 
+		err = processLauncher.LaunchPlugins()
+
+		if err != nil {
+			return err
+		}
+
 		parts := strings.Split(args[0], ".")
 
 		command := strings.TrimPrefix(args[0], parts[0]+".")

@@ -45,7 +45,7 @@ func NewProcessLauncher(
 // TODO implement multiple scroll support
 // To do this, best is to loop over activescrolldir and read every scroll
 // TODO: remove initCommandsIdentifiers
-func (sc *ProcessLauncher) Bootstrap(ignoreVersionCheck bool) error {
+func (sc *ProcessLauncher) LaunchPlugins() error {
 	go func() {
 		for {
 			select {

@@ -94,6 +94,12 @@ to interact and monitor the Scroll Application`,
 			return err
 		}
 
+		err = processLauncher.LaunchPlugins()
+
+		if err != nil {
+			return err
+		}
+
 		err = processLauncher.StartLockfile()
 
 		if err != nil {
