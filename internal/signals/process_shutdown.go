@@ -50,6 +50,7 @@ func GracefulShutdown(processLauncher ports.ProcessLauchnerInterface, processMan
 				app.Shutdown()
 				break
 			}
+			logger.Log().Info(fmt.Sprintf("Waiting for %d processes to stop...", len(processManager.GetRunningProcesses())))
 			time.Sleep(time.Second)
 		}
 	}()
