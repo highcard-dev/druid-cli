@@ -45,7 +45,7 @@ func (cm *ConsoleManager) AddConsole(id string, consoleType string, inputMode st
 				return
 			}
 
-			cm.logManager.AddLine(consoleType, tmpBuffer[:n])
+			cm.logManager.AddLine(id, tmpBuffer[:n])
 
 			newChannel.Broadcast <- tmpBuffer[:n]
 		}

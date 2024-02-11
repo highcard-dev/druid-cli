@@ -9,8 +9,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/highcard-dev/daemon/internal/core/ports"
-	logger "github.com/highcard-dev/daemon/internal/core/services/log"
-	log_drivers "github.com/highcard-dev/daemon/internal/core/services/log/drivers"
+	"github.com/highcard-dev/logger"
 	processutil "github.com/shirou/gopsutil/process"
 	"go.uber.org/zap"
 )
@@ -29,7 +28,6 @@ func SetupSignals(processLauncher ports.ProcessLauchnerInterface, processManager
 	go func() {
 		var s os.Signal
 		select {
-		case s = <-log_drivers.Exit:
 		case s = <-sigc:
 		}
 

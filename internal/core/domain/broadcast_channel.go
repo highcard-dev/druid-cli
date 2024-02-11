@@ -20,7 +20,7 @@ func NewHub() *BroadcastChannel {
 }
 
 func (h *BroadcastChannel) Subscribe() chan *[]byte {
-	client := make(chan *[]byte)
+	client := make(chan *[]byte, 10) // buffered channel to avoid blocking
 	h.Clients[client] = true
 	return client
 }
@@ -49,7 +49,7 @@ func (h *BroadcastChannel) Run() {
 			case client <- &message: // Try to send the message.
 			default:
 				logger.Log().Warn("Failed to Broadcast message to channel.. closing channel")
-				h.Unsubscribe(client)
+				//h.Unsubscribe(client)
 			}
 		}
 	}

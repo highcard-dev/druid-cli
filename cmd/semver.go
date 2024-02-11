@@ -6,7 +6,7 @@ import (
 
 	semver "github.com/Masterminds/semver/v3"
 	"github.com/highcard-dev/daemon/internal/core/services"
-	logger "github.com/highcard-dev/daemon/internal/core/services/log"
+	"github.com/highcard-dev/logger"
 	"github.com/spf13/cobra"
 )
 

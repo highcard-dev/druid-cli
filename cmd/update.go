@@ -3,12 +3,12 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
-	logger "github.com/highcard-dev/daemon/internal/core/services/log"
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
 	"github.com/highcard-dev/daemon/internal/utils"
+	"github.com/highcard-dev/logger"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -46,7 +46,7 @@ var UpdateCommand = &cobra.Command{
 		registryClient := registry.NewOciClient(host, user, password)
 
 		fileName := utils.GetScrollDirFromCwd(cwd) + "/manifest.json"
-		b, err := ioutil.ReadFile(fileName)
+		b, err := os.ReadFile(fileName)
 
 		if err != nil {
 			return fmt.Errorf("error reading manifest file: %v", err)

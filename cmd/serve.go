@@ -5,10 +5,10 @@ import (
 
 	"github.com/highcard-dev/daemon/cmd/server/web"
 	"github.com/highcard-dev/daemon/internal/core/services"
-	logger "github.com/highcard-dev/daemon/internal/core/services/log"
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
 	"github.com/highcard-dev/daemon/internal/handler"
 	"github.com/highcard-dev/daemon/internal/signals"
+	"github.com/highcard-dev/logger"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"

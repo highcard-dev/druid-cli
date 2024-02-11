@@ -7,8 +7,8 @@ import (
 	"io/ioutil"
 	"path/filepath"
 
-	logger "github.com/highcard-dev/daemon/internal/core/services/log"
 	"github.com/highcard-dev/daemon/internal/utils"
+	"github.com/highcard-dev/logger"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.uber.org/zap"
 	"oras.land/oras-go/v2"

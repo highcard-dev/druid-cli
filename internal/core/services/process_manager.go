@@ -9,7 +9,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
-	logger "github.com/highcard-dev/daemon/internal/core/services/log"
+	"github.com/highcard-dev/logger"
 	"go.uber.org/zap"
 )
 

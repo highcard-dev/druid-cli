@@ -3,8 +3,8 @@ package cmd
 import (
 	"path/filepath"
 
-	logger "github.com/highcard-dev/daemon/internal/core/services/log"
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
+	"github.com/highcard-dev/logger"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )

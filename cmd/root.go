@@ -3,14 +3,12 @@ package cmd
 import (
 	"os"
 
-	logger "github.com/highcard-dev/daemon/internal/core/services/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 var envPath string
 var cwd string
-var loggerFormat string
 
 var RootCmd = &cobra.Command{
 	Use:   "druidd",
@@ -20,9 +18,6 @@ var RootCmd = &cobra.Command{
                Complete documentation is available at https://druid.gg`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Usage()
-	},
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		logger.NewLogger(loggerFormat)
 	},
 }
 
@@ -34,7 +29,6 @@ func init() {
 	c, _ := os.Getwd()
 
 	RootCmd.PersistentFlags().StringVarP(&cwd, "cwd", "", c, "Path to environment file (.env)")
-	RootCmd.PersistentFlags().StringVarP(&loggerFormat, "log-format", "", "structured", "Log format (structured, cli)") //cli is buggy atm
 
 	RootCmd.PersistentFlags().StringVarP(&envPath, "env-file", "e", "./.env", "Path to environment file (.env)")
 	RootCmd.PersistentFlags().BoolVar(&ignoreVersionCheck, "ignore-version-check", false, "Ignore version check between scroll.yaml and scroll-lock.json")

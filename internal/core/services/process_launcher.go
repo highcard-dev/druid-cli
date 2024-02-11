@@ -7,8 +7,8 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
-	logger "github.com/highcard-dev/daemon/internal/core/services/log"
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
+	"github.com/highcard-dev/logger"
 	"go.uber.org/zap"
 )
 
@@ -70,7 +70,7 @@ func (sc *ProcessLauncher) LaunchPlugins() error {
 }
 
 func (sc *ProcessLauncher) Run(cmd string, processId string, changeStatus bool) error {
-	logger.Log().LogRunCommand(processId, cmd)
+	logger.Log().Info("Running command", zap.String("command", cmd), zap.String("processId", processId))
 
 	var command domain.CommandInstructionSet
 	scroll := sc.scrollService.GetFile()
@@ -89,8 +89,8 @@ func (sc *ProcessLauncher) Run(cmd string, processId string, changeStatus bool) 
 	if changeStatus && command.SchouldChangeStatus != "" {
 		sc.scrollService.ChangeLockStatus(processId, command.SchouldChangeStatus)
 	}
-	for k, proc := range command.Procedures {
-		logger.Log().LogRunProcedure(processId, cmd, k)
+	for _, proc := range command.Procedures {
+		logger.Log().Info("Running procedure", zap.String("mode", proc.Mode), zap.String("processId", processId))
 		_, err := sc.RunProcedure(proc, processId, changeStatus)
 		if err != nil {
 			return err
