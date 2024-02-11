@@ -60,7 +60,7 @@ func (sc *ProcessLauncher) LaunchPlugins() error {
 				//add console when stream is not found
 				console, ok := consoles[item.Stream]
 				if !ok {
-					console = sc.consoleManager.AddConsoleWithChannel(item.Stream, "plugin", make(chan string))
+					console = sc.consoleManager.AddConsoleWithChannel(item.Stream, "plugin", item.Stream, make(chan string))
 				}
 				console.Channel.Broadcast <- []byte(item.Data)
 			}

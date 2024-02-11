@@ -10,9 +10,12 @@ definitions:
     type: object
   Console:
     properties:
+      inputMode:
+        type: string
       type:
         type: string
     required:
+    - inputMode
     - type
     type: object
   ConsolesResponse:

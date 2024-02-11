@@ -2,14 +2,12 @@ package services
 
 import (
 	"io"
-	"sync"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 )
 
 type ConsoleManager struct {
 	consoles map[string]*domain.Console
-	mu       sync.Mutex
 }
 
 func NewConsoleManager() *ConsoleManager {
@@ -18,15 +16,14 @@ func NewConsoleManager() *ConsoleManager {
 	}
 }
 
-func (cm *ConsoleManager) AddConsole(id string, consoleType string, consoleReader io.Reader) *domain.Console {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
+func (cm *ConsoleManager) AddConsole(id string, consoleType string, inputMode string, consoleReader io.Reader) *domain.Console {
 
 	newChannel := domain.NewHub()
 
 	console := &domain.Console{
-		Channel: newChannel,
-		Type:    consoleType,
+		Channel:   newChannel,
+		Type:      consoleType,
+		InputMode: inputMode,
 	}
 
 	cm.consoles[id] = console
@@ -51,15 +48,14 @@ func (cm *ConsoleManager) AddConsole(id string, consoleType string, consoleReade
 	return console
 }
 
-func (cm *ConsoleManager) AddConsoleWithChannel(id string, consoleType string, channel chan string) *domain.Console {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
+func (cm *ConsoleManager) AddConsoleWithChannel(id string, consoleType string, inputMode string, channel chan string) *domain.Console {
 
 	newChannel := domain.NewHub()
 
 	console := &domain.Console{
-		Channel: newChannel,
-		Type:    consoleType,
+		Channel:   newChannel,
+		Type:      consoleType,
+		InputMode: inputMode,
 	}
 
 	cm.consoles[id] = console
@@ -81,8 +77,6 @@ func (cm *ConsoleManager) AddConsoleWithChannel(id string, consoleType string, c
 }
 
 func (cm *ConsoleManager) RemoveConsole(id string) {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
 
 	cm.consoles[id].Channel.Close <- struct{}{}
 
@@ -90,9 +84,6 @@ func (cm *ConsoleManager) RemoveConsole(id string) {
 }
 
 func (cm *ConsoleManager) GetSubscription(id string) chan *[]byte {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
 	if _, ok := cm.consoles[id]; !ok {
 		return nil
 	}
@@ -104,14 +95,9 @@ func (cm *ConsoleManager) GetSubscription(id string) chan *[]byte {
 }
 
 func (cm *ConsoleManager) DeleteSubscription(id string, subscription chan *[]byte) {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
 	cm.consoles[id].Channel.Unregister <- subscription
 }
 
 func (cm *ConsoleManager) GetConsoles() map[string]*domain.Console {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
 	return cm.consoles
 }

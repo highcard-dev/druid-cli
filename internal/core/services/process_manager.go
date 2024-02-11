@@ -68,7 +68,7 @@ func (po *ProcessManager) RunTty(processName string, command []string, cwd strin
 
 	//slight difference to normal process, as we only attach after the process has started
 	//add console output
-	po.consoleManager.AddConsole("process_tty", "tty", out)
+	po.consoleManager.AddConsole("process_tty", "tty", "stdin", out)
 
 	//reset periodically
 	process.Cmd.Wait()
@@ -135,7 +135,7 @@ func (po *ProcessManager) Run(processName string, command []string, dir string) 
 	//add console output
 	stdReader := io.MultiReader(stdoutReader, stderrReader)
 
-	po.consoleManager.AddConsole("process", "process", stdReader)
+	po.consoleManager.AddConsole("process", "process", "stdin", stdReader)
 
 	go func() {
 		_ = process.Cmd.Wait()

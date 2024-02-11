@@ -105,8 +105,10 @@ func (g *DruidPluginImpl) runProcedureShort(key string, value string) (string, e
 	log.Println("Connected to RCON server")
 	response, err := conn.Execute(value)
 	if err != nil {
-		log.Println(err.Error())
+		println(err.Error())
+		return "", err
 	}
+	err = g.mainClient.NotifyConsole("rcon", response)
 	return response, err
 }
 func (g *DruidPluginImpl) RunProcedure(key string, value string) (string, error) {
@@ -136,9 +138,19 @@ func (g *DruidPluginImpl) Init(config map[string]string, client plugins.DruidDae
 	g.mainClient = client
 	g.config = config
 
-	if scrollConfig.ConnectionMode == "" {
-		g.connectionMode = "constant"
+	environment, err := plugins.NewPluginEnvironment(cwd, password, port, host)
+	if err != nil {
+		log.Printf("Error creating environment: %s", err.Error())
+		return err
+	}
+	g.environment = environment
 
+	if scrollConfig.ConnectionMode == "" {
+		g.connectionMode = "short"
+		err = g.mainClient.NotifyConsole("rcon", "Connection mode not set, defaulting to short")
+		if err != nil {
+			return err
+		}
 	} else {
 		g.connectionMode = scrollConfig.ConnectionMode
 	}
@@ -152,12 +164,6 @@ func (g *DruidPluginImpl) Init(config map[string]string, client plugins.DruidDae
 					log.Println("RCON connection not established, trying to connect")
 
 					time.Sleep(time.Second)
-					environment, err := plugins.NewPluginEnvironment(cwd, password, port, host)
-					if err != nil {
-						log.Printf("Error creating environment: %s", err.Error())
-						continue
-					}
-					g.environment = environment
 
 					g.ensureConnection(true)
 					continue

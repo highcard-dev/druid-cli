@@ -57,8 +57,8 @@ type ConsoleManagerInterface interface {
 	DeleteSubscription(consoleId string, subscription chan *[]byte)
 	GetConsoles() map[string]*domain.Console
 	RemoveConsole(consoleId string)
-	AddConsole(consoleId string, consoleType string, console io.Reader) *domain.Console
-	AddConsoleWithChannel(consoleId string, consoleType string, channel chan string) *domain.Console
+	AddConsole(consoleId string, consoleType string, inputMode string, console io.Reader) *domain.Console
+	AddConsoleWithChannel(consoleId string, consoleType string, inputMode string, channel chan string) *domain.Console
 }
 
 type ProcessMonitorInterface interface {

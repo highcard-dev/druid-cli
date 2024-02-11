@@ -304,9 +304,13 @@ const docTemplate = `{
         "Console": {
             "type": "object",
             "required": [
+                "inputMode",
                 "type"
             ],
             "properties": {
+                "inputMode": {
+                    "type": "string"
+                },
                 "type": {
                     "type": "string"
                 }

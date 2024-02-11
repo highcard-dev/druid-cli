@@ -55,7 +55,7 @@ to interact and monitor the Scroll Application`,
 		go processMonitor.StartMonitoring()
 
 		scrollService := services.NewScrollService(cwd)
-		processLauncher := services.NewProcessLauncher(client, processManager, services.NewPluginManager(), consoleService, logManager, scrollService)
+		processLauncher := services.NewProcessLauncher(client, processManager, pluginManager, consoleService, logManager, scrollService)
 
 		if !scrollService.ScrollExists() {
 
