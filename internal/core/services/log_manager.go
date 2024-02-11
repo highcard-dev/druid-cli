@@ -7,24 +7,24 @@ import (
 )
 
 func NewLog(capacity uint) *domain.Log {
-	writer := make(chan domain.StreamCommand, 1024)
+	writer := make(chan []byte, 1024)
 	h := &domain.Log{
 		List:     list.New(),
 		Capacity: capacity,
-		Req:      make(chan chan<- domain.StreamCommand),
+		Req:      make(chan chan<- []byte),
 		Write:    writer,
 	}
 
-	go func(write <-chan domain.StreamCommand) {
+	go func(write <-chan []byte) {
 		for {
 			select {
 			case res := <-h.Req:
 				for e := h.List.Front(); e != nil; e = e.Next() {
-					res <- e.Value.(domain.StreamCommand)
+					res <- e.Value.([]byte)
 				}
 				close(res)
 			case in, ok := <-write:
-				push := func(in domain.StreamCommand, ok bool) bool {
+				push := func(in []byte, ok bool) bool {
 					if !ok {
 						return false
 					}
@@ -65,11 +65,11 @@ func NewLogManager() *LogManager {
 	}
 }
 
-func (hm *LogManager) AddLine(stream string, sc domain.StreamCommand) {
+func (hm *LogManager) AddLine(stream string, line []byte) {
 	if _, ok := hm.Streams[stream]; !ok {
 		hm.Streams[stream] = NewLog(100)
 	}
-	hm.Streams[stream].Write <- sc
+	hm.Streams[stream].Write <- line
 }
 
 func (hm *LogManager) GetStreams() map[string]*domain.Log {

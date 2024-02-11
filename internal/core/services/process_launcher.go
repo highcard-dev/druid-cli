@@ -50,11 +50,7 @@ func (sc *ProcessLauncher) LaunchPlugins() error {
 		for {
 			select {
 			case item := <-sc.pluginManager.NotifyConsole:
-				cmd := domain.StreamCommand{
-					Data:   item.Data,
-					Stream: item.Stream,
-				}
-				sc.logManager.AddLine(item.Stream, cmd)
+				sc.logManager.AddLine(item.Stream, []byte(item.Data))
 
 				consoles := sc.consoleManager.GetConsoles()
 				//add console when stream is not found
@@ -115,6 +111,7 @@ func (sc *ProcessLauncher) RunProcedure(proc *domain.Procedure, processId string
 		}
 
 		res, err := sc.pluginManager.RunProcedure(proc.Mode, val)
+		logger.Log().Error("Error running plugin procedure", zap.Error(err))
 		return res, err
 	}
 	//check internal

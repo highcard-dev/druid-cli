@@ -45,7 +45,7 @@ to interact and monitor the Scroll Application`,
 
 		client := registry.NewOciClient(host, user, password)
 		logManager := services.NewLogManager()
-		consoleService := services.NewConsoleManager()
+		consoleService := services.NewConsoleManager(logManager)
 		processMonitor := services.NewProcessMonitor()
 		processManager := services.NewProcessManager(logManager, consoleService, processMonitor)
 

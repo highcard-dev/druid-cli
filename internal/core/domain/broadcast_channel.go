@@ -1,49 +1,56 @@
 package domain
 
+import (
+	"github.com/highcard-dev/logger"
+)
+
 type BroadcastChannel struct {
 	// Registered clients.
 	Clients map[chan *[]byte]bool
 
 	// Inbound messages from the clients.
 	Broadcast chan []byte
-
-	// Register requests from the clients.
-	Register chan chan *[]byte
-
-	// Unregister requests from clients.
-	Unregister chan chan *[]byte
-
-	Close chan struct{}
 }
 
 func NewHub() *BroadcastChannel {
 	return &BroadcastChannel{
-		Broadcast:  make(chan []byte),
-		Register:   make(chan chan *[]byte),
-		Unregister: make(chan chan *[]byte),
-		Close:      make(chan struct{}),
-		Clients:    make(map[chan *[]byte]bool),
+		Broadcast: make(chan []byte),
+		Clients:   make(map[chan *[]byte]bool),
+	}
+}
+
+func (h *BroadcastChannel) Subscribe() chan *[]byte {
+	client := make(chan *[]byte)
+	h.Clients[client] = true
+	return client
+}
+
+func (h *BroadcastChannel) Unsubscribe(client chan *[]byte) {
+	delete(h.Clients, client)
+	close(client)
+}
+
+func (h *BroadcastChannel) CloseChannel() {
+	close(h.Broadcast)
+	for client := range h.Clients {
+		h.Unsubscribe(client)
 	}
 }
 
 func (h *BroadcastChannel) Run() {
 	for {
-		select {
-		case client := <-h.Register:
-			h.Clients[client] = true
-		case client := <-h.Unregister:
-			delete(h.Clients, client)
-		case message := <-h.Broadcast:
-			for client := range h.Clients {
-				client <- &message
-			}
-		case <-h.Close:
-			for client := range h.Clients {
-				client <- nil
-				delete(h.Clients, client)
-				close(client)
-			}
+		message, more := <-h.Broadcast
+		if !more {
+			logger.Log().Info("Broadcast channel closed")
 			return
+		}
+		for client := range h.Clients {
+			select {
+			case client <- &message: // Try to send the message.
+			default:
+				logger.Log().Warn("Failed to Broadcast message to channel.. closing channel")
+				h.Unsubscribe(client)
+			}
 		}
 	}
 }

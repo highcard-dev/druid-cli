@@ -24,7 +24,7 @@ var RunCmd = &cobra.Command{
 		client := registry.NewOciClient(host, user, password)
 
 		logManager := services.NewLogManager()
-		consoleService := services.NewConsoleManager()
+		consoleService := services.NewConsoleManager(logManager)
 		processManager := services.NewProcessManager(logManager, consoleService, services.NewProcessMonitor())
 		scrollService := services.NewScrollService(cwd)
 		processLauncher := services.NewProcessLauncher(client, processManager, services.NewPluginManager(), consoleService, logManager, scrollService)

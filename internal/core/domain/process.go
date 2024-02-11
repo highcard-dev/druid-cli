@@ -10,16 +10,6 @@ import (
 	processutil "github.com/shirou/gopsutil/process"
 )
 
-type Command struct {
-	CommandType string `json:"type"`
-}
-
-type StreamCommand struct {
-	Command
-	Data   string `json:"data"`
-	Stream string `json:"stream"`
-}
-
 type Process struct {
 	Cmd   *exec.Cmd
 	Name  string
@@ -30,14 +20,9 @@ type Process struct {
 type Log struct {
 	List     *list.List
 	Capacity uint
-	Req      chan chan<- StreamCommand
-	Write    chan<- StreamCommand
+	Req      chan chan<- []byte
+	Write    chan<- []byte
 }
-
-type ProcessStreamCommand struct {
-	SteamType string `json:"stream_type"`
-	Data      string `json:"data"`
-} // @name ProcessStreamCommand
 
 type ProcessMonitorMetrics struct {
 	Cpu         float64

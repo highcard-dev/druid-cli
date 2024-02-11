@@ -36,7 +36,7 @@ type PluginManagerInterface interface {
 
 type LogManagerInterface interface {
 	GetStreams() map[string]*domain.Log
-	AddLine(stream string, sc domain.StreamCommand)
+	AddLine(stream string, sc []byte)
 }
 
 type ProcessManagerInterface interface {

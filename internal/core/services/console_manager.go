@@ -7,12 +7,14 @@ import (
 )
 
 type ConsoleManager struct {
-	consoles map[string]*domain.Console
+	consoles   map[string]*domain.Console
+	logManager *LogManager
 }
 
-func NewConsoleManager() *ConsoleManager {
+func NewConsoleManager(logManager *LogManager) *ConsoleManager {
 	return &ConsoleManager{
-		consoles: make(map[string]*domain.Console),
+		consoles:   make(map[string]*domain.Console),
+		logManager: logManager,
 	}
 }
 
@@ -42,6 +44,9 @@ func (cm *ConsoleManager) AddConsole(id string, consoleType string, inputMode st
 				cm.RemoveConsole(id)
 				return
 			}
+
+			cm.logManager.AddLine(consoleType, tmpBuffer[:n])
+
 			newChannel.Broadcast <- tmpBuffer[:n]
 		}
 	}()
@@ -78,7 +83,7 @@ func (cm *ConsoleManager) AddConsoleWithChannel(id string, consoleType string, i
 
 func (cm *ConsoleManager) RemoveConsole(id string) {
 
-	cm.consoles[id].Channel.Close <- struct{}{}
+	cm.consoles[id].Channel.CloseChannel()
 
 	delete(cm.consoles, id)
 }
@@ -88,14 +93,12 @@ func (cm *ConsoleManager) GetSubscription(id string) chan *[]byte {
 		return nil
 	}
 
-	c := make(chan *[]byte)
-
-	cm.consoles[id].Channel.Register <- c
+	c := cm.consoles[id].Channel.Subscribe()
 	return c
 }
 
 func (cm *ConsoleManager) DeleteSubscription(id string, subscription chan *[]byte) {
-	cm.consoles[id].Channel.Unregister <- subscription
+	cm.consoles[id].Channel.Unsubscribe(subscription)
 }
 
 func (cm *ConsoleManager) GetConsoles() map[string]*domain.Console {

@@ -137,7 +137,7 @@ definitions:
         type: string
       log:
         items:
-          $ref: '#/definitions/domain.StreamCommand'
+          type: string
         type: array
     required:
     - key
@@ -149,15 +149,6 @@ definitions:
         type: string
     required:
     - token
-    type: object
-  domain.StreamCommand:
-    properties:
-      data:
-        type: string
-      stream:
-        type: string
-      type:
-        type: string
     type: object
   handler.StartProcedureRequestBody:
     properties:
@@ -247,7 +238,7 @@ paths:
       - logs
       - druid
       - daemon
-  /api/v1/logs/:stream:
+  /api/v1/logs/{stream}:
     get:
       consumes:
       - '*/*'

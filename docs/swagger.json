@@ -100,7 +100,7 @@
                 }
             }
         },
-        "/api/v1/logs/:stream": {
+        "/api/v1/logs/{stream}": {
             "get": {
                 "consumes": [
                     "*/*"
@@ -490,7 +490,7 @@
                 "log": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/domain.StreamCommand"
+                        "type": "string"
                     }
                 }
             }
@@ -502,20 +502,6 @@
             ],
             "properties": {
                 "token": {
-                    "type": "string"
-                }
-            }
-        },
-        "domain.StreamCommand": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "string"
-                },
-                "stream": {
-                    "type": "string"
-                },
-                "type": {
                     "type": "string"
                 }
             }

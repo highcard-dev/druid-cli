@@ -111,7 +111,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/v1/logs/:stream": {
+        "/api/v1/logs/{stream}": {
             "get": {
                 "consumes": [
                     "*/*"
@@ -501,7 +501,7 @@ const docTemplate = `{
                 "log": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/domain.StreamCommand"
+                        "type": "string"
                     }
                 }
             }
@@ -513,20 +513,6 @@ const docTemplate = `{
             ],
             "properties": {
                 "token": {
-                    "type": "string"
-                }
-            }
-        },
-        "domain.StreamCommand": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "string"
-                },
-                "stream": {
-                    "type": "string"
-                },
-                "type": {
                     "type": "string"
                 }
             }

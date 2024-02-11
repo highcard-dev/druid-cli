@@ -16,8 +16,8 @@ type ScrollLogHandler struct {
 }
 
 type ScrollLogStream struct {
-	Key string                 `json:"key" validate:"required"`
-	Log []domain.StreamCommand `json:"log" validate:"required"`
+	Key string   `json:"key" validate:"required"`
+	Log []string `json:"log" validate:"required"`
 } // @name ScrollLogStream
 
 func NewScrollLogHandler(scrollService ports.ScrollServiceInterface, logManager ports.LogManagerInterface, processManager ports.ProcessManagerInterface) *ScrollLogHandler {
@@ -40,22 +40,22 @@ func (sl ScrollLogHandler) ListAllLogs(c *fiber.Ctx) error {
 	wg := sync.WaitGroup{}
 
 	for streamName, log := range sl.logManager.GetStreams() {
-		req := make(chan domain.StreamCommand)
+		req := make(chan []byte)
 		wg.Add(1)
 		log.Req <- req
-		go func(streamName string, res <-chan domain.StreamCommand, log *domain.Log) {
+		go func(streamName string, res <-chan []byte, log *domain.Log) {
 			defer wg.Done()
 
 			logResponse := ScrollLogStream{
 				Key: streamName,
-				Log: make([]domain.StreamCommand, 0, log.Capacity),
+				Log: make([]string, 0, log.Capacity),
 			}
 			for {
 				cmd, ok := <-res
 				if !ok {
 					break
 				}
-				logResponse.Log = append(logResponse.Log, cmd)
+				logResponse.Log = append(logResponse.Log, string(cmd))
 			}
 			mutex.Lock()
 			defer mutex.Unlock()
@@ -73,7 +73,7 @@ func (sl ScrollLogHandler) ListAllLogs(c *fiber.Ctx) error {
 // @Produce json
 // @Param stream path string true "Stream name"
 // @Success 200 {object} ScrollLogStream
-// @Router /api/v1/logs/:stream [get]
+// @Router /api/v1/logs/{stream} [get]
 // ListStreamLogs lists logs for a specific stream.
 func (sl ScrollLogHandler) ListStreamLogs(c *fiber.Ctx) error {
 
@@ -85,9 +85,9 @@ func (sl ScrollLogHandler) ListStreamLogs(c *fiber.Ctx) error {
 
 	responseData := ScrollLogStream{
 		Key: c.Params("stream"),
-		Log: make([]domain.StreamCommand, 0, steam.Capacity),
+		Log: make([]string, 0, steam.Capacity),
 	}
-	req := make(chan domain.StreamCommand)
+	req := make(chan []byte)
 	steam.Req <- req
 
 	for {
@@ -95,7 +95,7 @@ func (sl ScrollLogHandler) ListStreamLogs(c *fiber.Ctx) error {
 		if !ok {
 			break
 		}
-		responseData.Log = append(responseData.Log, res)
+		responseData.Log = append(responseData.Log, string(res))
 	}
 
 	return c.JSON(responseData)

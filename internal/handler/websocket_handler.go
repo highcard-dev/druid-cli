@@ -75,9 +75,9 @@ func (wh WebsocketHandler) HandleProcess(c *websocket.Conn) {
 	//fetch channel and send to websocket
 	for {
 		//send 1024 bytes at a time
-		buffer := <-subscriptionChannel
+		buffer, ok := <-subscriptionChannel
 		//if nil is send, assume the channel is closed
-		if buffer == nil {
+		if buffer == nil || !ok {
 			c.Close()
 			return
 		}
