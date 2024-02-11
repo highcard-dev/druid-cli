@@ -14,7 +14,6 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]]; then
 
     echo "Artifact: $artifact"
 
-    logargs+=("--log-format" "${DRUID_LOG_FORMAT:=structured}")
     
 
     #Update command
@@ -22,7 +21,7 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]]; then
     then
 
         echo "Updating artifact"
-        druid update "${logargs[@]}"
+        druid update 
         echo "Updated artifact"
     fi
 
@@ -40,7 +39,7 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]]; then
             if [ "$current" != "$artifact" ];
             then
                 echo "Switching from $current to $artifact"
-                druid run scroll-switch.$artifact "${logargs[@]}"
+                druid run scroll-switch.$artifact
             else
                 echo "Desired artifact $artifact already installed"
             fi
@@ -49,7 +48,7 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]]; then
     
 
     #ignore-version-check otherwise we have missmatch after update
-    args=(serve --ignore-version-check "${logargs[@]}")
+    args=(serve --ignore-version-check)
 
     if [ ! -z "${artifact}" ];
     then
