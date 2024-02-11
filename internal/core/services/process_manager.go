@@ -133,14 +133,17 @@ func (po *ProcessManager) Run(processName string, command []string, dir string) 
 	po.processManager.AddProcess(int32(process.Cmd.Process.Pid), process.Name)
 
 	//add console output
-	stdReader := io.MultiReader(stdoutReader, stderrReader)
 
-	po.consoleManager.AddConsole("process", "process", "stdin", stdReader)
+	//WARNING MultiReader is not working as expected, it seems to block the process and process.Wait() never returns
+	//stdReader := io.MultiReader(stdoutReader, stderrReader)
+
+	po.consoleManager.AddConsole("process", "process", "stdin", stdoutReader)
+	po.consoleManager.AddConsole("process", "process", "stdin", stderrReader)
 
 	go func() {
 		_ = process.Cmd.Wait()
 		cmdDone()
-		stderrWriter.Close() //TODO: THis most likely can be removed
+		//stderrWriter.Close() //TODO: THis most likely can be removed
 		stdoutWriter.Close()
 		stdin.Close()
 	}()

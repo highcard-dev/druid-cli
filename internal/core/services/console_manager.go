@@ -4,6 +4,7 @@ import (
 	"io"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
+	"github.com/highcard-dev/logger"
 )
 
 type ConsoleManager struct {
@@ -19,18 +20,25 @@ func NewConsoleManager(logManager *LogManager) *ConsoleManager {
 }
 
 func (cm *ConsoleManager) AddConsole(id string, consoleType string, inputMode string, consoleReader io.Reader) *domain.Console {
+	var newChannel *domain.BroadcastChannel
+	var console *domain.Console
 
-	newChannel := domain.NewHub()
+	if _, ok := cm.consoles[id]; !ok {
+		newChannel = domain.NewHub()
 
-	console := &domain.Console{
-		Channel:   newChannel,
-		Type:      consoleType,
-		InputMode: inputMode,
+		console := &domain.Console{
+			Channel:   newChannel,
+			Type:      consoleType,
+			InputMode: inputMode,
+		}
+
+		cm.consoles[id] = console
+
+		go newChannel.Run()
+	} else {
+		console = cm.consoles[id]
+		newChannel = cm.consoles[id].Channel
 	}
-
-	cm.consoles[id] = console
-
-	go newChannel.Run()
 
 	//broadcast reader into channel (maybe increase chunk size?)
 	go func() {
@@ -43,6 +51,10 @@ func (cm *ConsoleManager) AddConsole(id string, consoleType string, inputMode st
 			if err != nil {
 				cm.RemoveConsole(id)
 				return
+			}
+
+			if consoleType != "tty" {
+				logger.Log().Info(string(tmpBuffer[:n]))
 			}
 
 			cm.logManager.AddLine(id, tmpBuffer[:n])
