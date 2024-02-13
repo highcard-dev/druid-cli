@@ -14,7 +14,7 @@
                 "${workspaceFolder}/examples/scroll-cwd",
                 "-p",
                 "9190",
-                "registry-1.docker.io/highcard/scroll-minecraft-vanilla:1.20.4"
+                "registry-1.docker.io/highcard/scroll-lgsm:pwserver"
             ],
         },
         {
