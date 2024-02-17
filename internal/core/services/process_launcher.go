@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
@@ -91,7 +92,21 @@ func (sc *ProcessLauncher) Run(cmd string, processId string, changeStatus bool) 
 	}
 	for _, proc := range command.Procedures {
 		logger.Log().Info("Running procedure", zap.String("mode", proc.Mode), zap.String("processId", processId))
-		_, err := sc.RunProcedure(proc, processId, changeStatus)
+		var err error
+
+		switch wait := proc.Wait.(type) {
+		case int: //run in go routine and wait for x seconds
+			go sc.RunProcedure(proc, processId, changeStatus)
+			time.Sleep(time.Duration(wait) * time.Second)
+		case bool: //run in go routine maybe wait
+			if wait {
+				_, err = sc.RunProcedure(proc, processId, changeStatus)
+			} else {
+				go sc.RunProcedure(proc, processId, changeStatus)
+			}
+		default: //run and wait
+			_, err = sc.RunProcedure(proc, processId, changeStatus)
+		}
 		if err != nil {
 			return err
 		}

@@ -2,7 +2,6 @@ package services
 
 import (
 	"errors"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -95,7 +94,7 @@ func (sc *ScrollService) CheckAndCreateLockFile(ignoreVersionCheck bool) error {
 					}
 				} else {
 
-					b, err := ioutil.ReadFile(path)
+					b, err := os.ReadFile(path)
 
 					if err != nil {
 						return err

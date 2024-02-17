@@ -25,6 +25,7 @@ type Scroll struct {
 
 type Procedure struct {
 	Mode string      `yaml:"mode"`
+	Wait interface{} `yaml:"wait"`
 	Data interface{} `yaml:"data"`
 } // @name Procedure
 
