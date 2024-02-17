@@ -12,12 +12,12 @@ require (
 	github.com/gofiber/fiber/v2 v2.52.0
 	github.com/gofiber/swagger v0.1.14
 	github.com/hashicorp/go-plugin v1.6.0
-	github.com/opencontainers/image-spec v1.1.0-rc6
+	github.com/opencontainers/image-spec v1.1.0
 	github.com/prometheus/client_golang v1.18.0
 	github.com/shirou/gopsutil v3.21.11+incompatible
 	github.com/spf13/cobra v1.8.0
 	github.com/spf13/viper v1.18.2
-	github.com/swaggo/swag v1.16.2
+	github.com/swaggo/swag v1.16.3
 	go.uber.org/zap v1.26.0
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	oras.land/oras-go/v2 v2.4.0
