@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"strings"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
@@ -111,12 +113,19 @@ func (sl ScrollHandler) RunProcedure(c *fiber.Ctx) error {
 		Data: requestBody.Data,
 		Mode: requestBody.Mode,
 	}
+	parts := strings.Split(requestBody.Process, ".")
+
+	if len(parts) != 2 {
+		c.SendString("Invalid process")
+		return c.SendStatus(400)
+	}
+
 	if !requestBody.Sync {
 
-		go sl.ProcessLauncher.RunProcedure(&procedure, requestBody.Process, "tmp")
+		go sl.ProcessLauncher.RunProcedure(&procedure, parts[0], parts[1])
 		return c.SendStatus(201)
 	} else {
-		res, _, err := sl.ProcessLauncher.RunProcedure(&procedure, requestBody.Process, "tmp")
+		res, _, err := sl.ProcessLauncher.RunProcedure(&procedure, parts[0], parts[1])
 		if err != nil {
 			c.SendString(err.Error())
 			return c.SendStatus(400)
