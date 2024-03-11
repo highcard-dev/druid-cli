@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -16,6 +17,7 @@ import (
 type ProcessMonitor struct {
 	exportedMetrics *ProcessMonitorMetricsExported
 	processes       map[string]*processutil.Process
+	mu              sync.Mutex
 }
 
 type ProcessMonitorMetricsExported struct {
@@ -113,10 +115,16 @@ func (po *ProcessMonitor) AddProcess(pid int32, name string) {
 		)
 		return
 	}
+	po.mu.Lock()
+	defer po.mu.Unlock()
+
 	po.processes[name] = process
 }
 
 func (po *ProcessMonitor) RemoveProcess(name string) {
+	po.mu.Lock()
+	defer po.mu.Unlock()
+
 	delete(po.processes, name)
 }
 
@@ -162,7 +170,7 @@ func calcUsageOfProcess(p *processutil.Process, excludePrivateIP bool) (int, flo
 	return memoryNum, cpu1, cons
 }
 
-func (p ProcessMonitor) GetAllProcessesMetrics() map[string]*domain.ProcessMonitorMetrics {
+func (p *ProcessMonitor) GetAllProcessesMetrics() map[string]*domain.ProcessMonitorMetrics {
 
 	metrics := make(map[string]*domain.ProcessMonitorMetrics)
 
@@ -173,7 +181,7 @@ func (p ProcessMonitor) GetAllProcessesMetrics() map[string]*domain.ProcessMonit
 	return metrics
 }
 
-func (p ProcessMonitor) GetPsTrees() map[string]*domain.ProcessTreeRoot {
+func (p *ProcessMonitor) GetPsTrees() map[string]*domain.ProcessTreeRoot {
 
 	trees := make(map[string]*domain.ProcessTreeRoot)
 

@@ -6,7 +6,6 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/highcard-dev/daemon/internal/core/domain"
-	"go.uber.org/zap/zapcore"
 )
 
 type AuthorizerServiceInterface interface {
@@ -18,16 +17,16 @@ type AuthorizerServiceInterface interface {
 type ScrollServiceInterface interface {
 	GetCurrent() *domain.Scroll
 	GetFile() *domain.File
-	GetScrollConfigRawYaml() string
+	GetScrollConfigRawYaml() []byte
 	GetDir() string
-	ChangeLockStatus(process string, status string) error
 	GetCwd() string
-	GetLock() *domain.ScrollLock
+	WriteNewScrollLock() *domain.ScrollLock
+	GetLock() (*domain.ScrollLock, error)
 }
 
 type ProcessLauchnerInterface interface {
-	Run(commandId string, processId string, changeStatus bool) error
-	RunProcedure(*domain.Procedure, string, bool) (string, error)
+	RunNew(commandId string, processId string, changeStatus bool) error
+	RunProcedure(*domain.Procedure, string, string) (string, *int, error)
 }
 
 type PluginManagerInterface interface {
@@ -41,9 +40,9 @@ type LogManagerInterface interface {
 
 type ProcessManagerInterface interface {
 	GetRunningProcesses() map[string]*domain.Process
-	GetRunningProcess(processName string) *domain.Process
-	Run(process string, command []string, dir string) error
-	RunTty(process string, command []string, dir string) error
+	GetRunningProcess(process string, commandName string) *domain.Process
+	Run(process string, commandName string, command []string, dir string) (*int, error)
+	RunTty(process string, comandName string, command []string, dir string) (*int, error)
 	WriteStdin(process *domain.Process, data string) error
 }
 
@@ -56,9 +55,9 @@ type ConsoleManagerInterface interface {
 	GetSubscription(consoleId string) chan *[]byte
 	DeleteSubscription(consoleId string, subscription chan *[]byte)
 	GetConsoles() map[string]*domain.Console
-	RemoveConsole(consoleId string)
-	AddConsole(consoleId string, consoleType string, inputMode string, console io.Reader) *domain.Console
-	AddConsoleWithChannel(consoleId string, consoleType string, inputMode string, channel chan string) *domain.Console
+	RemoveConsole(consoleId string) error
+	AddConsoleWithIoReader(consoleId string, consoleType domain.ConsoleType, inputMode string, console io.Reader) *domain.Console
+	AddConsoleWithChannel(consoleId string, consoleType domain.ConsoleType, inputMode string, channel chan string) *domain.Console
 }
 
 type ProcessMonitorInterface interface {
@@ -66,16 +65,6 @@ type ProcessMonitorInterface interface {
 	GetPsTrees() map[string]*domain.ProcessTreeRoot
 	AddProcess(pid int32, name string)
 	RemoveProcess(name string)
-}
-
-type LogDriverInterface interface {
-	Info(string, ...zapcore.Field)
-	Debug(string, ...zapcore.Field)
-	Warn(string, ...zapcore.Field)
-	Error(string, ...zapcore.Field)
-	LogRunCommand(string, string)
-	LogRunProcedure(string, string, int)
-	LogStdout(string, string, string)
 }
 
 type TemplateRendererInterface interface {

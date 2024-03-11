@@ -1,19 +1,23 @@
 definitions:
   CommandInstructionSet:
     properties:
+      needs:
+        items:
+          type: string
+        type: array
       procedures:
         items:
           $ref: '#/definitions/Procedure'
         type: array
-      should_change_status:
-        type: string
+      run:
+        $ref: '#/definitions/domain.RunMode'
     type: object
   Console:
     properties:
       inputMode:
         type: string
       type:
-        type: string
+        $ref: '#/definitions/domain.ConsoleType'
     required:
     - inputMode
     - type
@@ -32,6 +36,7 @@ definitions:
       data: {}
       mode:
         type: string
+      wait: {}
     type: object
   ProcessCommand:
     properties:
@@ -150,6 +155,28 @@ definitions:
     required:
     - token
     type: object
+  domain.ConsoleType:
+    enum:
+    - tty
+    - process
+    - plugin
+    type: string
+    x-enum-varnames:
+    - ConsoleTypeTTY
+    - ConsoleTypeProcess
+    - ConsoleTypePlugin
+  domain.RunMode:
+    enum:
+    - always
+    - once
+    - restart
+    type: string
+    x-enum-comments:
+      RunModeAlways: default
+    x-enum-varnames:
+    - RunModeAlways
+    - RunModeOnce
+    - RunModeRestart
   handler.StartProcedureRequestBody:
     properties:
       data:

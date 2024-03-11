@@ -290,14 +290,20 @@ const docTemplate = `{
         "CommandInstructionSet": {
             "type": "object",
             "properties": {
+                "needs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "procedures": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/Procedure"
                     }
                 },
-                "should_change_status": {
-                    "type": "string"
+                "run": {
+                    "$ref": "#/definitions/domain.RunMode"
                 }
             }
         },
@@ -312,7 +318,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "type": {
-                    "type": "string"
+                    "$ref": "#/definitions/domain.ConsoleType"
                 }
             }
         },
@@ -336,7 +342,8 @@ const docTemplate = `{
                 "data": {},
                 "mode": {
                     "type": "string"
-                }
+                },
+                "wait": {}
             }
         },
         "ProcessCommand": {
@@ -516,6 +523,35 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "domain.ConsoleType": {
+            "type": "string",
+            "enum": [
+                "tty",
+                "process",
+                "plugin"
+            ],
+            "x-enum-varnames": [
+                "ConsoleTypeTTY",
+                "ConsoleTypeProcess",
+                "ConsoleTypePlugin"
+            ]
+        },
+        "domain.RunMode": {
+            "type": "string",
+            "enum": [
+                "always",
+                "once",
+                "restart"
+            ],
+            "x-enum-comments": {
+                "RunModeAlways": "default"
+            },
+            "x-enum-varnames": [
+                "RunModeAlways",
+                "RunModeOnce",
+                "RunModeRestart"
+            ]
         },
         "handler.StartProcedureRequestBody": {
             "type": "object",

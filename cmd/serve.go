@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/highcard-dev/daemon/cmd/server/web"
+	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/services"
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
 	"github.com/highcard-dev/daemon/internal/handler"
@@ -88,8 +89,15 @@ to interact and monitor the Scroll Application`,
 
 		signals.SetupSignals(processLauncher, processManager, a, shutdownWait)
 
-		currentScroll, err := scrollService.Bootstrap(ignoreVersionCheck)
+		var currentScroll *domain.Scroll
+		var lock *domain.ScrollLock
 
+		if !scrollService.LockExists() {
+			scrollService.WriteNewScrollLock()
+			logger.Log().Info("Lock file created")
+		}
+
+		currentScroll, lock, err = scrollService.Bootstrap(ignoreVersionCheck)
 		if err != nil {
 			return err
 		}
@@ -100,23 +108,32 @@ to interact and monitor the Scroll Application`,
 			return err
 		}
 
-		err = processLauncher.StartLockfile()
+		if len(lock.Statuses) > 0 {
+			//run if something is there
+			err = processLauncher.StartLockfile(lock)
 
-		if err != nil {
-			return err
+			if err != nil {
+				return err
+			}
+		} else {
+			err := scrollService.CreateLockAndBootstrapFiles()
+			if err != nil {
+				return err
+			}
+
+			//start scroll.init process
+			//initialize if nothing is there
+			err = processLauncher.Initalize(lock)
+			if err != nil {
+				return err
+			}
+			logger.Log().Info("Bootstrapping done")
 		}
 
 		logger.Log().Info("Active Scroll",
 			zap.String("Description", fmt.Sprintf("%s (%s)", currentScroll.Desc, currentScroll.Name)),
 			zap.String("Scroll Version", currentScroll.Version.String()),
 			zap.String("cwd", cwd))
-
-		if !scrollService.GetLock().Initialized {
-			logger.Log().Info("Running init-command command")
-			processLauncher.Initalize()
-		}
-
-		logger.Log().Info("Bootstrapping done")
 
 		s.Serve(a, port)
 

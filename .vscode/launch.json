@@ -18,6 +18,20 @@
             ],
         },
         {
+            "name": "Debug Daemon start",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/main.go",
+            "args": [
+                "run",
+                "--cwd",
+                "${workspaceFolder}/examples/scroll-cwd",
+                "main.start"
+            ],
+        },
+        {
             "name": "Debug Daemon run switch scroll",
             "type": "go",
             "request": "launch",

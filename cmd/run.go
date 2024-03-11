@@ -6,6 +6,7 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/services"
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
+	"github.com/highcard-dev/logger"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -29,7 +30,12 @@ var RunCmd = &cobra.Command{
 		scrollService := services.NewScrollService(cwd)
 		processLauncher := services.NewProcessLauncher(client, processManager, services.NewPluginManager(), consoleService, logManager, scrollService)
 
-		_, err := scrollService.Bootstrap(ignoreVersionCheck)
+		if !scrollService.LockExists() {
+			scrollService.WriteNewScrollLock()
+			logger.Log().Info("Lock file created")
+		}
+
+		_, _, err := scrollService.Bootstrap(ignoreVersionCheck)
 
 		if err != nil {
 			return fmt.Errorf("error loading scroll: %w", err)
@@ -45,7 +51,7 @@ var RunCmd = &cobra.Command{
 
 		command := strings.TrimPrefix(args[0], parts[0]+".")
 
-		err = processLauncher.Run(command, parts[0], false)
+		err = processLauncher.RunNew(command, parts[0], false)
 		return err
 	},
 }

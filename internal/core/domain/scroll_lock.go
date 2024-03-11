@@ -2,18 +2,24 @@ package domain
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 
 	"github.com/Masterminds/semver/v3"
-	"github.com/highcard-dev/daemon/internal/utils"
+)
+
+type ScrollLockStatus string
+
+const (
+	ScrollLockStatusRunning ScrollLockStatus = "running"
+	ScrollLockStatusDone    ScrollLockStatus = "done"
+	ScrollLockStatusError   ScrollLockStatus = "error"
+	ScrollLockStatusWaiting ScrollLockStatus = "waiting"
 )
 
 type ScrollLock struct {
-	Statuses      map[string]string `json:"statuses"`
-	ScrollVersion *semver.Version   `json:"scroll_version"`
-	ScrollName    string            `json:"scroll_name"`
-	Initialized   bool              `json:"initialized"`
+	Statuses      map[string]ScrollLockStatus `json:"statuses"`
+	ScrollVersion *semver.Version             `json:"scroll_version"`
+	ScrollName    string                      `json:"scroll_name"`
 	path          string
 } // @name ScrollLock
 
@@ -26,26 +32,32 @@ func (scrollLock *ScrollLock) Write() error {
 	return nil
 }
 
-func (scrollLock *ScrollLock) Read() (*ScrollLock, error) {
-
+func ReadLock(path string) (*ScrollLock, error) {
 	lock := &ScrollLock{}
 
-	if !scrollLock.LockExists() {
-		return nil, errors.New("Scroll lock not found")
-	}
-	scrollRaw, _ := os.ReadFile(scrollLock.path)
+	scrollRaw, _ := os.ReadFile(path)
 	err := json.Unmarshal(scrollRaw, &lock)
 	if err != nil {
 		return nil, err
 	}
+	lock.path = path
 	return lock, nil
 }
 
-func (scrollLock *ScrollLock) LockExists() bool {
-	exisits, err := utils.FileExists(scrollLock.path)
-	return err == nil && exisits
+func WriteNewScrollLock(path string) *ScrollLock {
+	lock := &ScrollLock{
+		Statuses: make(map[string]ScrollLockStatus),
+		path:     path,
+	}
+	lock.Write()
+	return lock
 }
 
-func NewScrollLock(path string) *ScrollLock {
-	return &ScrollLock{path: path}
+func (scrollLock *ScrollLock) GetStatus(process string, command string) ScrollLockStatus {
+	return scrollLock.Statuses[process+"."+command]
+}
+
+func (scrollLock *ScrollLock) SetStatus(process string, command string, status ScrollLockStatus) {
+	scrollLock.Statuses[process+"."+command] = status
+	scrollLock.Write()
 }

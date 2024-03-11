@@ -20,7 +20,7 @@ var SemverCmd = &cobra.Command{
 
 		scrollService := services.NewScrollService(cwd)
 
-		scroll, err := scrollService.LoadScrollWithLockfile()
+		scroll, err := scrollService.LoadScroll()
 
 		if err != nil {
 			return fmt.Errorf("error loading scroll: %w", err)

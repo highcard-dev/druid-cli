@@ -1,9 +1,17 @@
 package domain
 
+type ConsoleType string
+
+const (
+	ConsoleTypeTTY     ConsoleType = "tty"
+	ConsoleTypeProcess ConsoleType = "process"
+	ConsoleTypePlugin  ConsoleType = "plugin"
+)
+
 type Console struct {
 	Channel *BroadcastChannel `json:"-" validate:"required"`
 
-	Type string `json:"type" validate:"required"`
+	Type ConsoleType `json:"type" validate:"required"`
 
 	InputMode string `json:"inputMode" validate:"required"`
 } //@name Console

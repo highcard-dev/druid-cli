@@ -1,15 +1,19 @@
 package services
 
 import (
+	"errors"
 	"io"
+	"sync"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/logger"
+	"go.uber.org/zap"
 )
 
 type ConsoleManager struct {
 	consoles   map[string]*domain.Console
 	logManager *LogManager
+	mu         sync.Mutex
 }
 
 func NewConsoleManager(logManager *LogManager) *ConsoleManager {
@@ -19,11 +23,11 @@ func NewConsoleManager(logManager *LogManager) *ConsoleManager {
 	}
 }
 
-func (cm *ConsoleManager) AddConsole(id string, consoleType string, inputMode string, consoleReader io.Reader) *domain.Console {
+func (cm *ConsoleManager) AddConsoleWithIoReader(id string, consoleType domain.ConsoleType, inputMode string, consoleReader io.Reader) *domain.Console {
 	var newChannel *domain.BroadcastChannel
 	var console *domain.Console
-
-	if _, ok := cm.consoles[id]; !ok {
+	var ok bool
+	if _, ok = cm.consoles[id]; !ok {
 		newChannel = domain.NewHub()
 
 		console := &domain.Console{
@@ -32,6 +36,8 @@ func (cm *ConsoleManager) AddConsole(id string, consoleType string, inputMode st
 			InputMode: inputMode,
 		}
 
+		cm.mu.Lock()
+		defer cm.mu.Unlock()
 		cm.consoles[id] = console
 
 		go newChannel.Run()
@@ -49,7 +55,14 @@ func (cm *ConsoleManager) AddConsole(id string, consoleType string, inputMode st
 			n, err := consoleReader.Read(tmpBuffer)
 
 			if err != nil {
-				cm.RemoveConsole(id)
+				if !ok {
+					err := cm.RemoveConsole(id)
+					if err != nil {
+
+						logger.Log().Warn("Failed to remove console", zap.Error(err), zap.String("name", id))
+					}
+				}
+
 				return
 			}
 
@@ -65,7 +78,7 @@ func (cm *ConsoleManager) AddConsole(id string, consoleType string, inputMode st
 	return console
 }
 
-func (cm *ConsoleManager) AddConsoleWithChannel(id string, consoleType string, inputMode string, channel chan string) *domain.Console {
+func (cm *ConsoleManager) AddConsoleWithChannel(id string, consoleType domain.ConsoleType, inputMode string, channel chan string) *domain.Console {
 
 	newChannel := domain.NewHub()
 
@@ -75,6 +88,8 @@ func (cm *ConsoleManager) AddConsoleWithChannel(id string, consoleType string, i
 		InputMode: inputMode,
 	}
 
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
 	cm.consoles[id] = console
 
 	go newChannel.Run()
@@ -93,11 +108,18 @@ func (cm *ConsoleManager) AddConsoleWithChannel(id string, consoleType string, i
 	return console
 }
 
-func (cm *ConsoleManager) RemoveConsole(id string) {
+func (cm *ConsoleManager) RemoveConsole(id string) error {
+
+	if _, ok := cm.consoles[id]; !ok {
+		return errors.New("console not found")
+	}
 
 	cm.consoles[id].Channel.CloseChannel()
 
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
 	delete(cm.consoles, id)
+	return nil
 }
 
 func (cm *ConsoleManager) GetSubscription(id string) chan *[]byte {

@@ -41,7 +41,7 @@ func (h *BroadcastChannel) Run() {
 	for {
 		message, more := <-h.Broadcast
 		if !more {
-			logger.Log().Info("Broadcast channel closed")
+			logger.Log().Debug("Broadcast channel closed")
 			return
 		}
 		for client := range h.Clients {

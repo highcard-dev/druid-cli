@@ -9,6 +9,14 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+type RunMode string
+
+const (
+	RunModeAlways  RunMode = "always" //default
+	RunModeOnce    RunMode = "once"
+	RunModeRestart RunMode = "restart"
+)
+
 type File struct {
 	Name       string                       `yaml:"name" json:"name"`
 	Desc       string                       `yaml:"desc" json:"desc"`
@@ -30,8 +38,9 @@ type Procedure struct {
 } // @name Procedure
 
 type CommandInstructionSet struct {
-	SchouldChangeStatus string       `yaml:"should_change_status" json:"should_change_status"`
-	Procedures          []*Procedure `yaml:"procedures" json:"procedures"`
+	Procedures []*Procedure `yaml:"procedures" json:"procedures"`
+	Needs      []string     `yaml:"needs,omitempty" json:"needs,omitempty"`
+	Run        RunMode      `yaml:"run,omitempty" json:"run,omitempty"`
 } // @name CommandInstructionSet
 
 type ProcessCommand struct {

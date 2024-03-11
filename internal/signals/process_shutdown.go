@@ -55,7 +55,7 @@ func GracefulShutdown(processLauncher ports.ProcessLauchnerInterface, processMan
 
 	logger.Log().Info("Stopping all processes by defined routines")
 	for processName := range processManager.GetRunningProcesses() {
-		go processLauncher.Run("stop", processName, false) //TODO use stop types instead of name
+		go processLauncher.RunNew("stop", processName, false) //TODO use stop types instead of name
 	}
 
 	logger.Log().Info(fmt.Sprintf("Waiting for %d seconds...", waitSeconds))
