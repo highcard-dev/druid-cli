@@ -1,6 +1,9 @@
 package utils
 
-import "strings"
+import (
+	"errors"
+	"strings"
+)
 
 func MapKeysToStringSlice(m map[string]interface{}) []string {
 	keys := make([]string, 0, len(m))
@@ -31,4 +34,23 @@ func ParseProcessAndCommand(processAndCommand string) (string, string) {
 	}
 	process, command := parts[0], parts[1]
 	return process, command
+}
+
+func InterfaceToStringSlice(data interface{}) ([]string, error) {
+
+	instructionsRaw, ok := data.([]interface{})
+	if !ok {
+		return []string{}, errors.New("invalid instruction, expected array of strings")
+	}
+
+	// we have to manually []interface{} to []string :(
+	instructions := make([]string, len(instructionsRaw))
+	for i, v := range instructionsRaw {
+		val, ok := v.(string)
+		if !ok {
+			return []string{}, errors.New("invalid instruction, cannot convert to string")
+		}
+		instructions[i] = val
+	}
+	return instructions, nil
 }

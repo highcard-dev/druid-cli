@@ -22,6 +22,7 @@ type ScrollServiceInterface interface {
 	GetCwd() string
 	WriteNewScrollLock() *domain.ScrollLock
 	GetLock() (*domain.ScrollLock, error)
+	GetCommand(cmd string, processId string) (*domain.CommandInstructionSet, error)
 }
 
 type ProcessLauchnerInterface interface {

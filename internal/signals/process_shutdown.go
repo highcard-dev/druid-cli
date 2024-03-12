@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -29,6 +30,9 @@ func SetupSignals(processLauncher ports.ProcessLauchnerInterface, processManager
 		var s os.Signal
 		select {
 		case s = <-sigc:
+			//debug timeout for testing
+			//case <-time.After(time.Duration(25) * time.Second):
+			//	s = syscall.SIGTERM
 		}
 
 		logger.Log().Info("Received shudown signal", zap.String("signal", s.String()))
@@ -55,7 +59,8 @@ func GracefulShutdown(processLauncher ports.ProcessLauchnerInterface, processMan
 
 	logger.Log().Info("Stopping all processes by defined routines")
 	for processName := range processManager.GetRunningProcesses() {
-		go processLauncher.RunNew("stop", processName, false) //TODO use stop types instead of name
+		parts := strings.Split(processName, ".")
+		go processLauncher.RunNew("stop", parts[0], false) //TODO use stop types instead of name
 	}
 
 	logger.Log().Info(fmt.Sprintf("Waiting for %d seconds...", waitSeconds))

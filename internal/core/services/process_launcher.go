@@ -55,7 +55,7 @@ func (sc *ProcessLauncher) SetCommandQueue(commandName string, status domain.Scr
 
 func (sc *ProcessLauncher) RunNew(cmd string, processId string, changeStatus bool) error {
 
-	command, err := sc.getCommand(cmd, processId)
+	command, err := sc.scrollService.GetCommand(cmd, processId)
 
 	if err != nil {
 		return err
@@ -111,7 +111,7 @@ func (sc *ProcessLauncher) RunNew(cmd string, processId string, changeStatus boo
 		go func(process string, command string) {
 			defer wg.Done()
 
-			need, err := sc.getCommand(command, process)
+			need, err := sc.scrollService.GetCommand(command, process)
 
 			if err != nil {
 				runError = err
@@ -194,24 +194,9 @@ func (sc *ProcessLauncher) LaunchPlugins() error {
 	return sc.pluginManager.ParseFromScroll(scroll.Plugins, string(sc.scrollService.GetScrollConfigRawYaml()), sc.scrollService.GetCwd())
 }
 
-func (sc *ProcessLauncher) getCommand(cmd string, processId string) (*domain.CommandInstructionSet, error) {
-	scroll := sc.scrollService.GetFile()
-	//check if we can accually do it before we start
-	if ps, ok := scroll.Processes[processId]; ok {
-		cmds, ok := ps.Commands[cmd]
-		if !ok {
-			return nil, errors.New("command " + cmd + " not found")
-		}
-		return &cmds, nil
-	} else {
-		return nil, errors.New("process " + processId + " not found")
-	}
-
-}
-
 func (sc *ProcessLauncher) Run(cmd string, processId string, changeStatus bool) error {
 
-	command, err := sc.getCommand(cmd, processId)
+	command, err := sc.scrollService.GetCommand(cmd, processId)
 	if err != nil {
 		return err
 	}
@@ -299,25 +284,18 @@ func (sc *ProcessLauncher) RunProcedure(proc *domain.Procedure, processId string
 		logger.Log().Error("Error running plugin procedure", zap.Error(err))
 		return res, nil, err
 	}
+
+	var err error
 	//check internal
 	switch proc.Mode {
 	//exec = create new process
 	case "exec-tty":
 		fallthrough
 	case "exec":
-		instructionsRaw, ok := proc.Data.([]interface{})
-		if !ok {
-			return "", nil, errors.New("invalid instruction, expected array of strings")
-		}
-
-		// we have to manually []interface{} to []string :(
-		instructions := make([]string, len(instructionsRaw))
-		for i, v := range instructionsRaw {
-			val, ok := v.(string)
-			if !ok {
-				return "", nil, errors.New("invalid instruction, cannot convert to string")
-			}
-			instructions[i] = val
+		var instructions []string
+		instructions, err = utils.InterfaceToStringSlice(proc.Data)
+		if err != nil {
+			return "", nil, err
 		}
 
 		logger.Log().Debug("Running exec process",
@@ -335,18 +313,30 @@ func (sc *ProcessLauncher) RunProcedure(proc *domain.Procedure, processId string
 		}
 		return "", exitCode, err
 	case "stdin":
+		var instructions []string
+		instructions, err = utils.InterfaceToStringSlice(proc.Data)
+		if err != nil {
+			return "", nil, err
+		}
+
+		if len(instructions) != 2 {
+			return "", nil, errors.New("invalid stdin instructions")
+		}
+		processAndCommandToWriteTo := instructions[0]
+		stdtIn := instructions[1]
+		process1, command1 := utils.ParseProcessAndCommand(processAndCommandToWriteTo)
 
 		logger.Log().Debug("Launching stdin process",
 			zap.String("processId", processId),
 			zap.String("cwd", processCwd),
-			zap.String("instructions", proc.Data.(string)),
+			zap.Strings("instructions", instructions),
 		)
 
-		process := sc.processManager.GetRunningProcess(processId, cmd)
+		process := sc.processManager.GetRunningProcess(process1, command1)
 		if process == nil {
 			return "", nil, errors.New("process not found")
 		}
-		sc.processManager.WriteStdin(process, proc.Data.(string))
+		sc.processManager.WriteStdin(process, stdtIn)
 
 	case "command":
 
@@ -378,7 +368,7 @@ func (sc *ProcessLauncher) RunProcedure(proc *domain.Procedure, processId string
 func (sc *ProcessLauncher) StartLockfile(lock *domain.ScrollLock) error {
 
 	for processAndCommand, status := range lock.Statuses {
-		if status != domain.ScrollLockStatusRunning && status != domain.ScrollLockStatusWaiting {
+		if status != domain.ScrollLockStatusRunning && status != domain.ScrollLockStatusWaiting && !strings.HasPrefix(string(status), "exit_code") {
 			continue
 		}
 		process, command := utils.ParseProcessAndCommand(processAndCommand)

@@ -10,6 +10,8 @@ import (
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/utils"
+	"github.com/highcard-dev/logger"
+	"go.uber.org/zap"
 	"gopkg.in/yaml.v2"
 )
 
@@ -73,6 +75,11 @@ func (sc *ScrollService) Bootstrap(ignoreVersionCheck bool) (*domain.Scroll, *do
 		if !lock.ScrollVersion.Equal(sc.scroll.Version) && !ignoreVersionCheck {
 			return scroll, lock, errors.New("scroll version mismatch")
 		}
+	}
+
+	err = sc.clearInvalidLockfileStatuses()
+	if err != nil {
+		return scroll, lock, err
 	}
 
 	err = sc.RenderCwdTemplates()
@@ -254,4 +261,35 @@ func (s ScrollService) GetScrollConfigRawYaml() []byte {
 	}
 
 	return content
+}
+
+// clear stuff statuses that make no sense in the lockfile
+func (sc *ScrollService) clearInvalidLockfileStatuses() error {
+	if sc.lock == nil {
+		return errors.New("lock not loaded")
+	}
+	for statusCommand := range sc.lock.Statuses {
+
+		process, command := utils.ParseProcessAndCommand(statusCommand)
+		_, err := sc.GetCommand(command, process)
+		if err != nil {
+			delete(sc.lock.Statuses, statusCommand)
+			logger.Log().Info("Removed invalid status from lockfile", zap.String("status", statusCommand))
+		}
+	}
+	return sc.lock.Write()
+}
+
+func (sc *ScrollService) GetCommand(cmd string, processId string) (*domain.CommandInstructionSet, error) {
+	scroll := sc.GetFile()
+	//check if we can accually do it before we start
+	if ps, ok := scroll.Processes[processId]; ok {
+		cmds, ok := ps.Commands[cmd]
+		if !ok {
+			return nil, errors.New("command " + cmd + " not found")
+		}
+		return &cmds, nil
+	} else {
+		return nil, errors.New("process " + processId + " not found")
+	}
 }

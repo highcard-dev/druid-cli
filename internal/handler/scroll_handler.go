@@ -109,10 +109,23 @@ func (sl ScrollHandler) RunProcedure(c *fiber.Ctx) error {
 		c.SendString("Data cannot be empty")
 		return c.SendStatus(400)
 	}
-	procedure := domain.Procedure{
-		Data: requestBody.Data,
-		Mode: requestBody.Mode,
+
+	var procedure domain.Procedure
+	if requestBody.Mode == "stdin" {
+		procedure = domain.Procedure{
+			Data: []interface{}{
+				requestBody.Process,
+				requestBody.Data,
+			},
+			Mode: requestBody.Mode,
+		}
+	} else {
+		procedure = domain.Procedure{
+			Data: requestBody.Data,
+			Mode: requestBody.Mode,
+		}
 	}
+
 	parts := strings.Split(requestBody.Process, ".")
 
 	if len(parts) != 2 {
