@@ -7,7 +7,6 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/logger"
-	"go.uber.org/zap"
 )
 
 type ConsoleManager struct {
@@ -55,15 +54,16 @@ func (cm *ConsoleManager) AddConsoleWithIoReader(id string, consoleType domain.C
 			n, err := consoleReader.Read(tmpBuffer)
 
 			if err != nil {
-				if !ok {
+				return
+				//do not remove console, as we want to keep the logs
+				/*if !ok {
 					err := cm.RemoveConsole(id)
 					if err != nil {
 
 						logger.Log().Warn("Failed to remove console", zap.Error(err), zap.String("name", id))
 					}
 				}
-
-				return
+				return*/
 			}
 
 			if consoleType != "tty" {
