@@ -14,6 +14,8 @@ definitions:
     type: object
   Console:
     properties:
+      exit:
+        type: integer
       inputMode:
         type: string
       type:
@@ -165,6 +167,13 @@ definitions:
     - ConsoleTypeTTY
     - ConsoleTypeProcess
     - ConsoleTypePlugin
+  domain.Process:
+    properties:
+      name:
+        type: string
+      type:
+        type: string
+    type: object
   domain.RunMode:
     enum:
     - always
@@ -177,6 +186,13 @@ definitions:
     - RunModeAlways
     - RunModeOnce
     - RunModeRestart
+  handler.ProcessesBody:
+    properties:
+      processes:
+        additionalProperties:
+          $ref: '#/definitions/domain.Process'
+        type: object
+    type: object
   handler.StartProcedureRequestBody:
     properties:
       data:
@@ -329,6 +345,23 @@ paths:
       summary: Run procedure
       tags:
       - scroll
+      - druid
+      - daemon
+  /api/v1/processes:
+    get:
+      consumes:
+      - '*/*'
+      operationId: getRunningProcesses
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ProcessesBody'
+      summary: Get running processes
+      tags:
+      - process
       - druid
       - daemon
   /api/v1/pstree:

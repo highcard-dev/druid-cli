@@ -59,6 +59,7 @@ type ConsoleManagerInterface interface {
 	RemoveConsole(consoleId string) error
 	AddConsoleWithIoReader(consoleId string, consoleType domain.ConsoleType, inputMode string, console io.Reader) *domain.Console
 	AddConsoleWithChannel(consoleId string, consoleType domain.ConsoleType, inputMode string, channel chan string) *domain.Console
+	MarkExited(id string, exitCode int) *domain.Console
 }
 
 type ProcessMonitorInterface interface {

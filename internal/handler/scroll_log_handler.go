@@ -33,13 +33,13 @@ func NewScrollLogHandler(scrollService ports.ScrollServiceInterface, logManager 
 // @Router /api/v1/logs [get]
 func (sl ScrollLogHandler) ListAllLogs(c *fiber.Ctx) error {
 
-	processes := sl.processManager.GetRunningProcesses()
+	streams := sl.logManager.GetStreams()
 
-	responseData := make([]ScrollLogStream, 0, len(processes))
+	responseData := make([]ScrollLogStream, 0, len(streams))
 	mutex := sync.Mutex{}
 	wg := sync.WaitGroup{}
 
-	for streamName, log := range sl.logManager.GetStreams() {
+	for streamName, log := range streams {
 		req := make(chan []byte)
 		wg.Add(1)
 		log.Req <- req

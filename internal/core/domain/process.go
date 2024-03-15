@@ -11,10 +11,10 @@ import (
 )
 
 type Process struct {
-	Cmd   *exec.Cmd
-	Name  string
-	Type  string
-	StdIn io.WriteCloser
+	Cmd   *exec.Cmd      `json:"-"`
+	Name  string         `json:"name"`
+	Type  string         `json:"type"`
+	StdIn io.WriteCloser `json:"-"`
 }
 
 type Log struct {

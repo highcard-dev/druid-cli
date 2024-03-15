@@ -14,4 +14,6 @@ type Console struct {
 	Type ConsoleType `json:"type" validate:"required"`
 
 	InputMode string `json:"inputMode" validate:"required"`
+
+	Exit *int `json:"exit,omitempty"`
 } //@name Console

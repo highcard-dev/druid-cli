@@ -27,6 +27,7 @@ type Server struct {
 	scrollHandler                 ports.ScrollHandlerInterface
 	scrollLogHandler              ports.ScrollLogHandlerInterface
 	scrollMetricHandler           ports.ScrollMetricHandlerInterface
+	processHandler                ports.ProcessHandlerInterface
 	websocketHandler              ports.WebsocketHandlerInterface
 }
 
@@ -35,6 +36,7 @@ func NewServer(
 	scrollHandler ports.ScrollHandlerInterface,
 	scrollLogHandler ports.ScrollLogHandlerInterface,
 	scrollMetricHandler ports.ScrollMetricHandlerInterface,
+	processHandler ports.ProcessHandlerInterface,
 	websocketHandler ports.WebsocketHandlerInterface,
 	authorizerService ports.AuthorizerServiceInterface,
 ) *Server {
@@ -47,6 +49,7 @@ func NewServer(
 		scrollHandler:                 scrollHandler,
 		scrollLogHandler:              scrollLogHandler,
 		scrollMetricHandler:           scrollMetricHandler,
+		processHandler:                processHandler,
 		websocketHandler:              websocketHandler,
 		tokenAuthenticationMiddleware: middlewares.TokenAuthentication(authorizerService),
 	}
@@ -111,8 +114,12 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 	dispatcherRoutes.Get("/metrics", s.scrollMetricHandler.Metrics).Name("scrolls.metrics")
 	dispatcherRoutes.Get("/pstree", s.scrollMetricHandler.PsTree).Name("scrolls.pstree")
 
+	//Processes Group
+	dispatcherRoutes.Get("/processes", s.processHandler.Processes).Name("processes.list")
+
 	//Websocket Group
 	dispatcherRoutes.Get("/consoles", s.websocketHandler.Consoles).Name("consoles.list")
+
 	wsRoutes.Get("/serve/:console", websocket.New(s.websocketHandler.HandleProcess)).Name("ws.serve")
 
 	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler())).Name("metrics")

@@ -209,6 +209,31 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/processes": {
+            "get": {
+                "consumes": [
+                    "*/*"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "process",
+                    "druid",
+                    "daemon"
+                ],
+                "summary": "Get running processes",
+                "operationId": "getRunningProcesses",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ProcessesBody"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/pstree": {
             "get": {
                 "description": "Get pstree of running process",
@@ -314,6 +339,9 @@ const docTemplate = `{
                 "type"
             ],
             "properties": {
+                "exit": {
+                    "type": "integer"
+                },
                 "inputMode": {
                     "type": "string"
                 },
@@ -537,6 +565,17 @@ const docTemplate = `{
                 "ConsoleTypePlugin"
             ]
         },
+        "domain.Process": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
         "domain.RunMode": {
             "type": "string",
             "enum": [
@@ -552,6 +591,17 @@ const docTemplate = `{
                 "RunModeOnce",
                 "RunModeRestart"
             ]
+        },
+        "handler.ProcessesBody": {
+            "type": "object",
+            "properties": {
+                "processes": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/domain.Process"
+                    }
+                }
+            }
         },
         "handler.StartProcedureRequestBody": {
             "type": "object",

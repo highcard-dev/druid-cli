@@ -165,6 +165,7 @@ func (po *ProcessManager) Run(processName string, commandName string, command []
 	po.RemoveProcess(processName, commandName)
 	// Wait for goroutine to print everything (watchdog closes stdin)
 	exitCode := process.Cmd.ProcessState.ExitCode()
+	po.consoleManager.MarkExited(prefixedProcessCommandName, exitCode)
 	process.Cmd = nil
 	return &exitCode, nil
 }

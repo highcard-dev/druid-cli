@@ -26,3 +26,7 @@ type WebsocketHandlerInterface interface {
 	HandleProcess(c *websocket.Conn)
 	Consoles(c *fiber.Ctx) error
 }
+
+type ProcessHandlerInterface interface {
+	Processes(c *fiber.Ctx) error
+}

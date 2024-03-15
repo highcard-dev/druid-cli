@@ -66,6 +66,7 @@ func (cm *ConsoleManager) AddConsoleWithIoReader(id string, consoleType domain.C
 				return*/
 			}
 
+			//logging tty results in unuseful logs
 			if consoleType != "tty" {
 				logger.Log().Info(string(tmpBuffer[:n]))
 			}
@@ -96,12 +97,9 @@ func (cm *ConsoleManager) AddConsoleWithChannel(id string, consoleType domain.Co
 
 	//broadcast reader into channel (maybe increase chunk size?)
 	go func() {
-		for {
-			select {
-			case data := <-channel:
-				b := []byte(data)
-				newChannel.Broadcast <- b
-			}
+		for data := range channel {
+			b := []byte(data)
+			newChannel.Broadcast <- b
 		}
 	}()
 
@@ -120,6 +118,13 @@ func (cm *ConsoleManager) RemoveConsole(id string) error {
 	defer cm.mu.Unlock()
 	delete(cm.consoles, id)
 	return nil
+}
+
+func (cm *ConsoleManager) MarkExited(id string, exitCode int) *domain.Console {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	cm.consoles[id].Exit = &exitCode
+	return cm.consoles[id]
 }
 
 func (cm *ConsoleManager) GetSubscription(id string) chan *[]byte {
