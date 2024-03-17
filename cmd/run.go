@@ -41,6 +41,11 @@ var RunCmd = &cobra.Command{
 			return fmt.Errorf("error loading scroll: %w", err)
 		}
 
+		err = scrollService.RenderCwdTemplates()
+		if err != nil {
+			return err
+		}
+
 		err = processLauncher.LaunchPlugins()
 
 		if err != nil {

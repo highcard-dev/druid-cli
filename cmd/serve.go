@@ -110,6 +110,11 @@ to interact and monitor the Scroll Application`,
 		}
 
 		if len(lock.Statuses) > 0 {
+			err = scrollService.RenderCwdTemplates()
+			if err != nil {
+				return err
+			}
+
 			//run if something is there
 			err = processLauncher.StartLockfile(lock)
 
@@ -117,7 +122,13 @@ to interact and monitor the Scroll Application`,
 				return err
 			}
 		} else {
+			//There is an error here. We need to bootstrap the files before we render out the templates in the bootstrap func above
 			err := scrollService.CreateLockAndBootstrapFiles()
+			if err != nil {
+				return err
+			}
+
+			err = scrollService.RenderCwdTemplates()
 			if err != nil {
 				return err
 			}

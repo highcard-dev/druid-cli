@@ -78,12 +78,6 @@ func (sc *ScrollService) Bootstrap(ignoreVersionCheck bool) (*domain.Scroll, *do
 	}
 
 	err = sc.clearInvalidLockfileStatuses()
-	if err != nil {
-		return scroll, lock, err
-	}
-
-	err = sc.RenderCwdTemplates()
-
 	return scroll, lock, err
 
 }
