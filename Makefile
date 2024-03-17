@@ -1,5 +1,7 @@
 .DEFAULT_GOAL:=help
 
+VERSION ?= "dev"
+
 help: ## Prints the help about targets.
 	@printf "Usage:             ENV=[\033[34mprod|stage|dev\033[0m] make [\033[34mtarget\033[0m]\n"
 	@printf "Default:           \033[34m%s\033[0m\n" $(.DEFAULT_GOAL)
@@ -7,7 +9,7 @@ help: ## Prints the help about targets.
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf " \033[34m%-17s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST) | sort
 
 build: ## Build Daemon
-	go build -o ./bin/druid
+	go build -ldflags "-X github.com/highcard-dev/daemon/cmd.version=$(VERSION)" -o ./bin/druid
 
 install: ## Install Daemon
 	cp ./bin/druid /usr/local/bin/druid
