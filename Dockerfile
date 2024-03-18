@@ -5,6 +5,8 @@ COPY /apps/deployment/daemon/.docker/entrypoint.sh /entrypoint.sh
 
 WORKDIR /go/apps/deployment/daemon
 
+ENV VERSION=docker
+
 RUN make build
 RUN make build-plugins
 
