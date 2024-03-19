@@ -37,6 +37,14 @@ type Procedure struct {
 	Data interface{} `yaml:"data"`
 } // @name Procedure
 
+// exec-tty, exec, stdin, command, scroll-switch
+func (p *Procedure) IsInternalMode() bool {
+	if p.Mode == "exec-tty" || p.Mode == "exec" || p.Mode == "stdin" || p.Mode == "command" || p.Mode == "scroll-switch" {
+		return true
+	}
+	return false
+}
+
 type CommandInstructionSet struct {
 	Procedures []*Procedure `yaml:"procedures" json:"procedures"`
 	Needs      []string     `yaml:"needs,omitempty" json:"needs,omitempty"`

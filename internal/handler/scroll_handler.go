@@ -129,8 +129,12 @@ func (sl ScrollHandler) RunProcedure(c *fiber.Ctx) error {
 	parts := strings.Split(requestBody.Process, ".")
 
 	if len(parts) != 2 {
-		c.SendString("Invalid process")
-		return c.SendStatus(400)
+		if procedure.IsInternalMode() {
+			c.SendString("Invalid process")
+			return c.SendStatus(400)
+		} else {
+			parts = []string{requestBody.Process, ""}
+		}
 	}
 
 	if !requestBody.Sync {
