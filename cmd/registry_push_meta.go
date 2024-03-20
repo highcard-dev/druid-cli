@@ -8,6 +8,7 @@ import (
 	"github.com/highcard-dev/logger"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.uber.org/zap"
 )
 
 var PushMetaCommand = &cobra.Command{
@@ -32,6 +33,8 @@ var PushMetaCommand = &cobra.Command{
 
 		fullPath := path.Join(cwd, folder)
 
+		logger.Log().Info("Pushing "+artifact+" to registry", zap.String("path", fullPath), zap.String("registry", host))
+
 		ociClient := registry.NewOciClient(host, user, password)
 
 		_, err := ociClient.PushMeta(fullPath, artifact)
@@ -40,7 +43,7 @@ var PushMetaCommand = &cobra.Command{
 			return err
 		}
 
-		logger.Log().Info("Pushed " + artifact + " to registry")
+		logger.Log().Info("Pushed " + artifact + " meta to registry")
 		return nil
 	},
 }

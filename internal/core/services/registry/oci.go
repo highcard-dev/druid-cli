@@ -296,7 +296,7 @@ func (c *OciClient) CreateMetaDescriptors(fs *file.Store, folder string, fsPath 
 	metaPath := filepath.Join(folder, fsPath)
 	exists, _ := utils.FileExists(metaPath)
 	if !exists {
-		return v1.Descriptor{}, fmt.Errorf("meta file not found")
+		return v1.Descriptor{}, fmt.Errorf("meta file %s not found", metaPath)
 	}
 	fsFileNames := []string{}
 	subitems, _ := ioutil.ReadDir(metaPath)
