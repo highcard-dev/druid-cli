@@ -18,6 +18,22 @@
             ],
         },
         {
+            "name": "Debug Daemon serve arkserver",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/main.go",
+            "args": [
+                "serve",
+                "--cwd",
+                "${workspaceFolder}/examples/scroll-cwd-ark",
+                "-p",
+                "9190",
+                "registry-1.docker.io/highcard/scroll-lgsm:arkserver"
+            ],
+        },
+        {
             "name": "Debug Daemon start",
             "type": "go",
             "request": "launch",

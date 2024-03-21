@@ -147,7 +147,7 @@ func (g *DruidPluginImpl) Init(config map[string]string, client plugins.DruidDae
 
 	if scrollConfig.ConnectionMode == "" {
 		g.connectionMode = "short"
-		err = g.mainClient.NotifyConsole("rcon", "Connection mode not set, defaulting to short")
+		err = g.mainClient.NotifyConsole("rcon", "Connection mode not set, defaulting to short\n")
 		if err != nil {
 			return err
 		}

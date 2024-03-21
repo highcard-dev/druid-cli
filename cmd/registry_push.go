@@ -10,6 +10,7 @@ import (
 	"github.com/highcard-dev/logger"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.uber.org/zap"
 )
 
 var minRam string
@@ -46,6 +47,8 @@ var PushCommand = &cobra.Command{
 			return err
 		}
 
+		logger.Log().Info("Pushing "+scroll.Name+" to registry", zap.String("path", fullPath), zap.String("registry", host))
+
 		ociClient := registry.NewOciClient(host, user, password)
 
 		repo := scroll.Name
@@ -77,7 +80,7 @@ var PushCommand = &cobra.Command{
 			return err
 		}
 
-		logger.Log().Info("Pushed " + scroll.Name + " to registry")
+		logger.Log().Info("Pushed "+scroll.Name+" to registry", zap.String("path", fullPath), zap.String("registry", host))
 		return nil
 	},
 }

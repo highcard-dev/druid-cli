@@ -33,7 +33,7 @@ var PushMetaCommand = &cobra.Command{
 
 		fullPath := path.Join(cwd, folder)
 
-		logger.Log().Info("Pushing "+artifact+" to registry", zap.String("path", fullPath), zap.String("registry", host))
+		logger.Log().Info("Pushing "+artifact+" meta to registry", zap.String("path", fullPath), zap.String("registry", host))
 
 		ociClient := registry.NewOciClient(host, user, password)
 
