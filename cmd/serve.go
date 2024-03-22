@@ -103,18 +103,18 @@ to interact and monitor the Scroll Application`,
 			return err
 		}
 
-		err = processLauncher.LaunchPlugins()
-
-		if err != nil {
-			return err
-		}
-
+		//normal or first launch?
 		if len(lock.Statuses) > 0 {
 			err = scrollService.RenderCwdTemplates()
 			if err != nil {
 				return err
 			}
+			//important to launch plugins, after the templates are rendered, sothat templates can provide for plugins
+			err = processLauncher.LaunchPlugins()
 
+			if err != nil {
+				return err
+			}
 			//run if something is there
 			err = processLauncher.StartLockfile(lock)
 
@@ -133,6 +133,12 @@ to interact and monitor the Scroll Application`,
 				return err
 			}
 
+			//important to launch plugins, after the templates are rendered, sothat templates can provide for plugins
+			err = processLauncher.LaunchPlugins()
+
+			if err != nil {
+				return err
+			}
 			//start scroll.init process
 			//initialize if nothing is there
 			err = processLauncher.Initalize(lock)
