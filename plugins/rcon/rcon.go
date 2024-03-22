@@ -106,6 +106,7 @@ func (g *DruidPluginImpl) runProcedureShort(key string, value string) (string, e
 	response, err := conn.Execute(value)
 	if err != nil {
 		println(err.Error())
+		err = g.mainClient.NotifyConsole("rcon", "Rcon Error: "+err.Error())
 		return "", err
 	}
 	err = g.mainClient.NotifyConsole("rcon", response)
