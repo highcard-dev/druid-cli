@@ -10,8 +10,8 @@ This CLI is currently deployed within every deployment at [druid.gg](https://dru
 ## Scroll OCI manifest
 
 The Druid CLI uses a **so called Scroll** to get instructions on how to launch and handle the process.
-A scroll can also include files required for that purpose.
-A Scroll is an OCI Artifact, so it is easy to distribute.
+A scroll can also include files.
+A Scroll is an OCI Artifact, so it is easy to distribute with registries like Dockerhub.
 
 ## Features
 
@@ -36,4 +36,3 @@ https://github.com/highcard-dev/druid-cli/tree/master/plugin
 ## Documentation
 
 Read more at https://docs.druid.gg/cli
-asd

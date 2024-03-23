@@ -16,8 +16,6 @@ jobs:
         id: version
         with:
           debug: true
-      - name: Print Diagnostic Output
-        run: echo ${{ steps.version.outputs.increment }}
       - name: Release
         uses: softprops/action-gh-release@v2
         if: ${{ steps.version.outputs.version != '' }}
