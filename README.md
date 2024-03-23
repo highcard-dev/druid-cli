@@ -36,3 +36,4 @@ https://github.com/highcard-dev/druid-cli/tree/master/plugin
 ## Documentation
 
 Read more at https://docs.druid.gg/cli
+asd
