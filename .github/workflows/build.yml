@@ -24,7 +24,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: ${{ steps.version.outputs.version != '' }}
         with:
-          tag_name: ${{ steps.version.outputs.version }}
+          tag_name: ${{ steps.version.outputs.version_tag }}
           prerelease: ${{ steps.version.outputs.increment != 0 }}
           files: |
             bin/druid
