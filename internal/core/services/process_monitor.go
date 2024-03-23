@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
-	"github.com/highcard-dev/logger"
+	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	processutil "github.com/shirou/gopsutil/process"

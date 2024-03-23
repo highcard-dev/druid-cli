@@ -2,7 +2,7 @@ package plugin
 
 import (
 	plugin "github.com/hashicorp/go-plugin"
-	"github.com/highcard-dev/proto"
+	"github.com/highcard-dev/daemon/plugin/proto"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )

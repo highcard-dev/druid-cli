@@ -7,10 +7,10 @@ import (
 
 	"log"
 
-	"github.com/hashicorp/go-plugin"
+	goplugin "github.com/hashicorp/go-plugin"
+	plugin "github.com/highcard-dev/daemon/plugin"
+	"github.com/highcard-dev/daemon/plugin/proto"
 	rconLib "github.com/highcard-dev/gorcon"
-	plugins "github.com/highcard-dev/plugin"
-	"github.com/highcard-dev/proto"
 )
 
 type ScrollConfig struct {
@@ -23,10 +23,10 @@ type ScrollConfig struct {
 // Here is a real implementation of Rcon
 type DruidPluginImpl struct {
 	conn           *rconLib.Conn
-	environment    *plugins.Environment
+	environment    *plugin.Environment
 	config         map[string]string
 	connectionMode string
-	mainClient     plugins.DruidDaemon
+	mainClient     plugin.DruidDaemon
 }
 
 func main() {
@@ -35,16 +35,16 @@ func main() {
 
 	rcon := &DruidPluginImpl{}
 	// pluginMap is the map of plugins we can dispense.
-	var pluginMap = map[string]plugin.Plugin{
-		"rcon": &plugins.DruidRpcPlugin{Impl: rcon},
+	var pluginMap = map[string]goplugin.Plugin{
+		"rcon": &plugin.DruidRpcPlugin{Impl: rcon},
 	}
 
 	log.Println("RCON Plugin started")
 
-	plugin.Serve(&plugin.ServeConfig{
+	goplugin.Serve(&goplugin.ServeConfig{
 		HandshakeConfig: handshakeConfig,
 		Plugins:         pluginMap,
-		GRPCServer:      plugin.DefaultGRPCServer,
+		GRPCServer:      goplugin.DefaultGRPCServer,
 	})
 }
 
@@ -122,9 +122,9 @@ func (g *DruidPluginImpl) RunProcedure(key string, value string) (string, error)
 	}
 }
 
-func (g *DruidPluginImpl) Init(config map[string]string, client plugins.DruidDaemon, cwd string, scrollConfigRawYaml string) error {
+func (g *DruidPluginImpl) Init(config map[string]string, client plugin.DruidDaemon, cwd string, scrollConfigRawYaml string) error {
 
-	scrollConfig, err := plugins.GetConfig[ScrollConfig]("rcon", []byte(scrollConfigRawYaml))
+	scrollConfig, err := plugin.GetConfig[ScrollConfig]("rcon", []byte(scrollConfigRawYaml))
 
 	if err != nil {
 		return err
@@ -139,7 +139,7 @@ func (g *DruidPluginImpl) Init(config map[string]string, client plugins.DruidDae
 	g.mainClient = client
 	g.config = config
 
-	environment, err := plugins.NewPluginEnvironment(cwd, password, port, host)
+	environment, err := plugin.NewPluginEnvironment(cwd, password, port, host)
 	if err != nil {
 		log.Printf("Error creating environment: %s", err.Error())
 		return err
@@ -194,7 +194,7 @@ func (g *DruidPluginImpl) Init(config map[string]string, client plugins.DruidDae
 // a plugin and host. If the handshake fails, a user friendly error is shown.
 // This prevents users from executing bad plugins or executing a plugin
 // directory. It is a UX feature, not a security feature.
-var handshakeConfig = plugin.HandshakeConfig{
+var handshakeConfig = goplugin.HandshakeConfig{
 	ProtocolVersion:  1,
 	MagicCookieKey:   "DRUID_PLUGIN",
 	MagicCookieValue: "druid_is_the_way",

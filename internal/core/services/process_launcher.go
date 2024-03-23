@@ -11,7 +11,7 @@ import (
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
 	"github.com/highcard-dev/daemon/internal/utils"
-	"github.com/highcard-dev/logger"
+	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"go.uber.org/zap"
 )
 

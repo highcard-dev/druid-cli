@@ -4,12 +4,9 @@ import (
 	"os"
 
 	"github.com/highcard-dev/daemon/cmd"
-	"github.com/highcard-dev/logger"
 )
 
 func main() {
-	logger.Log(logger.WithStructuredLogging())
-
 	//druidd start
 	//druidd run [update]
 	cmd.RootCmd.AddCommand(cmd.ServeCommand)

@@ -8,7 +8,7 @@ import (
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
 	"github.com/highcard-dev/daemon/internal/utils"
-	"github.com/highcard-dev/logger"
+	"github.com/highcard-dev/daemon/internal/utils/logger"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"

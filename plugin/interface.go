@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/hashicorp/go-plugin"
-	"github.com/highcard-dev/proto"
+	"github.com/highcard-dev/daemon/plugin/proto"
 	"google.golang.org/grpc"
 )
 

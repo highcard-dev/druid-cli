@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-plugin"
-	"github.com/highcard-dev/logger"
-	plugins "github.com/highcard-dev/plugin"
-	"github.com/highcard-dev/proto"
+	"github.com/highcard-dev/daemon/internal/utils/logger"
+	plugins "github.com/highcard-dev/daemon/plugin"
+	"github.com/highcard-dev/daemon/plugin/proto"
 
 	"github.com/gorilla/websocket"
 )
