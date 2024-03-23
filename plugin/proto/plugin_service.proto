@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "github.com/highcard-dev/daemon/plugin/proto";
+
+message GetModeResponse{
+  message Mode {
+    bool standalone = 1;
+    string mode = 2;
+  }
+  repeated Mode modes = 1;
+}
+
+message InitRequest {
+  map<string, string> plugin_config = 1;
+  uint32 druid_server = 2;
+  string cwd = 3;
+  string scroll_config = 4;
+}
+
+message ProcedureRequest {
+  string mode = 1;
+  string data = 2;
+}
+
+message ProcedureResponse {
+  string data = 1;
+}
+
+message EmptyPluginResponse {}
+
+service Plugin {
+  rpc GetModes(EmptyPluginResponse) returns (GetModeResponse);
+  rpc Init(InitRequest) returns (EmptyPluginResponse);
+  rpc RunProcedure(ProcedureRequest) returns (ProcedureResponse);
+}

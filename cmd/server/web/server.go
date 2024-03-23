@@ -12,7 +12,7 @@ import (
 	"github.com/gofiber/swagger"
 	"github.com/highcard-dev/daemon/cmd/server/web/middlewares"
 	"github.com/highcard-dev/daemon/internal/core/ports"
-	"github.com/highcard-dev/logger"
+	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	_ "github.com/highcard-dev/daemon/docs"

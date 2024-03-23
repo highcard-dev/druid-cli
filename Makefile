@@ -15,14 +15,14 @@ install: ## Install Daemon
 	cp ./bin/druid /usr/local/bin/druid
 
 build-plugins: ## Build Plugins
-	go build -o ./bin/druid_rcon ./plugins/rcon/rcon.go
-	go build -o ./bin/druid_rcon_web_rust ./plugins/rcon_web_rust/rcon_web_rust.go
+	go build -o ./bin/druid_rcon ./plugin/rcon/rcon.go
+	go build -o ./bin/druid_rcon_web_rust ./plugin/rcon_web_rust/rcon_web_rust.go
 
 proto:
-	protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative internal/plugin/commons/proto/kv.proto
+	protoc --go_out=paths=source_relative:./ --go-grpc_out=paths=source_relative:./ --go-grpc_opt=paths=source_relative plugin/proto/*.proto
 
 generate-swagger:
-	swag init --parseDependency -g ./cmd/server/web/server.go
+	swag init -g ./cmd/server/web/server.go --overridesFile override.swag
 
 run: ## Run Daemon
 	go run main.go

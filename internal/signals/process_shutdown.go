@@ -10,7 +10,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/highcard-dev/daemon/internal/core/ports"
-	"github.com/highcard-dev/logger"
+	"github.com/highcard-dev/daemon/internal/utils/logger"
 	processutil "github.com/shirou/gopsutil/process"
 	"go.uber.org/zap"
 )

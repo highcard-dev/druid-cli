@@ -1,0 +1,15 @@
+syntax = "proto3";
+package proto;
+
+option go_package = "github.com/highcard-dev/proto";
+
+message EmptyDaemonResponse {}
+
+message ConsoleNotification {
+    string mode = 1;
+    string data  = 2;
+}
+
+service DaemonService {
+    rpc NotifyConsole(ConsoleNotification) returns (EmptyDaemonResponse);
+}

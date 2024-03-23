@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
-	"github.com/highcard-dev/logger"
+	"github.com/highcard-dev/daemon/internal/utils/logger"
 )
 
 type ConsoleManager struct {

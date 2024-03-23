@@ -1,7 +1,7 @@
 package domain
 
 import (
-	"github.com/highcard-dev/logger"
+	"github.com/highcard-dev/daemon/internal/utils/logger"
 )
 
 type BroadcastChannel struct {

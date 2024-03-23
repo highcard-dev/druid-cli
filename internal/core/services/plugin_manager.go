@@ -9,8 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/highcard-dev/logger"
-	commons "github.com/highcard-dev/plugin"
+	"github.com/highcard-dev/daemon/internal/utils/logger"
+	commons "github.com/highcard-dev/daemon/plugin"
 
 	"github.com/hashicorp/go-plugin"
 )
