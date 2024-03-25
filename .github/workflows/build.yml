@@ -10,12 +10,14 @@ jobs:
         with:
           fetch-depth: 0
       - uses: actions/setup-go@v5
-      - run: make build
-      - run: make build-plugins
+        with:
+          go-version: "^1.21"
       - uses: paulhatch/semantic-version@v5.3.0
         id: version
         with:
           debug: true
+      - run: make build
+      - run: make build-plugins
       - name: Release
         uses: softprops/action-gh-release@v2
         if: ${{ steps.version.outputs.version != '' }}
