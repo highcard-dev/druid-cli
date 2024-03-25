@@ -15,8 +15,8 @@ install: ## Install Daemon
 	cp ./bin/druid /usr/local/bin/druid
 
 build-plugins: ## Build Plugins
-	go build -o ./bin/druid_rcon ./plugin/rcon/rcon.go
-	go build -o ./bin/druid_rcon_web_rust ./plugin/rcon_web_rust/rcon_web_rust.go
+	CGO_ENABLED=0 go build -o ./bin/druid_rcon ./plugin/rcon/rcon.go
+	CGO_ENABLED=0 go build -o ./bin/druid_rcon_web_rust ./plugin/rcon_web_rust/rcon_web_rust.go
 
 proto:
 	protoc --go_out=paths=source_relative:./ --go-grpc_out=paths=source_relative:./ --go-grpc_opt=paths=source_relative plugin/proto/*.proto
