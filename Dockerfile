@@ -1,9 +1,9 @@
 FROM golang:bullseye AS build
 
 COPY . .
-COPY /apps/deployment/daemon/.docker/entrypoint.sh /entrypoint.sh
+COPY .docker/entrypoint.sh /entrypoint.sh
 
-WORKDIR /go/apps/deployment/daemon
+WORKDIR /go
 
 ENV VERSION=docker
 
