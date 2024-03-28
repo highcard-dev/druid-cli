@@ -105,6 +105,7 @@ to interact and monitor the Scroll Application`,
 
 		//normal or first launch?
 		if len(lock.Statuses) > 0 {
+			logger.Log().Info("Found lock file, bootstrapping done")
 			err = scrollService.RenderCwdTemplates()
 			if err != nil {
 				return err
@@ -122,6 +123,7 @@ to interact and monitor the Scroll Application`,
 				return err
 			}
 		} else {
+			logger.Log().Info("No lock file found, bootstrapping")
 			//There is an error here. We need to bootstrap the files before we render out the templates in the bootstrap func above
 			err := scrollService.CreateLockAndBootstrapFiles()
 			if err != nil {

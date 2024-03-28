@@ -369,8 +369,10 @@ func (sc *ProcessLauncher) StartLockfile(lock *domain.ScrollLock) error {
 
 	for processAndCommand, status := range lock.Statuses {
 		if status != domain.ScrollLockStatusRunning && status != domain.ScrollLockStatusWaiting && !strings.HasPrefix(string(status), "exit_code") {
+			logger.Log().Debug("Skipping process", zap.String("processAndCommand", processAndCommand), zap.String("status", string(status)))
 			continue
 		}
+		logger.Log().Info("Starting process from lockfile", zap.String("processAndCommand", processAndCommand), zap.String("status", string(status)))
 		process, command := utils.ParseProcessAndCommand(processAndCommand)
 		go sc.RunNew(command, process, true)
 	}
