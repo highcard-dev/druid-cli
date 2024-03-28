@@ -55,6 +55,12 @@ func (sc *ProcessLauncher) SetCommandQueue(commandName string, status domain.Scr
 
 func (sc *ProcessLauncher) RunNew(cmd string, processId string, changeStatus bool) error {
 
+	logger.Log().Debug("Running command",
+		zap.String("processId", processId),
+		zap.String("cmd", cmd),
+		zap.Bool("changeStatus", changeStatus),
+	)
+
 	command, err := sc.scrollService.GetCommand(cmd, processId)
 
 	if err != nil {
