@@ -1,4 +1,4 @@
-.DEFAULT_GOAL:=help
+.PHONY: test
 
 VERSION ?= "dev"
 
@@ -27,9 +27,9 @@ mock:
 test:
 	go test -v ./test
 
-test:
-	go test -v ./test/container
+test-integration:
+	go test -v ./test/integration
 
-test-docker:
+test-integration-docker:
 	docker build . -f Dockerfile.testing -t druid-cli-test
-	docker run --rm druid-cli-test bash -c "go test -v ./test && go test -v ./test/container"
+	docker run --rm druid-cli-test bash -c "go test -v ./test/integration"
