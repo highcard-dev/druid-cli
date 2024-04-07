@@ -6,6 +6,9 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/highcard-dev/daemon/internal/core/domain"
+	v1 "github.com/opencontainers/image-spec/specs-go/v1"
+	"oras.land/oras-go/v2/content/file"
+	"oras.land/oras-go/v2/registry/remote"
 )
 
 type AuthorizerServiceInterface interface {
@@ -25,13 +28,17 @@ type ScrollServiceInterface interface {
 	GetCommand(cmd string, processId string) (*domain.CommandInstructionSet, error)
 }
 
-type ProcessLauchnerInterface interface {
+type ProcedureLauchnerInterface interface {
 	RunNew(commandId string, processId string, changeStatus bool) error
 	RunProcedure(*domain.Procedure, string, string) (string, *int, error)
 }
 
 type PluginManagerInterface interface {
 	CanRunStandaloneProcedure(mode string) bool
+	GetNotifyConsoleChannel() chan *domain.StreamItem
+	ParseFromScroll(pluginDefinitionMap map[string]map[string]string, config string, cwd string) error
+	HasMode(mode string) bool
+	RunProcedure(mode string, value string) (string, error)
 }
 
 type LogManagerInterface interface {
@@ -72,4 +79,14 @@ type ProcessMonitorInterface interface {
 type TemplateRendererInterface interface {
 	RenderTemplate(templatePath string, data interface{}) (string, error)
 	RenderScrollTemplateFiles(templateFiles []string, data interface{}, ouputPath string) error
+}
+
+type OciRegistryInterface interface {
+	GetRepo(repoUrl string) (*remote.Repository, error)
+	Pull(dir string, artifact string) error
+	CanUpdateTag(descriptor v1.Descriptor, folder string, tag string) (bool, error)
+	PackFolders(fs *file.Store, dirs []string, artifactType domain.ArtifactType, path string) (v1.Descriptor, error)
+	Push(folder string, repo string, tag string, annotationInfo domain.AnnotationInfo, packMeta bool) (v1.Descriptor, error)
+	PushMeta(folder string, repo string) (v1.Descriptor, error)
+	CreateMetaDescriptors(fs *file.Store, dir string, artifact string) (v1.Descriptor, error)
 }

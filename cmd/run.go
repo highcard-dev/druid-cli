@@ -27,15 +27,18 @@ var RunCmd = &cobra.Command{
 		logManager := services.NewLogManager()
 		consoleService := services.NewConsoleManager(logManager)
 		processManager := services.NewProcessManager(logManager, consoleService, services.NewProcessMonitor())
-		scrollService := services.NewScrollService(cwd)
-		processLauncher := services.NewProcessLauncher(client, processManager, services.NewPluginManager(), consoleService, logManager, scrollService)
+		scrollService, err := services.NewScrollService(cwd)
+		if err != nil {
+			return fmt.Errorf("error creating scroll service: %w", err)
+		}
+		processLauncher := services.NewProcedureLauncher(client, processManager, services.NewPluginManager(), consoleService, logManager, scrollService)
 
 		if !scrollService.LockExists() {
 			scrollService.WriteNewScrollLock()
 			logger.Log().Info("Lock file created")
 		}
 
-		_, _, err := scrollService.Bootstrap(ignoreVersionCheck)
+		_, _, err = scrollService.Bootstrap(ignoreVersionCheck)
 
 		if err != nil {
 			return fmt.Errorf("error loading scroll: %w", err)

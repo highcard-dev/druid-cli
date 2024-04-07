@@ -20,3 +20,16 @@ generate-swagger:
 
 run: ## Run Daemon
 	go run main.go
+
+mock:
+	mockgen -source=internal/core/ports/services_ports.go -destination test/mock/services.go
+
+test:
+	go test -v ./test
+
+test:
+	go test -v ./test/container
+
+test-docker:
+	docker build . -f Dockerfile.testing -t druid-cli-test
+	docker run --rm druid-cli-test bash -c "go test -v ./test && go test -v ./test/container"

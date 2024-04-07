@@ -18,9 +18,13 @@ var SemverCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger.Log()
 
-		scrollService := services.NewScrollService(cwd)
+		scrollService, err := services.NewScrollService(cwd)
 
-		scroll, err := scrollService.LoadScroll()
+		if err != nil {
+			return fmt.Errorf("error creating scroll service: %w", err)
+		}
+
+		scroll := scrollService.GetFile()
 
 		if err != nil {
 			return fmt.Errorf("error loading scroll: %w", err)

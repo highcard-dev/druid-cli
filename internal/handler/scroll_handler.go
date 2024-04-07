@@ -13,7 +13,7 @@ import (
 type ScrollHandler struct {
 	ScrollService   ports.ScrollServiceInterface
 	PluginManager   ports.PluginManagerInterface
-	ProcessLauncher ports.ProcessLauchnerInterface
+	ProcessLauncher ports.ProcedureLauchnerInterface
 }
 
 type StartScrollRequestBody struct {
@@ -29,7 +29,7 @@ type StartProcedureRequestBody struct {
 	Sync    bool   `json:"sync"`
 }
 
-func NewScrollHandler(scrollService ports.ScrollServiceInterface, pluginManager ports.PluginManagerInterface, processLauncher ports.ProcessLauchnerInterface) *ScrollHandler {
+func NewScrollHandler(scrollService ports.ScrollServiceInterface, pluginManager ports.PluginManagerInterface, processLauncher ports.ProcedureLauchnerInterface) *ScrollHandler {
 	return &ScrollHandler{ScrollService: scrollService, PluginManager: pluginManager, ProcessLauncher: processLauncher}
 }
 

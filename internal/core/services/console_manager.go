@@ -1,21 +1,23 @@
 package services
 
 import (
+	"bufio"
 	"errors"
 	"io"
 	"sync"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
+	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 )
 
 type ConsoleManager struct {
 	consoles   map[string]*domain.Console
-	logManager *LogManager
+	logManager ports.LogManagerInterface
 	mu         sync.Mutex
 }
 
-func NewConsoleManager(logManager *LogManager) *ConsoleManager {
+func NewConsoleManager(logManager ports.LogManagerInterface) *ConsoleManager {
 	return &ConsoleManager{
 		consoles:   make(map[string]*domain.Console),
 		logManager: logManager,
@@ -47,34 +49,31 @@ func (cm *ConsoleManager) AddConsoleWithIoReader(id string, consoleType domain.C
 
 	//broadcast reader into channel (maybe increase chunk size?)
 	go func() {
-		for {
 
-			//io.Reader to channel chunks
-			tmpBuffer := make([]byte, 4096)
-			n, err := consoleReader.Read(tmpBuffer)
+		//scanner for tty does not make real sense and works not so good
+		if consoleType == "tty" {
+			for {
+				//io.Reader to channel chunks
+				tmpBuffer := make([]byte, 4096)
+				n, err := consoleReader.Read(tmpBuffer)
 
-			if err != nil {
-				return
-				//do not remove console, as we want to keep the logs
-				/*if !ok {
-					err := cm.RemoveConsole(id)
-					if err != nil {
-
-						logger.Log().Warn("Failed to remove console", zap.Error(err), zap.String("name", id))
-					}
+				if err != nil {
+					return
 				}
-				return*/
+				cm.logManager.AddLine(id, tmpBuffer[:n])
+				newChannel.Broadcast <- tmpBuffer[:n]
 			}
-
-			//logging tty results in unuseful logs
-			if consoleType != "tty" {
-				logger.Log().Info(string(tmpBuffer[:n]))
+		} else {
+			scanner := bufio.NewScanner(consoleReader)
+			for scanner.Scan() {
+				b := scanner.Bytes()
+				//logging only for non tty
+				logger.Log().Info(string(b))
+				cm.logManager.AddLine(id, b)
+				newChannel.Broadcast <- b
 			}
-
-			cm.logManager.AddLine(id, tmpBuffer[:n])
-
-			newChannel.Broadcast <- tmpBuffer[:n]
 		}
+
 	}()
 	return console
 }

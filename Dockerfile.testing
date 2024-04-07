@@ -1,0 +1,27 @@
+#Dockerhub does not allow for setting of build args :/
+FROM nginx
+WORKDIR /app
+
+RUN apt update
+RUN apt install -y ca-certificates wget jq moreutils htop procps nano net-tools gcc make 
+
+RUN wget https://go.dev/dl/go1.21.6.linux-arm64.tar.gz 
+RUN tar -C /usr/local -xzf go1.21.6.linux-arm64.tar.gz
+
+RUN apt-get update && \
+    apt-get install -y openjdk-17-jdk && \
+    apt-get install -y ant && \
+    apt-get clean;
+
+
+#/root/go/bin is not in the path
+ENV PATH=$PATH:/root/go/bin
+ENV PATH=$PATH:/usr/local/go/bin
+
+# Copy go mod and sum files 
+COPY go.mod go.sum ./
+
+# Download all dependencies. Dependencies will be cached if the go.mod and go.sum files are not changed 
+RUN go mod download 
+
+COPY . . 
