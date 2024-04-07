@@ -1,0 +1,40 @@
+name: registry-1.docker.io/highcard/scroll-minecraft-spigot
+desc: Minecraft Spigot
+version: 0.0.1
+app_version: 1.20.4
+init: "main.start"
+processes:
+  main:
+    commands:
+      start:
+        needs: [main.install]
+        run: restart
+        procedures:
+          - mode: exec
+            data:
+              - java
+              - -Xmx1024M
+              - -Xms1024M
+              - -jar
+              - spigot.jar
+              - nogui
+      stop:
+        procedures:
+          - mode: stdin
+            data:
+              - main.start
+              - stop
+      install:
+        run: once
+        procedures:
+          - mode: exec
+            data:
+              - wget
+              - -O
+              - spigot.jar
+              - https://s3.eu-central-1.wasabisys.com/druid-scroll-artifacts/minecraft/spigot/spigot-1.20.4.jar
+          - mode: exec
+            data:
+              - bash
+              - -c
+              - echo eula=true > eula.txt

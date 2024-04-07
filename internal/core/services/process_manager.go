@@ -16,17 +16,17 @@ import (
 
 type ProcessManager struct {
 	runningProcesses map[string]*domain.Process
-	logManager       *LogManager
+	logManager       ports.LogManagerInterface
 	consoleManager   ports.ConsoleManagerInterface
-	processManager   ports.ProcessMonitorInterface
+	processMonitor   ports.ProcessMonitorInterface
 }
 
-func NewProcessManager(logManager *LogManager, consoleManager ports.ConsoleManagerInterface, processManager ports.ProcessMonitorInterface) *ProcessManager {
+func NewProcessManager(logManager ports.LogManagerInterface, consoleManager ports.ConsoleManagerInterface, processMonitor ports.ProcessMonitorInterface) *ProcessManager {
 	return &ProcessManager{
 		runningProcesses: make(map[string]*domain.Process),
 		logManager:       logManager,
 		consoleManager:   consoleManager,
-		processManager:   processManager,
+		processMonitor:   processMonitor,
 	}
 }
 
@@ -66,7 +66,7 @@ func (po *ProcessManager) RunTty(processName string, commandName string, command
 
 	processCommandName := fmt.Sprintf("%s.%s", processName, commandName)
 	//add process for monitoring
-	po.processManager.AddProcess(int32(process.Cmd.Process.Pid), processCommandName)
+	po.processMonitor.AddProcess(int32(process.Cmd.Process.Pid), processCommandName)
 
 	//slight difference to normal process, as we only attach after the process has started
 	//add console output
@@ -77,7 +77,7 @@ func (po *ProcessManager) RunTty(processName string, commandName string, command
 
 	//reset periodically
 	process.Cmd.Wait()
-	po.processManager.RemoveProcess(processCommandName)
+	po.processMonitor.RemoveProcess(processCommandName)
 	po.RemoveProcess(processName, commandName)
 
 	exitCode := process.Cmd.ProcessState.ExitCode()
@@ -108,13 +108,20 @@ func (po *ProcessManager) Run(processName string, commandName string, command []
 		zap.String("dir", dir),
 	)
 
-	stdoutReader, stdoutWriter := io.Pipe()
-	stderrReader, stderrWriter := io.Pipe()
-
 	process.Cmd = exec.Command(name, args...)
 	process.Cmd.Dir = dir
-	process.Cmd.Stdout = stdoutWriter
-	process.Cmd.Stderr = stderrWriter
+
+	stdoutReader, err := process.Cmd.StdoutPipe()
+	if err != nil {
+		cmdDone()
+		return nil, err
+	}
+
+	stderrReader, err := process.Cmd.StderrPipe()
+	if err != nil {
+		cmdDone()
+		return nil, err
+	}
 
 	stdin, err := process.Cmd.StdinPipe()
 
@@ -124,6 +131,11 @@ func (po *ProcessManager) Run(processName string, commandName string, command []
 	}
 
 	process.StdIn = stdin
+
+	prefixedProcessCommandName := fmt.Sprintf("process.%s.%s", processName, commandName)
+
+	po.consoleManager.AddConsoleWithIoReader(prefixedProcessCommandName, domain.ConsoleTypeProcess, "stdin", stdoutReader)
+	po.consoleManager.AddConsoleWithIoReader(prefixedProcessCommandName, domain.ConsoleTypeProcess, "stdin", stderrReader)
 
 	// Run and wait for Cmd to return, discard Status
 	err = process.Cmd.Start()
@@ -139,29 +151,25 @@ func (po *ProcessManager) Run(processName string, commandName string, command []
 
 	processCommandName := fmt.Sprintf("%s.%s", processName, commandName)
 	//add process for monitoring
-	po.processManager.AddProcess(int32(process.Cmd.Process.Pid), processCommandName)
+	po.processMonitor.AddProcess(int32(process.Cmd.Process.Pid), processCommandName)
 
 	//add console output
 
 	//WARNING MultiReader is not working as expected, it seems to block the process and process.Wait() never returns
 	//stdReader := io.MultiReader(stdoutReader, stderrReader)
 
-	prefixedProcessCommandName := fmt.Sprintf("process.%s.%s", processName, commandName)
-
-	po.consoleManager.AddConsoleWithIoReader(prefixedProcessCommandName, domain.ConsoleTypeProcess, "stdin", stdoutReader)
-	po.consoleManager.AddConsoleWithIoReader(prefixedProcessCommandName, domain.ConsoleTypeProcess, "stdin", stderrReader)
-
 	go func() {
 		_ = process.Cmd.Wait()
 		cmdDone()
-		//stderrWriter.Close() //TODO: THis most likely can be removed
-		stdoutWriter.Close()
+
+		stderrReader.Close()
+		stdoutReader.Close()
 		stdin.Close()
 	}()
 
 	<-cmdCtx.Done()
 
-	po.processManager.RemoveProcess(processCommandName)
+	po.processMonitor.RemoveProcess(processCommandName)
 	po.RemoveProcess(processName, commandName)
 	// Wait for goroutine to print everything (watchdog closes stdin)
 	exitCode := process.Cmd.ProcessState.ExitCode()

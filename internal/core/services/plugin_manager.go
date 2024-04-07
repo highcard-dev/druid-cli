@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	commons "github.com/highcard-dev/daemon/plugin"
 
@@ -16,21 +17,17 @@ import (
 )
 
 type NotifcationHandler struct {
-	broadcast chan StreamItem
-}
-type StreamItem struct {
-	Data   string
-	Stream string
+	broadcast chan *domain.StreamItem
 }
 
 func (n *NotifcationHandler) NotifyConsole(mode string, data string) error {
 	go func() {
 
-		item := StreamItem{
+		item := domain.StreamItem{
 			Stream: mode,
 			Data:   data,
 		}
-		n.broadcast <- item
+		n.broadcast <- &item
 	}()
 
 	return nil
@@ -40,15 +37,19 @@ type PluginManager struct {
 	Modes                  map[string]string
 	plugins                map[string]commons.DruidPluginInterface
 	allowedStandaloneModes []string
-	NotifyConsole          chan StreamItem
+	NotifyConsole          chan *domain.StreamItem
 }
 
 func NewPluginManager() *PluginManager {
 	return &PluginManager{
 		Modes:         make(map[string]string),
 		plugins:       make(map[string]commons.DruidPluginInterface),
-		NotifyConsole: make(chan StreamItem),
+		NotifyConsole: make(chan *domain.StreamItem),
 	}
+}
+
+func (pm *PluginManager) GetNotifyConsoleChannel() chan *domain.StreamItem {
+	return pm.NotifyConsole
 }
 
 func (pm *PluginManager) ParseFromScroll(pluginDefinitionMap map[string]map[string]string, config string, cwd string) error {

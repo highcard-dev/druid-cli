@@ -14,6 +14,8 @@ import (
 	"go.uber.org/zap"
 )
 
+var ErrorProcessNotActive = fmt.Errorf("process not active")
+
 type ProcessMonitor struct {
 	exportedMetrics *ProcessMonitorMetricsExported
 	processes       map[string]*processutil.Process
@@ -70,6 +72,7 @@ func (po *ProcessMonitor) StartMonitoring() {
 
 func (po *ProcessMonitor) RefreshMetrics() {
 	for name, process := range po.processes {
+
 		_, err := po.GetProcessMetric(name, process)
 		if err != nil {
 			logger.Log().Error("Error when retrieving process Metrics",
@@ -77,6 +80,13 @@ func (po *ProcessMonitor) RefreshMetrics() {
 				zap.String("processName", name),
 				zap.Error(err),
 			)
+			if err == ErrorProcessNotActive {
+				po.RemoveProcess(name)
+				logger.Log().Info("Process not active, removing from monitoring",
+					zap.String(logger.LogKeyContext, logger.LogContextMonitor),
+					zap.String("processName", name),
+				)
+			}
 		}
 	}
 }
@@ -101,7 +111,7 @@ func (po *ProcessMonitor) GetProcessMetric(name string, p *processutil.Process) 
 		}, nil
 	} else {
 
-		return nil, fmt.Errorf("process not running")
+		return nil, ErrorProcessNotActive
 	}
 }
 

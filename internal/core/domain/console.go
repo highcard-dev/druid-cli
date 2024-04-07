@@ -17,3 +17,8 @@ type Console struct {
 
 	Exit *int `json:"exit,omitempty"`
 } //@name Console
+
+type StreamItem struct {
+	Data   string
+	Stream string
+}

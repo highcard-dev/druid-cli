@@ -7,3 +7,7 @@ druid**
 dlv.log
 
 .DS_Store
+
+__debug_bin*
+
+druid-cli-test

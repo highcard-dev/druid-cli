@@ -15,7 +15,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func SetupSignals(processLauncher ports.ProcessLauchnerInterface, processManager ports.ProcessManagerInterface, app *fiber.App, waitSeconds int) {
+func SetupSignals(processLauncher ports.ProcedureLauchnerInterface, processManager ports.ProcessManagerInterface, app *fiber.App, waitSeconds int) {
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc,
 		syscall.SIGHUP,
@@ -41,7 +41,7 @@ func SetupSignals(processLauncher ports.ProcessLauchnerInterface, processManager
 	}()
 }
 
-func GracefulShutdown(processLauncher ports.ProcessLauchnerInterface, processManager ports.ProcessManagerInterface, app *fiber.App, waitSeconds int) {
+func GracefulShutdown(processLauncher ports.ProcedureLauchnerInterface, processManager ports.ProcessManagerInterface, app *fiber.App, waitSeconds int) {
 
 	go func() {
 		for {

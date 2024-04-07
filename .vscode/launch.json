@@ -2,7 +2,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug Daemon serve",
+            "name": "Debug Daemon serve (htop example)",
             "type": "go",
             "request": "launch",
             "mode": "debug",
@@ -11,14 +11,13 @@
             "args": [
                 "serve",
                 "--cwd",
-                "${workspaceFolder}/examples/scroll-cwd",
+                "${workspaceFolder}/examples/htop",
                 "-p",
-                "9190",
-                "registry-1.docker.io/highcard/scroll-minecraft-vanilla:1.20.4"
+                "9190"
             ],
         },
         {
-            "name": "Debug Daemon serve arkserver",
+            "name": "Debug Daemon serve (minecraft example)",
             "type": "go",
             "request": "launch",
             "mode": "debug",
@@ -27,10 +26,24 @@
             "args": [
                 "serve",
                 "--cwd",
-                "${workspaceFolder}/examples/scroll-cwd-ark",
+                "${workspaceFolder}/examples/minecraft",
                 "-p",
-                "9190",
-                "registry-1.docker.io/highcard/scroll-lgsm:arkserver"
+                "9190"
+            ],
+        },
+        {
+            "name": "Debug Daemon serve nginx example",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/main.go",
+            "args": [
+                "serve",
+                "--cwd",
+                "${workspaceFolder}/examples/nginx",
+                "-p",
+                "9190"
             ],
         },
         {
@@ -108,5 +121,18 @@
                 "${workspaceFolder}/examples/",
             ],
         },
+        {
+            "name": "Remote Debug Daemon serve",
+            "type": "go",
+            "request": "attach",
+            "mode": "remote",
+            "remotePath": "/app",
+            "cwd": "${workspaceFolder}",
+            "port": 2345,
+            "host": "127.0.0.1",
+            "trace": "verbose",
+            "debugAdapter": "legacy"
+            
+        }
     ]
 }

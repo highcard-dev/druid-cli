@@ -27,13 +27,21 @@ type TemplateData struct {
 
 func NewScrollService(
 	processCwd string,
-) *ScrollService {
+) (*ScrollService, error) {
 	s := &ScrollService{
 		processCwd:       processCwd,
 		templateRenderer: NewTemplateRenderer(),
 	}
 
-	return s
+	scroll, err := s.LoadScroll()
+
+	if err != nil {
+		return nil, err
+	}
+
+	s.scroll = scroll
+
+	return s, nil
 }
 
 func (sc *ScrollService) LoadScroll() (*domain.Scroll, error) {
@@ -47,13 +55,7 @@ func (sc *ScrollService) LoadScroll() (*domain.Scroll, error) {
 // Load Scroll and render templates in the cwd
 func (sc *ScrollService) Bootstrap(ignoreVersionCheck bool) (*domain.Scroll, *domain.ScrollLock, error) {
 
-	scroll, err := sc.LoadScroll()
-
-	if scroll == nil {
-		return nil, nil, err
-	}
-
-	sc.scroll = scroll
+	var scroll = sc.scroll
 
 	if !sc.LockExists() {
 		return scroll, nil, errors.New("scroll lock not found")

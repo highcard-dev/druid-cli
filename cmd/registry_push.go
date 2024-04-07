@@ -68,7 +68,7 @@ var PushCommand = &cobra.Command{
 			ps[name] = port
 		}
 
-		_, err = ociClient.Push(fullPath, repo, tag, registry.AnnotationInfo{
+		_, err = ociClient.Push(fullPath, repo, tag, domain.AnnotationInfo{
 			MinRam:  minRam,
 			MinCpu:  minCpu,
 			MinDisk: minDisk,

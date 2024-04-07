@@ -9,16 +9,15 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
-	"github.com/highcard-dev/daemon/internal/core/services/registry"
 	"github.com/highcard-dev/daemon/internal/utils"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"go.uber.org/zap"
 )
 
-type ProcessLauncher struct {
-	pluginManager  *PluginManager
+type ProcedureLauncher struct {
+	pluginManager  ports.PluginManagerInterface
 	processManager ports.ProcessManagerInterface
-	ociRegistry    *registry.OciClient
+	ociRegistry    ports.OciRegistryInterface
 	consoleManager ports.ConsoleManagerInterface
 	logManager     ports.LogManagerInterface
 	scrollService  ports.ScrollServiceInterface
@@ -26,15 +25,15 @@ type ProcessLauncher struct {
 	mu             sync.Mutex
 }
 
-func NewProcessLauncher(
-	ociRegistry *registry.OciClient,
+func NewProcedureLauncher(
+	ociRegistry ports.OciRegistryInterface,
 	processManager ports.ProcessManagerInterface,
-	pluginManager *PluginManager,
+	pluginManager ports.PluginManagerInterface,
 	consoleManager ports.ConsoleManagerInterface,
 	logManager ports.LogManagerInterface,
 	scrollService ports.ScrollServiceInterface,
-) *ProcessLauncher {
-	s := &ProcessLauncher{
+) *ProcedureLauncher {
+	s := &ProcedureLauncher{
 		processManager: processManager,
 		ociRegistry:    ociRegistry,
 		pluginManager:  pluginManager,
@@ -47,13 +46,13 @@ func NewProcessLauncher(
 	return s
 }
 
-func (sc *ProcessLauncher) SetCommandQueue(commandName string, status domain.ScrollLockStatus) {
+func (sc *ProcedureLauncher) SetCommandQueue(commandName string, status domain.ScrollLockStatus) {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
 	sc.commandQueue[commandName] = status
 }
 
-func (sc *ProcessLauncher) RunNew(cmd string, processId string, changeStatus bool) error {
+func (sc *ProcedureLauncher) RunNew(cmd string, processId string, changeStatus bool) error {
 
 	logger.Log().Debug("Running command",
 		zap.String("processId", processId),
@@ -176,11 +175,11 @@ func (sc *ProcessLauncher) RunNew(cmd string, processId string, changeStatus boo
 // TODO implement multiple scroll support
 // To do this, best is to loop over activescrolldir and read every scroll
 // TODO: remove initCommandsIdentifiers
-func (sc *ProcessLauncher) LaunchPlugins() error {
+func (sc *ProcedureLauncher) LaunchPlugins() error {
 	go func() {
 		for {
 			select {
-			case item := <-sc.pluginManager.NotifyConsole:
+			case item := <-sc.pluginManager.GetNotifyConsoleChannel():
 				sc.logManager.AddLine(item.Stream, []byte(item.Data))
 
 				consoles := sc.consoleManager.GetConsoles()
@@ -200,7 +199,7 @@ func (sc *ProcessLauncher) LaunchPlugins() error {
 	return sc.pluginManager.ParseFromScroll(scroll.Plugins, string(sc.scrollService.GetScrollConfigRawYaml()), sc.scrollService.GetCwd())
 }
 
-func (sc *ProcessLauncher) Run(cmd string, processId string, changeStatus bool) error {
+func (sc *ProcedureLauncher) Run(cmd string, processId string, changeStatus bool) error {
 
 	command, err := sc.scrollService.GetCommand(cmd, processId)
 	if err != nil {
@@ -276,7 +275,7 @@ func (sc *ProcessLauncher) Run(cmd string, processId string, changeStatus bool) 
 	return nil
 }
 
-func (sc *ProcessLauncher) RunProcedure(proc *domain.Procedure, processId string, cmd string) (string, *int, error) {
+func (sc *ProcedureLauncher) RunProcedure(proc *domain.Procedure, processId string, cmd string) (string, *int, error) {
 	processCwd := sc.scrollService.GetCwd()
 	//check if we have a plugin for the mode
 	if sc.pluginManager.HasMode(proc.Mode) {
@@ -371,7 +370,7 @@ func (sc *ProcessLauncher) RunProcedure(proc *domain.Procedure, processId string
 	return "", nil, nil
 }
 
-func (sc *ProcessLauncher) StartLockfile(lock *domain.ScrollLock) error {
+func (sc *ProcedureLauncher) StartLockfile(lock *domain.ScrollLock) error {
 
 	for processAndCommand, status := range lock.Statuses {
 		if status != domain.ScrollLockStatusRunning && status != domain.ScrollLockStatusWaiting && !strings.HasPrefix(string(status), "exit_code") {
@@ -385,7 +384,7 @@ func (sc *ProcessLauncher) StartLockfile(lock *domain.ScrollLock) error {
 	return nil
 }
 
-func (sc *ProcessLauncher) Initalize(lock *domain.ScrollLock) error {
+func (sc *ProcedureLauncher) Initalize(lock *domain.ScrollLock) error {
 	scroll := sc.scrollService.GetCurrent()
 
 	parts := strings.Split(scroll.Init, ".")

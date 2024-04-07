@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"path/filepath"
 
+	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/utils"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -18,26 +19,10 @@ import (
 	"oras.land/oras-go/v2/registry/remote/retry"
 )
 
-type ArtifactType string
-
-const (
-	ArtifactTypeScrollRoot ArtifactType = "application/vnd.highcard.druid.scroll.config.v1+json"
-	ArtifactTypeScrollFs   ArtifactType = "application/vnd.highcard.druid.scroll-fs.config.v1+json"
-	ArtifactTypeScrollMeta ArtifactType = "application/vnd.highcard.druid.scroll-meta.config.v1+json"
-)
-
 type OciClient struct {
 	host     string
 	username string
 	password string
-}
-
-type AnnotationInfo struct {
-	MinRam  string
-	MinDisk string
-	MinCpu  string
-	Image   string
-	Ports   map[string]string
 }
 
 func NewOciClient(host string, username string, password string) *OciClient {
@@ -142,7 +127,7 @@ func (c *OciClient) CanUpdateTag(current v1.Descriptor, r string, tag string) (b
 
 }
 
-func (c *OciClient) PackFolders(fs *file.Store, dirs []string, artifactType ArtifactType, path string) (v1.Descriptor, error) {
+func (c *OciClient) PackFolders(fs *file.Store, dirs []string, artifactType domain.ArtifactType, path string) (v1.Descriptor, error) {
 
 	ctx := context.Background()
 
@@ -170,7 +155,7 @@ func (c *OciClient) PackFolders(fs *file.Store, dirs []string, artifactType Arti
 }
 
 // the root has to leaves, one is the real scroll (fs) and the other is meta information about the scroll
-func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo AnnotationInfo, packMeta bool) (v1.Descriptor, error) {
+func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo domain.AnnotationInfo, packMeta bool) (v1.Descriptor, error) {
 
 	availableFileNames := []string{"init-files", "init-files-template", "scroll-switch", "update", "scroll.yaml"}
 	fsFileNames := []string{}
@@ -201,7 +186,7 @@ func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo 
 		return v1.Descriptor{}, err
 	}
 
-	scrollFsManifestDescriptor, err := c.PackFolders(fs, fsFileNames, ArtifactTypeScrollFs, "")
+	scrollFsManifestDescriptor, err := c.PackFolders(fs, fsFileNames, domain.ArtifactTypeScrollFs, "")
 
 	if err != nil {
 		return v1.Descriptor{}, err
@@ -238,7 +223,7 @@ func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo 
 	}
 
 	//Pack everything together
-	rootManifestDescriptor, err := oras.Pack(ctx, fs, string(ArtifactTypeScrollRoot), descriptorsForRoot, oras.PackOptions{
+	rootManifestDescriptor, err := oras.Pack(ctx, fs, string(domain.ArtifactTypeScrollRoot), descriptorsForRoot, oras.PackOptions{
 		ManifestAnnotations: annotations,
 		PackImageManifest:   true,
 	})
@@ -304,5 +289,5 @@ func (c *OciClient) CreateMetaDescriptors(fs *file.Store, folder string, fsPath 
 		fsFileNames = append(fsFileNames, subitem.Name())
 	}
 
-	return c.PackFolders(fs, fsFileNames, ArtifactTypeScrollMeta, fsPath)
+	return c.PackFolders(fs, fsFileNames, domain.ArtifactTypeScrollMeta, fsPath)
 }
