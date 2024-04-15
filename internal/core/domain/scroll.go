@@ -55,6 +55,8 @@ type ProcessCommand struct {
 	Commands map[string]CommandInstructionSet `yaml:"commands" json:"commands"`
 } // @name ProcessCommand
 
+var ErrScrollDoesNotExist = fmt.Errorf("scroll does not exist")
+
 func NewScroll(scrollDir string) (*Scroll, error) {
 
 	filePath := scrollDir + "/scroll.yaml"
@@ -62,6 +64,9 @@ func NewScroll(scrollDir string) (*Scroll, error) {
 	yamlFile, err := os.Open(filePath)
 	// if we os.Open returns an error then handle it
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrScrollDoesNotExist
+		}
 		return nil, fmt.Errorf("failed to open scroll.yaml - %w", err)
 	}
 	defer yamlFile.Close()

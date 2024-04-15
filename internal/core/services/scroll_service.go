@@ -33,15 +33,9 @@ func NewScrollService(
 		templateRenderer: NewTemplateRenderer(),
 	}
 
-	scroll, err := s.LoadScroll()
+	_, err := s.LoadScroll()
 
-	if err != nil {
-		return nil, err
-	}
-
-	s.scroll = scroll
-
-	return s, nil
+	return s, err
 }
 
 func (sc *ScrollService) LoadScroll() (*domain.Scroll, error) {
@@ -49,7 +43,13 @@ func (sc *ScrollService) LoadScroll() (*domain.Scroll, error) {
 	os.Setenv("SCROLL_DIR", sc.GetDir())
 	scroll, err := domain.NewScroll(sc.GetDir())
 
-	return scroll, err
+	if err != nil {
+		return nil, err
+	}
+
+	sc.scroll = scroll
+
+	return scroll, nil
 }
 
 // Load Scroll and render templates in the cwd

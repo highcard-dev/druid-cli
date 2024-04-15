@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/highcard-dev/daemon/cmd/server/web"
@@ -57,29 +58,32 @@ to interact and monitor the Scroll Application`,
 
 		scrollService, err := services.NewScrollService(cwd)
 		if err != nil {
-			return fmt.Errorf("error creating scroll service: %w", err)
+			if errors.Is(err, domain.ErrScrollDoesNotExist) {
+				logger.Log().Warn("Scroll does not exist.")
+
+				if artifact == "" {
+					return fmt.Errorf("no artifact provided")
+				}
+
+				logger.Log().Info("Downloading " + artifact + " into " + scrollService.GetDir())
+
+				err = client.Pull(scrollService.GetDir(), artifact)
+				if err != nil {
+					return err
+				}
+
+				_, err = scrollService.LoadScroll()
+				if err != nil {
+					return err
+				}
+
+				logger.Log().Info("Installed scroll " + artifact)
+			} else {
+				return fmt.Errorf("error creating scroll service: %w", err)
+			}
 		}
+
 		processLauncher := services.NewProcedureLauncher(client, processManager, pluginManager, consoleService, logManager, scrollService)
-
-		if !scrollService.ScrollExists() {
-
-			if artifact == "" {
-				return fmt.Errorf("no artifact provided")
-			}
-
-			logger.Log().Info("Scroll does not exist... downloading " + artifact + " into " + scrollService.GetDir())
-
-			if err != nil {
-				return err
-			}
-
-			err = client.Pull(scrollService.GetDir(), artifact)
-			if err != nil {
-				return err
-			}
-
-			logger.Log().Info("Installed scroll " + artifact)
-		}
 
 		scrollHandler := handler.NewScrollHandler(scrollService, pluginManager, processLauncher)
 		processHandler := handler.NewProcessHandler(processManager)

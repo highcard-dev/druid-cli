@@ -32,7 +32,7 @@
             ],
         },
         {
-            "name": "Debug Daemon serve nginx example",
+            "name": "Debug Daemon serve (nginx example)",
             "type": "go",
             "request": "launch",
             "mode": "debug",
@@ -44,6 +44,22 @@
                 "${workspaceFolder}/examples/nginx",
                 "-p",
                 "9190"
+            ],
+        },
+        {
+            "name": "Debug Daemon serve (emtpy dir)",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/main.go",
+            "args": [
+                "serve",
+                "--cwd",
+                "${workspaceFolder}/examples/scroll-cwd",
+                "-p",
+                "9190",
+                "registry-1.docker.io/highcard/scroll-lgsm:arkserver"
             ],
         },
         {
