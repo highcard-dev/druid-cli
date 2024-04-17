@@ -3,7 +3,7 @@
 VERSION ?= "dev"
 
 build: ## Build Daemon
-	CGO_ENABLED=0 go build -ldflags "-X github.com/highcard-dev/daemon/cmd.version=$(VERSION)" -o ./bin/druid
+	CGO_ENABLED=0 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/druid
 
 install: ## Install Daemon
 	cp ./bin/druid /usr/local/bin/druid

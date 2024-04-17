@@ -11,6 +11,7 @@ import (
 	jwtware "github.com/gofiber/jwt/v3"
 	"github.com/gofiber/swagger"
 	"github.com/highcard-dev/daemon/cmd/server/web/middlewares"
+	constants "github.com/highcard-dev/daemon/internal"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -123,6 +124,12 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 	wsRoutes.Get("/serve/:console", websocket.New(s.websocketHandler.HandleProcess)).Name("ws.serve")
 
 	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler())).Name("metrics")
+
+	app.Get("/info", func(ctx *fiber.Ctx) error {
+		return ctx.JSON(fiber.Map{
+			"version": constants.Version,
+		})
+	})
 
 	app.Get("/swagger/*", swagger.HandlerDefault) // default
 
