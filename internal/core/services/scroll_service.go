@@ -57,15 +57,8 @@ func (sc *ScrollService) Bootstrap(ignoreVersionCheck bool) (*domain.Scroll, *do
 
 	var scroll = sc.scroll
 
-	if !sc.LockExists() {
-		return scroll, nil, errors.New("scroll lock not found")
-	}
+	lock := sc.ReadLock()
 
-	lock, err := sc.ReadLock()
-
-	if err != nil {
-		return scroll, nil, err
-	}
 	sc.lock = lock
 
 	//Update the lock with the current scroll version
@@ -79,7 +72,7 @@ func (sc *ScrollService) Bootstrap(ignoreVersionCheck bool) (*domain.Scroll, *do
 		}
 	}
 
-	err = sc.clearInvalidLockfileStatuses()
+	err := sc.clearInvalidLockfileStatuses()
 	return scroll, lock, err
 
 }
@@ -157,13 +150,13 @@ func (sc *ScrollService) LockExists() bool {
 	return err == nil && exisits
 }
 
-func (sc *ScrollService) ReadLock() (*domain.ScrollLock, error) {
+func (sc *ScrollService) ReadLock() *domain.ScrollLock {
 	lock, err := domain.ReadLock(sc.GetDir() + "/scroll-lock.json")
 
 	if err != nil {
-		return nil, err
+		return sc.WriteNewScrollLock()
 	}
-	return lock, nil
+	return lock
 }
 
 func (sc *ScrollService) GetLock() (*domain.ScrollLock, error) {

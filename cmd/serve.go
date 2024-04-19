@@ -97,15 +97,7 @@ to interact and monitor the Scroll Application`,
 
 		signals.SetupSignals(processLauncher, processManager, a, shutdownWait)
 
-		var currentScroll *domain.Scroll
-		var lock *domain.ScrollLock
-
-		if !scrollService.LockExists() {
-			scrollService.WriteNewScrollLock()
-			logger.Log().Info("Lock file created")
-		}
-
-		currentScroll, lock, err = scrollService.Bootstrap(ignoreVersionCheck)
+		currentScroll, lock, err := scrollService.Bootstrap(ignoreVersionCheck)
 		if err != nil {
 			return err
 		}
