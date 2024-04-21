@@ -23,6 +23,7 @@ import (
 type Server struct {
 	corsMiddleware                fiber.Handler
 	injectUserMiddleware          fiber.Handler
+	headerMiddleware              fiber.Handler
 	tokenAuthenticationMiddleware fiber.Handler
 	jwtMiddleware                 fiber.Handler
 	scrollHandler                 ports.ScrollHandlerInterface
@@ -47,6 +48,7 @@ func NewServer(
 			AllowHeaders: "Origin, Content-Type, Accept, Authorization, X-DRUID-USER",
 		}),
 		injectUserMiddleware:          middlewares.NewUserInjector(),
+		headerMiddleware:              middlewares.NewHeaderMiddleware(),
 		scrollHandler:                 scrollHandler,
 		scrollLogHandler:              scrollLogHandler,
 		scrollMetricHandler:           scrollMetricHandler,
@@ -88,7 +90,7 @@ func (s *Server) Initialize() *fiber.App {
 }
 
 func (s *Server) SetAPI(app *fiber.App) *fiber.App {
-
+	app.Use(s.headerMiddleware)
 	wsRoutes := app.Group("/ws/v1")
 	v1 := app.Use(s.corsMiddleware).Group("/api/v1")
 	dispatcherRoutes := v1.Group("/")
