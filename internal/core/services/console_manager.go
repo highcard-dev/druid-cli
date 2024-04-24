@@ -67,6 +67,10 @@ func (cm *ConsoleManager) AddConsoleWithIoReader(id string, consoleType domain.C
 			scanner := bufio.NewScanner(consoleReader)
 			for scanner.Scan() {
 				b := scanner.Bytes()
+
+				//add new line
+				b = append(b, '\n')
+
 				//logging only for non tty
 				logger.Log().Info(string(b))
 				cm.logManager.AddLine(id, b)
