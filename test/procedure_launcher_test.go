@@ -40,7 +40,7 @@ func TestProcedureLauncher(t *testing.T) {
 
 		pluginManager.EXPECT().HasMode("exec").Return(false)
 
-		logManager.EXPECT().AddLine("process.main.test", []byte("hello")).Times(1)
+		logManager.EXPECT().AddLine("process.main.test", []byte("hello\n")).Times(1)
 
 		scrollService.EXPECT().GetLock().Return(&domain.ScrollLock{
 			Statuses:      map[string]domain.ScrollLockStatus{},

@@ -19,7 +19,7 @@ func TestProcessManager(t *testing.T) {
 
 		processMonitor.EXPECT().AddProcess(gomock.Any(), "test.echo").Times(1)
 		processMonitor.EXPECT().RemoveProcess("test.echo").Times(1)
-		logManager.EXPECT().AddLine("process.test.echo", []byte("hello")).Times(1)
+		logManager.EXPECT().AddLine("process.test.echo", []byte("hello\n")).Times(1)
 		exitCode, err := processManager.Run("test", "echo", []string{"echo", "hello"}, "/tmp")
 
 		if err != nil {
