@@ -9,14 +9,8 @@ import (
 
 func main() {
 	logger.Log(logger.WithStructuredLogging())
-	//druidd start
-	//druidd run [update]
-	cmd.RootCmd.AddCommand(cmd.ServeCommand)
-	cmd.RootCmd.AddCommand(cmd.RunCmd)
-	cmd.RootCmd.AddCommand(cmd.RegistryCmd)
-	cmd.RootCmd.AddCommand(cmd.UpdateCommand)
-	cmd.RootCmd.AddCommand(cmd.SemverCmd)
-	cmd.RootCmd.AddCommand(cmd.VersionCmd)
+	//druid start
+	//druid run [update]
 	if err := cmd.RootCmd.Execute(); err != nil {
 		// log it, then
 		os.Exit(23)

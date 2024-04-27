@@ -18,6 +18,9 @@ proto:
 generate-swagger:
 	swag init -g ./cmd/server/web/server.go --overridesFile override.swag
 
+generate-md-docs:
+	go run ./docs_md/main.go
+
 run: ## Run Daemon
 	go run main.go
 

@@ -11,11 +11,10 @@ var envPath string
 var cwd string
 
 var RootCmd = &cobra.Command{
-	Use:   "druidd",
+	Use:   "druid",
 	Short: "Druid Daemon that enable Scroll usage and communication",
 	Long: `A Scalable and Customizable daemon
-               to run any of your applications with the usage of Scrolls.
-               Complete documentation is available at https://druid.gg`,
+               to run any of your applications with the usage of Scrolls.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Usage()
 	},
@@ -25,6 +24,13 @@ func init() {
 
 	viper.SetDefault("registry.host", "registry-1.docker.io")
 	cobra.OnInitialize(initConfig)
+
+	RootCmd.AddCommand(ServeCommand)
+	RootCmd.AddCommand(RunCmd)
+	RootCmd.AddCommand(RegistryCmd)
+	RootCmd.AddCommand(UpdateCommand)
+	RootCmd.AddCommand(SemverCmd)
+	RootCmd.AddCommand(VersionCmd)
 
 	c, _ := os.Getwd()
 
