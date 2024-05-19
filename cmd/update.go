@@ -45,28 +45,31 @@ var UpdateCommand = &cobra.Command{
 
 		registryClient := registry.NewOciClient(host, user, password)
 
+		canUpdate := false
+
 		fileName := utils.GetScrollDirFromCwd(cwd) + "/manifest.json"
 		b, err := os.ReadFile(fileName)
 
 		if err != nil {
-			return fmt.Errorf("error reading manifest file: %v", err)
+			logger.Log().Error("error reading manifest file, updating...")
+			canUpdate = true
+		} else {
+			var manifest v1.Descriptor
+			err = json.Unmarshal(b, &manifest)
+			if err != nil {
+				return fmt.Errorf("error unmarshalling manifest file: %v", err)
+			}
+
+			logger.Log().Info("Checking for updates for " + artifact)
+			canUpdate, err = registryClient.CanUpdateTag(manifest, repo, tag)
+			if err != nil {
+				return fmt.Errorf("error checking for updates: %v", err)
+			}
 		}
 
-		var manifest v1.Descriptor
-		err = json.Unmarshal(b, &manifest)
-		if err != nil {
-			return fmt.Errorf("error unmarshalling manifest file: %v", err)
-		}
-
-		logger.Log().Info("Checking for updates for " + artifact)
-		canUpdate, err := registryClient.CanUpdateTag(manifest, repo, tag)
-
-		if err != nil {
-			return fmt.Errorf("error checking for updates: %v", err)
-		}
 		if canUpdate {
 			logger.Log().Info("Updated scroll files")
-			registryClient.Pull(scrollDir, artifact)
+			err = registryClient.Pull(scrollDir, artifact)
 			if err != nil {
 				return fmt.Errorf("error pulling scroll files: %v", err)
 			}
@@ -77,7 +80,4 @@ var UpdateCommand = &cobra.Command{
 
 		return nil
 	},
-}
-
-func init() {
 }
