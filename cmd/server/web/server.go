@@ -29,6 +29,7 @@ type Server struct {
 	scrollHandler                 ports.ScrollHandlerInterface
 	scrollLogHandler              ports.ScrollLogHandlerInterface
 	scrollMetricHandler           ports.ScrollMetricHandlerInterface
+	annotationHandler             ports.AnnotationHandlerInterface
 	processHandler                ports.ProcessHandlerInterface
 	websocketHandler              ports.WebsocketHandlerInterface
 }
@@ -38,6 +39,7 @@ func NewServer(
 	scrollHandler ports.ScrollHandlerInterface,
 	scrollLogHandler ports.ScrollLogHandlerInterface,
 	scrollMetricHandler ports.ScrollMetricHandlerInterface,
+	annotationHandler ports.AnnotationHandlerInterface,
 	processHandler ports.ProcessHandlerInterface,
 	websocketHandler ports.WebsocketHandlerInterface,
 	authorizerService ports.AuthorizerServiceInterface,
@@ -52,6 +54,7 @@ func NewServer(
 		scrollHandler:                 scrollHandler,
 		scrollLogHandler:              scrollLogHandler,
 		scrollMetricHandler:           scrollMetricHandler,
+		annotationHandler:             annotationHandler,
 		processHandler:                processHandler,
 		websocketHandler:              websocketHandler,
 		tokenAuthenticationMiddleware: middlewares.TokenAuthentication(authorizerService),
@@ -117,6 +120,8 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 	dispatcherRoutes.Get("/metrics", s.scrollMetricHandler.Metrics).Name("scrolls.metrics")
 	dispatcherRoutes.Get("/pstree", s.scrollMetricHandler.PsTree).Name("scrolls.pstree")
 
+	dispatcherRoutes.Get("/annotations", s.annotationHandler.Annotations).Name("annotations.list")
+
 	//Processes Group
 	dispatcherRoutes.Get("/processes", s.processHandler.Processes).Name("processes.list")
 
@@ -125,6 +130,9 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 
 	wsRoutes.Get("/serve/:console", websocket.New(s.websocketHandler.HandleProcess)).Name("ws.serve")
 
+	if s.annotationHandler != nil {
+		app.Get("/annotations", s.annotationHandler.Annotations).Name("annotations.list")
+	}
 	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler())).Name("metrics")
 
 	app.Get("/info", func(ctx *fiber.Ctx) error {

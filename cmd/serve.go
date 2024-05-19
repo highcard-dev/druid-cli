@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/highcard-dev/daemon/cmd/server/web"
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -20,6 +21,7 @@ var jwksUrl, userId string
 var ignoreVersionCheck bool
 var port int
 var shutdownWait int
+var additionalEndpoints []string
 
 var ServeCommand = &cobra.Command{
 	Use:   "serve",
@@ -89,9 +91,16 @@ to interact and monitor the Scroll Application`,
 		processHandler := handler.NewProcessHandler(processManager)
 		scrollLogHandler := handler.NewScrollLogHandler(scrollService, logManager, processManager)
 		scrollMetricHandler := handler.NewScrollMetricHandler(scrollService, processMonitor)
+
+		var annotationHandler *handler.AnnotationHandler
+
+		if slices.Contains(additionalEndpoints, "annotations") {
+			annotationHandler = handler.NewAnnotationHandler(scrollService)
+		}
+
 		websocketHandler := handler.NewWebsocketHandler(authorizer, scrollService, consoleService)
 
-		s := web.NewServer(jwksUrl, scrollHandler, scrollLogHandler, scrollMetricHandler, processHandler, websocketHandler, authorizer)
+		s := web.NewServer(jwksUrl, scrollHandler, scrollLogHandler, scrollMetricHandler, annotationHandler, processHandler, websocketHandler, authorizer)
 
 		a := s.Initialize()
 
@@ -170,5 +179,7 @@ func init() {
 	ServeCommand.Flags().StringVarP(&userId, "user-id", "u", "", "Allowed user id")
 
 	ServeCommand.Flags().BoolVarP(&ignoreVersionCheck, "ignore-version-check", "", false, "Ignore version check")
+
+	ServeCommand.Flags().StringArrayVarP(&additionalEndpoints, "additional-endpoints", "", []string{}, "Additional endpoints to serve. Valid values: annotations")
 
 }

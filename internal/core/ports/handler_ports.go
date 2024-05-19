@@ -21,6 +21,10 @@ type ScrollMetricHandlerInterface interface {
 	PsTree(c *fiber.Ctx) error
 }
 
+type AnnotationHandlerInterface interface {
+	Annotations(c *fiber.Ctx) error
+}
+
 type WebsocketHandlerInterface interface {
 	CreateToken(c *fiber.Ctx) error
 	HandleProcess(c *websocket.Conn)

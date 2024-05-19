@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -13,6 +13,7 @@ import (
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.uber.org/zap"
 	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/file"
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
@@ -96,11 +97,36 @@ func (c *OciClient) Pull(dir string, artifact string) error {
 		return fmt.Errorf("failed to marshal manifest descriptor: %w", err)
 	}
 
+	bs, err := content.FetchAll(ctx, repoInstance, manifestDescriptor)
+
+	if err != nil {
+		return fmt.Errorf("failed to fetch manifest descriptor: %w", err)
+	}
+
+	fullDesc := v1.Descriptor{}
+
+	err = json.Unmarshal(bs, &fullDesc)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal manifest descriptor: %w", err)
+	}
+
+	annotations := fullDesc.Annotations
 	fileName := filepath.Join(dir, "manifest.json")
-	err = ioutil.WriteFile(fileName, jsonData, 0644)
+	err = os.WriteFile(fileName, jsonData, 0644)
 
 	if err != nil {
 		return fmt.Errorf("failed to write manifest descriptor: %w", err)
+	}
+
+	annotationsJson, err := json.Marshal(annotations)
+	if err != nil {
+		return fmt.Errorf("failed to marshal annotations: %w", err)
+	}
+	fileName = filepath.Join(dir, "annotations.json")
+	err = os.WriteFile(fileName, annotationsJson, 0644)
+
+	if err != nil {
+		return fmt.Errorf("failed to write annotations: %w", err)
 	}
 
 	return nil
@@ -284,7 +310,7 @@ func (c *OciClient) CreateMetaDescriptors(fs *file.Store, folder string, fsPath 
 		return v1.Descriptor{}, fmt.Errorf("meta file %s not found", metaPath)
 	}
 	fsFileNames := []string{}
-	subitems, _ := ioutil.ReadDir(metaPath)
+	subitems, _ := os.ReadDir(metaPath)
 	for _, subitem := range subitems {
 		fsFileNames = append(fsFileNames, subitem.Name())
 	}
