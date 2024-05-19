@@ -37,7 +37,7 @@ var UpdateCommand = &cobra.Command{
 		repo, tag := utils.SplitArtifact(artifact)
 
 		//ctx := context.Background()
-		logger.Log().Info("Starting update Scroll Files command")
+		logger.Log().Info("Checking for updates for " + artifact)
 
 		host := viper.GetString("registry.host")
 		user := viper.GetString("registry.user")

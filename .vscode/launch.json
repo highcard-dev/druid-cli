@@ -55,6 +55,8 @@
             "program": "${workspaceFolder}/main.go",
             "args": [
                 "serve",
+                "--additional-endpoints",
+                "annotations",
                 "--cwd",
                 "${workspaceFolder}/examples/scroll-cwd",
                 "-p",

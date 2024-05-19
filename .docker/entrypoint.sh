@@ -48,7 +48,7 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]]; then
     
 
     #ignore-version-check otherwise we have missmatch after update
-    args=(serve --ignore-version-check)
+    args=(serve --ignore-version-check --additional-endpoints annotations)
 
     if [ ! -z "${artifact}" ];
     then

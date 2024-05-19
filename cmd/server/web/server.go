@@ -120,8 +120,6 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 	dispatcherRoutes.Get("/metrics", s.scrollMetricHandler.Metrics).Name("scrolls.metrics")
 	dispatcherRoutes.Get("/pstree", s.scrollMetricHandler.PsTree).Name("scrolls.pstree")
 
-	dispatcherRoutes.Get("/annotations", s.annotationHandler.Annotations).Name("annotations.list")
-
 	//Processes Group
 	dispatcherRoutes.Get("/processes", s.processHandler.Processes).Name("processes.list")
 

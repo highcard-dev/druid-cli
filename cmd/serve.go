@@ -92,7 +92,7 @@ to interact and monitor the Scroll Application`,
 		scrollLogHandler := handler.NewScrollLogHandler(scrollService, logManager, processManager)
 		scrollMetricHandler := handler.NewScrollMetricHandler(scrollService, processMonitor)
 
-		var annotationHandler *handler.AnnotationHandler
+		var annotationHandler *handler.AnnotationHandler = nil
 
 		if slices.Contains(additionalEndpoints, "annotations") {
 			annotationHandler = handler.NewAnnotationHandler(scrollService)
