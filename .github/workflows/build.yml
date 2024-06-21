@@ -20,6 +20,8 @@ jobs:
         name: Unit tests
       - run: make build
         name: Build
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
       - run: make build-plugins
         name: Build plugins
       - name: Release
