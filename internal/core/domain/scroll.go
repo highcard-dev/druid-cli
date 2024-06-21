@@ -6,6 +6,8 @@ import (
 	"os"
 
 	semver "github.com/Masterminds/semver/v3"
+	"github.com/highcard-dev/daemon/internal/utils/logger"
+	"go.uber.org/zap"
 	"gopkg.in/yaml.v2"
 )
 
@@ -65,6 +67,7 @@ func NewScroll(scrollDir string) (*Scroll, error) {
 	// if we os.Open returns an error then handle it
 	if err != nil {
 		if os.IsNotExist(err) {
+			logger.Log().Warn("scroll.yaml does not exist", zap.String("path", filePath))
 			return nil, ErrScrollDoesNotExist
 		}
 		return nil, fmt.Errorf("failed to open scroll.yaml - %w", err)

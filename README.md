@@ -7,6 +7,18 @@ A good use case is to let it run inside of a docker container. It will give addi
 
 This CLI is currently deployed within every deployment at [druid.gg](https://druid.gg).
 
+## Installation
+
+We publish [releases on Github](https://github.com/highcard-dev/druid-cli/releases).
+
+You can easlily install druid-cli on Linux by running:
+
+```bash
+curl -L -o druid "https://github.com/highcard-dev/druid-cli/releases/latest/download/druid" && sudo install -c -m 0755 druid /usr/local/bin
+```
+
+Also consider our installation documentation: [https://docs.druid.gg/cli/introduction](https://docs.druid.gg/cli/introduction)
+
 ## Scroll OCI manifest
 
 The Druid CLI uses a **so called Scroll** to get instructions on how to launch and handle the process.
