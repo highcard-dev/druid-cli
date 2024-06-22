@@ -90,3 +90,7 @@ type OciRegistryInterface interface {
 	PushMeta(folder string, repo string) (v1.Descriptor, error)
 	CreateMetaDescriptors(fs *file.Store, dir string, artifact string) (v1.Descriptor, error)
 }
+
+type CronManagerInterface interface {
+	Init()
+}

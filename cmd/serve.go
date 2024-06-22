@@ -158,6 +158,16 @@ to interact and monitor the Scroll Application`,
 			logger.Log().Info("Bootstrapping done")
 		}
 
+		//schedule crons
+		logger.Log().Info("Schedule crons")
+
+		cronManager := services.NewCronManager(currentScroll.Cronjobs, processLauncher)
+		err = cronManager.Init()
+
+		if err != nil {
+			return err
+		}
+
 		logger.Log().Info("Active Scroll",
 			zap.String("Description", fmt.Sprintf("%s (%s)", currentScroll.Desc, currentScroll.Name)),
 			zap.String("Scroll Version", currentScroll.Version.String()),

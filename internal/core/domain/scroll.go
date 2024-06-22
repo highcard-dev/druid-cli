@@ -19,6 +19,12 @@ const (
 	RunModeRestart RunMode = "restart"
 )
 
+type Cronjob struct {
+	Name     string `yaml:"name"`
+	Schedule string `yaml:"schedule"`
+	Command  string `yaml:"command"`
+}
+
 type File struct {
 	Name       string                       `yaml:"name" json:"name"`
 	Desc       string                       `yaml:"desc" json:"desc"`
@@ -27,6 +33,7 @@ type File struct {
 	Init       string                       `yaml:"init" json:"init"`
 	Processes  map[string]*ProcessCommand   `yaml:"processes" json:"processes"`
 	Plugins    map[string]map[string]string `yaml:"plugins" json:"plugins"`
+	Cronjobs   []*Cronjob                   `yaml:"cronjobs" json:"cronjobs"`
 } // @name ScrollFile
 
 type Scroll struct {
