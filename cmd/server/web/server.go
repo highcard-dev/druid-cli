@@ -15,6 +15,7 @@ import (
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"golang.org/x/net/webdav"
 
 	_ "github.com/highcard-dev/daemon/docs"
 	"go.uber.org/zap"
@@ -32,6 +33,7 @@ type Server struct {
 	annotationHandler             ports.AnnotationHandlerInterface
 	processHandler                ports.ProcessHandlerInterface
 	websocketHandler              ports.WebsocketHandlerInterface
+	webdavPath                    string
 }
 
 func NewServer(
@@ -43,6 +45,7 @@ func NewServer(
 	processHandler ports.ProcessHandlerInterface,
 	websocketHandler ports.WebsocketHandlerInterface,
 	authorizerService ports.AuthorizerServiceInterface,
+	webdavPath string,
 ) *Server {
 	server := &Server{
 		corsMiddleware: cors.New(cors.Config{
@@ -58,6 +61,7 @@ func NewServer(
 		processHandler:                processHandler,
 		websocketHandler:              websocketHandler,
 		tokenAuthenticationMiddleware: middlewares.TokenAuthentication(authorizerService),
+		webdavPath:                    webdavPath,
 	}
 
 	if jwlsUrl != "" {
@@ -70,6 +74,8 @@ func NewServer(
 }
 
 func (s *Server) Initialize() *fiber.App {
+	webdavRequestMethods := []string{"PROPFIND", "MKCOL", "COPY", "MOVE"}
+
 	app := fiber.New(fiber.Config{
 		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
 			code := fiber.StatusInternalServerError
@@ -84,6 +90,7 @@ func (s *Server) Initialize() *fiber.App {
 				return ctx.Status(code).JSON(e)
 			}
 		},
+		RequestMethods:        append(fiber.DefaultMethods[:], webdavRequestMethods...),
 		DisableStartupMessage: true,
 	})
 
@@ -96,35 +103,46 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 	app.Use(s.headerMiddleware)
 	wsRoutes := app.Group("/ws/v1")
 	v1 := app.Use(s.corsMiddleware).Group("/api/v1")
-	dispatcherRoutes := v1.Group("/")
+	apiRoutes := v1.Group("/")
+	webdavRoutes := app.Group("/webdav")
 
 	if s.jwtMiddleware != nil {
-		dispatcherRoutes.Use(s.jwtMiddleware, s.injectUserMiddleware)
+		apiRoutes.Use(s.jwtMiddleware, s.injectUserMiddleware)
+		webdavRoutes.Use(s.jwtMiddleware, s.injectUserMiddleware)
 	}
 
 	wsRoutes.Use(s.tokenAuthenticationMiddleware)
 
 	//Scroll Group
-	dispatcherRoutes.Get("/scroll", s.scrollHandler.GetScroll).Name("scrolls.current")
-	dispatcherRoutes.Post("/command", s.scrollHandler.RunCommand).Name("command.start")
-	dispatcherRoutes.Post("/procedure", s.scrollHandler.RunProcedure).Name("procedure.start")
+	apiRoutes.Get("/scroll", s.scrollHandler.GetScroll).Name("scrolls.current")
+	apiRoutes.Post("/command", s.scrollHandler.RunCommand).Name("command.start")
+	apiRoutes.Post("/procedure", s.scrollHandler.RunProcedure).Name("procedure.start")
 
 	//Scroll Logs Group
-	dispatcherRoutes.Get("/logs", s.scrollLogHandler.ListAllLogs).Name("scrolls.logs")
-	dispatcherRoutes.Get("/logs/:stream", s.scrollLogHandler.ListStreamLogs).Name("scrolls.log")
+	apiRoutes.Get("/logs", s.scrollLogHandler.ListAllLogs).Name("scrolls.logs")
+	apiRoutes.Get("/logs/:stream", s.scrollLogHandler.ListStreamLogs).Name("scrolls.log")
 
 	//Authentication Group
-	dispatcherRoutes.Get("/token", s.websocketHandler.CreateToken).Name("token.create")
+	apiRoutes.Get("/token", s.websocketHandler.CreateToken).Name("token.create")
 
 	//Metrics Group
-	dispatcherRoutes.Get("/metrics", s.scrollMetricHandler.Metrics).Name("scrolls.metrics")
-	dispatcherRoutes.Get("/pstree", s.scrollMetricHandler.PsTree).Name("scrolls.pstree")
+	apiRoutes.Get("/metrics", s.scrollMetricHandler.Metrics).Name("scrolls.metrics")
+	apiRoutes.Get("/pstree", s.scrollMetricHandler.PsTree).Name("scrolls.pstree")
 
 	//Processes Group
-	dispatcherRoutes.Get("/processes", s.processHandler.Processes).Name("processes.list")
+	apiRoutes.Get("/processes", s.processHandler.Processes).Name("processes.list")
 
 	//Websocket Group
-	dispatcherRoutes.Get("/consoles", s.websocketHandler.Consoles).Name("consoles.list")
+	apiRoutes.Get("/consoles", s.websocketHandler.Consoles).Name("consoles.list")
+
+	// Create the WebDAV handler
+	webdavHandler := &webdav.Handler{
+		Prefix:     "/webdav",
+		FileSystem: webdav.Dir(s.webdavPath),
+		LockSystem: webdav.NewMemLS(),
+	}
+
+	webdavRoutes.Use("*", adaptor.HTTPHandler(webdavHandler))
 
 	wsRoutes.Get("/serve/:console", websocket.New(s.websocketHandler.HandleProcess)).Name("ws.serve")
 

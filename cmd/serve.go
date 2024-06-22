@@ -100,7 +100,7 @@ to interact and monitor the Scroll Application`,
 
 		websocketHandler := handler.NewWebsocketHandler(authorizer, scrollService, consoleService)
 
-		s := web.NewServer(jwksUrl, scrollHandler, scrollLogHandler, scrollMetricHandler, annotationHandler, processHandler, websocketHandler, authorizer)
+		s := web.NewServer(jwksUrl, scrollHandler, scrollLogHandler, scrollMetricHandler, annotationHandler, processHandler, websocketHandler, authorizer, cwd)
 
 		a := s.Initialize()
 
