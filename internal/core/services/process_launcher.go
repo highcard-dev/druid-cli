@@ -225,8 +225,10 @@ func (sc *ProcedureLauncher) Run(cmd string, processId string, changeStatus bool
 		)
 		switch wait := proc.Wait.(type) {
 		case int: //run in go routine and wait for x seconds
-			go sc.RunProcedure(proc, processId, cmd)
-			time.Sleep(time.Duration(wait) * time.Second)
+			go func() {
+				time.Sleep(time.Duration(wait) * time.Second)
+				sc.RunProcedure(proc, processId, cmd)
+			}()
 		case bool: //run in go routine maybe wait
 			if wait {
 				_, exitCode, err = sc.RunProcedure(proc, processId, cmd)
@@ -276,6 +278,14 @@ func (sc *ProcedureLauncher) Run(cmd string, processId string, changeStatus bool
 }
 
 func (sc *ProcedureLauncher) RunProcedure(proc *domain.Procedure, processId string, cmd string) (string, *int, error) {
+
+	logger.Log().Debug("Running procedure",
+		zap.String("processId", processId),
+		zap.String("cmd", cmd),
+		zap.String("mode", proc.Mode),
+		zap.Any("data", proc.Data),
+	)
+
 	processCwd := sc.scrollService.GetCwd()
 	//check if we have a plugin for the mode
 	if sc.pluginManager.HasMode(proc.Mode) {
