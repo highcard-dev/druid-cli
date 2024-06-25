@@ -225,10 +225,10 @@ func (sc *ProcedureLauncher) Run(cmd string, processId string, changeStatus bool
 		)
 		switch wait := proc.Wait.(type) {
 		case int: //run in go routine and wait for x seconds
-			go func() {
+			go func(procedure domain.Procedure) {
 				time.Sleep(time.Duration(wait) * time.Second)
-				sc.RunProcedure(proc, processId, cmd)
-			}()
+				sc.RunProcedure(&procedure, processId, cmd)
+			}(*proc)
 		case bool: //run in go routine maybe wait
 			if wait {
 				_, exitCode, err = sc.RunProcedure(proc, processId, cmd)
