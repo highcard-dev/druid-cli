@@ -11,3 +11,5 @@ dlv.log
 __debug_bin*
 
 druid-cli-test
+
+!.docker/**

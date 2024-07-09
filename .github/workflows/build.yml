@@ -34,3 +34,5 @@ jobs:
             bin/druid
             bin/druid_rcon
             bin/druid_rcon_web_rust
+            .docker/entrypoint.sh
+            .docker/druid-install-command.sh
