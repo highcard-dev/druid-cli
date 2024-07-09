@@ -6,4 +6,4 @@ chmod +x /app/resources/druid /app/resources/druid_rcon /app/resources/druid_rco
 
 export PATH=$PATH:/app/resources
 
-sh /app/resources/entrypoint.sh
+bash /app/resources/entrypoint.sh
