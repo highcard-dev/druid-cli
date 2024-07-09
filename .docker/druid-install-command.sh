@@ -1,7 +1,16 @@
-wget -O /app/resources/druid https://github.com/highcard-dev/druid-cli/releases/latest/download/druid
-wget -O /app/resources/druid_rcon https://github.com/highcard-dev/druid-cli/releases/latest/download/druid_rcon 
-wget -O /app/resources/druid_rcon_web https://github.com/highcard-dev/druid-cli/releases/latest/download/druid_rcon_web
-wget -O /app/resources/entrypoint.sh https://github.com/highcard-dev/druid-cli/releases/latest/download/entrypoint.sh 
+#!/bin/bash
+
+#check if first argument is there, set CHANNEL to it, otherwise default to latest
+if [ -z "$1" ]; then
+    CHANNEL="latest"
+else
+    CHANNEL=$1
+fi
+
+wget -O /app/resources/druid https://github.com/highcard-dev/druid-cli/releases/$CHANNEL/download/druid
+wget -O /app/resources/druid_rcon https://github.com/highcard-dev/druid-cli/releases/$CHANNEL/download/druid_rcon 
+wget -O /app/resources/druid_rcon_web https://github.com/highcard-dev/druid-cli/releases/$CHANNEL/download/druid_rcon_web
+wget -O /app/resources/entrypoint.sh https://github.com/highcard-dev/druid-cli/releases/$CHANNEL/download/entrypoint.sh 
 chmod +x /app/resources/druid /app/resources/druid_rcon /app/resources/druid_rcon_web
 
 # Modify the PATH variable to prioritize /app/resources
