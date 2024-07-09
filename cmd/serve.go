@@ -22,6 +22,7 @@ var ignoreVersionCheck bool
 var port int
 var shutdownWait int
 var additionalEndpoints []string
+var initScroll bool
 
 var ServeCommand = &cobra.Command{
 	Use:   "serve",
@@ -130,8 +131,8 @@ to interact and monitor the Scroll Application`,
 			if err != nil {
 				return err
 			}
-		} else {
-			logger.Log().Info("No lock file found, bootstrapping")
+		} else if initScroll {
+			logger.Log().Info("No lock file found, but init command available. Bootstrapping...")
 			//There is an error here. We need to bootstrap the files before we render out the templates in the bootstrap func above
 			err := scrollService.CreateLockAndBootstrapFiles()
 			if err != nil {
@@ -187,6 +188,8 @@ func init() {
 	ServeCommand.Flags().StringVarP(&jwksUrl, "jwks-server", "", "", "JWKS Server to authenticate requests against")
 
 	ServeCommand.Flags().StringVarP(&userId, "user-id", "u", "", "Allowed user id")
+
+	ServeCommand.Flags().BoolVarP(&initScroll, "init", "", false, "Initialize the scroll if no lock file is present")
 
 	ServeCommand.Flags().BoolVarP(&ignoreVersionCheck, "ignore-version-check", "", false, "Ignore version check")
 
