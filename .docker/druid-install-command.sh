@@ -4,6 +4,7 @@ wget -O /app/resources/druid_rcon_web https://github.com/highcard-dev/druid-cli/
 wget -O /app/resources/entrypoint.sh https://github.com/highcard-dev/druid-cli/releases/latest/download/entrypoint.sh 
 chmod +x /app/resources/druid /app/resources/druid_rcon /app/resources/druid_rcon_web
 
-export PATH=$PATH:/app/resources
+# Modify the PATH variable to prioritize /app/resources
+export PATH=/app/resources:$PATH
 
 bash /app/resources/entrypoint.sh
