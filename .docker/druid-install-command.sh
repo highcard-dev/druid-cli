@@ -17,5 +17,3 @@ chmod +x /app/resources/druid /app/resources/druid_rcon /app/resources/druid_rco
 export PATH=/app/resources:$PATH
 
 bash /app/resources/entrypoint.sh
-
-#https://github.com/highcard-dev/druid-cli/releases/download/0.1.8-prerelease3/druid
