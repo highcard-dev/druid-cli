@@ -15,7 +15,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/prometheus/client_golang v1.19.1
 	github.com/shirou/gopsutil v3.21.11+incompatible
-	github.com/spf13/cobra v1.8.0
+	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.18.2
 	github.com/swaggo/swag v1.16.3
 	go.uber.org/zap v1.27.0
@@ -89,7 +89,7 @@ require (
 )
 
 require (
-	github.com/cpuguy83/go-md2man/v2 v2.0.3 // indirect
+	github.com/cpuguy83/go-md2man/v2 v2.0.4 // indirect
 	github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.1.0 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
