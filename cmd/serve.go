@@ -148,7 +148,7 @@ to interact and monitor the Scroll Application`,
 			}
 			//start scroll.init process
 			//initialize if nothing is there
-			err = queueManager.AddItem(currentScroll.Init, false)
+			err = queueManager.AddItem(currentScroll.Init, true)
 			if err != nil {
 				return err
 			}

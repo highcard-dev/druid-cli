@@ -41,34 +41,40 @@ func NewQueueManager(
 	}
 }
 
-func (sc *QueueManager) setCommandQueue(commandName string, status domain.ScrollLockStatus) {
+func (sc *QueueManager) setCommandQueue(commandName string, status domain.ScrollLockStatus, changeStatus bool) {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
 	sc.commandQueue[commandName] = &QueueItem{
 		status:       status,
-		changeStatus: true,
+		changeStatus: changeStatus,
 	}
 }
 
-func (sc *QueueManager) workItem(cmd string, changeStatus bool) error {
+func (sc *QueueManager) workItem(cmd string) error {
+
+	queueItem := sc.commandQueue[cmd]
+	if queueItem == nil {
+		return fmt.Errorf("command %s not found", cmd)
+	}
+
+	command, err := sc.scrollService.GetCommand(cmd)
+	if err != nil {
+		return err
+	}
+
+	changeStatus := queueItem.changeStatus
 
 	logger.Log().Debug("Running command",
 		zap.String("cmd", cmd),
 		zap.Bool("changeStatus", changeStatus),
 	)
 
-	command, err := sc.scrollService.GetCommand(cmd)
-
-	if err != nil {
-		return err
-	}
-
 	lock, err := sc.scrollService.GetLock()
 	if err != nil {
 		return err
 	}
 
-	sc.setCommandQueue(cmd, domain.ScrollLockStatusWaiting)
+	sc.setCommandQueue(cmd, domain.ScrollLockStatusWaiting, changeStatus)
 	if changeStatus {
 		lock.SetStatus(cmd, domain.ScrollLockStatusWaiting)
 	}
@@ -82,11 +88,11 @@ func (sc *QueueManager) workItem(cmd string, changeStatus bool) error {
 
 	//if done and should be done once, skip
 	if status == domain.ScrollLockStatusDone && command.Run == domain.RunModeOnce {
-		sc.setCommandQueue(cmd, domain.ScrollLockStatusDone)
+		sc.setCommandQueue(cmd, domain.ScrollLockStatusDone, changeStatus)
 		return nil
 	}
 
-	sc.setCommandQueue(cmd, domain.ScrollLockStatusRunning)
+	sc.setCommandQueue(cmd, domain.ScrollLockStatusRunning, changeStatus)
 	if changeStatus {
 		lock.SetStatus(cmd, domain.ScrollLockStatusRunning)
 	}
@@ -94,7 +100,7 @@ func (sc *QueueManager) workItem(cmd string, changeStatus bool) error {
 	err = sc.processLauncher.Run(cmd)
 
 	if err != nil {
-		sc.setCommandQueue(cmd, domain.ScrollLockStatusError)
+		sc.setCommandQueue(cmd, domain.ScrollLockStatusError, changeStatus)
 		return err
 	}
 
@@ -102,7 +108,7 @@ func (sc *QueueManager) workItem(cmd string, changeStatus bool) error {
 	if changeStatus && command.Run != domain.RunModeRestart {
 		lock.SetStatus(cmd, domain.ScrollLockStatusDone)
 	}
-	sc.setCommandQueue(cmd, domain.ScrollLockStatusDone)
+	sc.setCommandQueue(cmd, domain.ScrollLockStatusDone, changeStatus)
 
 	return nil
 
@@ -162,7 +168,7 @@ func (sc *QueueManager) QueueLockFile() error {
 	for cmd, status := range lock.Statuses {
 		sc.commandQueue[cmd] = &QueueItem{
 			status:       status,
-			changeStatus: false,
+			changeStatus: true,
 		}
 	}
 
@@ -230,7 +236,7 @@ func (sc *QueueManager) RunQueue() {
 		}
 
 		if dependenciesReady {
-			err := sc.workItem(cmd, item.changeStatus)
+			err := sc.workItem(cmd)
 			if err != nil {
 				logger.Log().Error("Error running command", zap.String("command", cmd), zap.Error(err))
 			}
