@@ -1,7 +1,6 @@
 package services
 
 import (
-	"strings"
 	"time"
 
 	"github.com/go-co-op/gocron"
@@ -12,14 +11,14 @@ import (
 )
 
 type CronManager struct {
-	crons           []*domain.Cronjob
-	processLauncher ports.ProcedureLauchnerInterface
+	crons        []*domain.Cronjob
+	queueManager ports.QueueManagerInterface
 }
 
-func NewCronManager(cronjobs []*domain.Cronjob, processLauncher ports.ProcedureLauchnerInterface) *CronManager {
+func NewCronManager(cronjobs []*domain.Cronjob, queueManager ports.QueueManagerInterface) *CronManager {
 	return &CronManager{
-		crons:           cronjobs,
-		processLauncher: processLauncher,
+		crons:        cronjobs,
+		queueManager: queueManager,
 	}
 }
 
@@ -30,13 +29,9 @@ func (c *CronManager) Init() error {
 		_, err := scheduler.Cron(cron.Schedule).Do(func() {
 			logger.Log().Info("Cronjob started", zap.String("name", cron.Name))
 
-			//parse cron.Command e.g. main.start
-			//split by dot
-			parts := strings.Split(cron.Command, ".")
-			process := parts[0]
-			command := parts[1]
+			//run cron.Command e.g. main.start
 
-			err := c.processLauncher.RunNew(command, process, false)
+			err := c.queueManager.AddItem(cron.Command, false)
 
 			if err != nil {
 				logger.Log().Error("error running cronjob", zap.String("name", cron.Name), zap.Error(err))

@@ -56,13 +56,14 @@ func TestContainerNginx(t *testing.T) {
 	processMonitor := test_utils.GetMockedProcessMonitor(ctrl)
 	processManager := services.NewProcessManager(logManager, consoleManager, processMonitor)
 	procedureLauncher := services.NewProcedureLauncher(ociRegistryMock, processManager, pluginManager, consoleManager, logManager, scrollService)
+	queueManager := services.NewQueueManager(scrollService, procedureLauncher)
 
 	t.Run("Launch real app from examples", func(t *testing.T) {
 
 		scrollService.WriteNewScrollLock()
 		scrollService.Bootstrap(false)
 
-		err := procedureLauncher.RunNew("start", "main", false)
+		err := queueManager.AddItem("start", false)
 		if err != nil {
 			t.Error(err)
 		}

@@ -1,1 +1,5 @@
-{"statuses":{"main.start":"running"},"scroll_version":"0.0.1","scroll_name":"registry-1.docker.io/highcard/scroll-nginx"}
+{
+  "statuses": { "start": "running" },
+  "scroll_version": "0.0.1",
+  "scroll_name": "registry-1.docker.io/highcard/scroll-nginx"
+}

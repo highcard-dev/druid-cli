@@ -88,7 +88,9 @@ to interact and monitor the Scroll Application`,
 
 		processLauncher := services.NewProcedureLauncher(client, processManager, pluginManager, consoleService, logManager, scrollService)
 
-		scrollHandler := handler.NewScrollHandler(scrollService, pluginManager, processLauncher)
+		queueManager := services.NewQueueManager(scrollService, processLauncher)
+
+		scrollHandler := handler.NewScrollHandler(scrollService, pluginManager, processLauncher, queueManager)
 		processHandler := handler.NewProcessHandler(processManager)
 		scrollLogHandler := handler.NewScrollLogHandler(scrollService, logManager, processManager)
 		scrollMetricHandler := handler.NewScrollMetricHandler(scrollService, processMonitor)
@@ -105,7 +107,7 @@ to interact and monitor the Scroll Application`,
 
 		a := s.Initialize()
 
-		signals.SetupSignals(processLauncher, processManager, a, shutdownWait)
+		signals.SetupSignals(queueManager, processManager, a, shutdownWait)
 
 		currentScroll, lock, err := scrollService.Bootstrap(ignoreVersionCheck)
 		if err != nil {
@@ -121,12 +123,6 @@ to interact and monitor the Scroll Application`,
 			}
 			//important to launch plugins, after the templates are rendered, sothat templates can provide for plugins
 			err = processLauncher.LaunchPlugins()
-
-			if err != nil {
-				return err
-			}
-			//run if something is there
-			err = processLauncher.StartLockfile(lock)
 
 			if err != nil {
 				return err
@@ -152,17 +148,28 @@ to interact and monitor the Scroll Application`,
 			}
 			//start scroll.init process
 			//initialize if nothing is there
-			err = processLauncher.Initalize(lock)
+			err = queueManager.AddItem(currentScroll.Init, false)
 			if err != nil {
 				return err
 			}
+
+			scrollService.WriteNewScrollLock()
+
 			logger.Log().Info("Bootstrapping done")
 		}
+
+		err = queueManager.QueueLockFile()
+		if err != nil {
+			return err
+		}
+
+		//run if something is there
+		go queueManager.Work()
 
 		//schedule crons
 		logger.Log().Info("Schedule crons")
 
-		cronManager := services.NewCronManager(currentScroll.Cronjobs, processLauncher)
+		cronManager := services.NewCronManager(currentScroll.Cronjobs, queueManager)
 		err = cronManager.Init()
 
 		if err != nil {

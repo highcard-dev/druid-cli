@@ -53,11 +53,11 @@ func WriteNewScrollLock(path string) *ScrollLock {
 	return lock
 }
 
-func (scrollLock *ScrollLock) GetStatus(process string, command string) ScrollLockStatus {
-	return scrollLock.Statuses[process+"."+command]
+func (scrollLock *ScrollLock) GetStatus(command string) ScrollLockStatus {
+	return scrollLock.Statuses[command]
 }
 
-func (scrollLock *ScrollLock) SetStatus(process string, command string, status ScrollLockStatus) {
-	scrollLock.Statuses[process+"."+command] = status
+func (scrollLock *ScrollLock) SetStatus(command string, status ScrollLockStatus) {
+	scrollLock.Statuses[command] = status
 	scrollLock.Write()
 }

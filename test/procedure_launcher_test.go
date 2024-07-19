@@ -23,12 +23,13 @@ func TestProcedureLauncher(t *testing.T) {
 	consoleManager := services.NewConsoleManager(logManager)
 	processManager := services.NewProcessManager(logManager, consoleManager, processMonitor)
 	procedureLauncher := services.NewProcedureLauncher(ociRegistryMock, processManager, pluginManager, consoleManager, logManager, scrollService)
+	queueManager := services.NewQueueManager(scrollService, procedureLauncher)
 
 	t.Run("RunNew", func(t *testing.T) {
-		processMonitor.EXPECT().AddProcess(gomock.Any(), "main.test").Times(1)
-		processMonitor.EXPECT().RemoveProcess("main.test").Times(1)
+		processMonitor.EXPECT().AddProcess(gomock.Any(), "test").Times(1)
+		processMonitor.EXPECT().RemoveProcess("test").Times(1)
 
-		scrollService.EXPECT().GetCommand("test", "main").Return(&domain.CommandInstructionSet{
+		scrollService.EXPECT().GetCommand("test").Return(&domain.CommandInstructionSet{
 			Procedures: []*domain.Procedure{
 				{
 					Mode: "exec",
@@ -40,7 +41,7 @@ func TestProcedureLauncher(t *testing.T) {
 
 		pluginManager.EXPECT().HasMode("exec").Return(false)
 
-		logManager.EXPECT().AddLine("process.main.test", []byte("hello\n")).Times(1)
+		logManager.EXPECT().AddLine("process.test", []byte("hello\n")).Times(1)
 
 		scrollService.EXPECT().GetLock().Return(&domain.ScrollLock{
 			Statuses:      map[string]domain.ScrollLockStatus{},
@@ -50,9 +51,12 @@ func TestProcedureLauncher(t *testing.T) {
 
 		scrollService.EXPECT().GetCwd().Return("/tmp").AnyTimes()
 
-		err := procedureLauncher.RunNew("test", "main", false)
+		go queueManager.Work()
+		err := queueManager.AddItem("test", false)
 		if err != nil {
 			t.Error(err)
 		}
+
+		queueManager.WaitUntilEmpty()
 	})
 }

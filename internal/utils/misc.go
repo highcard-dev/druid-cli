@@ -22,20 +22,6 @@ func SplitArtifact(url string) (string, string) {
 	return repo, tag
 }
 
-func ParseProcessAndCommand(processAndCommand string) (string, string) {
-	parts := strings.Split(processAndCommand, ".")
-
-	if len(parts) == 1 {
-		return "main", processAndCommand
-	}
-
-	if len(parts) != 2 {
-		return "", ""
-	}
-	process, command := parts[0], parts[1]
-	return process, command
-}
-
 func InterfaceToStringSlice(data interface{}) ([]string, error) {
 
 	instructionsRaw, ok := data.([]interface{})

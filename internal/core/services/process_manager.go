@@ -30,10 +30,10 @@ func NewProcessManager(logManager ports.LogManagerInterface, consoleManager port
 	}
 }
 
-func (po *ProcessManager) RunTty(processName string, commandName string, command []string, cwd string) (*int, error) {
+func (po *ProcessManager) RunTty(commandName string, command []string, cwd string) (*int, error) {
 
 	process := domain.Process{
-		Name: processName,
+		Name: commandName,
 		Type: "process_tty",
 	}
 
@@ -52,7 +52,7 @@ func (po *ProcessManager) RunTty(processName string, commandName string, command
 	process.Cmd = exec.Command(name, args...)
 	process.Cmd.Dir = cwd
 
-	logger.Log().Info("Starting tty process", zap.String("processName", processName), zap.String("name", name), zap.Strings("args", args), zap.String("dir", cwd))
+	logger.Log().Info("Starting tty process", zap.String("commandName", commandName), zap.String("name", name), zap.Strings("args", args), zap.String("dir", cwd))
 
 	out, err := pty.Start(process.Cmd)
 	if err != nil {
@@ -62,33 +62,34 @@ func (po *ProcessManager) RunTty(processName string, commandName string, command
 	process.StdIn = out
 
 	//self register process
-	po.AddRunningProcess(processName, commandName, &process)
+	po.AddRunningProcess(commandName, &process)
 
-	processCommandName := fmt.Sprintf("%s.%s", processName, commandName)
 	//add process for monitoring
-	po.processMonitor.AddProcess(int32(process.Cmd.Process.Pid), processCommandName)
+	po.processMonitor.AddProcess(int32(process.Cmd.Process.Pid), commandName)
 
 	//slight difference to normal process, as we only attach after the process has started
 	//add console output
 
-	processName = fmt.Sprintf("process_tty.%s.%s", processName, commandName)
+	prefixedProcessCommandName := fmt.Sprintf("process_tty.%s", commandName)
 
-	po.consoleManager.AddConsoleWithIoReader(processName, domain.ConsoleTypeTTY, "stdin", out)
+	po.consoleManager.AddConsoleWithIoReader(prefixedProcessCommandName, domain.ConsoleTypeTTY, "stdin", out)
 
 	//reset periodically
 	process.Cmd.Wait()
-	po.processMonitor.RemoveProcess(processCommandName)
-	po.RemoveProcess(processName, commandName)
+	po.processMonitor.RemoveProcess(commandName)
+	po.RemoveProcess(commandName)
 
+	// Wait for goroutine to print everything (watchdog closes stdin)
 	exitCode := process.Cmd.ProcessState.ExitCode()
+	po.consoleManager.MarkExited(prefixedProcessCommandName, exitCode)
 
 	return &exitCode, nil
 }
 
-func (po *ProcessManager) Run(processName string, commandName string, command []string, dir string) (*int, error) {
+func (po *ProcessManager) Run(commandName string, command []string, dir string) (*int, error) {
 
 	process := domain.Process{
-		Name: processName,
+		Name: commandName,
 		Type: "process",
 	}
 	//Todo, add processmonitoring explicitly here
@@ -102,7 +103,7 @@ func (po *ProcessManager) Run(processName string, commandName string, command []
 	name, args := command[0], command[1:]
 
 	logger.Log().Debug("Launch",
-		zap.String("processName", processName),
+		zap.String("commandName", commandName),
 		zap.String("name", name),
 		zap.Strings("args", args),
 		zap.String("dir", dir),
@@ -132,7 +133,7 @@ func (po *ProcessManager) Run(processName string, commandName string, command []
 
 	process.StdIn = stdin
 
-	prefixedProcessCommandName := fmt.Sprintf("process.%s.%s", processName, commandName)
+	prefixedProcessCommandName := fmt.Sprintf("process.%s", commandName)
 
 	po.consoleManager.AddConsoleWithIoReader(prefixedProcessCommandName, domain.ConsoleTypeProcess, "stdin", stdoutReader)
 	po.consoleManager.AddConsoleWithIoReader(prefixedProcessCommandName, domain.ConsoleTypeProcess, "stdin", stderrReader)
@@ -147,11 +148,10 @@ func (po *ProcessManager) Run(processName string, commandName string, command []
 	}
 
 	//self register process
-	po.AddRunningProcess(processName, commandName, &process)
+	po.AddRunningProcess(commandName, &process)
 
-	processCommandName := fmt.Sprintf("%s.%s", processName, commandName)
 	//add process for monitoring
-	po.processMonitor.AddProcess(int32(process.Cmd.Process.Pid), processCommandName)
+	po.processMonitor.AddProcess(int32(process.Cmd.Process.Pid), commandName)
 
 	//add console output
 
@@ -169,8 +169,8 @@ func (po *ProcessManager) Run(processName string, commandName string, command []
 
 	<-cmdCtx.Done()
 
-	po.processMonitor.RemoveProcess(processCommandName)
-	po.RemoveProcess(processName, commandName)
+	po.processMonitor.RemoveProcess(commandName)
+	po.RemoveProcess(commandName)
 	// Wait for goroutine to print everything (watchdog closes stdin)
 	exitCode := process.Cmd.ProcessState.ExitCode()
 	po.consoleManager.MarkExited(prefixedProcessCommandName, exitCode)
@@ -201,20 +201,17 @@ func (pm *ProcessManager) GetRunningProcesses() map[string]*domain.Process {
 	return pm.runningProcesses
 }
 
-func (pm *ProcessManager) AddRunningProcess(processName string, commandName string, process *domain.Process) {
-	name := fmt.Sprintf("%s.%s", processName, commandName)
-	pm.runningProcesses[name] = process
+func (pm *ProcessManager) AddRunningProcess(commandName string, process *domain.Process) {
+	pm.runningProcesses[commandName] = process
 }
 
-func (pm *ProcessManager) GetRunningProcess(processName string, commandName string) *domain.Process {
-	name := fmt.Sprintf("%s.%s", processName, commandName)
-	if process, ok := pm.GetRunningProcesses()[name]; ok {
+func (pm *ProcessManager) GetRunningProcess(commandName string) *domain.Process {
+	if process, ok := pm.GetRunningProcesses()[commandName]; ok {
 		return process
 	}
 	return nil
 }
 
-func (pm *ProcessManager) RemoveProcess(processName string, commandName string) {
-	name := fmt.Sprintf("%s.%s", processName, commandName)
-	delete(pm.runningProcesses, name)
+func (pm *ProcessManager) RemoveProcess(commandName string) {
+	delete(pm.runningProcesses, commandName)
 }

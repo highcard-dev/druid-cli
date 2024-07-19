@@ -259,8 +259,7 @@ func (sc *ScrollService) clearInvalidLockfileStatuses() error {
 	}
 	for statusCommand := range sc.lock.Statuses {
 
-		process, command := utils.ParseProcessAndCommand(statusCommand)
-		_, err := sc.GetCommand(command, process)
+		_, err := sc.GetCommand(statusCommand)
 		if err != nil {
 			delete(sc.lock.Statuses, statusCommand)
 			logger.Log().Info("Removed invalid status from lockfile", zap.String("status", statusCommand))
@@ -269,16 +268,12 @@ func (sc *ScrollService) clearInvalidLockfileStatuses() error {
 	return sc.lock.Write()
 }
 
-func (sc *ScrollService) GetCommand(cmd string, processId string) (*domain.CommandInstructionSet, error) {
+func (sc *ScrollService) GetCommand(cmd string) (*domain.CommandInstructionSet, error) {
 	scroll := sc.GetFile()
 	//check if we can accually do it before we start
-	if ps, ok := scroll.Processes[processId]; ok {
-		cmds, ok := ps.Commands[cmd]
-		if !ok {
-			return nil, errors.New("command " + cmd + " not found")
-		}
-		return &cmds, nil
+	if cmds, ok := scroll.Commands[cmd]; ok {
+		return cmds, nil
 	} else {
-		return nil, errors.New("process " + processId + " not found")
+		return nil, errors.New("command " + cmd + " not found")
 	}
 }
