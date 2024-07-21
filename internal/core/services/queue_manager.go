@@ -152,10 +152,7 @@ func (sc *QueueManager) QueueLockFile() error {
 		}
 		status = domain.ScrollLockStatusWaiting
 
-		sc.commandQueue[cmd] = &domain.QueueItem{
-			Status:       status,
-			ChangeStatus: true,
-		}
+		sc.AddItem(cmd, true)
 	}
 
 	return nil
