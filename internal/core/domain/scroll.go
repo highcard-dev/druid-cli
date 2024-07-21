@@ -99,3 +99,25 @@ func (sc *Scroll) ParseFile(file []byte) (*Scroll, error) {
 	sc.File = f
 	return sc, nil
 }
+
+func (sc *Scroll) Validate() error {
+	if sc.Name == "" {
+		return fmt.Errorf("scroll name is required")
+	}
+	if sc.Desc == "" {
+		return fmt.Errorf("scroll description is required")
+	}
+	if sc.Version == nil {
+		return fmt.Errorf("scroll version is required")
+	}
+	if sc.AppVersion == "" {
+		return fmt.Errorf("scroll app_version is required")
+	}
+	if sc.Init == "" {
+		return fmt.Errorf("scroll init is required")
+	}
+	if len(sc.Commands) == 0 {
+		return fmt.Errorf("scroll commands are required")
+	}
+	return nil
+}
