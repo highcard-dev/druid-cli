@@ -264,17 +264,17 @@ func (mr *MockProcedureLauchnerInterfaceMockRecorder) LaunchPlugins() *gomock.Ca
 }
 
 // Run mocks base method.
-func (m *MockProcedureLauchnerInterface) Run(cmd string) error {
+func (m *MockProcedureLauchnerInterface) Run(cmd string, runCommandCb func(string) error) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Run", cmd)
+	ret := m.ctrl.Call(m, "Run", cmd, runCommandCb)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Run indicates an expected call of Run.
-func (mr *MockProcedureLauchnerInterfaceMockRecorder) Run(cmd any) *gomock.Call {
+func (mr *MockProcedureLauchnerInterfaceMockRecorder) Run(cmd, runCommandCb any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Run", reflect.TypeOf((*MockProcedureLauchnerInterface)(nil).Run), cmd)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Run", reflect.TypeOf((*MockProcedureLauchnerInterface)(nil).Run), cmd, runCommandCb)
 }
 
 // RunProcedure mocks base method.

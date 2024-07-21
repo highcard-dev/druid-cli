@@ -10,6 +10,10 @@ import (
 	"go.uber.org/zap"
 )
 
+var ErrAlreadyInQueue = fmt.Errorf("command is already in queue")
+var ErrCommandNotFound = fmt.Errorf("command not found")
+var ErrCommandDoneOnce = fmt.Errorf("command is already done and has run mode once")
+
 type QueueItem struct {
 	status       domain.ScrollLockStatus
 	changeStatus bool
@@ -17,6 +21,7 @@ type QueueItem struct {
 
 type QueueManager struct {
 	mu              sync.Mutex
+	runQueueMu      sync.Mutex
 	scrollService   ports.ScrollServiceInterface
 	processLauncher ports.ProcedureLauchnerInterface
 	commandQueue    map[string]*QueueItem
@@ -41,27 +46,12 @@ func NewQueueManager(
 	}
 }
 
-func (sc *QueueManager) setCommandQueue(commandName string, status domain.ScrollLockStatus, changeStatus bool) {
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
-	sc.commandQueue[commandName] = &QueueItem{
-		status:       status,
-		changeStatus: changeStatus,
-	}
-}
-
 func (sc *QueueManager) workItem(cmd string) error {
 
-	queueItem := sc.commandQueue[cmd]
+	queueItem := sc.GetQueueItem(cmd)
 	if queueItem == nil {
 		return fmt.Errorf("command %s not found", cmd)
 	}
-
-	command, err := sc.scrollService.GetCommand(cmd)
-	if err != nil {
-		return err
-	}
-
 	changeStatus := queueItem.changeStatus
 
 	logger.Log().Debug("Running command",
@@ -69,83 +59,58 @@ func (sc *QueueManager) workItem(cmd string) error {
 		zap.Bool("changeStatus", changeStatus),
 	)
 
-	lock, err := sc.scrollService.GetLock()
+	return sc.processLauncher.Run(cmd, func(cmd string) error {
+		return sc.AddItem(cmd, changeStatus)
+	})
+}
+
+func (sc *QueueManager) notify() {
+	queuedCommands := make([]string, 0)
+
+	for cmd, _ := range sc.commandQueue {
+		if sc.getStatus(cmd) != domain.ScrollLockStatusDone && sc.getStatus(cmd) != domain.ScrollLockStatusError {
+			queuedCommands = append(queuedCommands, cmd)
+		}
+	}
+
+	for _, notifier := range sc.notifierChan {
+		select {
+		case notifier <- queuedCommands:
+			// Successfully sent queuedCommands to the notifier channel
+		default:
+			// The notifier channel is not ready to receive, handle accordingly
+			// For example, log a warning or skip this notifier
+		}
+	}
+}
+
+func (sc *QueueManager) AddItem(cmd string, changeStatus bool) error {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+
+	logger.Log().Debug("Running command",
+		zap.String("cmd", cmd),
+	)
+
+	command, err := sc.scrollService.GetCommand(cmd)
+
 	if err != nil {
 		return err
 	}
-
-	sc.setCommandQueue(cmd, domain.ScrollLockStatusWaiting, changeStatus)
-	if changeStatus {
-		lock.SetStatus(cmd, domain.ScrollLockStatusWaiting)
-	}
-
-	status := lock.GetStatus(cmd)
 
 	//Functions that run once, should be remembered, but should only have waiting status, when the are called explicitly
 	if command.Run == domain.RunModeOnce {
 		changeStatus = true
 	}
 
-	//if done and should be done once, skip
-	if status == domain.ScrollLockStatusDone && command.Run == domain.RunModeOnce {
-		sc.setCommandQueue(cmd, domain.ScrollLockStatusDone, changeStatus)
-		return nil
-	}
-
-	sc.setCommandQueue(cmd, domain.ScrollLockStatusRunning, changeStatus)
-	if changeStatus {
-		lock.SetStatus(cmd, domain.ScrollLockStatusRunning)
-	}
-
-	err = sc.processLauncher.Run(cmd)
-
-	if err != nil {
-		sc.setCommandQueue(cmd, domain.ScrollLockStatusError, changeStatus)
-		return err
-	}
-
-	//restart means we are never done!
-	if changeStatus && command.Run != domain.RunModeRestart {
-		lock.SetStatus(cmd, domain.ScrollLockStatusDone)
-	}
-	sc.setCommandQueue(cmd, domain.ScrollLockStatusDone, changeStatus)
-
-	return nil
-
-}
-
-func (sc *QueueManager) notify() {
-	queuedCommands := make([]string, 0)
-
-	for cmd, item := range sc.commandQueue {
-		if item.status != domain.ScrollLockStatusDone {
-			queuedCommands = append(queuedCommands, cmd)
-		}
-	}
-
-	for _, notifier := range sc.notifierChan {
-		notifier <- queuedCommands
-	}
-}
-
-func (sc *QueueManager) AddItem(cmd string, changeStatus bool) error {
-
-	logger.Log().Debug("Running command",
-		zap.String("cmd", cmd),
-	)
-
-	_, err := sc.scrollService.GetCommand(cmd)
-
-	if err != nil {
-		return err
-	}
-
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
-
 	if value, ok := sc.commandQueue[cmd]; ok {
-		if value.status != domain.ScrollLockStatusDone {
-			return fmt.Errorf("command %s is already in queue", cmd)
+
+		if value.status != domain.ScrollLockStatusDone && value.status != domain.ScrollLockStatusError {
+			return ErrAlreadyInQueue
+		}
+
+		if value.status == domain.ScrollLockStatusDone && command.Run == domain.RunModeOnce {
+			return ErrCommandDoneOnce
 		}
 	}
 
@@ -197,10 +162,13 @@ func (sc *QueueManager) Work() {
 }
 
 func (sc *QueueManager) RunQueue() {
+	sc.runQueueMu.Lock()
+	defer sc.runQueueMu.Unlock()
+
 	for cmd, item := range sc.commandQueue {
 
 		//if already running, skip
-		if sc.commandQueue[cmd].status == domain.ScrollLockStatusRunning {
+		if sc.getStatus(cmd) == domain.ScrollLockStatusRunning {
 			continue
 		}
 
@@ -214,14 +182,14 @@ func (sc *QueueManager) RunQueue() {
 		}
 
 		//if run Mode is restart, we need to run it again
-		if (item.status == domain.ScrollLockStatusError || item.status == domain.ScrollLockStatusDone) && command.Run != domain.RunModeRestart {
+		if (sc.getStatus(cmd) == domain.ScrollLockStatusError || sc.getStatus(cmd) == domain.ScrollLockStatusDone) && command.Run != domain.RunModeRestart {
 			continue
 		}
 
 		dependencies := command.Needs
 		dependenciesReady := true
 		for _, dep := range dependencies {
-			childItem, ok := sc.commandQueue[dep]
+			_, ok := sc.commandQueue[dep]
 			//if item not in queue, add it and
 			if !ok {
 				dependenciesReady = false
@@ -229,18 +197,37 @@ func (sc *QueueManager) RunQueue() {
 				continue
 			}
 
-			if childItem.status != domain.ScrollLockStatusDone {
+			if sc.getStatus(dep) != domain.ScrollLockStatusDone {
 				dependenciesReady = false
 				continue
 			}
 		}
 
 		if dependenciesReady {
-			err := sc.workItem(cmd)
-			if err != nil {
-				logger.Log().Error("Error running command", zap.String("command", cmd), zap.Error(err))
-			}
-			sc.taskDoneChan <- struct{}{}
+			//we only run one process at a time, this is not optimal, but it is simple
+			sc.setStatus(cmd, domain.ScrollLockStatusRunning, item.changeStatus)
+			go func(c string, i *QueueItem) {
+
+				err := sc.workItem(c)
+				if err != nil {
+					sc.setStatus(c, domain.ScrollLockStatusError, i.changeStatus)
+					logger.Log().Error("Error running command", zap.String("command", c), zap.Error(err))
+					sc.taskDoneChan <- struct{}{}
+					return
+				}
+
+				//restart means we are never done!
+				if i.changeStatus && command.Run != domain.RunModeRestart {
+					sc.setStatus(c, domain.ScrollLockStatusDone, true)
+				} else {
+					if command.Run == domain.RunModeRestart {
+						sc.setStatus(c, domain.ScrollLockStatusWaiting, false)
+					} else {
+						sc.setStatus(c, domain.ScrollLockStatusDone, false)
+					}
+				}
+				sc.taskDoneChan <- struct{}{}
+			}(cmd, item)
 		}
 	}
 }
@@ -256,7 +243,49 @@ func (sc *QueueManager) WaitUntilEmpty() {
 	for {
 		cmds := <-notifier
 		if len(cmds) == 0 {
+			// remove notifier
+			for i, n := range sc.notifierChan {
+				if n == notifier {
+					sc.notifierChan = append(sc.notifierChan[:i], sc.notifierChan[i+1:]...)
+					break
+				}
+			}
 			return
 		}
+	}
+}
+
+func (sc *QueueManager) GetQueueItem(cmd string) *QueueItem {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+
+	if value, ok := sc.commandQueue[cmd]; ok {
+		return value
+	}
+
+	return nil
+}
+
+func (sc *QueueManager) getStatus(cmd string) domain.ScrollLockStatus {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	if value, ok := sc.commandQueue[cmd]; ok {
+		return value.status
+	}
+	return domain.ScrollLockStatusDone
+}
+
+func (sc *QueueManager) setStatus(cmd string, status domain.ScrollLockStatus, writeLock bool) {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	if value, ok := sc.commandQueue[cmd]; ok {
+		value.status = status
+	}
+	if writeLock {
+		lock, err := sc.scrollService.GetLock()
+		if err != nil {
+			return
+		}
+		lock.SetStatus(cmd, status)
 	}
 }

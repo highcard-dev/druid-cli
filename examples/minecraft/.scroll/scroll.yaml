@@ -36,3 +36,11 @@ commands:
           - bash
           - -c
           - echo eula=true > eula.txt
+  restart:
+    procedures:
+      - mode: command
+        data:
+          - stop
+      - mode: command
+        data:
+          - start

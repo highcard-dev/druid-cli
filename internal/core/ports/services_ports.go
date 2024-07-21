@@ -31,7 +31,7 @@ type ScrollServiceInterface interface {
 type ProcedureLauchnerInterface interface {
 	LaunchPlugins() error
 	RunProcedure(*domain.Procedure, string) (string, *int, error)
-	Run(cmd string) error
+	Run(cmd string, runCommandCb func(cmd string) error) error
 }
 
 type PluginManagerInterface interface {

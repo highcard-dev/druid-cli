@@ -65,7 +65,8 @@ func (sc *ProcedureLauncher) LaunchPlugins() error {
 	return sc.pluginManager.ParseFromScroll(scroll.Plugins, string(sc.scrollService.GetScrollConfigRawYaml()), sc.scrollService.GetCwd())
 }
 
-func (sc *ProcedureLauncher) Run(cmd string) error {
+// I am unsure if we should support he command mode in the future as it is an antipattern for the scroll architecture, we try to solve stuff with dependencies
+func (sc *ProcedureLauncher) Run(cmd string, runCommandCb func(cmd string) error) error {
 
 	command, err := sc.scrollService.GetCommand(cmd)
 	if err != nil {
@@ -73,6 +74,15 @@ func (sc *ProcedureLauncher) Run(cmd string) error {
 	}
 
 	for _, proc := range command.Procedures {
+
+		if proc.Mode == "command" {
+			if proc.Wait != nil {
+				return errors.New("command mode does not support wait")
+			}
+			err = runCommandCb(proc.Data.(string))
+			return err
+		}
+
 		var err error
 		var exitCode *int
 		logger.Log().Debug("Running procedure",
@@ -192,16 +202,6 @@ func (sc *ProcedureLauncher) RunProcedure(proc *domain.Procedure, cmd string) (s
 			return "", nil, errors.New("process not found")
 		}
 		sc.processManager.WriteStdin(process, stdtIn)
-
-	case "command":
-
-		logger.Log().Debug("Launching stdin process",
-			zap.String("cwd", processCwd),
-			zap.String("instructions", proc.Data.(string)),
-		)
-
-		//err := sc.queueManager.Additem(proc.Data.(string), false)
-		return "", nil, err
 
 	case "scroll-switch":
 
