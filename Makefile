@@ -30,6 +30,10 @@ mock:
 test:
 	go test -v ./test
 
+test_clean:
+	go clean -testcache
+	go test -v ./test
+
 test-integration:
 	go test -v ./test/integration
 

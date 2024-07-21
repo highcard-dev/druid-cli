@@ -17,10 +17,10 @@ func TestProcessManager(t *testing.T) {
 	processManager := services.NewProcessManager(logManager, consoleManager, processMonitor)
 	t.Run("Run", func(t *testing.T) {
 
-		processMonitor.EXPECT().AddProcess(gomock.Any(), "test.echo").Times(1)
-		processMonitor.EXPECT().RemoveProcess("test.echo").Times(1)
-		logManager.EXPECT().AddLine("process.test.echo", []byte("hello\n")).Times(1)
-		exitCode, err := processManager.Run("test", "echo", []string{"echo", "hello"}, "/tmp")
+		processMonitor.EXPECT().AddProcess(gomock.Any(), "echo").Times(1)
+		processMonitor.EXPECT().RemoveProcess("echo").Times(1)
+		logManager.EXPECT().AddLine("process.echo", []byte("hello\n")).Times(1)
+		exitCode, err := processManager.Run("echo", []string{"echo", "hello"}, "/tmp")
 
 		if err != nil {
 			t.Error(err)
@@ -31,11 +31,11 @@ func TestProcessManager(t *testing.T) {
 		}
 	})
 	t.Run("RunTty", func(t *testing.T) {
-		processMonitor.EXPECT().AddProcess(gomock.Any(), "test.echo").Times(1)
-		processMonitor.EXPECT().RemoveProcess("test.echo").Times(1)
+		processMonitor.EXPECT().AddProcess(gomock.Any(), "echo").Times(1)
+		processMonitor.EXPECT().RemoveProcess("echo").Times(1)
 
-		logManager.EXPECT().AddLine("process_tty.test.echo", gomock.Any()).MinTimes(1)
-		exitCode, err := processManager.RunTty("test", "echo", []string{"echo", "hello"}, "/tmp")
+		logManager.EXPECT().AddLine("process_tty.echo", gomock.Any()).MinTimes(1)
+		exitCode, err := processManager.RunTty("echo", []string{"echo", "hello"}, "/tmp")
 
 		if err != nil {
 			t.Error(err)

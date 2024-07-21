@@ -363,17 +363,6 @@
                 "wait": {}
             }
         },
-        "ProcessCommand": {
-            "type": "object",
-            "properties": {
-                "commands": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/CommandInstructionSet"
-                    }
-                }
-            }
-        },
         "ProcessMonitorMetrics": {
             "type": "object",
             "properties": {
@@ -483,6 +472,18 @@
                     "description": "don't make this a semver, it's not allways",
                     "type": "string"
                 },
+                "commands": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/CommandInstructionSet"
+                    }
+                },
+                "cronjobs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domain.Cronjob"
+                    }
+                },
                 "desc": {
                     "type": "string"
                 },
@@ -499,12 +500,6 @@
                         "additionalProperties": {
                             "type": "string"
                         }
-                    }
-                },
-                "processes": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/ProcessCommand"
                     }
                 },
                 "version": {
@@ -553,6 +548,20 @@
                 "ConsoleTypeProcess",
                 "ConsoleTypePlugin"
             ]
+        },
+        "domain.Cronjob": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "schedule": {
+                    "type": "string"
+                }
+            }
         },
         "domain.Process": {
             "type": "object",
@@ -613,9 +622,6 @@
             "type": "object",
             "properties": {
                 "command": {
-                    "type": "string"
-                },
-                "process": {
                     "type": "string"
                 },
                 "sync": {

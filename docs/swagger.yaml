@@ -40,13 +40,6 @@ definitions:
         type: string
       wait: {}
     type: object
-  ProcessCommand:
-    properties:
-      commands:
-        additionalProperties:
-          $ref: '#/definitions/CommandInstructionSet'
-        type: object
-    type: object
   ProcessMonitorMetrics:
     properties:
       connections:
@@ -119,6 +112,14 @@ definitions:
       app_version:
         description: don't make this a semver, it's not allways
         type: string
+      commands:
+        additionalProperties:
+          $ref: '#/definitions/CommandInstructionSet'
+        type: object
+      cronjobs:
+        items:
+          $ref: '#/definitions/domain.Cronjob'
+        type: array
       desc:
         type: string
       init:
@@ -130,10 +131,6 @@ definitions:
           additionalProperties:
             type: string
           type: object
-        type: object
-      processes:
-        additionalProperties:
-          $ref: '#/definitions/ProcessCommand'
         type: object
       version:
         type: string
@@ -167,6 +164,15 @@ definitions:
     - ConsoleTypeTTY
     - ConsoleTypeProcess
     - ConsoleTypePlugin
+  domain.Cronjob:
+    properties:
+      command:
+        type: string
+      name:
+        type: string
+      schedule:
+        type: string
+    type: object
   domain.Process:
     properties:
       name:
@@ -207,8 +213,6 @@ definitions:
   handler.StartScrollRequestBody:
     properties:
       command:
-        type: string
-      process:
         type: string
       sync:
         type: boolean

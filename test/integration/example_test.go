@@ -17,10 +17,11 @@ import (
 )
 
 type ServiceConfig struct {
-	ServiceName string
-	ExamplePath string
-	TestAddress string
-	TestName    string
+	ServiceName    string
+	ExamplePath    string
+	TestAddress    string
+	TestName       string
+	LockFileStatus []string
 }
 
 func TestExamples(t *testing.T) {
@@ -30,16 +31,18 @@ func TestExamples(t *testing.T) {
 
 	configs := []ServiceConfig{
 		{
-			ServiceName: "minecraft",
-			ExamplePath: "../../examples/minecraft/.scroll/scroll.yaml",
-			TestAddress: "localhost:25565",
-			TestName:    "Minecraft",
+			ServiceName:    "minecraft",
+			ExamplePath:    "../../examples/minecraft/.scroll/scroll.yaml",
+			TestAddress:    "localhost:25565",
+			TestName:       "Minecraft",
+			LockFileStatus: []string{"start", "install"},
 		},
 		{
-			ServiceName: "nginx",
-			ExamplePath: "../../examples/nginx/.scroll/scroll.yaml",
-			TestAddress: "localhost:80",
-			TestName:    "Nginx",
+			ServiceName:    "nginx",
+			ExamplePath:    "../../examples/nginx/.scroll/scroll.yaml",
+			TestAddress:    "localhost:80",
+			TestName:       "Nginx",
+			LockFileStatus: []string{"start"},
 		},
 		// Add more services here
 	}
@@ -85,6 +88,9 @@ func TestExamples(t *testing.T) {
 			processMonitor := test_utils.GetMockedProcessMonitor(ctrl)
 			processManager := services.NewProcessManager(logManager, consoleManager, processMonitor)
 			procedureLauncher := services.NewProcedureLauncher(ociRegistryMock, processManager, pluginManager, consoleManager, logManager, scrollService)
+			queueManager := services.NewQueueManager(scrollService, procedureLauncher)
+
+			go queueManager.Work()
 
 			scrollService.WriteNewScrollLock()
 			scrollService.Bootstrap(false)
@@ -110,7 +116,7 @@ func TestExamples(t *testing.T) {
 							if err == nil {
 								println("Connected to server after", time.Since(now).String())
 								conn.Close()
-								err = procedureLauncher.RunNew("stop", "main", false)
+								err = queueManager.AddItem("stop", false)
 								if err != nil {
 									t.Error(err)
 									doneConnecting <- err
@@ -130,6 +136,12 @@ func TestExamples(t *testing.T) {
 				timeout := time.After(4 * time.Minute)
 				tick := time.Tick(1 * time.Second)
 
+				err := queueManager.AddItem("start", true)
+				if err != nil {
+					doneStarting <- err
+					return
+				}
+
 				for {
 					select {
 					case <-timeout:
@@ -137,7 +149,6 @@ func TestExamples(t *testing.T) {
 						doneStarting <- errors.New("Timeout Starting")
 						return
 					case <-tick:
-						err := procedureLauncher.RunNew("start", "main", false)
 
 						// If we are not testing a server, we can end the test here
 						if config.TestAddress == "" {
@@ -156,6 +167,26 @@ func TestExamples(t *testing.T) {
 			err = <-doneConnecting
 			if err != nil {
 				t.Error("Failed to test to server: ", err)
+			}
+
+			lock, err := scrollService.GetLock()
+
+			if err != nil {
+				t.Error(err)
+				return
+
+			}
+
+			if len(lock.Statuses) != len(config.LockFileStatus) {
+				t.Errorf("Lock file statuses count mismatch, expected: %d, got: %d", len(config.LockFileStatus), len(lock.Statuses))
+			}
+
+			for _, status := range config.LockFileStatus {
+				if _, ok := lock.Statuses[status]; !ok {
+					t.Errorf(
+						"Lock file status %s not found, expected: %v, got: %v", status, config.LockFileStatus, lock.Statuses,
+					)
+				}
 			}
 		})
 	}

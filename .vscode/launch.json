@@ -151,6 +151,16 @@
             "trace": "verbose",
             "debugAdapter": "legacy"
             
-        }
+        },
+        {
+            "name": "Test Current File",
+            "type": "go",
+            "request": "launch",
+            "mode": "test",
+            "program": "${file}",
+            "env": {},
+            "args": [],
+            "showLog": true
+        }       
     ]
 }

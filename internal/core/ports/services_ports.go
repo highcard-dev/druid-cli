@@ -25,12 +25,13 @@ type ScrollServiceInterface interface {
 	GetCwd() string
 	WriteNewScrollLock() *domain.ScrollLock
 	GetLock() (*domain.ScrollLock, error)
-	GetCommand(cmd string, processId string) (*domain.CommandInstructionSet, error)
+	GetCommand(cmd string) (*domain.CommandInstructionSet, error)
 }
 
 type ProcedureLauchnerInterface interface {
-	RunNew(commandId string, processId string, changeStatus bool) error
-	RunProcedure(*domain.Procedure, string, string) (string, *int, error)
+	LaunchPlugins() error
+	RunProcedure(*domain.Procedure, string) (string, *int, error)
+	Run(cmd string, runCommandCb func(cmd string) error) error
 }
 
 type PluginManagerInterface interface {
@@ -48,9 +49,9 @@ type LogManagerInterface interface {
 
 type ProcessManagerInterface interface {
 	GetRunningProcesses() map[string]*domain.Process
-	GetRunningProcess(process string, commandName string) *domain.Process
-	Run(process string, commandName string, command []string, dir string) (*int, error)
-	RunTty(process string, comandName string, command []string, dir string) (*int, error)
+	GetRunningProcess(commandName string) *domain.Process
+	Run(commandName string, command []string, dir string) (*int, error)
+	RunTty(comandName string, command []string, dir string) (*int, error)
 	WriteStdin(process *domain.Process, data string) error
 }
 
@@ -93,4 +94,8 @@ type OciRegistryInterface interface {
 
 type CronManagerInterface interface {
 	Init()
+}
+
+type QueueManagerInterface interface {
+	AddItem(cmd string, changeStatus bool) error
 }

@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"strings"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
@@ -14,10 +12,10 @@ type ScrollHandler struct {
 	ScrollService   ports.ScrollServiceInterface
 	PluginManager   ports.PluginManagerInterface
 	ProcessLauncher ports.ProcedureLauchnerInterface
+	QueueManager    ports.QueueManagerInterface
 }
 
 type StartScrollRequestBody struct {
-	ProcessId string `json:"process"`
 	CommandId string `json:"command"`
 	Sync      bool   `json:"sync"`
 }
@@ -29,8 +27,8 @@ type StartProcedureRequestBody struct {
 	Sync    bool   `json:"sync"`
 }
 
-func NewScrollHandler(scrollService ports.ScrollServiceInterface, pluginManager ports.PluginManagerInterface, processLauncher ports.ProcedureLauchnerInterface) *ScrollHandler {
-	return &ScrollHandler{ScrollService: scrollService, PluginManager: pluginManager, ProcessLauncher: processLauncher}
+func NewScrollHandler(scrollService ports.ScrollServiceInterface, pluginManager ports.PluginManagerInterface, processLauncher ports.ProcedureLauchnerInterface, queueManager ports.QueueManagerInterface) *ScrollHandler {
+	return &ScrollHandler{ScrollService: scrollService, PluginManager: pluginManager, ProcessLauncher: processLauncher, QueueManager: queueManager}
 }
 
 // @Summary Get current scroll
@@ -65,7 +63,7 @@ func (sl ScrollHandler) RunCommand(c *fiber.Ctx) error {
 	}
 
 	if requestBody.Sync {
-		err = sl.ProcessLauncher.RunNew(requestBody.CommandId, requestBody.ProcessId, true)
+		err = sl.QueueManager.AddItem(requestBody.CommandId, true)
 		if err != nil {
 			logger.Log().Error("Error running command (sync)", zap.Error(err))
 			return c.SendStatus(500)
@@ -73,7 +71,7 @@ func (sl ScrollHandler) RunCommand(c *fiber.Ctx) error {
 		return c.SendStatus(200)
 	} else {
 		go func() {
-			err = sl.ProcessLauncher.RunNew(requestBody.CommandId, requestBody.ProcessId, true)
+			err = sl.QueueManager.AddItem(requestBody.CommandId, true)
 			if err != nil {
 				logger.Log().Error("Error running command (async)", zap.Error(err))
 			}
@@ -126,23 +124,20 @@ func (sl ScrollHandler) RunProcedure(c *fiber.Ctx) error {
 		}
 	}
 
-	parts := strings.Split(requestBody.Process, ".")
+	command := requestBody.Process
+	_, err = sl.ScrollService.GetCommand(command)
 
-	if len(parts) != 2 {
-		if procedure.IsInternalMode() {
-			c.SendString("Invalid process")
-			return c.SendStatus(400)
-		} else {
-			parts = []string{requestBody.Process, ""}
-		}
+	if err != nil {
+		c.SendString("Command not found")
+		return c.SendStatus(400)
 	}
 
 	if !requestBody.Sync {
 
-		go sl.ProcessLauncher.RunProcedure(&procedure, parts[0], parts[1])
+		go sl.ProcessLauncher.RunProcedure(&procedure, command)
 		return c.SendStatus(201)
 	} else {
-		res, _, err := sl.ProcessLauncher.RunProcedure(&procedure, parts[0], parts[1])
+		res, _, err := sl.ProcessLauncher.RunProcedure(&procedure, command)
 		if err != nil {
 			c.SendString(err.Error())
 			return c.SendStatus(400)

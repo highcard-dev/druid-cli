@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/highcard-dev/daemon/internal/core/services"
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
@@ -33,6 +32,8 @@ var RunCmd = &cobra.Command{
 		}
 		processLauncher := services.NewProcedureLauncher(client, processManager, services.NewPluginManager(), consoleService, logManager, scrollService)
 
+		queueManager := services.NewQueueManager(scrollService, processLauncher)
+
 		if !scrollService.LockExists() {
 			scrollService.WriteNewScrollLock()
 			logger.Log().Info("Lock file created")
@@ -55,11 +56,9 @@ var RunCmd = &cobra.Command{
 			return err
 		}
 
-		parts := strings.Split(args[0], ".")
+		command := args[0]
 
-		command := strings.TrimPrefix(args[0], parts[0]+".")
-
-		err = processLauncher.RunNew(command, parts[0], false)
+		err = queueManager.AddItem(command, false)
 		return err
 	},
 }

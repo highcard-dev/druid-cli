@@ -26,14 +26,14 @@ type Cronjob struct {
 }
 
 type File struct {
-	Name       string                       `yaml:"name" json:"name"`
-	Desc       string                       `yaml:"desc" json:"desc"`
-	Version    *semver.Version              `yaml:"version" json:"version"`
-	AppVersion string                       `yaml:"app_version" json:"app_version"` //don't make this a semver, it's not allways
-	Init       string                       `yaml:"init" json:"init"`
-	Processes  map[string]*ProcessCommand   `yaml:"processes" json:"processes"`
-	Plugins    map[string]map[string]string `yaml:"plugins" json:"plugins"`
-	Cronjobs   []*Cronjob                   `yaml:"cronjobs" json:"cronjobs"`
+	Name       string                            `yaml:"name" json:"name"`
+	Desc       string                            `yaml:"desc" json:"desc"`
+	Version    *semver.Version                   `yaml:"version" json:"version"`
+	AppVersion string                            `yaml:"app_version" json:"app_version"` //don't make this a semver, it's not allways
+	Init       string                            `yaml:"init" json:"init"`
+	Commands   map[string]*CommandInstructionSet `yaml:"commands" json:"commands"`
+	Plugins    map[string]map[string]string      `yaml:"plugins" json:"plugins"`
+	Cronjobs   []*Cronjob                        `yaml:"cronjobs" json:"cronjobs"`
 } // @name ScrollFile
 
 type Scroll struct {
@@ -59,10 +59,6 @@ type CommandInstructionSet struct {
 	Needs      []string     `yaml:"needs,omitempty" json:"needs,omitempty"`
 	Run        RunMode      `yaml:"run,omitempty" json:"run,omitempty"`
 } // @name CommandInstructionSet
-
-type ProcessCommand struct {
-	Commands map[string]CommandInstructionSet `yaml:"commands" json:"commands"`
-} // @name ProcessCommand
 
 var ErrScrollDoesNotExist = fmt.Errorf("scroll does not exist")
 
@@ -102,4 +98,26 @@ func (sc *Scroll) ParseFile(file []byte) (*Scroll, error) {
 
 	sc.File = f
 	return sc, nil
+}
+
+func (sc *Scroll) Validate() error {
+	if sc.Name == "" {
+		return fmt.Errorf("scroll name is required")
+	}
+	if sc.Desc == "" {
+		return fmt.Errorf("scroll description is required")
+	}
+	if sc.Version == nil {
+		return fmt.Errorf("scroll version is required")
+	}
+	if sc.AppVersion == "" {
+		return fmt.Errorf("scroll app_version is required")
+	}
+	if sc.Init == "" {
+		return fmt.Errorf("scroll init is required")
+	}
+	if len(sc.Commands) == 0 {
+		return fmt.Errorf("scroll commands are required")
+	}
+	return nil
 }

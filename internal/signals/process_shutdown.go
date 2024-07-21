@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -15,7 +14,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func SetupSignals(processLauncher ports.ProcedureLauchnerInterface, processManager ports.ProcessManagerInterface, app *fiber.App, waitSeconds int) {
+func SetupSignals(queueManager ports.QueueManagerInterface, processManager ports.ProcessManagerInterface, app *fiber.App, waitSeconds int) {
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc,
 		syscall.SIGHUP,
@@ -37,11 +36,11 @@ func SetupSignals(processLauncher ports.ProcedureLauchnerInterface, processManag
 
 		logger.Log().Info("Received shudown signal", zap.String("signal", s.String()))
 
-		GracefulShutdown(processLauncher, processManager, app, waitSeconds)
+		GracefulShutdown(queueManager, processManager, app, waitSeconds)
 	}()
 }
 
-func GracefulShutdown(processLauncher ports.ProcedureLauchnerInterface, processManager ports.ProcessManagerInterface, app *fiber.App, waitSeconds int) {
+func GracefulShutdown(queueManager ports.QueueManagerInterface, processManager ports.ProcessManagerInterface, app *fiber.App, waitSeconds int) {
 
 	go func() {
 		for {
@@ -58,10 +57,7 @@ func GracefulShutdown(processLauncher ports.ProcedureLauchnerInterface, processM
 	}()
 
 	logger.Log().Info("Stopping all processes by defined routines")
-	for processName := range processManager.GetRunningProcesses() {
-		parts := strings.Split(processName, ".")
-		go processLauncher.RunNew("stop", parts[0], false) //TODO use stop types instead of name
-	}
+	go queueManager.AddItem("stop", false) //TODO use stop types instead of name
 
 	logger.Log().Info(fmt.Sprintf("Waiting for %d seconds...", waitSeconds))
 	<-time.After(time.Minute)

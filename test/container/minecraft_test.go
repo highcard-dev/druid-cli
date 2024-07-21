@@ -60,6 +60,8 @@ func TestContainerMinecraft(t *testing.T) {
 	processManager := services.NewProcessManager(logManager, consoleManager, processMonitor)
 	procedureLauncher := services.NewProcedureLauncher(ociRegistryMock, processManager, pluginManager, consoleManager, logManager, scrollService)
 
+	queueManager := services.NewQueueManager(scrollService, procedureLauncher)
+
 	t.Run("Launch real app from examples", func(t *testing.T) {
 
 		scrollService.WriteNewScrollLock()
@@ -84,7 +86,7 @@ func TestContainerMinecraft(t *testing.T) {
 					if err == nil {
 						println("Connected to server after", time.Since(now).String())
 						conn.Close()
-						err = procedureLauncher.RunNew("stop", "main", false)
+						err = queueManager.AddItem("stop", false)
 						if err != nil {
 							t.Error(err)
 							doneConnecting <- err
@@ -111,7 +113,7 @@ func TestContainerMinecraft(t *testing.T) {
 					doneStarting <- errors.New("Timeout Starting")
 					return
 				case <-tick:
-					err := procedureLauncher.RunNew("start", "main", false)
+					err := queueManager.AddItem("start", false)
 					if err != nil {
 						t.Error(err)
 						doneStarting <- err

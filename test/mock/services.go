@@ -113,18 +113,18 @@ func (m *MockScrollServiceInterface) EXPECT() *MockScrollServiceInterfaceMockRec
 }
 
 // GetCommand mocks base method.
-func (m *MockScrollServiceInterface) GetCommand(cmd, processId string) (*domain.CommandInstructionSet, error) {
+func (m *MockScrollServiceInterface) GetCommand(cmd string) (*domain.CommandInstructionSet, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetCommand", cmd, processId)
+	ret := m.ctrl.Call(m, "GetCommand", cmd)
 	ret0, _ := ret[0].(*domain.CommandInstructionSet)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetCommand indicates an expected call of GetCommand.
-func (mr *MockScrollServiceInterfaceMockRecorder) GetCommand(cmd, processId any) *gomock.Call {
+func (mr *MockScrollServiceInterfaceMockRecorder) GetCommand(cmd any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCommand", reflect.TypeOf((*MockScrollServiceInterface)(nil).GetCommand), cmd, processId)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCommand", reflect.TypeOf((*MockScrollServiceInterface)(nil).GetCommand), cmd)
 }
 
 // GetCurrent mocks base method.
@@ -249,24 +249,38 @@ func (m *MockProcedureLauchnerInterface) EXPECT() *MockProcedureLauchnerInterfac
 	return m.recorder
 }
 
-// RunNew mocks base method.
-func (m *MockProcedureLauchnerInterface) RunNew(commandId, processId string, changeStatus bool) error {
+// LaunchPlugins mocks base method.
+func (m *MockProcedureLauchnerInterface) LaunchPlugins() error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RunNew", commandId, processId, changeStatus)
+	ret := m.ctrl.Call(m, "LaunchPlugins")
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// RunNew indicates an expected call of RunNew.
-func (mr *MockProcedureLauchnerInterfaceMockRecorder) RunNew(commandId, processId, changeStatus any) *gomock.Call {
+// LaunchPlugins indicates an expected call of LaunchPlugins.
+func (mr *MockProcedureLauchnerInterfaceMockRecorder) LaunchPlugins() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunNew", reflect.TypeOf((*MockProcedureLauchnerInterface)(nil).RunNew), commandId, processId, changeStatus)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LaunchPlugins", reflect.TypeOf((*MockProcedureLauchnerInterface)(nil).LaunchPlugins))
+}
+
+// Run mocks base method.
+func (m *MockProcedureLauchnerInterface) Run(cmd string, runCommandCb func(string) error) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Run", cmd, runCommandCb)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Run indicates an expected call of Run.
+func (mr *MockProcedureLauchnerInterfaceMockRecorder) Run(cmd, runCommandCb any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Run", reflect.TypeOf((*MockProcedureLauchnerInterface)(nil).Run), cmd, runCommandCb)
 }
 
 // RunProcedure mocks base method.
-func (m *MockProcedureLauchnerInterface) RunProcedure(arg0 *domain.Procedure, arg1, arg2 string) (string, *int, error) {
+func (m *MockProcedureLauchnerInterface) RunProcedure(arg0 *domain.Procedure, arg1 string) (string, *int, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RunProcedure", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "RunProcedure", arg0, arg1)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(*int)
 	ret2, _ := ret[2].(error)
@@ -274,9 +288,9 @@ func (m *MockProcedureLauchnerInterface) RunProcedure(arg0 *domain.Procedure, ar
 }
 
 // RunProcedure indicates an expected call of RunProcedure.
-func (mr *MockProcedureLauchnerInterfaceMockRecorder) RunProcedure(arg0, arg1, arg2 any) *gomock.Call {
+func (mr *MockProcedureLauchnerInterfaceMockRecorder) RunProcedure(arg0, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunProcedure", reflect.TypeOf((*MockProcedureLauchnerInterface)(nil).RunProcedure), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunProcedure", reflect.TypeOf((*MockProcedureLauchnerInterface)(nil).RunProcedure), arg0, arg1)
 }
 
 // MockPluginManagerInterface is a mock of PluginManagerInterface interface.
@@ -446,17 +460,17 @@ func (m *MockProcessManagerInterface) EXPECT() *MockProcessManagerInterfaceMockR
 }
 
 // GetRunningProcess mocks base method.
-func (m *MockProcessManagerInterface) GetRunningProcess(process, commandName string) *domain.Process {
+func (m *MockProcessManagerInterface) GetRunningProcess(commandName string) *domain.Process {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetRunningProcess", process, commandName)
+	ret := m.ctrl.Call(m, "GetRunningProcess", commandName)
 	ret0, _ := ret[0].(*domain.Process)
 	return ret0
 }
 
 // GetRunningProcess indicates an expected call of GetRunningProcess.
-func (mr *MockProcessManagerInterfaceMockRecorder) GetRunningProcess(process, commandName any) *gomock.Call {
+func (mr *MockProcessManagerInterfaceMockRecorder) GetRunningProcess(commandName any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRunningProcess", reflect.TypeOf((*MockProcessManagerInterface)(nil).GetRunningProcess), process, commandName)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRunningProcess", reflect.TypeOf((*MockProcessManagerInterface)(nil).GetRunningProcess), commandName)
 }
 
 // GetRunningProcesses mocks base method.
@@ -474,33 +488,33 @@ func (mr *MockProcessManagerInterfaceMockRecorder) GetRunningProcesses() *gomock
 }
 
 // Run mocks base method.
-func (m *MockProcessManagerInterface) Run(process, commandName string, command []string, dir string) (*int, error) {
+func (m *MockProcessManagerInterface) Run(commandName string, command []string, dir string) (*int, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Run", process, commandName, command, dir)
+	ret := m.ctrl.Call(m, "Run", commandName, command, dir)
 	ret0, _ := ret[0].(*int)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Run indicates an expected call of Run.
-func (mr *MockProcessManagerInterfaceMockRecorder) Run(process, commandName, command, dir any) *gomock.Call {
+func (mr *MockProcessManagerInterfaceMockRecorder) Run(commandName, command, dir any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Run", reflect.TypeOf((*MockProcessManagerInterface)(nil).Run), process, commandName, command, dir)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Run", reflect.TypeOf((*MockProcessManagerInterface)(nil).Run), commandName, command, dir)
 }
 
 // RunTty mocks base method.
-func (m *MockProcessManagerInterface) RunTty(process, comandName string, command []string, dir string) (*int, error) {
+func (m *MockProcessManagerInterface) RunTty(comandName string, command []string, dir string) (*int, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RunTty", process, comandName, command, dir)
+	ret := m.ctrl.Call(m, "RunTty", comandName, command, dir)
 	ret0, _ := ret[0].(*int)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // RunTty indicates an expected call of RunTty.
-func (mr *MockProcessManagerInterfaceMockRecorder) RunTty(process, comandName, command, dir any) *gomock.Call {
+func (mr *MockProcessManagerInterfaceMockRecorder) RunTty(comandName, command, dir any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunTty", reflect.TypeOf((*MockProcessManagerInterface)(nil).RunTty), process, comandName, command, dir)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunTty", reflect.TypeOf((*MockProcessManagerInterface)(nil).RunTty), comandName, command, dir)
 }
 
 // WriteStdin mocks base method.
@@ -937,4 +951,76 @@ func (m *MockOciRegistryInterface) PushMeta(folder, repo string) (v1.Descriptor,
 func (mr *MockOciRegistryInterfaceMockRecorder) PushMeta(folder, repo any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PushMeta", reflect.TypeOf((*MockOciRegistryInterface)(nil).PushMeta), folder, repo)
+}
+
+// MockCronManagerInterface is a mock of CronManagerInterface interface.
+type MockCronManagerInterface struct {
+	ctrl     *gomock.Controller
+	recorder *MockCronManagerInterfaceMockRecorder
+}
+
+// MockCronManagerInterfaceMockRecorder is the mock recorder for MockCronManagerInterface.
+type MockCronManagerInterfaceMockRecorder struct {
+	mock *MockCronManagerInterface
+}
+
+// NewMockCronManagerInterface creates a new mock instance.
+func NewMockCronManagerInterface(ctrl *gomock.Controller) *MockCronManagerInterface {
+	mock := &MockCronManagerInterface{ctrl: ctrl}
+	mock.recorder = &MockCronManagerInterfaceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockCronManagerInterface) EXPECT() *MockCronManagerInterfaceMockRecorder {
+	return m.recorder
+}
+
+// Init mocks base method.
+func (m *MockCronManagerInterface) Init() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Init")
+}
+
+// Init indicates an expected call of Init.
+func (mr *MockCronManagerInterfaceMockRecorder) Init() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Init", reflect.TypeOf((*MockCronManagerInterface)(nil).Init))
+}
+
+// MockQueueManagerInterface is a mock of QueueManagerInterface interface.
+type MockQueueManagerInterface struct {
+	ctrl     *gomock.Controller
+	recorder *MockQueueManagerInterfaceMockRecorder
+}
+
+// MockQueueManagerInterfaceMockRecorder is the mock recorder for MockQueueManagerInterface.
+type MockQueueManagerInterfaceMockRecorder struct {
+	mock *MockQueueManagerInterface
+}
+
+// NewMockQueueManagerInterface creates a new mock instance.
+func NewMockQueueManagerInterface(ctrl *gomock.Controller) *MockQueueManagerInterface {
+	mock := &MockQueueManagerInterface{ctrl: ctrl}
+	mock.recorder = &MockQueueManagerInterfaceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockQueueManagerInterface) EXPECT() *MockQueueManagerInterfaceMockRecorder {
+	return m.recorder
+}
+
+// AddItem mocks base method.
+func (m *MockQueueManagerInterface) AddItem(cmd string, changeStatus bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddItem", cmd, changeStatus)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddItem indicates an expected call of AddItem.
+func (mr *MockQueueManagerInterfaceMockRecorder) AddItem(cmd, changeStatus any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddItem", reflect.TypeOf((*MockQueueManagerInterface)(nil).AddItem), cmd, changeStatus)
 }

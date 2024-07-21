@@ -22,6 +22,7 @@ var ignoreVersionCheck bool
 var port int
 var shutdownWait int
 var additionalEndpoints []string
+var initScroll bool
 
 var ServeCommand = &cobra.Command{
 	Use:   "serve",
@@ -87,7 +88,9 @@ to interact and monitor the Scroll Application`,
 
 		processLauncher := services.NewProcedureLauncher(client, processManager, pluginManager, consoleService, logManager, scrollService)
 
-		scrollHandler := handler.NewScrollHandler(scrollService, pluginManager, processLauncher)
+		queueManager := services.NewQueueManager(scrollService, processLauncher)
+
+		scrollHandler := handler.NewScrollHandler(scrollService, pluginManager, processLauncher, queueManager)
 		processHandler := handler.NewProcessHandler(processManager)
 		scrollLogHandler := handler.NewScrollLogHandler(scrollService, logManager, processManager)
 		scrollMetricHandler := handler.NewScrollMetricHandler(scrollService, processMonitor)
@@ -104,7 +107,7 @@ to interact and monitor the Scroll Application`,
 
 		a := s.Initialize()
 
-		signals.SetupSignals(processLauncher, processManager, a, shutdownWait)
+		signals.SetupSignals(queueManager, processManager, a, shutdownWait)
 
 		currentScroll, lock, err := scrollService.Bootstrap(ignoreVersionCheck)
 		if err != nil {
@@ -124,14 +127,8 @@ to interact and monitor the Scroll Application`,
 			if err != nil {
 				return err
 			}
-			//run if something is there
-			err = processLauncher.StartLockfile(lock)
-
-			if err != nil {
-				return err
-			}
-		} else {
-			logger.Log().Info("No lock file found, bootstrapping")
+		} else if initScroll {
+			logger.Log().Info("No lock file found, but init command available. Bootstrapping...")
 			//There is an error here. We need to bootstrap the files before we render out the templates in the bootstrap func above
 			err := scrollService.CreateLockAndBootstrapFiles()
 			if err != nil {
@@ -151,17 +148,28 @@ to interact and monitor the Scroll Application`,
 			}
 			//start scroll.init process
 			//initialize if nothing is there
-			err = processLauncher.Initalize(lock)
+			err = queueManager.AddItem(currentScroll.Init, true)
 			if err != nil {
 				return err
 			}
+
+			scrollService.WriteNewScrollLock()
+
 			logger.Log().Info("Bootstrapping done")
 		}
+
+		err = queueManager.QueueLockFile()
+		if err != nil {
+			return err
+		}
+
+		//run if something is there
+		go queueManager.Work()
 
 		//schedule crons
 		logger.Log().Info("Schedule crons")
 
-		cronManager := services.NewCronManager(currentScroll.Cronjobs, processLauncher)
+		cronManager := services.NewCronManager(currentScroll.Cronjobs, queueManager)
 		err = cronManager.Init()
 
 		if err != nil {
@@ -187,6 +195,8 @@ func init() {
 	ServeCommand.Flags().StringVarP(&jwksUrl, "jwks-server", "", "", "JWKS Server to authenticate requests against")
 
 	ServeCommand.Flags().StringVarP(&userId, "user-id", "u", "", "Allowed user id")
+
+	ServeCommand.Flags().BoolVarP(&initScroll, "init", "", false, "Initialize the scroll if no lock file is present")
 
 	ServeCommand.Flags().BoolVarP(&ignoreVersionCheck, "ignore-version-check", "", false, "Ignore version check")
 

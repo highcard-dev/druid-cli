@@ -70,6 +70,11 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]]; then
     then
         args+=("--port" "${DRUID_PORT}")
     fi
+
+    if [ ! -z "${DRUID_INIT}" ];
+    then
+        args+=("--init")
+    fi
         
     echo "Running druid with args from env: ${args[@]}"
     exec druid "${args[@]}"

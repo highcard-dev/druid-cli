@@ -12,6 +12,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "^1.21"
+      - name: Extract branch name
+        id: extract_branch
+        run: echo "BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/} | sed 's/\//-/g')" >> $GITHUB_ENV
+      - uses: paulhatch/semantic-version@v5.3.0
+        id: version
+        with:
+          version_format: "${major}.${minor}.${patch}-${{ env.BRANCH_NAME }}${increment}"
       - run: make test-integration-docker
         name: Run integration tests inside Docker
       - run: make test
@@ -20,3 +27,14 @@ jobs:
         name: Build
       - run: make build-plugins
         name: Build Plugins
+      - name: Prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          prerelease: true
+          files: |
+            bin/druid
+            bin/druid_rcon
+            bin/druid_rcon_web_rust
+            .docker/entrypoint.sh
+            .docker/druid-install-command.sh

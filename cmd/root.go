@@ -31,6 +31,7 @@ func init() {
 	RootCmd.AddCommand(UpdateCommand)
 	RootCmd.AddCommand(SemverCmd)
 	RootCmd.AddCommand(VersionCmd)
+	RootCmd.AddCommand(ScrollCmd)
 
 	c, _ := os.Getwd()
 
