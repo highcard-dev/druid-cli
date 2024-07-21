@@ -159,13 +159,13 @@ to interact and monitor the Scroll Application`,
 			logger.Log().Info("Bootstrapping done")
 		}
 
+		//run if something is there
+		go queueManager.Work()
+
 		err = queueManager.QueueLockFile()
 		if err != nil {
 			return err
 		}
-
-		//run if something is there
-		go queueManager.Work()
 
 		//schedule crons
 		logger.Log().Info("Schedule crons")
