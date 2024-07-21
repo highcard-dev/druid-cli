@@ -3,7 +3,7 @@ desc: Nginx server
 version: 0.0.1
 app_version: latest
 init: start"
-processes:
+commands:
   start:
     run: restart
     procedures:
