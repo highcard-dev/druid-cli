@@ -374,17 +374,6 @@ const docTemplate = `{
                 "wait": {}
             }
         },
-        "ProcessCommand": {
-            "type": "object",
-            "properties": {
-                "commands": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/CommandInstructionSet"
-                    }
-                }
-            }
-        },
         "ProcessMonitorMetrics": {
             "type": "object",
             "properties": {
@@ -494,6 +483,18 @@ const docTemplate = `{
                     "description": "don't make this a semver, it's not allways",
                     "type": "string"
                 },
+                "commands": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/CommandInstructionSet"
+                    }
+                },
+                "cronjobs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domain.Cronjob"
+                    }
+                },
                 "desc": {
                     "type": "string"
                 },
@@ -510,12 +511,6 @@ const docTemplate = `{
                         "additionalProperties": {
                             "type": "string"
                         }
-                    }
-                },
-                "processes": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/ProcessCommand"
                     }
                 },
                 "version": {
@@ -564,6 +559,20 @@ const docTemplate = `{
                 "ConsoleTypeProcess",
                 "ConsoleTypePlugin"
             ]
+        },
+        "domain.Cronjob": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "schedule": {
+                    "type": "string"
+                }
+            }
         },
         "domain.Process": {
             "type": "object",
@@ -624,9 +633,6 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "command": {
-                    "type": "string"
-                },
-                "process": {
                     "type": "string"
                 },
                 "sync": {
