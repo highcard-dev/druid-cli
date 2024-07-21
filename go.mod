@@ -10,7 +10,7 @@ require (
 	github.com/gofiber/adaptor/v2 v2.2.1
 	github.com/gofiber/contrib/websocket v1.3.2
 	github.com/gofiber/fiber/v2 v2.52.5
-	github.com/gofiber/swagger v0.1.14
+	github.com/gofiber/swagger v1.1.0
 	github.com/hashicorp/go-plugin v1.6.1
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/prometheus/client_golang v1.19.1
