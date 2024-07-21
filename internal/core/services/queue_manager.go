@@ -128,7 +128,7 @@ func (sc *QueueManager) QueueLockFile() error {
 	for cmd, status := range lock.Statuses {
 
 		//convert legacy command names
-		_, err := sc.scrollService.GetCommand(cmd)
+		command, err := sc.scrollService.GetCommand(cmd)
 		if err != nil {
 
 			parts := strings.Split(cmd, ".")
@@ -138,11 +138,19 @@ func (sc *QueueManager) QueueLockFile() error {
 				return err
 			}
 
-			_, err = sc.scrollService.GetCommand(cmd)
+			command, err = sc.scrollService.GetCommand(cmd)
 			if err != nil {
 				return err
 			}
 		}
+
+		if status == domain.ScrollLockStatusDone {
+			//not sure if this can even happen
+			if command.Run != domain.RunModeRestart {
+				continue
+			}
+		}
+		status = domain.ScrollLockStatusWaiting
 
 		sc.commandQueue[cmd] = &domain.QueueItem{
 			Status:       status,
