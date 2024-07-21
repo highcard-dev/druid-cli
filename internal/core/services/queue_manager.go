@@ -183,6 +183,8 @@ func (sc *QueueManager) RunQueue() {
 	sc.runQueueMu.Lock()
 	defer sc.runQueueMu.Unlock()
 
+	logger.Log().Info("Running queue")
+
 	for cmd, item := range sc.commandQueue {
 
 		//if already running, skip
@@ -224,8 +226,8 @@ func (sc *QueueManager) RunQueue() {
 		if dependenciesReady {
 			//we only run one process at a time, this is not optimal, but it is simple
 			sc.setStatus(cmd, domain.ScrollLockStatusRunning, item.ChangeStatus)
+			logger.Log().Info("Running command", zap.String("command", cmd))
 			go func(c string, i *domain.QueueItem) {
-
 				err := sc.workItem(c)
 				if err != nil {
 					sc.setStatus(c, domain.ScrollLockStatusError, i.ChangeStatus)
@@ -246,6 +248,8 @@ func (sc *QueueManager) RunQueue() {
 				}
 				sc.taskDoneChan <- struct{}{}
 			}(cmd, item)
+		} else {
+			logger.Log().Info("Dependencies not ready", zap.String("command", cmd))
 		}
 	}
 }

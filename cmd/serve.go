@@ -128,7 +128,7 @@ to interact and monitor the Scroll Application`,
 			if err != nil {
 				return err
 			}
-		} else if initScroll {
+		} else if initScroll || true { //TODO: remove true
 			logger.Log().Info("No lock file found, but init command available. Bootstrapping...")
 			//There is an error here. We need to bootstrap the files before we render out the templates in the bootstrap func above
 			err := scrollService.CreateLockAndBootstrapFiles()
