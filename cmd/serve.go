@@ -128,25 +128,37 @@ to interact and monitor the Scroll Application`,
 			if err != nil {
 				return err
 			}
+
+			logger.Log().Info("Starting queue manager")
+			go queueManager.Work()
 		} else if initScroll || true { //TODO: remove true
 			logger.Log().Info("No lock file found, but init command available. Bootstrapping...")
+
+			logger.Log().Info("Creating lock and bootstrapping files")
 			//There is an error here. We need to bootstrap the files before we render out the templates in the bootstrap func above
 			err := scrollService.CreateLockAndBootstrapFiles()
 			if err != nil {
 				return err
 			}
 
+			logger.Log().Info("Rendering cwd templates")
 			err = scrollService.RenderCwdTemplates()
 			if err != nil {
 				return err
 			}
 
+			logger.Log().Info("Launching plugins")
 			//important to launch plugins, after the templates are rendered, sothat templates can provide for plugins
 			err = processLauncher.LaunchPlugins()
 
 			if err != nil {
 				return err
 			}
+
+			logger.Log().Info("Starting queue manager")
+			go queueManager.Work()
+
+			logger.Log().Info("Starting scroll.init process")
 			//start scroll.init process
 			//initialize if nothing is there
 			err = queueManager.AddItem(currentScroll.Init, true)
@@ -154,13 +166,11 @@ to interact and monitor the Scroll Application`,
 				return err
 			}
 
+			logger.Log().Info("Writing new scroll lock")
 			scrollService.WriteNewScrollLock()
 
 			logger.Log().Info("Bootstrapping done")
 		}
-
-		//run if something is there
-		go queueManager.Work()
 
 		err = queueManager.QueueLockFile()
 		if err != nil {
