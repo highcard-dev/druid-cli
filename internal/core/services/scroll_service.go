@@ -10,8 +10,6 @@ import (
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/utils"
-	"github.com/highcard-dev/daemon/internal/utils/logger"
-	"go.uber.org/zap"
 	"gopkg.in/yaml.v2"
 )
 
@@ -72,8 +70,7 @@ func (sc *ScrollService) Bootstrap(ignoreVersionCheck bool) (*domain.Scroll, *do
 		}
 	}
 
-	err := sc.clearInvalidLockfileStatuses()
-	return scroll, lock, err
+	return scroll, lock, nil
 
 }
 func (sc *ScrollService) CreateLockAndBootstrapFiles() error {
@@ -250,22 +247,6 @@ func (s ScrollService) GetScrollConfigRawYaml() []byte {
 	}
 
 	return content
-}
-
-// clear stuff statuses that make no sense in the lockfile
-func (sc *ScrollService) clearInvalidLockfileStatuses() error {
-	if sc.lock == nil {
-		return errors.New("lock not loaded")
-	}
-	for statusCommand := range sc.lock.Statuses {
-
-		_, err := sc.GetCommand(statusCommand)
-		if err != nil {
-			delete(sc.lock.Statuses, statusCommand)
-			logger.Log().Info("Removed invalid status from lockfile", zap.String("status", statusCommand))
-		}
-	}
-	return sc.lock.Write()
 }
 
 func (sc *ScrollService) GetCommand(cmd string) (*domain.CommandInstructionSet, error) {
