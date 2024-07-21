@@ -45,6 +45,8 @@ func (cm *ConsoleManager) AddConsoleWithIoReader(id string, consoleType domain.C
 	} else {
 		console = cm.consoles[id]
 		newChannel = cm.consoles[id].Channel
+		//TODO: whe need a better way to manager mutltiple consoles for one command. We probabl consoles   map[string][]*domain.Console instead of consoles   map[string]*domain.Console
+		cm.consoles[id].Exit = nil
 	}
 
 	//broadcast reader into channel (maybe increase chunk size?)
