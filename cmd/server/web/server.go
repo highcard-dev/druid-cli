@@ -32,6 +32,7 @@ type Server struct {
 	scrollMetricHandler           ports.ScrollMetricHandlerInterface
 	annotationHandler             ports.AnnotationHandlerInterface
 	processHandler                ports.ProcessHandlerInterface
+	queueHandler                  ports.QueueHandlerInterface
 	websocketHandler              ports.WebsocketHandlerInterface
 	webdavPath                    string
 }
@@ -43,6 +44,7 @@ func NewServer(
 	scrollMetricHandler ports.ScrollMetricHandlerInterface,
 	annotationHandler ports.AnnotationHandlerInterface,
 	processHandler ports.ProcessHandlerInterface,
+	queueHandler ports.QueueHandlerInterface,
 	websocketHandler ports.WebsocketHandlerInterface,
 	authorizerService ports.AuthorizerServiceInterface,
 	webdavPath string,
@@ -59,6 +61,7 @@ func NewServer(
 		scrollMetricHandler:           scrollMetricHandler,
 		annotationHandler:             annotationHandler,
 		processHandler:                processHandler,
+		queueHandler:                  queueHandler,
 		websocketHandler:              websocketHandler,
 		tokenAuthenticationMiddleware: middlewares.TokenAuthentication(authorizerService),
 		webdavPath:                    webdavPath,
@@ -131,6 +134,8 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 
 	//Processes Group
 	apiRoutes.Get("/processes", s.processHandler.Processes).Name("processes.list")
+
+	apiRoutes.Get("/queue", s.queueHandler.Queue).Name("queue.list")
 
 	//Websocket Group
 	apiRoutes.Get("/consoles", s.websocketHandler.Consoles).Name("consoles.list")

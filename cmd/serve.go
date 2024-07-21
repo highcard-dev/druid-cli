@@ -94,6 +94,7 @@ to interact and monitor the Scroll Application`,
 		processHandler := handler.NewProcessHandler(processManager)
 		scrollLogHandler := handler.NewScrollLogHandler(scrollService, logManager, processManager)
 		scrollMetricHandler := handler.NewScrollMetricHandler(scrollService, processMonitor)
+		queueHandler := handler.NewQueueHandler(queueManager)
 
 		var annotationHandler *handler.AnnotationHandler = nil
 
@@ -103,7 +104,7 @@ to interact and monitor the Scroll Application`,
 
 		websocketHandler := handler.NewWebsocketHandler(authorizer, scrollService, consoleService)
 
-		s := web.NewServer(jwksUrl, scrollHandler, scrollLogHandler, scrollMetricHandler, annotationHandler, processHandler, websocketHandler, authorizer, cwd)
+		s := web.NewServer(jwksUrl, scrollHandler, scrollLogHandler, scrollMetricHandler, annotationHandler, processHandler, queueHandler, websocketHandler, authorizer, cwd)
 
 		a := s.Initialize()
 

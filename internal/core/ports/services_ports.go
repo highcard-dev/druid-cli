@@ -98,4 +98,5 @@ type CronManagerInterface interface {
 
 type QueueManagerInterface interface {
 	AddItem(cmd string, changeStatus bool) error
+	GetQueue() map[string]domain.ScrollLockStatus
 }

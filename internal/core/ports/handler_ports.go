@@ -34,3 +34,7 @@ type WebsocketHandlerInterface interface {
 type ProcessHandlerInterface interface {
 	Processes(c *fiber.Ctx) error
 }
+
+type QueueHandlerInterface interface {
+	Queue(c *fiber.Ctx) error
+}

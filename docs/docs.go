@@ -259,6 +259,34 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/queue": {
+            "get": {
+                "consumes": [
+                    "*/*"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "queue",
+                    "druid",
+                    "daemon"
+                ],
+                "summary": "Get current scroll",
+                "operationId": "getQueue",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/domain.ScrollLockStatus"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/scroll": {
             "get": {
                 "consumes": [
@@ -599,6 +627,21 @@ const docTemplate = `{
                 "RunModeAlways",
                 "RunModeOnce",
                 "RunModeRestart"
+            ]
+        },
+        "domain.ScrollLockStatus": {
+            "type": "string",
+            "enum": [
+                "running",
+                "done",
+                "error",
+                "waiting"
+            ],
+            "x-enum-varnames": [
+                "ScrollLockStatusRunning",
+                "ScrollLockStatusDone",
+                "ScrollLockStatusError",
+                "ScrollLockStatusWaiting"
             ]
         },
         "handler.ProcessesBody": {

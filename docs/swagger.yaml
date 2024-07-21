@@ -192,6 +192,18 @@ definitions:
     - RunModeAlways
     - RunModeOnce
     - RunModeRestart
+  domain.ScrollLockStatus:
+    enum:
+    - running
+    - done
+    - error
+    - waiting
+    type: string
+    x-enum-varnames:
+    - ScrollLockStatusRunning
+    - ScrollLockStatusDone
+    - ScrollLockStatusError
+    - ScrollLockStatusWaiting
   handler.ProcessesBody:
     properties:
       processes:
@@ -383,6 +395,25 @@ paths:
       summary: Get all process metrics
       tags:
       - metrics
+      - druid
+      - daemon
+  /api/v1/queue:
+    get:
+      consumes:
+      - '*/*'
+      operationId: getQueue
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/domain.ScrollLockStatus'
+            type: object
+      summary: Get current scroll
+      tags:
+      - queue
       - druid
       - daemon
   /api/v1/scroll:
