@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -129,8 +130,25 @@ func (sc *QueueManager) QueueLockFile() error {
 	if err != nil {
 		return err
 	}
-
 	for cmd, status := range lock.Statuses {
+
+		//convert legacy command names
+		_, err := sc.scrollService.GetCommand(cmd)
+		if err != nil {
+
+			parts := strings.Split(cmd, ".")
+			if len(parts) > 1 {
+				cmd = parts[1]
+			} else {
+				return err
+			}
+
+			_, err = sc.scrollService.GetCommand(cmd)
+			if err != nil {
+				return err
+			}
+		}
+
 		sc.commandQueue[cmd] = &QueueItem{
 			status:       status,
 			changeStatus: true,
