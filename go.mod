@@ -104,6 +104,7 @@ require (
 
 require (
 	github.com/MicahParks/keyfunc v1.9.0
+	github.com/MicahParks/keyfunc/v3 v3.3.3
 	github.com/creack/pty v1.1.21
 	github.com/go-co-op/gocron v1.37.0
 	github.com/go-co-op/gocron/v2 v2.11.0
