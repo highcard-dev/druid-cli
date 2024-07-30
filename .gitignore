@@ -9,6 +9,7 @@ dlv.log
 .DS_Store
 
 __debug_bin*
+debug**
 
 druid-cli-test
 

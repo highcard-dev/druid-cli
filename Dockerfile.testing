@@ -14,15 +14,14 @@ RUN apt-get update && \
     apt-get install -y ant && \
     apt-get clean;
 
-
 #/root/go/bin is not in the path
 ENV PATH=$PATH:/root/go/bin
 ENV PATH=$PATH:/usr/local/go/bin
+
+RUN go install github.com/go-delve/delve/cmd/dlv@latest
 
 # Copy go mod and sum files 
 COPY go.mod go.sum ./
 
 # Download all dependencies. Dependencies will be cached if the go.mod and go.sum files are not changed 
 RUN go mod download 
-
-COPY . . 

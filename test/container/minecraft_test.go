@@ -86,7 +86,7 @@ func TestContainerMinecraft(t *testing.T) {
 					if err == nil {
 						println("Connected to server after", time.Since(now).String())
 						conn.Close()
-						err = queueManager.AddItem("stop", false)
+						err = queueManager.AddShutdownItem("stop")
 						if err != nil {
 							t.Error(err)
 							doneConnecting <- err
@@ -113,7 +113,7 @@ func TestContainerMinecraft(t *testing.T) {
 					doneStarting <- errors.New("Timeout Starting")
 					return
 				case <-tick:
-					err := queueManager.AddItem("start", false)
+					err := queueManager.AddTempItem("start")
 					if err != nil {
 						t.Error(err)
 						doneStarting <- err

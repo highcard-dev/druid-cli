@@ -1,7 +1,6 @@
 package ports
 
 import (
-	"io"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -61,13 +60,9 @@ type BroadcastChannelInterface interface {
 }
 
 type ConsoleManagerInterface interface {
-	GetSubscription(consoleId string) chan *[]byte
-	DeleteSubscription(consoleId string, subscription chan *[]byte)
+	GetConsole(consoleId string) *domain.Console
 	GetConsoles() map[string]*domain.Console
-	RemoveConsole(consoleId string) error
-	AddConsoleWithIoReader(consoleId string, consoleType domain.ConsoleType, inputMode string, console io.Reader) *domain.Console
-	AddConsoleWithChannel(consoleId string, consoleType domain.ConsoleType, inputMode string, channel chan string) *domain.Console
-	MarkExited(id string, exitCode int) *domain.Console
+	AddConsoleWithChannel(consoleId string, consoleType domain.ConsoleType, inputMode string, channel chan string) (*domain.Console, chan struct{})
 }
 
 type ProcessMonitorInterface interface {
@@ -97,6 +92,8 @@ type CronManagerInterface interface {
 }
 
 type QueueManagerInterface interface {
-	AddItem(cmd string, changeStatus bool) error
+	AddAndRememberItem(cmd string) error
+	AddTempItem(cmd string) error
+	AddShutdownItem(cmd string) error
 	GetQueue() map[string]domain.ScrollLockStatus
 }

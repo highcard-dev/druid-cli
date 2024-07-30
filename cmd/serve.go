@@ -161,7 +161,7 @@ to interact and monitor the Scroll Application`,
 			logger.Log().Info("Starting scroll.init process")
 			//start scroll.init process
 			//initialize if nothing is there
-			err = queueManager.AddItem(currentScroll.Init, true)
+			err = queueManager.AddAndRememberItem(currentScroll.Init)
 			if err != nil {
 				return err
 			}

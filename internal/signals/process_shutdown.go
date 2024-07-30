@@ -57,7 +57,7 @@ func GracefulShutdown(queueManager ports.QueueManagerInterface, processManager p
 	}()
 
 	logger.Log().Info("Stopping all processes by defined routines")
-	go queueManager.AddItem("stop", false) //TODO use stop types instead of name
+	go queueManager.AddShutdownItem("stop") //TODO use stop types instead of name
 
 	logger.Log().Info(fmt.Sprintf("Waiting for %d seconds...", waitSeconds))
 	<-time.After(time.Minute)

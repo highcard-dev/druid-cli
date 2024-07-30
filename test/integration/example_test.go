@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,12 +23,68 @@ type ServiceConfig struct {
 	TestAddress    string
 	TestName       string
 	LockFileStatus []string
+	UseLogSpy      bool
+	LogSpy         func(string, []byte) bool
+}
+
+func testDial(testAddress string) (net.Conn, error) {
+	return net.DialTimeout("tcp", testAddress, 1*time.Second)
+}
+
+func connectionTest(testAddress string, queueManager *services.QueueManager, checkOnline bool) error {
+	doneConnecting := make(chan error)
+
+	// try to connect to TestAddress to see if the server is up, if yes end the test
+	go func() {
+		timeout := time.After(10 * time.Second)
+		tick := time.Tick(1 * time.Second)
+		now := time.Now()
+		for {
+			select {
+			case <-timeout:
+				doneConnecting <- errors.New("Timeout Connecting")
+				return
+			case <-tick:
+				conn, err := testDial(testAddress)
+				//TODO: UDP support, when we need it
+				if err == nil {
+					conn.Close()
+					if checkOnline {
+						println("Connected to server after", time.Since(now).String())
+						doneConnecting <- nil
+						return
+					}
+				} else {
+					if !checkOnline {
+						println("Server is offline after", time.Since(now).String())
+						doneConnecting <- nil
+						return
+					}
+				}
+			}
+		}
+	}()
+
+	return <-doneConnecting
+}
+
+func checkLockFile(scrollService *services.ScrollService, config ServiceConfig) error {
+
+	lock, err := scrollService.GetLock()
+
+	if err != nil {
+		return err
+	}
+
+	for _, status := range config.LockFileStatus {
+		if _, ok := lock.Statuses[status]; !ok {
+			return fmt.Errorf("Lock file status %s not found, expected: %v, got: %v", status, config.LockFileStatus, lock.Statuses)
+		}
+	}
+	return nil
 }
 
 func TestExamples(t *testing.T) {
-
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
 
 	configs := []ServiceConfig{
 		{
@@ -36,6 +93,11 @@ func TestExamples(t *testing.T) {
 			TestAddress:    "localhost:25565",
 			TestName:       "Minecraft",
 			LockFileStatus: []string{"start", "install"},
+			UseLogSpy:      true,
+			LogSpy: func(stream string, sc []byte) bool {
+				println(string(sc))
+				return strings.Contains(string(sc), `For help, type "help"`)
+			},
 		},
 		{
 			ServiceName:    "nginx",
@@ -49,13 +111,23 @@ func TestExamples(t *testing.T) {
 	for _, config := range configs {
 		t.Run(config.TestName, func(t *testing.T) {
 
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
 			logManager := mock_ports.NewMockLogManagerInterface(ctrl)
 			ociRegistryMock := mock_ports.NewMockOciRegistryInterface(ctrl)
 			pluginManager := mock_ports.NewMockPluginManagerInterface(ctrl)
 
 			pluginManager.EXPECT().HasMode(gomock.Any()).Return(false).AnyTimes()
 
-			logManager.EXPECT().AddLine(gomock.Any(), gomock.Any()).MinTimes(2)
+			logDoneChan := make(chan struct{}, 1)
+
+			logManager.EXPECT().AddLine(gomock.Any(), gomock.Any()).DoAndReturn(func(stream string, sc []byte) {
+				if config.UseLogSpy {
+					if config.LogSpy(stream, sc) {
+						logDoneChan <- struct{}{}
+					}
+				}
+			}).AnyTimes()
 
 			unixTime := time.Now().Unix()
 
@@ -95,99 +167,55 @@ func TestExamples(t *testing.T) {
 			scrollService.WriteNewScrollLock()
 			scrollService.Bootstrap(false)
 
-			doneConnecting := make(chan error)
-			doneStarting := make(chan error)
-
-			if config.TestAddress != "" {
-				// try to connect to TestAddress to see if the server is up, if yes end the test
-				go func() {
-					timeout := time.After(3 * time.Minute)
-					tick := time.Tick(1 * time.Second)
-					now := time.Now()
-					for {
-						select {
-						case <-timeout:
-							t.Error("Timeout")
-							doneConnecting <- errors.New("Timeout Connecting")
-							return
-						case <-tick:
-							//TODO: UDP support, when we need it
-							conn, err := net.DialTimeout("tcp", config.TestAddress, 1*time.Second)
-							if err == nil {
-								println("Connected to server after", time.Since(now).String())
-								conn.Close()
-								err = queueManager.AddItem("stop", false)
-								if err != nil {
-									t.Error(err)
-									doneConnecting <- err
-									return
-								}
-								doneConnecting <- nil
-								return
-							}
-						case e := <-doneStarting:
-							doneConnecting <- fmt.Errorf("Failed to start server: %v", e)
-						}
-					}
-				}()
-			}
-
-			go func() {
-				timeout := time.After(4 * time.Minute)
-				tick := time.Tick(1 * time.Second)
-
-				err := queueManager.AddItem("start", true)
-				if err != nil {
-					doneStarting <- err
-					return
-				}
-
-				for {
-					select {
-					case <-timeout:
-						t.Error("Timeout")
-						doneStarting <- errors.New("Timeout Starting")
-						return
-					case <-tick:
-
-						// If we are not testing a server, we can end the test here
-						if config.TestAddress == "" {
-							doneConnecting <- err
-							return
-						}
-						if err != nil {
-							t.Error(err)
-							doneStarting <- err
-							return
-						}
-					}
-				}
-			}()
-
-			err = <-doneConnecting
-			if err != nil {
-				t.Error("Failed to test to server: ", err)
-			}
-
-			lock, err := scrollService.GetLock()
+			err = queueManager.AddAndRememberItem("start")
 
 			if err != nil {
 				t.Error(err)
 				return
-
 			}
 
-			if len(lock.Statuses) != len(config.LockFileStatus) {
-				t.Errorf("Lock file statuses count mismatch, expected: %d, got: %d", len(config.LockFileStatus), len(lock.Statuses))
+			if config.UseLogSpy {
+				<-logDoneChan
 			}
 
-			for _, status := range config.LockFileStatus {
-				if _, ok := lock.Statuses[status]; !ok {
-					t.Errorf(
-						"Lock file status %s not found, expected: %v, got: %v", status, config.LockFileStatus, lock.Statuses,
-					)
+			if config.TestAddress != "" {
+				err = connectionTest(config.TestAddress, queueManager, true)
+				if err != nil {
+					t.Error(err)
+					return
 				}
 			}
+
+			if err != nil {
+				t.Error("Failed to test to server: ", err)
+			}
+
+			err = checkLockFile(scrollService, config)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+
+			err = queueManager.AddShutdownItem("stop")
+			if err != nil {
+				t.Error(err)
+				return
+			}
+
+			if config.TestAddress != "" {
+				err = connectionTest(config.TestAddress, queueManager, false)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+			}
+
+			err = checkLockFile(scrollService, config)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+
 		})
 	}
 }

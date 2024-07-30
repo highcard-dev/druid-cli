@@ -20,7 +20,7 @@ commands:
     procedures:
       - mode: stdin
         data:
-          - start
+          - start.0
           - stop
   install:
     run: once

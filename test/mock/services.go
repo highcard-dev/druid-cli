@@ -10,7 +10,6 @@
 package mock_ports
 
 import (
-	io "io"
 	reflect "reflect"
 	time "time"
 
@@ -604,11 +603,12 @@ func (m *MockConsoleManagerInterface) EXPECT() *MockConsoleManagerInterfaceMockR
 }
 
 // AddConsoleWithChannel mocks base method.
-func (m *MockConsoleManagerInterface) AddConsoleWithChannel(consoleId string, consoleType domain.ConsoleType, inputMode string, channel chan string) *domain.Console {
+func (m *MockConsoleManagerInterface) AddConsoleWithChannel(consoleId string, consoleType domain.ConsoleType, inputMode string, channel chan string) (*domain.Console, chan struct{}) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AddConsoleWithChannel", consoleId, consoleType, inputMode, channel)
 	ret0, _ := ret[0].(*domain.Console)
-	return ret0
+	ret1, _ := ret[1].(chan struct{})
+	return ret0, ret1
 }
 
 // AddConsoleWithChannel indicates an expected call of AddConsoleWithChannel.
@@ -617,30 +617,18 @@ func (mr *MockConsoleManagerInterfaceMockRecorder) AddConsoleWithChannel(console
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddConsoleWithChannel", reflect.TypeOf((*MockConsoleManagerInterface)(nil).AddConsoleWithChannel), consoleId, consoleType, inputMode, channel)
 }
 
-// AddConsoleWithIoReader mocks base method.
-func (m *MockConsoleManagerInterface) AddConsoleWithIoReader(consoleId string, consoleType domain.ConsoleType, inputMode string, console io.Reader) *domain.Console {
+// GetConsole mocks base method.
+func (m *MockConsoleManagerInterface) GetConsole(consoleId string) *domain.Console {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AddConsoleWithIoReader", consoleId, consoleType, inputMode, console)
+	ret := m.ctrl.Call(m, "GetConsole", consoleId)
 	ret0, _ := ret[0].(*domain.Console)
 	return ret0
 }
 
-// AddConsoleWithIoReader indicates an expected call of AddConsoleWithIoReader.
-func (mr *MockConsoleManagerInterfaceMockRecorder) AddConsoleWithIoReader(consoleId, consoleType, inputMode, console any) *gomock.Call {
+// GetConsole indicates an expected call of GetConsole.
+func (mr *MockConsoleManagerInterfaceMockRecorder) GetConsole(consoleId any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddConsoleWithIoReader", reflect.TypeOf((*MockConsoleManagerInterface)(nil).AddConsoleWithIoReader), consoleId, consoleType, inputMode, console)
-}
-
-// DeleteSubscription mocks base method.
-func (m *MockConsoleManagerInterface) DeleteSubscription(consoleId string, subscription chan *[]byte) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "DeleteSubscription", consoleId, subscription)
-}
-
-// DeleteSubscription indicates an expected call of DeleteSubscription.
-func (mr *MockConsoleManagerInterfaceMockRecorder) DeleteSubscription(consoleId, subscription any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteSubscription", reflect.TypeOf((*MockConsoleManagerInterface)(nil).DeleteSubscription), consoleId, subscription)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetConsole", reflect.TypeOf((*MockConsoleManagerInterface)(nil).GetConsole), consoleId)
 }
 
 // GetConsoles mocks base method.
@@ -655,48 +643,6 @@ func (m *MockConsoleManagerInterface) GetConsoles() map[string]*domain.Console {
 func (mr *MockConsoleManagerInterfaceMockRecorder) GetConsoles() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetConsoles", reflect.TypeOf((*MockConsoleManagerInterface)(nil).GetConsoles))
-}
-
-// GetSubscription mocks base method.
-func (m *MockConsoleManagerInterface) GetSubscription(consoleId string) chan *[]byte {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetSubscription", consoleId)
-	ret0, _ := ret[0].(chan *[]byte)
-	return ret0
-}
-
-// GetSubscription indicates an expected call of GetSubscription.
-func (mr *MockConsoleManagerInterfaceMockRecorder) GetSubscription(consoleId any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSubscription", reflect.TypeOf((*MockConsoleManagerInterface)(nil).GetSubscription), consoleId)
-}
-
-// MarkExited mocks base method.
-func (m *MockConsoleManagerInterface) MarkExited(id string, exitCode int) *domain.Console {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "MarkExited", id, exitCode)
-	ret0, _ := ret[0].(*domain.Console)
-	return ret0
-}
-
-// MarkExited indicates an expected call of MarkExited.
-func (mr *MockConsoleManagerInterfaceMockRecorder) MarkExited(id, exitCode any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkExited", reflect.TypeOf((*MockConsoleManagerInterface)(nil).MarkExited), id, exitCode)
-}
-
-// RemoveConsole mocks base method.
-func (m *MockConsoleManagerInterface) RemoveConsole(consoleId string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RemoveConsole", consoleId)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// RemoveConsole indicates an expected call of RemoveConsole.
-func (mr *MockConsoleManagerInterfaceMockRecorder) RemoveConsole(consoleId any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveConsole", reflect.TypeOf((*MockConsoleManagerInterface)(nil).RemoveConsole), consoleId)
 }
 
 // MockProcessMonitorInterface is a mock of ProcessMonitorInterface interface.
@@ -1023,4 +969,18 @@ func (m *MockQueueManagerInterface) AddItem(cmd string, changeStatus bool) error
 func (mr *MockQueueManagerInterfaceMockRecorder) AddItem(cmd, changeStatus any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddItem", reflect.TypeOf((*MockQueueManagerInterface)(nil).AddItem), cmd, changeStatus)
+}
+
+// GetQueue mocks base method.
+func (m *MockQueueManagerInterface) GetQueue() map[string]domain.ScrollLockStatus {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetQueue")
+	ret0, _ := ret[0].(map[string]domain.ScrollLockStatus)
+	return ret0
+}
+
+// GetQueue indicates an expected call of GetQueue.
+func (mr *MockQueueManagerInterfaceMockRecorder) GetQueue() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetQueue", reflect.TypeOf((*MockQueueManagerInterface)(nil).GetQueue))
 }

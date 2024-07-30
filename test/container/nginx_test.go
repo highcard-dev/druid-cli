@@ -63,7 +63,7 @@ func TestContainerNginx(t *testing.T) {
 		scrollService.WriteNewScrollLock()
 		scrollService.Bootstrap(false)
 
-		err := queueManager.AddItem("start", false)
+		err := queueManager.AddTempItem("start")
 		if err != nil {
 			t.Error(err)
 		}
