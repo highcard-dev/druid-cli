@@ -64,8 +64,8 @@ func TestQueueManager(t *testing.T) {
 			procedureLauncher := services.NewProcedureLauncher(ociRegistryMock, processManager, pluginManager, consoleManager, logManager, scrollService)
 			queueManager := services.NewQueueManager(scrollService, procedureLauncher)
 
-			processMonitor.EXPECT().AddProcess(gomock.Any(), "test").AnyTimes()
-			processMonitor.EXPECT().RemoveProcess("test").AnyTimes()
+			processMonitor.EXPECT().AddProcess(gomock.Any(), "test.0").AnyTimes()
+			processMonitor.EXPECT().RemoveProcess("test.0").AnyTimes()
 
 			scrollService.EXPECT().GetCommand("test").Return(&domain.CommandInstructionSet{
 				Run: testCase.RunMode,
@@ -80,10 +80,10 @@ func TestQueueManager(t *testing.T) {
 
 			pluginManager.EXPECT().HasMode(gomock.Any()).Return(false).AnyTimes()
 
-			logManager.EXPECT().AddLine("process.test", []byte("hello\n")).Times(testCase.AccualExecution)
+			logManager.EXPECT().AddLine("test.0", []byte("hello\n")).Times(testCase.AccualExecution)
 
 			scrollService.EXPECT().GetLock().Return(&domain.ScrollLock{
-				Statuses:      map[string]domain.ScrollLockStatus{},
+				Statuses:      map[string]domain.LockStatus{},
 				ScrollVersion: semver.MustParse("1.0.0"),
 				ScrollName:    "test",
 			}, nil).AnyTimes()
@@ -93,7 +93,7 @@ func TestQueueManager(t *testing.T) {
 			go queueManager.Work()
 
 			for i := 0; i < testCase.Repeat; i++ {
-				err := queueManager.AddItem("test", false)
+				err := queueManager.AddTempItem("test")
 				if err != nil {
 					if testCase.RunMode == domain.RunModeOnce && err == services.ErrCommandDoneOnce {
 						continue
@@ -129,7 +129,7 @@ func TestQueueManager(t *testing.T) {
 			}, nil).AnyTimes()
 
 			scrollService.EXPECT().GetLock().Return(&domain.ScrollLock{
-				Statuses:      map[string]domain.ScrollLockStatus{},
+				Statuses:      map[string]domain.LockStatus{},
 				ScrollVersion: semver.MustParse("1.0.0"),
 				ScrollName:    "test",
 			}, nil).AnyTimes()
@@ -154,7 +154,7 @@ func TestQueueManager(t *testing.T) {
 			go queueManager.Work()
 
 			for i := 0; i < testCase.Repeat; i++ {
-				err := queueManager.AddItem("test", false)
+				err := queueManager.AddTempItem("test")
 
 				if err != nil {
 					if testCase.RunMode == domain.RunModeOnce && err == services.ErrCommandDoneOnce {
@@ -181,8 +181,8 @@ func TestQueueManager(t *testing.T) {
 			procedureLauncher := services.NewProcedureLauncher(ociRegistryMock, processManager, pluginManager, consoleManager, logManager, scrollService)
 			queueManager := services.NewQueueManager(scrollService, procedureLauncher)
 
-			processMonitor.EXPECT().AddProcess(gomock.Any(), "test").AnyTimes()
-			processMonitor.EXPECT().RemoveProcess("test").AnyTimes()
+			processMonitor.EXPECT().AddProcess(gomock.Any(), "test.0").AnyTimes()
+			processMonitor.EXPECT().RemoveProcess("test.0").AnyTimes()
 
 			scrollService.EXPECT().GetCommand("test").Return(&domain.CommandInstructionSet{
 				Run: testCase.RunMode,
@@ -207,10 +207,10 @@ func TestQueueManager(t *testing.T) {
 
 			pluginManager.EXPECT().HasMode(gomock.Any()).Return(false).AnyTimes()
 
-			logManager.EXPECT().AddLine("process.test", []byte("hello\n")).Times(testCase.AccualExecution)
+			logManager.EXPECT().AddLine("test.0", []byte("hello\n")).Times(testCase.AccualExecution)
 
 			scrollService.EXPECT().GetLock().Return(&domain.ScrollLock{
-				Statuses:      map[string]domain.ScrollLockStatus{},
+				Statuses:      map[string]domain.LockStatus{},
 				ScrollVersion: semver.MustParse("1.0.0"),
 				ScrollName:    "test",
 			}, nil).AnyTimes()
@@ -220,7 +220,7 @@ func TestQueueManager(t *testing.T) {
 			go queueManager.Work()
 
 			for i := 0; i < testCase.Repeat; i++ {
-				err := queueManager.AddItem("test_command", false)
+				err := queueManager.AddTempItem("test_command")
 				if err != nil {
 					t.Error(err)
 				}
@@ -247,7 +247,7 @@ func TestQueueManager(t *testing.T) {
 		queueManager := services.NewQueueManager(scrollService, procedureLauncher)
 
 		lock := &domain.ScrollLock{
-			Statuses: map[string]domain.ScrollLockStatus{},
+			Statuses: map[string]domain.LockStatus{},
 		}
 		scrollService.EXPECT().GetLock().Return(lock, nil).AnyTimes()
 		processMonitor.EXPECT().AddProcess(gomock.Any(), gomock.Any()).Times(4)
@@ -303,10 +303,10 @@ func TestQueueManager(t *testing.T) {
 
 		logManager.EXPECT().AddLine(gomock.Any(), gomock.Any()).Times(4)
 		//logManager.EXPECT().AddLine("process.dep1", gomock.Eq([]byte("hello1\n"))).Times(1)
-		//logManager.EXPECT().AddLine("process.test", gomock.Eq([]byte("hello\n"))).Times(1)
+		//logManager.EXPECT().AddLine("test.0", gomock.Eq([]byte("hello\n"))).Times(1)
 
 		scrollService.EXPECT().GetLock().Return(&domain.ScrollLock{
-			Statuses:      map[string]domain.ScrollLockStatus{},
+			Statuses:      map[string]domain.LockStatus{},
 			ScrollVersion: semver.MustParse("1.0.0"),
 			ScrollName:    "test",
 		}, nil).AnyTimes()
@@ -314,7 +314,7 @@ func TestQueueManager(t *testing.T) {
 		scrollService.EXPECT().GetCwd().Return("/tmp").AnyTimes()
 
 		go queueManager.Work()
-		err := queueManager.AddItem("test", false)
+		err := queueManager.AddTempItem("test")
 		if err != nil {
 			t.Error(err)
 		}
@@ -322,7 +322,7 @@ func TestQueueManager(t *testing.T) {
 		queueManager.WaitUntilEmpty()
 
 		if len(lock.Statuses) != 1 {
-			t.Error("Lock status must be 1 (dep2.1)")
+			t.Errorf("Lock status must be 1 (dep2.1) but got %d", len(lock.Statuses))
 		}
 	})
 }

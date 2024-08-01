@@ -63,7 +63,7 @@ func (sl ScrollHandler) RunCommand(c *fiber.Ctx) error {
 	}
 
 	if requestBody.Sync {
-		err = sl.QueueManager.AddItem(requestBody.CommandId, true)
+		err = sl.QueueManager.AddTempItem(requestBody.CommandId)
 		if err != nil {
 			logger.Log().Error("Error running command (sync)", zap.Error(err))
 			return c.SendStatus(500)
@@ -71,7 +71,7 @@ func (sl ScrollHandler) RunCommand(c *fiber.Ctx) error {
 		return c.SendStatus(200)
 	} else {
 		go func() {
-			err = sl.QueueManager.AddItem(requestBody.CommandId, true)
+			err = sl.QueueManager.AddTempItem(requestBody.CommandId)
 			if err != nil {
 				logger.Log().Error("Error running command (async)", zap.Error(err))
 			}

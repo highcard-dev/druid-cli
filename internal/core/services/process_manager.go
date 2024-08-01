@@ -1,11 +1,12 @@
 package services
 
 import (
+	"bufio"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os/exec"
+	"sync"
 
 	"github.com/creack/pty"
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -15,6 +16,7 @@ import (
 )
 
 type ProcessManager struct {
+	mu               sync.Mutex
 	runningProcesses map[string]*domain.Process
 	logManager       ports.LogManagerInterface
 	consoleManager   ports.ConsoleManagerInterface
@@ -70,18 +72,36 @@ func (po *ProcessManager) RunTty(commandName string, command []string, cwd strin
 	//slight difference to normal process, as we only attach after the process has started
 	//add console output
 
-	prefixedProcessCommandName := fmt.Sprintf("process_tty.%s", commandName)
+	combinedChannel := make(chan string, 20)
+	go func() {
+		for {
+			//io.Reader to channel chunks
+			tmpBuffer := make([]byte, 1024)
+			n, err := out.Read(tmpBuffer)
 
-	po.consoleManager.AddConsoleWithIoReader(prefixedProcessCommandName, domain.ConsoleTypeTTY, "stdin", out)
+			if err != nil {
+				return
+			}
+			combinedChannel <- string(tmpBuffer[:n])
+		}
+	}()
+
+	console, doneChan := po.consoleManager.AddConsoleWithChannel(commandName, domain.ConsoleTypeTTY, "stdin", combinedChannel)
 
 	//reset periodically
 	process.Cmd.Wait()
 	po.processMonitor.RemoveProcess(commandName)
 	po.RemoveProcess(commandName)
-
 	// Wait for goroutine to print everything (watchdog closes stdin)
 	exitCode := process.Cmd.ProcessState.ExitCode()
-	po.consoleManager.MarkExited(prefixedProcessCommandName, exitCode)
+	console.MarkExited(exitCode)
+
+	close(combinedChannel)
+
+	//we wait, sothat we are sure all data is written to the console
+	<-doneChan
+
+	process.Cmd = nil
 
 	return &exitCode, nil
 }
@@ -133,10 +153,32 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 
 	process.StdIn = stdin
 
-	prefixedProcessCommandName := fmt.Sprintf("process.%s", commandName)
+	combinedChannel := make(chan string, 20)
 
-	po.consoleManager.AddConsoleWithIoReader(prefixedProcessCommandName, domain.ConsoleTypeProcess, "stdin", stdoutReader)
-	po.consoleManager.AddConsoleWithIoReader(prefixedProcessCommandName, domain.ConsoleTypeProcess, "stdin", stderrReader)
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	//read stdout
+	go func() {
+		defer wg.Done()
+		scanner := bufio.NewScanner(stdoutReader)
+		for scanner.Scan() {
+			combinedChannel <- scanner.Text() + "\n"
+		}
+	}()
+
+	wg.Add(1)
+	//read stderr
+	go func() {
+		defer wg.Done()
+		scanner := bufio.NewScanner(stderrReader)
+		for scanner.Scan() {
+			combinedChannel <- scanner.Text() + "\n"
+		}
+
+	}()
+
+	console, doneChan := po.consoleManager.AddConsoleWithChannel(commandName, domain.ConsoleTypeProcess, "stdin", combinedChannel)
 
 	// Run and wait for Cmd to return, discard Status
 	err = process.Cmd.Start()
@@ -173,7 +215,14 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 	po.RemoveProcess(commandName)
 	// Wait for goroutine to print everything (watchdog closes stdin)
 	exitCode := process.Cmd.ProcessState.ExitCode()
-	po.consoleManager.MarkExited(prefixedProcessCommandName, exitCode)
+	console.MarkExited(exitCode)
+
+	wg.Wait()
+
+	close(combinedChannel)
+	//we wait, sothat we are sure all data is written to the console
+	<-doneChan
+
 	process.Cmd = nil
 	return &exitCode, nil
 }
@@ -202,6 +251,9 @@ func (pm *ProcessManager) GetRunningProcesses() map[string]*domain.Process {
 }
 
 func (pm *ProcessManager) AddRunningProcess(commandName string, process *domain.Process) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
 	pm.runningProcesses[commandName] = process
 }
 
@@ -213,5 +265,8 @@ func (pm *ProcessManager) GetRunningProcess(commandName string) *domain.Process 
 }
 
 func (pm *ProcessManager) RemoveProcess(commandName string) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
 	delete(pm.runningProcesses, commandName)
 }

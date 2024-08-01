@@ -52,7 +52,7 @@ func (sc *ProcedureLauncher) LaunchPlugins() error {
 				//add console when stream is not found
 				console, ok := consoles[item.Stream]
 				if !ok {
-					console = sc.consoleManager.AddConsoleWithChannel(item.Stream, domain.ConsoleTypePlugin, item.Stream, make(chan string))
+					console, _ = sc.consoleManager.AddConsoleWithChannel(item.Stream, domain.ConsoleTypePlugin, item.Stream, make(chan string))
 				}
 				console.Channel.Broadcast <- []byte(item.Data)
 			}
@@ -73,7 +73,7 @@ func (sc *ProcedureLauncher) Run(cmd string, runCommandCb func(cmd string) error
 		return err
 	}
 
-	for _, proc := range command.Procedures {
+	for idx, proc := range command.Procedures {
 
 		if proc.Mode == "command" {
 			if proc.Wait != nil {
@@ -83,10 +83,16 @@ func (sc *ProcedureLauncher) Run(cmd string, runCommandCb func(cmd string) error
 			return err
 		}
 
+		commandIdx := fmt.Sprintf("%s.%d", cmd, idx)
+
+		if proc.Id != nil {
+			commandIdx = *proc.Id
+		}
+
 		var err error
 		var exitCode *int
 		logger.Log().Debug("Running procedure",
-			zap.String("cmd", cmd),
+			zap.String("cmd", commandIdx),
 			zap.String("mode", proc.Mode),
 			zap.Any("data", proc.Data),
 		)
@@ -94,28 +100,28 @@ func (sc *ProcedureLauncher) Run(cmd string, runCommandCb func(cmd string) error
 		case int: //run in go routine and wait for x seconds
 			go func(procedure domain.Procedure) {
 				time.Sleep(time.Duration(wait) * time.Second)
-				sc.RunProcedure(&procedure, cmd)
+				sc.RunProcedure(&procedure, commandIdx)
 			}(*proc)
 		case bool: //run in go routine maybe wait
 			if wait {
-				_, exitCode, err = sc.RunProcedure(proc, cmd)
+				_, exitCode, err = sc.RunProcedure(proc, commandIdx)
 			} else {
-				go sc.RunProcedure(proc, cmd)
+				go sc.RunProcedure(proc, commandIdx)
 			}
 		default: //run and wait
-			_, exitCode, err = sc.RunProcedure(proc, cmd)
+			_, exitCode, err = sc.RunProcedure(proc, commandIdx)
 		}
 
 		if err != nil {
 			logger.Log().Error("Error running procedure",
-				zap.String("cmd", cmd),
+				zap.String("cmd", commandIdx),
 				zap.Error(err))
 			return err
 		}
 
 		if exitCode != nil && *exitCode != 0 {
 			logger.Log().Error("Procedure ended with exit code "+fmt.Sprintf("%d", *exitCode),
-				zap.String("cmd", cmd),
+				zap.String("cmd", commandIdx),
 				zap.Int("exitCode", *exitCode),
 			)
 			return fmt.Errorf("procedure %s failed with exit code %d", proc.Mode, *exitCode)

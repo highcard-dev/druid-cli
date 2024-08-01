@@ -42,6 +42,7 @@ type Scroll struct {
 
 type Procedure struct {
 	Mode string      `yaml:"mode"`
+	Id   *string     `yaml:"id"`
 	Wait interface{} `yaml:"wait"`
 	Data interface{} `yaml:"data"`
 } // @name Procedure
@@ -118,6 +119,30 @@ func (sc *Scroll) Validate() error {
 	}
 	if len(sc.Commands) == 0 {
 		return fmt.Errorf("scroll commands are required")
+	}
+
+	ids := make(map[string]bool)
+	for cmd, cis := range sc.Commands {
+		if cmd == "" {
+			return fmt.Errorf("command name is required")
+		}
+		if cis == nil {
+			return fmt.Errorf("command instruction set is required")
+		}
+		if len(cis.Procedures) == 0 {
+			return fmt.Errorf("command procedures are required")
+		}
+		for _, p := range cis.Procedures {
+			if p.Mode == "" {
+				return fmt.Errorf("procedure mode is required")
+			}
+			if !p.IsInternalMode() {
+				if _, ok := ids[*p.Id]; ok {
+					return fmt.Errorf("procedure id %s is not unique", *p.Id)
+				}
+				ids[*p.Id] = true
+			}
+		}
 	}
 	return nil
 }

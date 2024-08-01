@@ -58,7 +58,7 @@ var RunCmd = &cobra.Command{
 
 		command := args[0]
 
-		err = queueManager.AddItem(command, false)
+		err = queueManager.AddTempItem(command)
 		return err
 	},
 }

@@ -22,3 +22,7 @@ type StreamItem struct {
 	Data   string
 	Stream string
 }
+
+func (c *Console) MarkExited(exitCode int) {
+	c.Exit = &exitCode
+}

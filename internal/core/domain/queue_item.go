@@ -1,6 +1,7 @@
 package domain
 
 type QueueItem struct {
-	Status       ScrollLockStatus
-	ChangeStatus bool
+	Status            ScrollLockStatus
+	UpdateLockStatus  bool
+	RunAfterExecution func()
 }

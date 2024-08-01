@@ -6,6 +6,7 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/utils/env"
 	"go.uber.org/zap/zaptest"
+	"go.uber.org/zap/zaptest/observer"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -35,8 +36,9 @@ const (
 )
 
 var (
-	logOnce sync.Once
-	logger  *zap.Logger
+	logOnce        sync.Once
+	logger         *zap.Logger
+	testingContext bool
 )
 
 type LoggerOptions struct {
@@ -51,6 +53,9 @@ type LoggerOptionsFunc func(*LoggerOptions) error
 
 func Log(optFuncs ...LoggerOptionsFunc) *zap.Logger {
 	logOnce.Do(func() {
+		if testingContext {
+			return
+		}
 		logger = NewLogger(optFuncs...)
 	})
 	return logger
@@ -58,6 +63,13 @@ func Log(optFuncs ...LoggerOptionsFunc) *zap.Logger {
 
 func SetTestLogger(t *testing.T) {
 	logger = zaptest.NewLogger(t)
+}
+
+func SetupLogsCapture() *observer.ObservedLogs {
+	core, logs := observer.New(zap.InfoLevel)
+	logger = zap.New(core)
+	testingContext = true
+	return logs
 }
 
 func WithStructuredLogging() LoggerOptionsFunc {

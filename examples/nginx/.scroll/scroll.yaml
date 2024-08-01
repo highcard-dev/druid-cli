@@ -5,7 +5,8 @@ app_version: latest
 init: "start"
 commands:
   start:
-    run: restart
+    # the nginx command detaches the process
+    #run: restart
     procedures:
       - mode: exec
         data:

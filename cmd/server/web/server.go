@@ -172,9 +172,11 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 	return app
 }
 
-func (s *Server) Serve(app *fiber.App, port int) {
+func (s *Server) Serve(app *fiber.App, port int) error {
 	addr := fmt.Sprintf(":%d", port)
 	if err := app.Listen(addr); err != nil {
 		logger.Log().Error("web server error", zap.Error(err))
+		return err
 	}
+	return nil
 }

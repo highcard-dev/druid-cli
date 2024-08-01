@@ -31,7 +31,7 @@ func (c *CronManager) Init() error {
 
 			//run cron.Command e.g. main.start
 
-			err := c.queueManager.AddItem(cron.Command, false)
+			err := c.queueManager.AddTempItem(cron.Command)
 
 			if err != nil {
 				logger.Log().Error("error running cronjob", zap.String("name", cron.Name), zap.Error(err))
