@@ -47,14 +47,6 @@ type Procedure struct {
 	Data interface{} `yaml:"data"`
 } // @name Procedure
 
-// exec-tty, exec, stdin, command, scroll-switch
-func (p *Procedure) IsInternalMode() bool {
-	if p.Mode == "exec-tty" || p.Mode == "exec" || p.Mode == "stdin" || p.Mode == "command" || p.Mode == "scroll-switch" {
-		return true
-	}
-	return false
-}
-
 type CommandInstructionSet struct {
 	Procedures []*Procedure `yaml:"procedures" json:"procedures"`
 	Needs      []string     `yaml:"needs,omitempty" json:"needs,omitempty"`
@@ -136,12 +128,13 @@ func (sc *Scroll) Validate() error {
 			if p.Mode == "" {
 				return fmt.Errorf("procedure mode is required")
 			}
-			if !p.IsInternalMode() {
-				if _, ok := ids[*p.Id]; ok {
-					return fmt.Errorf("procedure id %s is not unique", *p.Id)
-				}
-				ids[*p.Id] = true
+			if p.Id == nil {
+				continue
 			}
+			if _, ok := ids[*p.Id]; ok {
+				return fmt.Errorf("procedure id %s is not unique", *p.Id)
+			}
+			ids[*p.Id] = true
 		}
 	}
 	return nil
