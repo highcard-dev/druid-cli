@@ -55,6 +55,12 @@ func NewProcessMonitorMetricsExported() *ProcessMonitorMetricsExported {
 	}
 }
 
+func (po *ProcessMonitor) ShutdownPromMetrics() {
+	prometheus.DefaultRegisterer.Unregister(po.exportedMetrics.prometheusCpuUsage)
+	prometheus.DefaultRegisterer.Unregister(po.exportedMetrics.prometheusMemoryUsage)
+	prometheus.DefaultRegisterer.Unregister(po.exportedMetrics.prometheusConnectionCount)
+}
+
 func (po *ProcessMonitor) StartMonitoring() {
 	ticker := time.NewTicker(time.Second)
 	done := make(chan bool)

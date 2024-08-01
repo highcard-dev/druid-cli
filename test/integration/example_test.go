@@ -1,9 +1,7 @@
-package container_test
+package integration_test
 
 import (
-	"errors"
 	"fmt"
-	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -25,47 +23,6 @@ type ServiceConfig struct {
 	LockFileStatus []string
 	UseLogSpy      bool
 	LogSpy         func(string, []byte) bool
-}
-
-func testDial(testAddress string) (net.Conn, error) {
-	return net.DialTimeout("tcp", testAddress, 1*time.Second)
-}
-
-func connectionTest(testAddress string, queueManager *services.QueueManager, checkOnline bool) error {
-	doneConnecting := make(chan error)
-
-	// try to connect to TestAddress to see if the server is up, if yes end the test
-	go func() {
-		timeout := time.After(10 * time.Second)
-		tick := time.Tick(1 * time.Second)
-		now := time.Now()
-		for {
-			select {
-			case <-timeout:
-				doneConnecting <- errors.New("Timeout Connecting")
-				return
-			case <-tick:
-				conn, err := testDial(testAddress)
-				//TODO: UDP support, when we need it
-				if err == nil {
-					conn.Close()
-					if checkOnline {
-						println("Connected to server after", time.Since(now).String())
-						doneConnecting <- nil
-						return
-					}
-				} else {
-					if !checkOnline {
-						println("Server is offline after", time.Since(now).String())
-						doneConnecting <- nil
-						return
-					}
-				}
-			}
-		}
-	}()
-
-	return <-doneConnecting
 }
 
 func checkLockFile(scrollService *services.ScrollService, config ServiceConfig) error {
@@ -179,7 +136,7 @@ func TestExamples(t *testing.T) {
 			}
 
 			if config.TestAddress != "" {
-				err = connectionTest(config.TestAddress, queueManager, true)
+				err = test_utils.ConnectionTest(config.TestAddress, true)
 				if err != nil {
 					t.Error(err)
 					return
@@ -203,7 +160,7 @@ func TestExamples(t *testing.T) {
 			}
 
 			if config.TestAddress != "" {
-				err = connectionTest(config.TestAddress, queueManager, false)
+				err = test_utils.ConnectionTest(config.TestAddress, false)
 				if err != nil {
 					t.Error(err)
 					return

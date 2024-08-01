@@ -14,9 +14,14 @@ import (
 	"go.uber.org/zap"
 )
 
+var SigC chan os.Signal
+var shutdownDone chan struct{}
+
 func SetupSignals(queueManager ports.QueueManagerInterface, processManager ports.ProcessManagerInterface, app *fiber.App, waitSeconds int) {
-	sigc := make(chan os.Signal, 1)
-	signal.Notify(sigc,
+	SigC = make(chan os.Signal, 1)
+	shutdownDone = make(chan struct{})
+
+	signal.Notify(SigC,
 		syscall.SIGHUP,
 		syscall.SIGINT,
 		syscall.SIGTERM,
@@ -28,7 +33,7 @@ func SetupSignals(queueManager ports.QueueManagerInterface, processManager ports
 	go func() {
 		var s os.Signal
 		select {
-		case s = <-sigc:
+		case s = <-SigC:
 			//debug timeout for testing
 			//case <-time.After(time.Duration(25) * time.Second):
 			//	s = syscall.SIGTERM
@@ -37,45 +42,46 @@ func SetupSignals(queueManager ports.QueueManagerInterface, processManager ports
 		logger.Log().Info("Received shudown signal", zap.String("signal", s.String()))
 
 		GracefulShutdown(queueManager, processManager, app, waitSeconds)
+		shutdownDone <- struct{}{}
 	}()
 }
 
 func GracefulShutdown(queueManager ports.QueueManagerInterface, processManager ports.ProcessManagerInterface, app *fiber.App, waitSeconds int) {
 
+	shudownDone := make(chan struct{})
 	go func() {
-		for {
-			if len(processManager.GetRunningProcesses()) == 0 {
-				logger.Log().Info("No running processes")
-				logger.Log().Info("Quitting...")
-				os.Exit(0)
-				app.Shutdown()
-				break
-			}
-			logger.Log().Info(fmt.Sprintf("Waiting for %d processes to stop...", len(processManager.GetRunningProcesses())))
-			time.Sleep(time.Second)
-		}
+		waitForProcessesToStop(processManager)
+		app.Shutdown()
+		shudownDone <- struct{}{}
 	}()
 
-	logger.Log().Info("Stopping all processes by defined routines")
-	go queueManager.AddShutdownItem("stop") //TODO use stop types instead of name
+	//we do that non block, in case something is allready down
+	go queueManager.AddShutdownItem("stop")
 
-	logger.Log().Info(fmt.Sprintf("Waiting for %d seconds...", waitSeconds))
-	<-time.After(time.Minute)
+	go func() {
+		<-time.After(time.Duration(waitSeconds) * time.Second)
+		go shutdownRoutine(processManager, syscall.SIGTERM)
+		<-time.After(time.Duration(waitSeconds) * time.Second)
+		go shutdownRoutine(processManager, syscall.SIGKILL)
+	}()
 
-	logger.Log().Info("Still not done, ending processes with SIGTERM")
-	for _, process := range processManager.GetRunningProcesses() {
-		pgid, err := syscall.Getpgid(process.Status().Pid)
-		if err == nil {
-			syscall.Kill(-pgid, 15) // note the minus sign
-		} else {
-			//normal stop without pgid
-			process.Stop()
+	<-shudownDone
+	logger.Log().Info("Shutdown done")
+
+}
+
+func waitForProcessesToStop(processManager ports.ProcessManagerInterface) {
+	for {
+		if len(processManager.GetRunningProcesses()) == 0 {
+			logger.Log().Info("No running processes")
+			break
 		}
-
+		logger.Log().Info(fmt.Sprintf("Waiting for %d processes to stop...", len(processManager.GetRunningProcesses())))
+		time.Sleep(time.Second)
 	}
+}
 
-	logger.Log().Info(fmt.Sprintf("Waiting for %d seconds...", waitSeconds))
-	<-time.After(time.Minute)
+func shutdownRoutine(processManager ports.ProcessManagerInterface, signal syscall.Signal) {
 
 	logger.Log().Info("Still not done, killing all processes with SIGKILL")
 	for _, process := range processManager.GetRunningProcesses() {
@@ -85,15 +91,18 @@ func GracefulShutdown(queueManager ports.QueueManagerInterface, processManager p
 		}
 		running, _ := p.IsRunning()
 		if running {
-			pgid, err := syscall.Getpgid(process.Status().Pid)
-			if err == nil {
-				syscall.Kill(-pgid, 9) // note the minus sign
-			} else {
-				//normal stop without pgid
-				process.Stop()
-			}
+			//pgid, err := syscall.Getpgid(process.Status().Pid)
+			//if err == nil {
+			//	syscall.Kill(-pgid, signal) // note the minus sign
+			//} else {
+			//normal stop without pgid
+			process.Cmd.Process.Signal(signal)
+			//}
 		}
 	}
-	app.Shutdown()
-	os.Exit(0)
+}
+
+func Stop() {
+	SigC <- syscall.SIGTERM
+	<-shutdownDone
 }

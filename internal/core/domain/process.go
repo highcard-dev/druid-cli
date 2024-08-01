@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"syscall"
 
 	processutil "github.com/shirou/gopsutil/process"
 )
@@ -36,9 +37,14 @@ func (process *Process) Stop() error {
 		return nil
 	}
 	//TODO: stop process
-	println("TODO: stop process")
-	//process.Cmd = nil
-	return nil
+	return process.Cmd.Process.Signal(syscall.SIGKILL)
+}
+
+func (process *Process) Kill() error {
+	if process.Cmd == nil {
+		return nil
+	}
+	return process.Cmd.Process.Kill()
 }
 
 func (process *Process) Status() *os.Process {

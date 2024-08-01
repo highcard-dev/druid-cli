@@ -176,13 +176,17 @@ func (sc *QueueManager) QueueLockFile() error {
 			}
 		}
 
-		if status == domain.ScrollLockStatusDone {
+		if status.Status == domain.ScrollLockStatusDone {
 			//not sure if this can even happen
 			if command.Run != domain.RunModeRestart {
+				sc.commandQueue[cmd] = &domain.QueueItem{
+					Status:           domain.ScrollLockStatusDone,
+					UpdateLockStatus: true,
+				}
 				continue
 			}
 		}
-		status = domain.ScrollLockStatusWaiting
+		status.Status = domain.ScrollLockStatusWaiting
 
 		sc.AddAndRememberItem(cmd)
 	}
@@ -205,7 +209,6 @@ func (sc *QueueManager) Work() {
 				sc.notify()
 			})()
 		case <-sc.shutdownChan:
-			//todo cleanup
 			return
 		}
 	}
@@ -278,15 +281,12 @@ func (sc *QueueManager) RunQueue() {
 				}
 
 				//restart means we are never done!
-				if i.UpdateLockStatus && command.Run != domain.RunModeRestart {
-					sc.setStatus(c, domain.ScrollLockStatusDone, true)
+				if command.Run == domain.RunModeRestart {
+					sc.setStatus(c, domain.ScrollLockStatusWaiting, i.UpdateLockStatus)
 				} else {
-					if command.Run == domain.RunModeRestart {
-						sc.setStatus(c, domain.ScrollLockStatusWaiting, false)
-					} else {
-						sc.setStatus(c, domain.ScrollLockStatusDone, false)
-					}
+					sc.setStatus(c, domain.ScrollLockStatusDone, i.UpdateLockStatus)
 				}
+
 			}(cmd, item)
 		} else {
 			logger.Log().Info("Dependencies not ready", zap.String("command", cmd))
@@ -348,7 +348,7 @@ func (sc *QueueManager) setStatus(cmd string, status domain.ScrollLockStatus, wr
 		if err != nil {
 			return
 		}
-		lock.SetStatus(cmd, status)
+		lock.SetStatus(cmd, status, nil)
 	}
 }
 

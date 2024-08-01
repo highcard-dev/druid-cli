@@ -3,6 +3,7 @@ package domain
 import (
 	"encoding/json"
 	"os"
+	"time"
 
 	"github.com/Masterminds/semver/v3"
 )
@@ -16,10 +17,16 @@ const (
 	ScrollLockStatusWaiting ScrollLockStatus = "waiting"
 )
 
+type LockStatus struct {
+	Status           ScrollLockStatus `json:"status"`
+	ExitCode         *int             `json:"exit_code"`
+	LastStatusChange int64            `json:"last_status_change"`
+}
+
 type ScrollLock struct {
-	Statuses      map[string]ScrollLockStatus `json:"statuses"`
-	ScrollVersion *semver.Version             `json:"scroll_version"`
-	ScrollName    string                      `json:"scroll_name"`
+	Statuses      map[string]LockStatus `json:"statuses"`
+	ScrollVersion *semver.Version       `json:"scroll_version"`
+	ScrollName    string                `json:"scroll_name"`
 	path          string
 } // @name ScrollLock
 
@@ -46,18 +53,24 @@ func ReadLock(path string) (*ScrollLock, error) {
 
 func WriteNewScrollLock(path string) *ScrollLock {
 	lock := &ScrollLock{
-		Statuses: make(map[string]ScrollLockStatus),
+		Statuses: make(map[string]LockStatus),
 		path:     path,
 	}
 	lock.Write()
 	return lock
 }
 
-func (scrollLock *ScrollLock) GetStatus(command string) ScrollLockStatus {
+func (scrollLock *ScrollLock) GetStatus(command string) LockStatus {
 	return scrollLock.Statuses[command]
 }
 
-func (scrollLock *ScrollLock) SetStatus(command string, status ScrollLockStatus) {
-	scrollLock.Statuses[command] = status
+func (scrollLock *ScrollLock) SetStatus(command string, status ScrollLockStatus, exitCode *int) {
+	lockStatus := LockStatus{
+		Status:           status,
+		LastStatusChange: time.Now().Unix(),
+		ExitCode:         exitCode,
+	}
+
+	scrollLock.Statuses[command] = lockStatus
 	scrollLock.Write()
 }

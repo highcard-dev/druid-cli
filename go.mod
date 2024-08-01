@@ -90,7 +90,6 @@ require (
 
 require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.4 // indirect
-	github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.2 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
@@ -106,9 +105,7 @@ require (
 	github.com/MicahParks/keyfunc v1.9.0
 	github.com/creack/pty v1.1.21
 	github.com/go-co-op/gocron v1.37.0
-	github.com/go-co-op/gocron/v2 v2.11.0
 	github.com/gofiber/jwt/v3 v3.3.10
-	github.com/gofiber/jwt/v4 v4.0.0
 	github.com/golang-jwt/jwt/v4 v4.5.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/highcard-dev/gorcon v1.3.10
