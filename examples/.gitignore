@@ -2,3 +2,4 @@
 
 #except php files
 !.scroll/**
+!.dockerignore
