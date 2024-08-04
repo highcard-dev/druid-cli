@@ -8,7 +8,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/highcard-dev/daemon/internal/core/services/coldstarter/lua"
+	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"go.uber.org/zap"
 )
@@ -18,12 +18,12 @@ type TCPServer interface {
 }
 
 type TCP struct {
-	handler  *lua.LuaHandler
+	handler  ports.ColdStarterHandlerInterface
 	listener net.Listener
 	onFinish func()
 }
 
-func NewTCP(handler *lua.LuaHandler) *TCP {
+func NewTCP(handler ports.ColdStarterHandlerInterface) *TCP {
 	return &TCP{
 		handler: handler,
 	}

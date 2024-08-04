@@ -96,13 +96,15 @@ to interact and monitor the Scroll Application`,
 			}
 		}
 
+		currentScroll := scrollService.GetCurrent()
+
 		processLauncher := services.NewProcedureLauncher(client, processManager, pluginManager, consoleService, logManager, scrollService)
 
 		queueManager := services.NewQueueManager(scrollService, processLauncher)
 
 		portService := services.NewPortServiceWithScrollFile(scrollService.GetFile())
 
-		coldStarter := services.NewColdStarter(portService, scrollService.GetDir())
+		coldStarter := services.NewColdStarter(scrollService.GetDir(), currentScroll.GetColdStartPorts())
 
 		scrollHandler := handler.NewScrollHandler(scrollService, pluginManager, processLauncher, queueManager)
 		processHandler := handler.NewProcessHandler(processManager)
@@ -145,16 +147,20 @@ to interact and monitor the Scroll Application`,
 
 			go func() {
 				if useColdstarter {
-					err = coldStarter.StartOnce(ctx)
-					if err != nil {
-						logger.Log().Error("Error in coldstarter", zap.Error(err))
-						doneChan <- err
-						return
+					if currentScroll.CanColdStart() {
+						err = coldStarter.StartOnce(ctx)
+						if err != nil {
+							logger.Log().Error("Error in coldstarter", zap.Error(err))
+							doneChan <- err
+							return
+						}
+						logger.Log().Info("Coldstarter done, starting scroll")
+					} else {
+						logger.Log().Warn("No ports to start, skipping coldstarter")
 					}
-					logger.Log().Info("Coldstarter done, starting scroll")
 				}
 
-				currentScroll, lock, err := scrollService.Bootstrap(ignoreVersionCheck)
+				lock, err := scrollService.Bootstrap(ignoreVersionCheck)
 				if err != nil {
 					doneChan <- err
 					return
@@ -228,9 +234,17 @@ to interact and monitor the Scroll Application`,
 					return
 				}
 
+				var version string
+
+				if currentScroll.Version != nil {
+					version = currentScroll.Version.String()
+				} else {
+					version = "N/A"
+				}
+
 				logger.Log().Info("Active Scroll",
 					zap.String("Description", fmt.Sprintf("%s (%s)", currentScroll.Desc, currentScroll.Name)),
-					zap.String("Scroll Version", currentScroll.Version.String()),
+					zap.String("Scroll Version", version),
 					zap.String("cwd", cwd))
 
 				doneChan <- nil

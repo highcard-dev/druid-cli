@@ -6,27 +6,27 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
-	"github.com/highcard-dev/daemon/internal/core/services/coldstarter/lua"
+	lua "github.com/highcard-dev/daemon/internal/core/services/coldstarter/handler"
 	"github.com/highcard-dev/daemon/internal/core/services/coldstarter/servers"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 )
 
 type ColdStarter struct {
-	portService ports.PortServiceInterface
 	handler     map[string]uint
 	finishCount uint
 	dir         string
+	ports       []domain.Port
 }
 
 func NewColdStarter(
-	portService ports.PortServiceInterface,
 	dir string,
+	ports []domain.Port,
 ) *ColdStarter {
 	return &ColdStarter{
-		portService,
 		make(map[string]uint),
 		0,
 		dir,
+		ports,
 	}
 }
 
@@ -38,7 +38,7 @@ func (c ColdStarter) StartOnce(ctx context.Context) error {
 }
 
 func (c ColdStarter) Start(ctx context.Context, stopAfterFirst bool) error {
-	augmentedPorts := c.portService.GetPorts()
+	augmentedPorts := c.ports
 
 	luactx, cancel := context.WithCancel(context.Background())
 
@@ -52,28 +52,34 @@ func (c ColdStarter) Start(ctx context.Context, stopAfterFirst bool) error {
 	}
 
 	for _, port := range augmentedPorts {
-		if port.Port.SleepHandler == nil {
-			logger.Log().Warn(fmt.Sprintf("No sleep handler found for port %d", port.Port.Port))
+		if port.SleepHandler == nil {
+			logger.Log().Warn(fmt.Sprintf("No sleep handler found for port %d", port.Port))
 			continue
 		}
 
-		path := fmt.Sprintf("%s/%s", c.dir, *port.Port.SleepHandler)
+		path := fmt.Sprintf("%s/%s", c.dir, *port.SleepHandler)
 
-		go func(port *domain.AugmentedPort) {
+		go func(port domain.Port) {
+
+			var handler ports.ColdStarterHandlerInterface
+
+			if *port.SleepHandler == "generic" {
+				handler = lua.NewGenericHandler()
+			} else {
+				handler = lua.NewLuaHandler(path, c.dir)
+			}
 
 			if port.Protocol == "udp" {
-				logger.Log().Info(fmt.Sprintf("Starting UDP server on port %d", port.Port.Port))
-				handler := lua.NewLuaHandler(path, c.dir)
+				logger.Log().Info(fmt.Sprintf("Starting UDP server on port %d", port.Port))
 				udpServer := servers.NewUDP(handler)
-				err := udpServer.Start(luactx, port.Port.Port, finishFunc)
+				err := udpServer.Start(luactx, port.Port, finishFunc)
 				if err != nil {
 					doneChan <- err
 				}
 			} else if port.Protocol == "tcp" {
-				logger.Log().Info(fmt.Sprintf("Starting TCP server on port %d", port.Port.Port))
-				handler := lua.NewLuaHandler(path, c.dir)
+				logger.Log().Info(fmt.Sprintf("Starting TCP server on port %d", port.Port))
 				tcpServer := servers.NewTCP(handler)
-				err := tcpServer.Start(luactx, port.Port.Port, finishFunc)
+				err := tcpServer.Start(luactx, port.Port, finishFunc)
 				if err != nil {
 					doneChan <- err
 				}
@@ -81,7 +87,7 @@ func (c ColdStarter) Start(ctx context.Context, stopAfterFirst bool) error {
 				logger.Log().Warn(fmt.Sprintf("Unknown protocol %s for coldstarter", port.Protocol))
 				return
 			}
-			logger.Log().Info(fmt.Sprintf("Server on port %d received finish signal", port.Port.Port))
+			logger.Log().Info(fmt.Sprintf("Server on port %d received finish signal", port.Port))
 		}(port)
 	}
 

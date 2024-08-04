@@ -105,3 +105,7 @@ type PortServiceInterface interface {
 	CheckOpen(prot int) bool
 	GetPorts() []*domain.AugmentedPort
 }
+
+type ColdStarterHandlerInterface interface {
+	Handle(data []byte, funcs map[string]func(data ...string)) error
+}

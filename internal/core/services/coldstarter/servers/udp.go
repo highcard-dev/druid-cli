@@ -7,7 +7,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/highcard-dev/daemon/internal/core/services/coldstarter/lua"
+	"github.com/highcard-dev/daemon/internal/core/ports"
 )
 
 type UDPServer interface {
@@ -15,12 +15,12 @@ type UDPServer interface {
 }
 
 type UDP struct {
-	handler  *lua.LuaHandler
+	handler  ports.ColdStarterHandlerInterface
 	conn     *net.UDPConn
 	onFinish func()
 }
 
-func NewUDP(handler *lua.LuaHandler) *UDP {
+func NewUDP(handler ports.ColdStarterHandlerInterface) *UDP {
 	return &UDP{
 		handler: handler,
 	}

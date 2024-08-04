@@ -39,7 +39,7 @@ var RunCmd = &cobra.Command{
 			logger.Log().Info("Lock file created")
 		}
 
-		_, _, err = scrollService.Bootstrap(ignoreVersionCheck)
+		_, err = scrollService.Bootstrap(ignoreVersionCheck)
 
 		if err != nil {
 			return fmt.Errorf("error loading scroll: %w", err)
