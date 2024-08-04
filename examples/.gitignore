@@ -1,2 +1,4 @@
-scroll-cwd
-scroll-cwd-*
+*.*
+
+#except php files
+!.scroll/**

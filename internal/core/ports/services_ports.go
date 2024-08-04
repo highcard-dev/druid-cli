@@ -1,6 +1,7 @@
 package ports
 
 import (
+	"context"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -96,4 +97,11 @@ type QueueManagerInterface interface {
 	AddTempItem(cmd string) error
 	AddShutdownItem(cmd string) error
 	GetQueue() map[string]domain.ScrollLockStatus
+}
+
+type PortServiceInterface interface {
+	StartMonitoring(context.Context, []string)
+	GetLastActivity(port int) uint
+	CheckOpen(prot int) bool
+	GetPorts() []*domain.AugmentedPort
 }

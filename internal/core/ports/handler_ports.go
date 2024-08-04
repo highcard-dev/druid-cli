@@ -38,3 +38,7 @@ type ProcessHandlerInterface interface {
 type QueueHandlerInterface interface {
 	Queue(c *fiber.Ctx) error
 }
+
+type PortHandlerInterface interface {
+	GetPorts(c *fiber.Ctx) error
+}

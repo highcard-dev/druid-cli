@@ -23,6 +23,10 @@ var port int
 var shutdownWait int
 var additionalEndpoints []string
 var idleScroll bool
+var watchPorts bool
+var watchPortsInterfaces []string
+var portInactivity uint
+var useColdstarter bool
 
 var ServeCommand = &cobra.Command{
 	Use:   "serve",
@@ -96,11 +100,16 @@ to interact and monitor the Scroll Application`,
 
 		queueManager := services.NewQueueManager(scrollService, processLauncher)
 
+		portService := services.NewPortServiceWithScrollFile(scrollService.GetFile())
+
+		coldStarter := services.NewColdStarter(portService, scrollService.GetDir())
+
 		scrollHandler := handler.NewScrollHandler(scrollService, pluginManager, processLauncher, queueManager)
 		processHandler := handler.NewProcessHandler(processManager)
 		scrollLogHandler := handler.NewScrollLogHandler(scrollService, logManager, processManager)
 		scrollMetricHandler := handler.NewScrollMetricHandler(scrollService, processMonitor)
 		queueHandler := handler.NewQueueHandler(queueManager)
+		portHandler := handler.NewPortHandler(portService)
 
 		var annotationHandler *handler.AnnotationHandler = nil
 
@@ -110,86 +119,129 @@ to interact and monitor the Scroll Application`,
 
 		websocketHandler := handler.NewWebsocketHandler(authorizer, scrollService, consoleService)
 
-		s := web.NewServer(jwksUrl, scrollHandler, scrollLogHandler, scrollMetricHandler, annotationHandler, processHandler, queueHandler, websocketHandler, authorizer, cwd)
+		s := web.NewServer(jwksUrl, scrollHandler, scrollLogHandler, scrollMetricHandler, annotationHandler, processHandler, queueHandler, websocketHandler, portHandler, authorizer, cwd)
 
 		a := s.Initialize()
 
 		signals.SetupSignals(queueManager, processManager, a, shutdownWait)
 
+		if watchPorts {
+			logger.Log().Info("Starting port watcher")
+			go portService.StartMonitoring(ctx, watchPortsInterfaces)
+		}
+
 		if !idleScroll {
 
-			currentScroll, lock, err := scrollService.Bootstrap(ignoreVersionCheck)
-			if err != nil {
-				return err
-			}
+			doneChan := make(chan error, 1)
 
-			newScroll := len(lock.Statuses) == 0
-
-			if newScroll {
-				logger.Log().Info("No lock file found, but init command available. Bootstrapping...")
-
-				logger.Log().Info("Creating lock and bootstrapping files")
-				//There is an error here. We need to bootstrap the files before we render out the templates in the bootstrap func above
-				err := scrollService.CreateLockAndBootstrapFiles()
+			go func() {
+				err := <-doneChan
 				if err != nil {
-					return err
+					logger.Log().Error("Error in Daemon Startup", zap.Error(err))
+					signals.Stop()
 				}
-			} else {
-				logger.Log().Info("Found lock file, bootstrapping done")
-			}
+				logger.Log().Info("Daemon Startup Complete")
+			}()
 
-			logger.Log().Info("Rendering cwd templates")
-			err = scrollService.RenderCwdTemplates()
-			if err != nil {
-				return err
-			}
-
-			logger.Log().Info("Launching plugins")
-			//important to launch plugins, after the templates are rendered, sothat templates can provide for plugins
-			err = processLauncher.LaunchPlugins()
-
-			if err != nil {
-				return err
-			}
-
-			logger.Log().Info("Starting queue manager")
-			go queueManager.Work()
-
-			if newScroll {
-				logger.Log().Info("Starting scroll.init process")
-				//start scroll.init process
-				//initialize if nothing is there
-				err = queueManager.AddAndRememberItem(currentScroll.Init)
-				if err != nil {
-					return err
+			go func() {
+				if useColdstarter {
+					err = coldStarter.StartOnce(ctx)
+					if err != nil {
+						logger.Log().Error("Error in coldstarter", zap.Error(err))
+						doneChan <- err
+						return
+					}
+					logger.Log().Info("Coldstarter done, starting scroll")
 				}
 
-				logger.Log().Info("Writing new scroll lock")
-				scrollService.WriteNewScrollLock()
+				currentScroll, lock, err := scrollService.Bootstrap(ignoreVersionCheck)
+				if err != nil {
+					doneChan <- err
+					return
+				}
 
-				logger.Log().Info("Bootstrapping done")
+				newScroll := len(lock.Statuses) == 0
+
+				if newScroll {
+					logger.Log().Info("No lock file found, but init command available. Bootstrapping...")
+
+					logger.Log().Info("Creating lock and bootstrapping files")
+					//There is an error here. We need to bootstrap the files before we render out the templates in the bootstrap func above
+					err := scrollService.CreateLockAndBootstrapFiles()
+					if err != nil {
+						doneChan <- err
+						return
+					}
+				} else {
+					logger.Log().Info("Found lock file, bootstrapping done")
+				}
+
+				logger.Log().Info("Rendering cwd templates")
+				err = scrollService.RenderCwdTemplates()
+				if err != nil {
+					doneChan <- err
+					return
+				}
+
+				logger.Log().Info("Launching plugins")
+				//important to launch plugins, after the templates are rendered, sothat templates can provide for plugins
+				err = processLauncher.LaunchPlugins()
+
+				if err != nil {
+					doneChan <- err
+					return
+				}
+
+				logger.Log().Info("Starting queue manager")
+				go queueManager.Work()
+
+				if newScroll {
+					logger.Log().Info("Starting scroll.init process")
+					//start scroll.init process
+					//initialize if nothing is there
+					err = queueManager.AddAndRememberItem(currentScroll.Init)
+					if err != nil {
+						doneChan <- err
+						return
+					}
+
+					logger.Log().Info("Writing new scroll lock")
+					scrollService.WriteNewScrollLock()
+
+					logger.Log().Info("Bootstrapping done")
+				}
+
+				err = queueManager.QueueLockFile()
+				if err != nil {
+					doneChan <- err
+					return
+				}
+
+				//schedule crons
+				logger.Log().Info("Schedule crons")
+
+				cronManager := services.NewCronManager(currentScroll.Cronjobs, queueManager)
+				err = cronManager.Init()
+
+				if err != nil {
+					doneChan <- err
+					return
+				}
+
+				logger.Log().Info("Active Scroll",
+					zap.String("Description", fmt.Sprintf("%s (%s)", currentScroll.Desc, currentScroll.Name)),
+					zap.String("Scroll Version", currentScroll.Version.String()),
+					zap.String("cwd", cwd))
+
+				doneChan <- nil
+			}()
+
+		} else {
+			if useColdstarter {
+				go coldStarter.StartLoop(ctx)
 			}
-
-			err = queueManager.QueueLockFile()
-			if err != nil {
-				return err
-			}
-
-			//schedule crons
-			logger.Log().Info("Schedule crons")
-
-			cronManager := services.NewCronManager(currentScroll.Cronjobs, queueManager)
-			err = cronManager.Init()
-
-			if err != nil {
-				return err
-			}
-
-			logger.Log().Info("Active Scroll",
-				zap.String("Description", fmt.Sprintf("%s (%s)", currentScroll.Desc, currentScroll.Name)),
-				zap.String("Scroll Version", currentScroll.Version.String()),
-				zap.String("cwd", cwd))
 		}
+
 		err = s.Serve(a, port)
 
 		return err
@@ -207,8 +259,15 @@ func init() {
 
 	ServeCommand.Flags().BoolVarP(&idleScroll, "idle", "", false, "Don't start the queue manager")
 
+	ServeCommand.Flags().BoolVarP(&watchPorts, "watch-ports", "", false, "Track port activity")
+
+	ServeCommand.Flags().StringArrayVarP(&watchPortsInterfaces, "watch-ports-interfaces", "", []string{"lo0"}, "Interfaces to watch for port activity")
+
+	ServeCommand.Flags().BoolVarP(&useColdstarter, "coldstarter", "", true, "Use coldstarter to not start immediately")
+
 	ServeCommand.Flags().BoolVarP(&ignoreVersionCheck, "ignore-version-check", "", false, "Ignore version check")
 
 	ServeCommand.Flags().StringArrayVarP(&additionalEndpoints, "additional-endpoints", "", []string{}, "Additional endpoints to serve. Valid values: annotations")
 
+	ServeCommand.Flags().UintVarP(&portInactivity, "port-inactivity", "", 0, "Port inactivity timeout")
 }
