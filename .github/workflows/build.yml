@@ -6,6 +6,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Install libpcap-dev
+        run: apt install -y libpcap-dev
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
