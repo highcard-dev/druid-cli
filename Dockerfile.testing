@@ -3,16 +3,11 @@ FROM nginx
 WORKDIR /app
 
 RUN apt update
-RUN apt install -y ca-certificates wget jq moreutils htop procps nano net-tools gcc make 
+RUN apt install -y ca-certificates wget jq moreutils htop procps nano net-tools gcc make libpcap-dev openjdk-17-jdk ant
 
 
 RUN wget https://go.dev/dl/go1.21.6.linux-$(dpkg --print-architecture).tar.gz -O go.tar.gz
 RUN tar -C /usr/local -xzf go.tar.gz && rm go.tar.gz
-
-RUN apt-get update && \
-    apt-get install -y openjdk-17-jdk && \
-    apt-get install -y ant && \
-    apt-get clean;
 
 #/root/go/bin is not in the path
 ENV PATH=$PATH:/root/go/bin
