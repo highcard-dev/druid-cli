@@ -43,10 +43,11 @@ func startAndTestServeCommand(ctx context.Context, t *testing.T, serveCmd *cobra
 		}
 	}()
 
-	go func() {
+	go func(ctx context.Context) {
+		serveCmd.SetContext(ctx)
 		err := serveCmd.ExecuteContext(ctx)
 		executionDoneChan <- err
-	}()
+	}(ctx)
 
 	select {
 	case <-connectedChan:

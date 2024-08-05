@@ -139,7 +139,7 @@ func (sc *ProcedureLauncher) Run(cmd string, runCommandCb func(cmd string) error
 
 func (sc *ProcedureLauncher) RunProcedure(proc *domain.Procedure, cmd string) (string, *int, error) {
 
-	logger.Log().Debug("Running procedure",
+	logger.Log().Info("Running procedure",
 		zap.String("cmd", cmd),
 		zap.String("mode", proc.Mode),
 		zap.Any("data", proc.Data),

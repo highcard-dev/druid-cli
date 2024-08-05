@@ -179,10 +179,14 @@ func (sc *QueueManager) QueueLockFile() error {
 		if status.Status == domain.ScrollLockStatusDone {
 			//not sure if this can even happen
 			if command.Run != domain.RunModeRestart {
+
+				//TODO: use addQueueItem here
+				sc.mu.Lock()
 				sc.commandQueue[cmd] = &domain.QueueItem{
 					Status:           domain.ScrollLockStatusDone,
 					UpdateLockStatus: true,
 				}
+				sc.mu.Unlock()
 				continue
 			}
 		}
@@ -282,8 +286,10 @@ func (sc *QueueManager) RunQueue() {
 
 				//restart means we are never done!
 				if command.Run == domain.RunModeRestart {
+					logger.Log().Info("Command done, restarting..", zap.String("command", c))
 					sc.setStatus(c, domain.ScrollLockStatusWaiting, i.UpdateLockStatus)
 				} else {
+					logger.Log().Info("Command done", zap.String("command", c))
 					sc.setStatus(c, domain.ScrollLockStatusDone, i.UpdateLockStatus)
 				}
 

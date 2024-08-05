@@ -1,0 +1,6 @@
+*.jar
+*.tgz
+
+world
+
+!**/.scroll
