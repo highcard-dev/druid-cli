@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"slices"
 
 	"github.com/highcard-dev/daemon/cmd/server/web"
@@ -275,7 +276,13 @@ func init() {
 
 	ServeCommand.Flags().BoolVarP(&watchPorts, "watch-ports", "", false, "Track port activity")
 
-	ServeCommand.Flags().StringArrayVarP(&watchPortsInterfaces, "watch-ports-interfaces", "", []string{"lo0"}, "Interfaces to watch for port activity")
+	//macOS specific
+
+	if runtime.GOOS == "darwin" {
+		ServeCommand.Flags().StringArrayVarP(&watchPortsInterfaces, "watch-ports-interfaces", "", []string{"lo0", "en0"}, "Interfaces to watch for port activity")
+	} else {
+		ServeCommand.Flags().StringArrayVarP(&watchPortsInterfaces, "watch-ports-interfaces", "", []string{"lo"}, "Interfaces to watch for port activity")
+	}
 
 	ServeCommand.Flags().BoolVarP(&useColdstarter, "coldstarter", "", true, "Use coldstarter to not start immediately")
 

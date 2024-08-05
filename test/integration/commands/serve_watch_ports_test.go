@@ -3,6 +3,7 @@ package command_test
 import (
 	"encoding/json"
 	"os"
+	"runtime"
 	"testing"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -19,18 +20,24 @@ func fetchPorts() ([]domain.AugmentedPort, error) {
 	return ap, nil
 }
 
+var ncCommand = []string{"nc", "-l", "-p", "12349"}
+
 var testCommandTCP = map[string]*domain.CommandInstructionSet{
 	"start": {
 		Procedures: []*domain.Procedure{
 			{
 				Mode: "exec",
-				Data: []string{"nc", "-l", "12349"},
+				Data: ncCommand,
 			},
 		},
 	},
 }
 
 func TestWatchPortsServeCommand(t *testing.T) {
+
+	if runtime.GOOS == "darwin" {
+		ncCommand = []string{"nc", "-l", "12349"}
+	}
 
 	type TestCase struct {
 		Name   string
