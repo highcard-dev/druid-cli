@@ -96,7 +96,10 @@ func (t *TCP) handleConnection(conn net.Conn) {
 			"finish": func(data ...string) {
 				fmt.Println("Connection closed")
 				logger.Log().Info("Finish received", zap.Strings("data", data), zap.String("type", "tcp"), zap.String("address", conn.RemoteAddr().String()))
+				<-time.After(time.Second)
 				t.onFinish()
+				<-time.After(time.Second)
+				conn.Close()
 			},
 			"close": func(data ...string) {
 				sendFunc(data...)
