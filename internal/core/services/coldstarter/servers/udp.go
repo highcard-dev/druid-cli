@@ -74,6 +74,7 @@ func (u *UDP) handleConnection(data []byte, remoteAddr *net.UDPAddr) {
 		"sendData": sendFunc,
 		"finish": func(data ...string) {
 			fmt.Println("Connection closed")
+			logger.Log().Info("Finish received", zap.Strings("data", data), zap.String("type", "udp"), zap.String("address", remoteAddr.String()))
 			u.onFinish()
 		},
 		"close": func(data ...string) {
