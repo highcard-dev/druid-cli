@@ -5,6 +5,7 @@ import (
 	"os"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/signals"
@@ -20,24 +21,24 @@ func fetchPorts() ([]domain.AugmentedPort, error) {
 	return ap, nil
 }
 
-var ncCommand = []string{"nc", "-l", "-p", "12349"}
-
-var testCommandTCP = map[string]*domain.CommandInstructionSet{
-	"start": {
-		Procedures: []*domain.Procedure{
-			{
-				Mode: "exec",
-				Data: ncCommand,
-			},
-		},
-	},
-}
-
-func TestWatchPortsServeCommand(t *testing.T) {
-
+var testCommandTCP = func() map[string]*domain.CommandInstructionSet {
+	var ncCommand = []string{"nc", "-l", "-p", "12349"}
 	if runtime.GOOS == "darwin" {
 		ncCommand = []string{"nc", "-l", "12349"}
 	}
+	return map[string]*domain.CommandInstructionSet{
+		"start": {
+			Procedures: []*domain.Procedure{
+				{
+					Mode: "exec",
+					Data: ncCommand,
+				},
+			},
+		},
+	}
+}
+
+func TestWatchPortsServeCommand(t *testing.T) {
 
 	type TestCase struct {
 		Name   string
@@ -55,7 +56,7 @@ func TestWatchPortsServeCommand(t *testing.T) {
 					},
 				},
 				Init:     "start",
-				Commands: testCommandTCP,
+				Commands: testCommandTCP(),
 			},
 		},
 	}
@@ -72,6 +73,8 @@ func TestWatchPortsServeCommand(t *testing.T) {
 				signals.Stop()
 			}()
 
+			//give time to make sure everything is online
+			time.Sleep(1 * time.Second)
 			ap1, err := fetchPorts()
 			if err != nil {
 				t.Fatalf("Failed to fetch ports: %v", err)
@@ -82,8 +85,12 @@ func TestWatchPortsServeCommand(t *testing.T) {
 					t.Fatalf("Port %d is not open", p.Port.Port)
 				}
 			}
-
+			//give time to to get picked up by the watcher
+			time.Sleep(1 * time.Second)
 			err = tcpTester("")
+
+			//give time to to get picked up by the watcher
+			time.Sleep(1 * time.Second)
 
 			if err != nil {
 				t.Fatalf("Failed to test tcp: %v", err)
@@ -96,7 +103,7 @@ func TestWatchPortsServeCommand(t *testing.T) {
 
 			for idx, p := range ap2 {
 				if p.InactiveSince == ap1[idx].InactiveSince {
-					t.Fatalf("InactiveSince did not change")
+					t.Fatalf("InactiveSince did not change for port %d (both: %s)", p.Port.Port, p.InactiveSince)
 				}
 			}
 
