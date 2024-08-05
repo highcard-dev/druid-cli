@@ -69,10 +69,10 @@ var testCommand = map[string]*domain.CommandInstructionSet{
 	},
 }
 
-var tcpTester = func(answer string) error {
+var tcpTester = func(answer string, port int) error {
 	println("dial tcpTester")
 	//tcp connect to 12349 and send test data
-	con, err := net.DialTCP("tcp", nil, &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12349})
+	con, err := net.DialTCP("tcp", nil, &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: port})
 	if err != nil {
 		return fmt.Errorf("failed to dial tcp: %v", err)
 	}
@@ -102,10 +102,10 @@ var tcpTester = func(answer string) error {
 	return nil
 }
 
-var udpTester = func(answer string) error {
+var udpTester = func(answer string, port int) error {
 	println("dial udpTester")
 	//udp connect to 12349 and send test data
-	con, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12349})
+	con, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: port})
 	if err != nil {
 		return fmt.Errorf("failed to dial udp: %v", err)
 	}
@@ -155,7 +155,7 @@ var setupScroll = func(t *testing.T, scroll domain.File) (string, string) {
 	return scrollPath, cwd
 }
 
-var setupServeCmd = func(t *testing.T, cwd string, additionalArgs []string) {
+var setupServeCmd = func(ctx context.Context, t *testing.T, cwd string, additionalArgs []string) {
 
 	b := bytes.NewBufferString("")
 
@@ -165,8 +165,6 @@ var setupServeCmd = func(t *testing.T, cwd string, additionalArgs []string) {
 	serveCmd.SetArgs(append([]string{"--cwd", cwd, "serve"}, additionalArgs...))
 
 	// Create a new context for each test case
-	ctx, cancel := context.WithCancelCause(context.Background())
-	defer cancel(errors.New("test ended"))
 
 	cmd.ServeCommand.SetContext(ctx)
 
@@ -181,7 +179,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 	type TestCase struct {
 		Name              string
 		Scroll            domain.File
-		ExecColdStarterFn func(string) error
+		ExecColdStarterFn func(string, int) error
 		LuaHandlerContent string
 	}
 	var testCases = []TestCase{
@@ -198,7 +196,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 			Scroll: domain.File{
 				Ports: []domain.Port{
 					{
-						Port:     12349,
+						Port:     12350,
 						Name:     "testport",
 						Protocol: "tcp",
 					},
@@ -212,12 +210,12 @@ func TestColdstarterServeCommand(t *testing.T) {
 			Scroll: domain.File{
 				Ports: []domain.Port{
 					{
-						Port:     12349,
+						Port:     12350,
 						Name:     "testport",
 						Protocol: "tcp",
 					},
 					{
-						Port:     12350,
+						Port:     12351,
 						Name:     "testport2",
 						Protocol: "tcp",
 					},
@@ -230,7 +228,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 			Scroll: domain.File{
 				Ports: []domain.Port{
 					{
-						Port:         12349,
+						Port:         12352,
 						Name:         "testport",
 						Protocol:     "tcp",
 						SleepHandler: &genericHandler,
@@ -245,7 +243,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 			Scroll: domain.File{
 				Ports: []domain.Port{
 					{
-						Port:         12349,
+						Port:         12353,
 						Name:         "testport",
 						Protocol:     "tcp",
 						SleepHandler: &testHandler,
@@ -262,7 +260,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 			Scroll: domain.File{
 				Ports: []domain.Port{
 					{
-						Port:         12349,
+						Port:         12354,
 						Name:         "testport",
 						Protocol:     "udp",
 						SleepHandler: &genericHandler,
@@ -274,7 +272,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 			ExecColdStarterFn: udpTester,
 		},
 
-		/* {
+		{
 			Name: "TestServeColdstarterWithTestLuaUDPHandler",
 			Scroll: domain.File{
 				Ports: []domain.Port{
@@ -290,7 +288,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 			},
 			LuaHandlerContent: luaHandlerContent,
 			ExecColdStarterFn: udpTester,
-		},*/
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
@@ -305,7 +303,10 @@ func TestColdstarterServeCommand(t *testing.T) {
 				}
 			}
 
-			setupServeCmd(t, path, []string{})
+			ctx, cancel := context.WithCancelCause(context.Background())
+			defer cancel(errors.New("test ended"))
+
+			setupServeCmd(ctx, t, path, []string{})
 
 			defer func() {
 				signals.Stop()
@@ -313,12 +314,12 @@ func TestColdstarterServeCommand(t *testing.T) {
 
 			if tc.ExecColdStarterFn != nil {
 				//wait for server to start, maybe we can do this better, but we cannot do a tcp dial or somthing like that
-
+				time.Sleep(1 * time.Second)
 				var err error
 				if tc.LuaHandlerContent != "" {
-					err = tc.ExecColdStarterFn("testback")
+					err = tc.ExecColdStarterFn("testback", tc.Scroll.Ports[0].Port)
 				} else {
-					err = tc.ExecColdStarterFn("")
+					err = tc.ExecColdStarterFn("", tc.Scroll.Ports[0].Port)
 				}
 				if err != nil {
 					t.Fatalf("Failed to execute coldstarter function: %v", err)

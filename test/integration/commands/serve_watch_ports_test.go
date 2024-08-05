@@ -1,7 +1,9 @@
 package command_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"runtime"
 	"testing"
@@ -67,7 +69,10 @@ func TestWatchPortsServeCommand(t *testing.T) {
 			_, path := setupScroll(t, tc.Scroll)
 			defer os.RemoveAll(path)
 
-			setupServeCmd(t, path, []string{"--watch-ports"})
+			ctx, cancel := context.WithCancelCause(context.Background())
+			defer cancel(errors.New("test ended"))
+
+			setupServeCmd(ctx, t, path, []string{"--watch-ports"})
 
 			defer func() {
 				signals.Stop()
@@ -87,7 +92,7 @@ func TestWatchPortsServeCommand(t *testing.T) {
 			}
 			//give time to to get picked up by the watcher
 			time.Sleep(1 * time.Second)
-			err = tcpTester("")
+			err = tcpTester("", 12349)
 
 			//give time to to get picked up by the watcher
 			time.Sleep(1 * time.Second)
