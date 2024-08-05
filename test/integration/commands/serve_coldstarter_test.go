@@ -70,63 +70,69 @@ var testCommand = map[string]*domain.CommandInstructionSet{
 }
 
 var tcpTester = func(answer string) error {
+	println("dial tcpTester")
 	//tcp connect to 12349 and send test data
 	con, err := net.DialTCP("tcp", nil, &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12349})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to dial tcp: %v", err)
 	}
 	defer con.Close()
 
+	println("write tcpTester")
 	_, err = con.Write([]byte("test"))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to write test data: %v", err)
 	}
 
 	if answer == "" {
 		return nil
 	}
 
+	println("read tcpTester")
 	data := make([]byte, 1024)
 	n, err := con.Read(data)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read response: %v", err)
 	}
 
 	dataStr := string(data[:n])
 	if dataStr != answer {
 		return fmt.Errorf("unexpected response: %s != %s ", dataStr, answer)
 	}
-	return err
+	return nil
 }
 
 var udpTester = func(answer string) error {
+	println("dial udpTester")
 	//udp connect to 12349 and send test data
 	con, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12349})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to dial udp: %v", err)
 	}
 	defer con.Close()
 
+	println("write udpTester")
 	_, err = con.Write([]byte("test"))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to write test data: %v", err)
 	}
 
 	if answer == "" {
 		return nil
 	}
 
+	println("read udpTester")
 	data := make([]byte, 1024)
 	n, _, err := con.ReadFromUDP(data)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read response: %v", err)
 	}
 
 	dataStr := string(data[:n])
 	if dataStr != answer {
 		return fmt.Errorf("unexpected response: %s != %s ", dataStr, answer)
 	}
-	return err
+	return nil
 }
 
 var setupScroll = func(t *testing.T, scroll domain.File) (string, string) {
