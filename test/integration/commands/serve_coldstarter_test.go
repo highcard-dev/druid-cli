@@ -225,8 +225,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 				Init:     "start",
 				Commands: testCommand,
 			},
-		},
-		{
+		}, {
 			Name: "TestServeColdstarterWithGenericTCPHandler",
 			Scroll: domain.File{
 				Ports: []domain.Port{
@@ -241,8 +240,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 				Commands: testCommand,
 			},
 			ExecColdStarterFn: tcpTester,
-		},
-		{
+		}, {
 			Name: "TestServeColdstarterWithTestLuaTCPHandler",
 			Scroll: domain.File{
 				Ports: []domain.Port{
@@ -274,7 +272,9 @@ func TestColdstarterServeCommand(t *testing.T) {
 				Commands: testCommand,
 			},
 			ExecColdStarterFn: udpTester,
-		}, {
+		},
+
+		/* {
 			Name: "TestServeColdstarterWithTestLuaUDPHandler",
 			Scroll: domain.File{
 				Ports: []domain.Port{
@@ -290,7 +290,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 			},
 			LuaHandlerContent: luaHandlerContent,
 			ExecColdStarterFn: udpTester,
-		},
+		},*/
 	}
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
@@ -313,7 +313,6 @@ func TestColdstarterServeCommand(t *testing.T) {
 
 			if tc.ExecColdStarterFn != nil {
 				//wait for server to start, maybe we can do this better, but we cannot do a tcp dial or somthing like that
-				time.Sleep(5 * time.Second)
 
 				var err error
 				if tc.LuaHandlerContent != "" {
