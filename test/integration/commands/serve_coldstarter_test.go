@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"strconv"
@@ -50,7 +51,10 @@ var testHandler = "test.lua"
 
 var luaHandlerContent = `
 function handle(data)
-	finish()
+	if data == "test" then
+		sendData("testback")
+		finish()
+	end
 end
 `
 
@@ -65,7 +69,7 @@ var testCommand = map[string]*domain.CommandInstructionSet{
 	},
 }
 
-var tcpTester = func() error {
+var tcpTester = func(answer string) error {
 	//tcp connect to 12349 and send test data
 	con, err := net.DialTCP("tcp", nil, &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12349})
 	if err != nil {
@@ -74,10 +78,28 @@ var tcpTester = func() error {
 	defer con.Close()
 
 	_, err = con.Write([]byte("test"))
+	if err != nil {
+		return err
+	}
+
+	if answer == "" {
+		return nil
+	}
+
+	data := make([]byte, 1024)
+	n, err := con.Read(data)
+	if err != nil {
+		return err
+	}
+
+	dataStr := string(data[:n])
+	if dataStr != answer {
+		return fmt.Errorf("unexpected response: %s != %s ", dataStr, answer)
+	}
 	return err
 }
 
-var udpTester = func() error {
+var udpTester = func(answer string) error {
 	//udp connect to 12349 and send test data
 	con, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12349})
 	if err != nil {
@@ -86,7 +108,66 @@ var udpTester = func() error {
 	defer con.Close()
 
 	_, err = con.Write([]byte("test"))
+	if err != nil {
+		return err
+	}
+
+	if answer == "" {
+		return nil
+	}
+
+	data := make([]byte, 1024)
+	n, _, err := con.ReadFromUDP(data)
+	if err != nil {
+		return err
+	}
+
+	dataStr := string(data[:n])
+	if dataStr != answer {
+		return fmt.Errorf("unexpected response: %s != %s ", dataStr, answer)
+	}
 	return err
+}
+
+var setupScroll = func(t *testing.T, scroll domain.File) (string, string) {
+
+	logger.Log(logger.WithStructuredLogging())
+
+	//observer := logger.SetupLogsCapture()
+	unixTime := time.Now().Unix()
+	cwd := "./druid-cli-test/" + strconv.FormatInt(unixTime, 10) + "/"
+	scrollPath := cwd + ".scroll/"
+
+	if err := os.MkdirAll(scrollPath, 0755); err != nil {
+		t.Fatalf("Failed to create test cwd: %v", err)
+	}
+
+	err := writeScroll(scroll, scrollPath+"scroll.yaml")
+	if err != nil {
+		t.Fatalf("Failed to write test scroll file: %v", err)
+	}
+	return scrollPath, cwd
+}
+
+var setupServeCmd = func(t *testing.T, cwd string, additionalArgs []string) {
+
+	b := bytes.NewBufferString("")
+
+	serveCmd := cmd.RootCmd
+	serveCmd.SetErr(b)
+	serveCmd.SetOut(b)
+	serveCmd.SetArgs(append([]string{"--cwd", cwd, "serve"}, additionalArgs...))
+
+	// Create a new context for each test case
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(errors.New("test ended"))
+
+	cmd.ServeCommand.SetContext(ctx)
+
+	connected, err := startAndTestServeCommand(ctx, t, serveCmd)
+	if !connected {
+		t.Fatalf("Failed to connect to daemon web server: %v", err)
+	}
 }
 
 func TestColdstarterServeCommand(t *testing.T) {
@@ -94,7 +175,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 	type TestCase struct {
 		Name              string
 		Scroll            domain.File
-		ExecColdStarterFn func() error
+		ExecColdStarterFn func(string) error
 		LuaHandlerContent string
 	}
 	var testCases = []TestCase{
@@ -208,23 +289,8 @@ func TestColdstarterServeCommand(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			println(tc.Name)
-			logger.Log(logger.WithStructuredLogging())
-
-			//observer := logger.SetupLogsCapture()
-			unixTime := time.Now().Unix()
-			path := "./druid-cli-test/" + strconv.FormatInt(unixTime, 10) + "/"
-			scrollPath := path + ".scroll/"
-
-			scroll := tc.Scroll
-
-			if err := os.MkdirAll(scrollPath, 0755); err != nil {
-				t.Fatalf("Failed to create test cwd: %v", err)
-			}
-
-			err := writeScroll(scroll, scrollPath+"scroll.yaml")
-			if err != nil {
-				t.Fatalf("Failed to write test scroll file: %v", err)
-			}
+			scrollPath, path := setupScroll(t, tc.Scroll)
+			defer os.RemoveAll(path)
 
 			if tc.LuaHandlerContent != "" {
 				err := os.WriteFile(scrollPath+testHandler, []byte(tc.LuaHandlerContent), 0644)
@@ -233,40 +299,28 @@ func TestColdstarterServeCommand(t *testing.T) {
 				}
 			}
 
-			defer os.RemoveAll(path)
-
-			b := bytes.NewBufferString("")
-
-			serveCmd := cmd.RootCmd
-			serveCmd.SetErr(b)
-			serveCmd.SetOut(b)
-			serveCmd.SetArgs([]string{"--cwd", path, "serve"})
-
-			// Create a new context for each test case
-			ctx, cancel := context.WithCancelCause(context.Background())
-			defer cancel(errors.New("test ended"))
-
-			cmd.ServeCommand.SetContext(ctx)
-
-			connected, err := startAndTestServeCommand(ctx, t, serveCmd)
-			if !connected {
-				t.Fatalf("Failed to connect to daemon web server: %v", err)
-			}
-
-			if tc.ExecColdStarterFn != nil {
-				//wait for server to start, maybe we can do this better, but we cannot do a tcp dial or somthing like that
-				time.Sleep(1 * time.Second)
-				err := tc.ExecColdStarterFn()
-				if err != nil {
-					t.Fatalf("Failed to execute coldstarter function: %v", err)
-				}
-			}
+			setupServeCmd(t, path, []string{})
 
 			defer func() {
 				signals.Stop()
 			}()
 
-			err = waitUntilFileExists(path+"test.txt", 15*time.Second)
+			if tc.ExecColdStarterFn != nil {
+				//wait for server to start, maybe we can do this better, but we cannot do a tcp dial or somthing like that
+				time.Sleep(1 * time.Second)
+
+				var err error
+				if tc.LuaHandlerContent != "" {
+					err = tc.ExecColdStarterFn("testback")
+				} else {
+					err = tc.ExecColdStarterFn("")
+				}
+				if err != nil {
+					t.Fatalf("Failed to execute coldstarter function: %v", err)
+				}
+			}
+
+			err := waitUntilFileExists(path+"test.txt", 15*time.Second)
 			if err != nil {
 				t.Fatalf("Failed to wait for test.txt to be created: %v", err)
 			}

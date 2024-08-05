@@ -3,11 +3,12 @@ package servers
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/ports"
+	"github.com/highcard-dev/daemon/internal/utils/logger"
+	"go.uber.org/zap"
 )
 
 type UDPServer interface {
@@ -44,10 +45,10 @@ func (u *UDP) Start(ctx context.Context, port int, onFinish func()) error {
 			n, remoteAddr, err := u.conn.ReadFromUDP(buf)
 			if err != nil {
 				if opErr, ok := err.(*net.OpError); ok && opErr.Err.Error() == "use of closed network connection" {
-					log.Println("Server stopped")
+					logger.Log().Info("UDP Server stopped")
 					return
 				}
-				log.Println("Error reading from connection:", err)
+				logger.Log().Warn("Error reading from UDP connection", zap.Error(err))
 				continue
 			}
 
@@ -84,6 +85,6 @@ func (u *UDP) handleConnection(data []byte, remoteAddr *net.UDPAddr) {
 	})
 
 	if err != nil {
-		log.Println("Error handling packet:", err)
+		logger.Log().Error("Error handling packet", zap.Error(err))
 	}
 }
