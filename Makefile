@@ -1,4 +1,4 @@
-.PHONY: test
+.PHONY: test build
 
 VERSION ?= "dev"
 
