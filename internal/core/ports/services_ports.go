@@ -81,10 +81,10 @@ type OciRegistryInterface interface {
 	GetRepo(repoUrl string) (*remote.Repository, error)
 	Pull(dir string, artifact string) error
 	CanUpdateTag(descriptor v1.Descriptor, folder string, tag string) (bool, error)
-	PackFolders(fs *file.Store, dirs []string, artifactType domain.ArtifactType, path string) (v1.Descriptor, error)
+	PackFolders(fs *file.Store, dirs []string, artifactType domain.ArtifactType, path string) ([]v1.Descriptor, error)
 	Push(folder string, repo string, tag string, annotationInfo domain.AnnotationInfo, packMeta bool) (v1.Descriptor, error)
 	PushMeta(folder string, repo string) (v1.Descriptor, error)
-	CreateMetaDescriptors(fs *file.Store, dir string, artifact string) (v1.Descriptor, error)
+	CreateMetaDescriptors(fs *file.Store, dir string, artifact string) ([]v1.Descriptor, error)
 }
 
 type CronManagerInterface interface {

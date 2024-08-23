@@ -153,11 +153,9 @@ func (c *OciClient) CanUpdateTag(current v1.Descriptor, r string, tag string) (b
 
 }
 
-func (c *OciClient) PackFolders(fs *file.Store, dirs []string, artifactType domain.ArtifactType, path string) (v1.Descriptor, error) {
+func (c *OciClient) PackFolders(fs *file.Store, dirs []string, artifactType domain.ArtifactType, path string) ([]v1.Descriptor, error) {
 
 	ctx := context.Background()
-
-	artifactTypeString := string(artifactType)
 
 	fileDescriptors := make([]v1.Descriptor, 0, len(dirs))
 	for _, name := range dirs {
@@ -166,18 +164,13 @@ func (c *OciClient) PackFolders(fs *file.Store, dirs []string, artifactType doma
 
 		fileDescriptor, err := fs.Add(ctx, name, string(artifactType), fullPath)
 		if err != nil {
-			return v1.Descriptor{}, err
+			return []v1.Descriptor{}, err
 		}
 		fileDescriptors = append(fileDescriptors, fileDescriptor)
 		logger.Log().Info(fmt.Sprintf("file descriptor for %s: %v\n", name, fileDescriptor.Digest))
 	}
 
-	artifactDescriptor, err := oras.Pack(ctx, fs, artifactTypeString, fileDescriptors, oras.PackOptions{
-		PackImageManifest:   true,
-		ManifestAnnotations: map[string]string{},
-	})
-
-	return artifactDescriptor, err
+	return fileDescriptors, nil
 }
 
 // the root has to leaves, one is the real scroll (fs) and the other is meta information about the scroll
@@ -217,7 +210,7 @@ func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo 
 	if err != nil {
 		return v1.Descriptor{}, err
 	}
-	descriptorsForRoot := []v1.Descriptor{scrollFsManifestDescriptor}
+	descriptorsForRoot := scrollFsManifestDescriptor
 
 	if packMeta {
 
@@ -225,7 +218,7 @@ func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo 
 		if err != nil {
 			return v1.Descriptor{}, err
 		}
-		descriptorsForRoot = append(descriptorsForRoot, scrollMetaManifestDescriptor)
+		descriptorsForRoot = append(descriptorsForRoot, scrollMetaManifestDescriptor...)
 	}
 
 	ctx := context.Background()
@@ -248,12 +241,11 @@ func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo 
 		annotations[fmt.Sprintf("gg.druid.scroll.port.%s", name)] = port
 	}
 
-	//Pack everything together
-	rootManifestDescriptor, err := oras.Pack(ctx, fs, string(domain.ArtifactTypeScrollRoot), descriptorsForRoot, oras.PackOptions{
+	opts := oras.PackManifestOptions{
+		Layers:              descriptorsForRoot,
 		ManifestAnnotations: annotations,
-		PackImageManifest:   true,
-	})
-
+	}
+	rootManifestDescriptor, err := oras.PackManifest(ctx, fs, oras.PackManifestVersion1_1, string(domain.ArtifactTypeScrollRoot), opts)
 	if err != nil {
 		return v1.Descriptor{}, err
 	}
@@ -282,9 +274,17 @@ func (c *OciClient) PushMeta(folder string, repo string) (v1.Descriptor, error) 
 		return v1.Descriptor{}, err
 	}
 
-	rootManifestDescriptor, err := c.CreateMetaDescriptors(fs, folder, "")
+	manifestDescriptors, err := c.CreateMetaDescriptors(fs, folder, "")
 
 	ctx := context.Background()
+
+	if err != nil {
+		return v1.Descriptor{}, err
+	}
+
+	rootManifestDescriptor, err := oras.PackManifest(ctx, fs, oras.PackManifestVersion1_1, string(domain.ArtifactTypeScrollRoot), oras.PackManifestOptions{
+		Layers: manifestDescriptors,
+	})
 
 	if err != nil {
 		return v1.Descriptor{}, err
@@ -293,7 +293,6 @@ func (c *OciClient) PushMeta(folder string, repo string) (v1.Descriptor, error) 
 	logger.Log().Info(fmt.Sprintf("Meta manifest descriptor: %v\n", rootManifestDescriptor.Digest))
 
 	tag := "meta"
-
 	if err = fs.Tag(ctx, rootManifestDescriptor, tag); err != nil {
 		return v1.Descriptor{}, err
 	}
@@ -302,12 +301,12 @@ func (c *OciClient) PushMeta(folder string, repo string) (v1.Descriptor, error) 
 	return rootManifestDescriptor, err
 }
 
-func (c *OciClient) CreateMetaDescriptors(fs *file.Store, folder string, fsPath string) (v1.Descriptor, error) {
+func (c *OciClient) CreateMetaDescriptors(fs *file.Store, folder string, fsPath string) ([]v1.Descriptor, error) {
 
 	metaPath := filepath.Join(folder, fsPath)
 	exists, _ := utils.FileExists(metaPath)
 	if !exists {
-		return v1.Descriptor{}, fmt.Errorf("meta file %s not found", metaPath)
+		return []v1.Descriptor{}, fmt.Errorf("meta file %s not found", metaPath)
 	}
 	fsFileNames := []string{}
 	subitems, _ := os.ReadDir(metaPath)
