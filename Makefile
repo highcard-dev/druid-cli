@@ -1,9 +1,13 @@
-.PHONY: test
+.PHONY: test build
 
 VERSION ?= "dev"
 
 build: ## Build Daemon
 	CGO_ENABLED=1 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/druid
+
+build-x86-docker:
+	docker build . -f build/Dockerfile.darwin -t golang-new-builder:latest
+	docker run -e GOOS=linux -e GOARCH=amd64 -it --rm -v ./:/app -w /app --entrypoint=/bin/bash golang-new-builder:latest  -c 'CGO_ENABLED=1 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/x86/druid'
 
 install: ## Install Daemon
 	cp ./bin/druid /usr/local/bin/druid

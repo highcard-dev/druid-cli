@@ -811,10 +811,10 @@ func (mr *MockOciRegistryInterfaceMockRecorder) CanUpdateTag(descriptor, folder,
 }
 
 // CreateMetaDescriptors mocks base method.
-func (m *MockOciRegistryInterface) CreateMetaDescriptors(fs *file.Store, dir, artifact string) (v1.Descriptor, error) {
+func (m *MockOciRegistryInterface) CreateMetaDescriptors(fs *file.Store, dir, artifact string) ([]v1.Descriptor, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateMetaDescriptors", fs, dir, artifact)
-	ret0, _ := ret[0].(v1.Descriptor)
+	ret0, _ := ret[0].([]v1.Descriptor)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -841,10 +841,10 @@ func (mr *MockOciRegistryInterfaceMockRecorder) GetRepo(repoUrl any) *gomock.Cal
 }
 
 // PackFolders mocks base method.
-func (m *MockOciRegistryInterface) PackFolders(fs *file.Store, dirs []string, artifactType domain.ArtifactType, path string) (v1.Descriptor, error) {
+func (m *MockOciRegistryInterface) PackFolders(fs *file.Store, dirs []string, artifactType domain.ArtifactType, path string) ([]v1.Descriptor, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "PackFolders", fs, dirs, artifactType, path)
-	ret0, _ := ret[0].(v1.Descriptor)
+	ret0, _ := ret[0].([]v1.Descriptor)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -957,18 +957,46 @@ func (m *MockQueueManagerInterface) EXPECT() *MockQueueManagerInterfaceMockRecor
 	return m.recorder
 }
 
-// AddItem mocks base method.
-func (m *MockQueueManagerInterface) AddItem(cmd string, changeStatus bool) error {
+// AddAndRememberItem mocks base method.
+func (m *MockQueueManagerInterface) AddAndRememberItem(cmd string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AddItem", cmd, changeStatus)
+	ret := m.ctrl.Call(m, "AddAndRememberItem", cmd)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// AddItem indicates an expected call of AddItem.
-func (mr *MockQueueManagerInterfaceMockRecorder) AddItem(cmd, changeStatus any) *gomock.Call {
+// AddAndRememberItem indicates an expected call of AddAndRememberItem.
+func (mr *MockQueueManagerInterfaceMockRecorder) AddAndRememberItem(cmd any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddItem", reflect.TypeOf((*MockQueueManagerInterface)(nil).AddItem), cmd, changeStatus)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddAndRememberItem", reflect.TypeOf((*MockQueueManagerInterface)(nil).AddAndRememberItem), cmd)
+}
+
+// AddShutdownItem mocks base method.
+func (m *MockQueueManagerInterface) AddShutdownItem(cmd string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddShutdownItem", cmd)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddShutdownItem indicates an expected call of AddShutdownItem.
+func (mr *MockQueueManagerInterfaceMockRecorder) AddShutdownItem(cmd any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddShutdownItem", reflect.TypeOf((*MockQueueManagerInterface)(nil).AddShutdownItem), cmd)
+}
+
+// AddTempItem mocks base method.
+func (m *MockQueueManagerInterface) AddTempItem(cmd string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddTempItem", cmd)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddTempItem indicates an expected call of AddTempItem.
+func (mr *MockQueueManagerInterfaceMockRecorder) AddTempItem(cmd any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddTempItem", reflect.TypeOf((*MockQueueManagerInterface)(nil).AddTempItem), cmd)
 }
 
 // GetQueue mocks base method.

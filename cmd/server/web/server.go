@@ -9,7 +9,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	jwtware "github.com/gofiber/jwt/v3"
-	"github.com/gofiber/swagger"
 	"github.com/highcard-dev/daemon/cmd/server/web/middlewares"
 	constants "github.com/highcard-dev/daemon/internal"
 	"github.com/highcard-dev/daemon/internal/core/ports"
@@ -167,7 +166,7 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 		})
 	})
 
-	app.Get("/swagger/*", swagger.HandlerDefault) // default
+	//app.Get("/swagger/*", swagger.HandlerDefault) // default
 
 	//Catch-all 404 page
 	app.Use(func(ctx *fiber.Ctx) error {
