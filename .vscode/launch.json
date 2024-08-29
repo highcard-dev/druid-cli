@@ -139,7 +139,7 @@
                 "registry",
                 "pull",
                 "--cwd",
-                "${workspaceFolder}/examples/scroll-cwd-pull/", "registry-1.docker.io/highcard/scroll-minecraft-forge:1.20.1",
+                "${workspaceFolder}/examples/scroll-cwd-pull/", "artifacts.druid.gg/druid-team/scroll-minecraft-forge:1.20.1",
             ],
         },
         {

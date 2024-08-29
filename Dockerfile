@@ -7,7 +7,7 @@ WORKDIR /go
 
 ENV VERSION=docker
 
-RUN make build
+RUN make build-static
 RUN make build-plugins
 
 RUN cp ./bin/druid* /usr/bin/
