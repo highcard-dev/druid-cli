@@ -4,15 +4,15 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/pcap"
+	"github.com/gopacket/gopacket"
+	"github.com/gopacket/gopacket/layers"
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
+	pcap "github.com/packetcap/go-pcap"
 	"github.com/shirou/gopsutil/net"
 	"go.uber.org/zap"
 )
@@ -162,27 +162,15 @@ func (p *PortMonitor) StartMonitoring(ctx context.Context, ifaces []string) {
 func (p *PortMonitor) StartMonitorPorts(ports []int, ifaces []string, timeout time.Duration) (*int, error) {
 
 	// Find all network interfaces
-	interfaces, err := pcap.FindAllDevs()
-	if err != nil {
-		return nil, err
-	}
 
-	var ifacesFound []string
-	for _, iface := range interfaces {
-		if slices.Contains(ifaces, iface.Name) {
-			ifacesFound = append(ifacesFound, iface.Name)
-			continue
-		}
-	}
-
-	logger.Log().Debug("Found interfaces", zap.Strings("ifaces", ifacesFound), zap.Strings("requestedInterfaces", ifaces))
+	logger.Log().Debug("Found interfaces", zap.Strings("ifaces", ifaces), zap.Strings("requestedInterfaces", ifaces))
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 
 	var doneIface string
 	var donePort int
 
-	for _, iface := range ifacesFound {
+	for _, iface := range ifaces {
 		go func(po []int, i string) {
 			port, err := p.waitForPortActiviy(ctx, ports, i)
 			if err != nil {
@@ -216,7 +204,7 @@ func (p *PortMonitor) StartMonitorPorts(ports []int, ifaces []string, timeout ti
 
 func (p *PortMonitor) waitForPortActiviy(ctx context.Context, ports []int, interfaceName string) (int, error) {
 
-	handle, err := pcap.OpenLive(interfaceName, 1600, true, pcap.BlockForever)
+	handle, err := pcap.OpenLive(interfaceName, 1600, true, time.Hour, false)
 	if err != nil {
 		return 0, err
 	}
@@ -241,7 +229,9 @@ func (p *PortMonitor) waitForPortActiviy(ctx context.Context, ports []int, inter
 	}
 	logger.Log().Debug("Listening on iface", zap.String("iface", interfaceName), zap.Ints("ports", ports))
 
-	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
+	lt1 := layers.LinkType(handle.LinkType())
+
+	packetSource := gopacket.NewPacketSource(handle, lt1)
 	for packet := range packetSource.Packets() {
 		// Process the packet here
 		if packet.ApplicationLayer() == nil {

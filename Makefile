@@ -3,7 +3,7 @@
 VERSION ?= "dev"
 
 build: ## Build Daemon
-	CGO_ENABLED=1 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/druid
+	CGO_ENABLED=0 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/druid
 
 build-x86-docker:
 	docker build . -f build/Dockerfile.darwin -t golang-new-builder:latest
