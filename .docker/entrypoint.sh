@@ -75,6 +75,10 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]]; then
     then
         args+=("--idle")
     fi
+    if [ ! -z "${DRUID_WATCH_PORTS}" ];
+    then
+        args+=("--watch-ports")
+    fi
         
     echo "Running druid with args from env: ${args[@]}"
     exec druid "${args[@]}"
