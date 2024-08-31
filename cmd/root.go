@@ -33,6 +33,7 @@ func init() {
 	RootCmd.AddCommand(VersionCmd)
 	RootCmd.AddCommand(ScrollCmd)
 	RootCmd.AddCommand(PortMonitorCmd)
+	RootCmd.AddCommand(ColdstarterCmd)
 
 	c, _ := os.Getwd()
 
