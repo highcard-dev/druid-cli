@@ -93,11 +93,13 @@ to interact and monitor the Scroll Application`,
 
 				logger.Log().Info("Installed scroll " + artifact)
 			} else {
-				return fmt.Errorf("error creating scroll service: %w", err)
+				return fmt.Errorf("failed to load scroll - %w", err)
 			}
 		}
 
 		currentScroll := scrollService.GetCurrent()
+
+		logger.Log().Info("Scroll loaded", zap.String("Name", currentScroll.Name), zap.Any("Version", currentScroll.Version), zap.String("AppVersion", currentScroll.AppVersion), zap.Any("Ports", currentScroll.Ports))
 
 		processLauncher := services.NewProcedureLauncher(client, processManager, pluginManager, consoleService, logManager, scrollService)
 

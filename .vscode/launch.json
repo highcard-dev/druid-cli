@@ -33,6 +33,23 @@
             ],
         },
         {
+            "name": "Debug Daemon serve --idle (minecraft example)",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/main.go",
+            "args": [
+                "serve",
+                "--cwd",
+                "${workspaceFolder}/examples/minecraft",
+                "--watch-ports",
+                "-p",
+                "9190",
+                "--idle"
+            ],
+        },
+        {
             "name": "Debug Daemon serve --coldstarter (minecraft example)",
             "type": "go",
             "request": "launch",
