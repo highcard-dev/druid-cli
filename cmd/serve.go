@@ -129,7 +129,7 @@ to interact and monitor the Scroll Application`,
 		signals.SetupSignals(queueManager, processManager, a, shutdownWait)
 
 		if watchPorts {
-			logger.Log().Info("Starting port watcher")
+			logger.Log().Info("Starting port watcher", zap.Strings("interfaces", watchPortsInterfaces))
 			go portService.StartMonitoring(ctx, watchPortsInterfaces)
 		}
 
