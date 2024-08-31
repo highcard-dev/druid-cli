@@ -6,6 +6,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Install libpcap-dev
+        run: sudo apt update && sudo apt install -y libpcap-dev
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -19,6 +21,8 @@ jobs:
         id: version
         with:
           version_format: "${major}.${minor}.${patch}-${{ env.BRANCH_NAME }}${increment}"
+      #- name: Setup tmate session
+      #  uses: mxschmitt/action-tmate@v3
       - run: make test-integration-docker
         name: Run integration tests inside Docker
       - run: make test

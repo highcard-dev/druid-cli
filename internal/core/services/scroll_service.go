@@ -51,7 +51,7 @@ func (sc *ScrollService) LoadScroll() (*domain.Scroll, error) {
 }
 
 // Load Scroll and render templates in the cwd
-func (sc *ScrollService) Bootstrap(ignoreVersionCheck bool) (*domain.Scroll, *domain.ScrollLock, error) {
+func (sc *ScrollService) Bootstrap(ignoreVersionCheck bool) (*domain.ScrollLock, error) {
 
 	var scroll = sc.scroll
 
@@ -66,11 +66,11 @@ func (sc *ScrollService) Bootstrap(ignoreVersionCheck bool) (*domain.Scroll, *do
 		lock.Write()
 	} else {
 		if !lock.ScrollVersion.Equal(sc.scroll.Version) && !ignoreVersionCheck {
-			return scroll, lock, errors.New("scroll version mismatch")
+			return lock, errors.New("scroll version mismatch")
 		}
 	}
 
-	return scroll, lock, nil
+	return lock, nil
 
 }
 func (sc *ScrollService) CreateLockAndBootstrapFiles() error {

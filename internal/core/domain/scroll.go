@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	semver "github.com/Masterminds/semver/v3"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
@@ -25,12 +26,27 @@ type Cronjob struct {
 	Command  string `yaml:"command"`
 }
 
+type Port struct {
+	Port         int     `yaml:"port" json:"port"`
+	Protocol     string  `yaml:"protocol" json:"protocol"`
+	Name         string  `yaml:"name" json:"name"`
+	SleepHandler *string `yaml:"sleep_handler" json:"sleep_handler"`
+}
+
+type AugmentedPort struct {
+	Port
+	InactiveSince    time.Time `json:"inactive_since"`
+	InactiveSinceSec uint      `json:"inactive_since_sec"`
+	Open             bool      `json:"open"`
+}
+
 type File struct {
 	Name       string                            `yaml:"name" json:"name"`
 	Desc       string                            `yaml:"desc" json:"desc"`
 	Version    *semver.Version                   `yaml:"version" json:"version"`
 	AppVersion string                            `yaml:"app_version" json:"app_version"` //don't make this a semver, it's not allways
 	Init       string                            `yaml:"init" json:"init"`
+	Ports      []Port                            `yaml:"ports" json:"ports"`
 	Commands   map[string]*CommandInstructionSet `yaml:"commands" json:"commands"`
 	Plugins    map[string]map[string]string      `yaml:"plugins" json:"plugins"`
 	Cronjobs   []*Cronjob                        `yaml:"cronjobs" json:"cronjobs"`
@@ -138,4 +154,23 @@ func (sc *Scroll) Validate() error {
 		}
 	}
 	return nil
+}
+
+func (sc *Scroll) CanColdStart() bool {
+	for _, port := range sc.Ports {
+		if port.SleepHandler != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (sc *Scroll) GetColdStartPorts() []Port {
+	var ports []Port
+	for _, port := range sc.Ports {
+		if port.SleepHandler != nil {
+			ports = append(ports, port)
+		}
+	}
+	return ports
 }

@@ -86,13 +86,6 @@ func (po *ProcessMonitor) RefreshMetrics() {
 				zap.String("processName", name),
 				zap.Error(err),
 			)
-			if err == ErrorProcessNotActive {
-				po.RemoveProcess(name)
-				logger.Log().Info("Process not active, removing from monitoring",
-					zap.String(logger.LogKeyContext, logger.LogContextMonitor),
-					zap.String("processName", name),
-				)
-			}
 		}
 	}
 }

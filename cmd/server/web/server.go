@@ -33,6 +33,7 @@ type Server struct {
 	processHandler                ports.ProcessHandlerInterface
 	queueHandler                  ports.QueueHandlerInterface
 	websocketHandler              ports.WebsocketHandlerInterface
+	portHandler                   ports.PortHandlerInterface
 	webdavPath                    string
 }
 
@@ -45,6 +46,7 @@ func NewServer(
 	processHandler ports.ProcessHandlerInterface,
 	queueHandler ports.QueueHandlerInterface,
 	websocketHandler ports.WebsocketHandlerInterface,
+	portHandler ports.PortHandlerInterface,
 	authorizerService ports.AuthorizerServiceInterface,
 	webdavPath string,
 ) *Server {
@@ -62,6 +64,7 @@ func NewServer(
 		processHandler:                processHandler,
 		queueHandler:                  queueHandler,
 		websocketHandler:              websocketHandler,
+		portHandler:                   portHandler,
 		tokenAuthenticationMiddleware: middlewares.TokenAuthentication(authorizerService),
 		webdavPath:                    webdavPath,
 	}
@@ -149,6 +152,8 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 	webdavRoutes.Use("*", adaptor.HTTPHandler(webdavHandler))
 
 	wsRoutes.Get("/serve/:console", websocket.New(s.websocketHandler.HandleProcess)).Name("ws.serve")
+
+	apiRoutes.Get("/ports", s.portHandler.GetPorts).Name("ports.list")
 
 	if s.annotationHandler != nil {
 		app.Get("/annotations", s.annotationHandler.Annotations).Name("annotations.list")
