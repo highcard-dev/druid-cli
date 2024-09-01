@@ -72,7 +72,7 @@ func TestWatchPortsServeCommand(t *testing.T) {
 			ctx, cancel := context.WithCancelCause(context.Background())
 			defer cancel(errors.New("test ended"))
 
-			setupServeCmd(ctx, t, path, []string{"--watch-ports"})
+			setupServeCmd(ctx, t, path, []string{"--watch-ports", "--coldstarter=false"})
 
 			defer func() {
 				signals.Stop()

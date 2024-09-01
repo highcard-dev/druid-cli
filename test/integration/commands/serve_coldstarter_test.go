@@ -157,16 +157,19 @@ var setupScroll = func(t *testing.T, scroll domain.File) (string, string) {
 
 var setupServeCmd = func(ctx context.Context, t *testing.T, cwd string, additionalArgs []string) {
 
+	args := append([]string{"--cwd", cwd, "serve"}, additionalArgs...)
+
 	b := bytes.NewBufferString("")
 
 	serveCmd := cmd.RootCmd
 	serveCmd.SetErr(b)
 	serveCmd.SetOut(b)
-	serveCmd.SetArgs(append([]string{"--cwd", cwd, "serve"}, additionalArgs...))
-
+	serveCmd.SetArgs(args)
 	// Create a new context for each test case
 
 	cmd.ServeCommand.SetContext(ctx)
+
+	logger.Log().Info(fmt.Sprintf("Running serve command with args: %v", args))
 
 	connected, err := startAndTestServeCommand(ctx, t, serveCmd)
 	if !connected {
@@ -306,7 +309,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 			ctx, cancel := context.WithCancelCause(context.Background())
 			defer cancel(errors.New("test ended"))
 
-			setupServeCmd(ctx, t, path, []string{})
+			setupServeCmd(ctx, t, path, []string{"--coldstarter"})
 
 			defer func() {
 				signals.Stop()

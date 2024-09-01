@@ -151,6 +151,7 @@ to interact and monitor the Scroll Application`,
 			go func() {
 				if useColdstarter {
 					if currentScroll.CanColdStart() {
+						logger.Log().Info("Starting coldstarter")
 						err = coldStarter.StartOnce(ctx)
 						if err != nil {
 							logger.Log().Error("Error in coldstarter", zap.Error(err))
@@ -286,7 +287,7 @@ func init() {
 		ServeCommand.Flags().StringArrayVarP(&watchPortsInterfaces, "watch-ports-interfaces", "", []string{"lo"}, "Interfaces to watch for port activity")
 	}
 
-	ServeCommand.Flags().BoolVarP(&useColdstarter, "coldstarter", "", true, "Use coldstarter to not start immediately")
+	ServeCommand.Flags().BoolVarP(&useColdstarter, "coldstarter", "", false, "Use coldstarter to not start immediately")
 
 	ServeCommand.Flags().BoolVarP(&ignoreVersionCheck, "ignore-version-check", "", false, "Ignore version check")
 

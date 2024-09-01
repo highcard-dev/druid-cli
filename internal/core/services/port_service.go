@@ -70,7 +70,8 @@ func (p *PortMonitor) SyncPortEnv(file *domain.File) []*domain.AugmentedPort {
 		}
 
 		ap := &domain.AugmentedPort{
-			Port: port,
+			Port:          port,
+			InactiveSince: time.Now(),
 		}
 
 		augmentedPorts[idx] = ap
