@@ -157,12 +157,7 @@ func (sc *Scroll) Validate() error {
 }
 
 func (sc *Scroll) CanColdStart() bool {
-	for _, port := range sc.Ports {
-		if port.SleepHandler != nil {
-			return true
-		}
-	}
-	return false
+	return len(sc.Ports) != 0
 }
 
 func (sc *Scroll) GetColdStartPorts() []Port {
