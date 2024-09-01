@@ -41,6 +41,8 @@ func NewPortService(ports []int) *PortMonitor {
 				Name: fmt.Sprintf("port%d", port),
 				Port: port,
 			},
+			InactiveSince:    time.Now(),
+			InactiveSinceSec: 0,
 		}
 	}
 
