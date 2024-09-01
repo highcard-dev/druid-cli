@@ -11,10 +11,9 @@ import (
 )
 
 var ColdstarterCmd = &cobra.Command{
-	Use:   "run",
-	Short: "Run single command",
-	Args:  cobra.ExactArgs(1),
-	Long:  `This command runs a single command from the scroll file.`,
+	Use:   "coldstarter",
+	Short: "Starts the coldstarter only",
+	Long:  "Starts the coldstarter only and waits to finish",
 	RunE: func(cmd *cobra.Command, args []string) error {
 
 		scrollService, err := services.NewScrollService(cwd)
