@@ -207,6 +207,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 				Init:     "start",
 				Commands: testCommand,
 			},
+			ExecColdStarterFn: tcpTester,
 		},
 		{
 			Name: "TestServeColdstarterWithoutHandler2",
@@ -226,6 +227,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 				Init:     "start",
 				Commands: testCommand,
 			},
+			ExecColdStarterFn: tcpTester,
 		}, {
 			Name: "TestServeColdstarterWithGenericTCPHandler",
 			Scroll: domain.File{
