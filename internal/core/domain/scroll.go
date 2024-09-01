@@ -161,11 +161,5 @@ func (sc *Scroll) CanColdStart() bool {
 }
 
 func (sc *Scroll) GetColdStartPorts() []Port {
-	var ports []Port
-	for _, port := range sc.Ports {
-		if port.SleepHandler != nil {
-			ports = append(ports, port)
-		}
-	}
-	return ports
+	return sc.Ports
 }

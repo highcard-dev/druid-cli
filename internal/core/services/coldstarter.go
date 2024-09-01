@@ -52,18 +52,21 @@ func (c ColdStarter) Start(ctx context.Context, stopAfterFirst bool) error {
 	}
 
 	for _, port := range augmentedPorts {
+		var sleepHandler string
 		if port.SleepHandler == nil {
-			logger.Log().Warn(fmt.Sprintf("No sleep handler found for port %d", port.Port))
-			continue
+			logger.Log().Warn(fmt.Sprintf("No sleep handler found for port %d, using generic", port.Port))
+			sleepHandler = "generic"
+		} else {
+			sleepHandler = *port.SleepHandler
 		}
 
-		path := fmt.Sprintf("%s/%s", c.dir, *port.SleepHandler)
+		path := fmt.Sprintf("%s/%s", c.dir, sleepHandler)
 
 		go func(port domain.Port) {
 
 			var handler ports.ColdStarterHandlerInterface
 
-			if port.SleepHandler == nil || *port.SleepHandler == "generic" {
+			if sleepHandler == "generic" {
 				handler = lua.NewGenericHandler()
 			} else {
 				handler = lua.NewLuaHandler(path, c.dir)
