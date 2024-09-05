@@ -23,6 +23,10 @@ var ColdstarterCmd = &cobra.Command{
 
 		currentScroll := scrollService.GetCurrent()
 
+		if len(currentScroll.Ports) == 0 {
+			return fmt.Errorf("no ports found in scroll")
+		}
+
 		logger.Log().Info("Scroll loaded", zap.String("Name", currentScroll.Name), zap.Any("Version", currentScroll.Version), zap.String("AppVersion", currentScroll.AppVersion), zap.Any("Ports", currentScroll.Ports))
 
 		coldStarter := services.NewColdStarter(scrollService.GetDir(), currentScroll.GetColdStartPorts())
