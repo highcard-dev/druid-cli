@@ -56,9 +56,9 @@ func NewPortService(ports []int) *PortMonitor {
 func (p *PortMonitor) SyncPortEnv(file *domain.File) []*domain.AugmentedPort {
 	ports := file.Ports
 
-	augmentedPorts := make([]*domain.AugmentedPort, len(ports))
+	var augmentedPorts []*domain.AugmentedPort
 
-	for idx, port := range ports {
+	for _, port := range ports {
 		portEnvName := fmt.Sprintf("DRUID_PORT_%s", strings.ToUpper(port.Name))
 		envPort := os.Getenv(portEnvName)
 
@@ -69,12 +69,15 @@ func (p *PortMonitor) SyncPortEnv(file *domain.File) []*domain.AugmentedPort {
 			}
 		}
 
-		ap := &domain.AugmentedPort{
-			Port:          port,
-			InactiveSince: time.Now(),
+		if port.Port == 0 {
+			logger.Log().Warn("Could no find port number for port", zap.String("port", port.Name))
+			continue
 		}
 
-		augmentedPorts[idx] = ap
+		augmentedPorts = append(augmentedPorts, &domain.AugmentedPort{
+			Port:          port,
+			InactiveSince: time.Now(),
+		})
 		os.Setenv(portEnvName, strconv.Itoa(port.Port))
 	}
 
