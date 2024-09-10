@@ -59,10 +59,12 @@ func (p *PortMonitor) SyncPortEnv(file *domain.File) []*domain.AugmentedPort {
 	var augmentedPorts []*domain.AugmentedPort
 
 	for _, port := range ports {
+
+		//TODO: get rid of this and set this directly in scroll.yaml, when templating is implemented
 		portEnvName := fmt.Sprintf("DRUID_PORT_%s", strings.ToUpper(port.Name))
 		envPort := os.Getenv(portEnvName)
 
-		if envPort != "" {
+		if envPort != "" && port.Port == 0 {
 			portInt, err := strconv.Atoi(envPort)
 			if err != nil {
 				port.Port = portInt
