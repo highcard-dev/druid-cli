@@ -30,6 +30,7 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.version_tag }}
           prerelease: ${{ steps.version.outputs.increment != 0 }}
+          make_latest: true
           files: |
             bin/druid
             bin/druid_rcon
