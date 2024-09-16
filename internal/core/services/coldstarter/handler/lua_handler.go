@@ -59,7 +59,7 @@ func (handler *LuaHandler) Handle(data []byte, funcs map[string]func(data ...str
 	l.SetGlobal("debug_print", l.NewFunction(
 		func(l *lua.LState) int {
 			arg := l.CheckString(1)
-			logger.Log().Debug(arg)
+			logger.Log().Info(arg)
 			return 0
 		},
 	))
