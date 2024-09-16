@@ -1,4 +1,4 @@
-json = require("json")
+json = require("packet_handler/json")
 
 function string.fromhex(str)
     return (str:gsub('..', function(cc)
@@ -139,11 +139,8 @@ function formatResponse(jsonObj)
 end
 
 function pingResponse()
-    -- https://minecraft.fandom.com/wiki/Formatting_codes
-    local messageList = {"🔴 Druid IDLE Minecraft", "To be or not to be 🤡", "Hi Marvin 💉", "Hi Adrian 💻",
-                         "Hi Mark 📰", "§kKein Principle, weil es schon zu viele gibt"}
 
-    realMessage = {
+    local description = {
         color = "red",
         extra = {"\n", {
             color = "gray",
@@ -161,12 +158,6 @@ function pingResponse()
         }},
         text = "This server is in standby."
     }
-
-    -- add realMessage to messageList
-
-    table.insert(messageList, realMessage)
-
-    local description = messageList[math.random(#messageList)]
 
     local obj = {
         version = {

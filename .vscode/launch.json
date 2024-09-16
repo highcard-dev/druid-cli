@@ -80,6 +80,19 @@
             ],
         },
         {
+            "name": "Debug Daemon coldstart (minecraft2 example)",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/main.go",
+            "args": [
+                "coldstarter",
+                "--cwd",
+                "${workspaceFolder}/examples/minecraft2",
+            ],
+        },
+        {
             "name": "Debug Daemon serve (nginx example)",
             "type": "go",
             "request": "launch",
@@ -149,7 +162,7 @@
                 "registry",
                 "push",
                 "--cwd",
-                "${workspaceFolder}/examples/scroll-cwd/", ".scroll",
+                "${workspaceFolder}/examples/minecraft/", ".scroll",
                 "-c", "1",
                 "-r", "1G",
                 "-d", "1G",

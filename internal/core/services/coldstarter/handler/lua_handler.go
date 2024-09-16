@@ -3,6 +3,7 @@ package lua
 import (
 	"fmt"
 
+	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	lua "github.com/yuin/gopher-lua"
 	"go.uber.org/zap"
@@ -13,12 +14,18 @@ type LuaHandler struct {
 	luaPath string
 }
 
+type LuaWrapper struct {
+	luaState *lua.LState
+}
+
 func NewLuaHandler(file string, luaPath string) *LuaHandler {
+
 	handler := &LuaHandler{file: file, luaPath: luaPath}
 	return handler
 }
 
-func (handler *LuaHandler) Handle(data []byte, funcs map[string]func(data ...string)) error {
+func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (ports.ColdStarterHandlerInterface, error) {
+
 	l := lua.NewState(lua.Options{
 		RegistrySize: 256 * 200,
 	})
@@ -51,7 +58,7 @@ func (handler *LuaHandler) Handle(data []byte, funcs map[string]func(data ...str
 				return 1
 			})
 		default:
-			return fmt.Errorf("unsupported function: %s", name)
+			return nil, fmt.Errorf("unsupported function: %s", name)
 		}
 		l.SetGlobal(name, fn)
 	}
@@ -68,11 +75,15 @@ func (handler *LuaHandler) Handle(data []byte, funcs map[string]func(data ...str
 	l.DoString(fmt.Sprintf("package.path = package.path .. ';;%s/?.lua'", handler.luaPath))
 
 	if err := l.DoFile(handler.file); err != nil {
-		return err
+		return nil, err
 	}
 
+	return &LuaWrapper{luaState: l}, nil
+}
+
+func (handler *LuaWrapper) Handle(data []byte) error {
 	//call handler function
-	if err := callLuaFunction(l, "handle", data); err != nil {
+	if err := callLuaFunction(handler.luaState, "handle", data); err != nil {
 		return err
 	}
 

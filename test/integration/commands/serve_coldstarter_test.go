@@ -311,7 +311,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 			ctx, cancel := context.WithCancelCause(context.Background())
 			defer cancel(errors.New("test ended"))
 
-			setupServeCmd(ctx, t, path, []string{"--coldstarter"})
+			setupServeCmd(ctx, t, path, []string{"--coldstarter", "--port", "9191"})
 
 			defer func() {
 				signals.Stop()
