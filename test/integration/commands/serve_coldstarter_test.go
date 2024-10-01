@@ -50,7 +50,7 @@ var genericHandler = "generic"
 var testHandler = "test.lua"
 
 var luaHandlerContent = `
-function handle(data)
+function handle(ctx, data)
 	if data == "test" then
 		sendData("testback")
 		finish()
