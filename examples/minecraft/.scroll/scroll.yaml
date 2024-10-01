@@ -7,6 +7,15 @@ ports:
     protocol: tcp
     port: 25565
     sleep_handler: packet_handler/minecraft.lua
+    mandatory: true
+  - name: udptest
+    protocol: udp
+    port: 2556
+    sleep_handler: packet_handler/udp.lua
+  - name: udptest2
+    protocol: udp
+    port: 12345
+    sleep_handler: generic
 
 init: "start"
 commands:

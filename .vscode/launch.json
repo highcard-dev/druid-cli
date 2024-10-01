@@ -29,7 +29,9 @@
                 "${workspaceFolder}/examples/minecraft",
                 "--watch-ports",
                 "-p",
-                "9190"
+                "9190",
+                "--max-health-check-startup-timeount",
+                "10",
             ],
         },
         {
@@ -63,7 +65,7 @@
                 "--coldstarter",
                 "--watch-ports",
                 "-p",
-                "9190"
+                "9190",
             ],
         },
         {
@@ -77,6 +79,19 @@
                 "coldstarter",
                 "--cwd",
                 "${workspaceFolder}/examples/minecraft",
+            ],
+        },
+        {
+            "name": "Debug Daemon coldstart (minecraft2 example)",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/main.go",
+            "args": [
+                "coldstarter",
+                "--cwd",
+                "${workspaceFolder}/examples/minecraft2",
             ],
         },
         {
@@ -149,7 +164,7 @@
                 "registry",
                 "push",
                 "--cwd",
-                "${workspaceFolder}/examples/scroll-cwd/", ".scroll",
+                "${workspaceFolder}/examples/minecraft/", ".scroll",
                 "-c", "1",
                 "-r", "1G",
                 "-d", "1G",

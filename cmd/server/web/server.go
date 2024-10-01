@@ -34,6 +34,7 @@ type Server struct {
 	queueHandler                  ports.QueueHandlerInterface
 	websocketHandler              ports.WebsocketHandlerInterface
 	portHandler                   ports.PortHandlerInterface
+	healthHandler                 ports.HealthHandlerInterface
 	webdavPath                    string
 }
 
@@ -47,6 +48,7 @@ func NewServer(
 	queueHandler ports.QueueHandlerInterface,
 	websocketHandler ports.WebsocketHandlerInterface,
 	portHandler ports.PortHandlerInterface,
+	healthHandler ports.HealthHandlerInterface,
 	authorizerService ports.AuthorizerServiceInterface,
 	webdavPath string,
 ) *Server {
@@ -66,6 +68,7 @@ func NewServer(
 		websocketHandler:              websocketHandler,
 		portHandler:                   portHandler,
 		tokenAuthenticationMiddleware: middlewares.TokenAuthentication(authorizerService),
+		healthHandler:                 healthHandler,
 		webdavPath:                    webdavPath,
 	}
 
@@ -159,6 +162,8 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 		app.Get("/annotations", s.annotationHandler.Annotations).Name("annotations.list")
 	}
 	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler())).Name("metrics")
+
+	app.Get("/health", s.healthHandler.Health).Name("health")
 
 	app.Get("/info", func(ctx *fiber.Ctx) error {
 		return ctx.JSON(fiber.Map{

@@ -28,6 +28,7 @@ var watchPorts bool
 var watchPortsInterfaces []string
 var portInactivity uint
 var useColdstarter bool
+var maxStartupHealthCheckTimeout uint
 
 var ServeCommand = &cobra.Command{
 	Use:   "serve",
@@ -115,6 +116,7 @@ to interact and monitor the Scroll Application`,
 		scrollMetricHandler := handler.NewScrollMetricHandler(scrollService, processMonitor)
 		queueHandler := handler.NewQueueHandler(queueManager)
 		portHandler := handler.NewPortHandler(portService)
+		healthHandler := handler.NewHealthHandler(portService, maxStartupHealthCheckTimeout)
 
 		var annotationHandler *handler.AnnotationHandler = nil
 
@@ -124,7 +126,7 @@ to interact and monitor the Scroll Application`,
 
 		websocketHandler := handler.NewWebsocketHandler(authorizer, scrollService, consoleService)
 
-		s := web.NewServer(jwksUrl, scrollHandler, scrollLogHandler, scrollMetricHandler, annotationHandler, processHandler, queueHandler, websocketHandler, portHandler, authorizer, cwd)
+		s := web.NewServer(jwksUrl, scrollHandler, scrollLogHandler, scrollMetricHandler, annotationHandler, processHandler, queueHandler, websocketHandler, portHandler, healthHandler, authorizer, cwd)
 
 		a := s.Initialize()
 
@@ -294,4 +296,6 @@ func init() {
 	ServeCommand.Flags().StringArrayVarP(&additionalEndpoints, "additional-endpoints", "", []string{}, "Additional endpoints to serve. Valid values: annotations")
 
 	ServeCommand.Flags().UintVarP(&portInactivity, "port-inactivity", "", 0, "Port inactivity timeout")
+
+	ServeCommand.Flags().UintVarP(&maxStartupHealthCheckTimeout, "max-health-check-startup-timeount", "", 0, "Sets the max amount of time the health check is allowed to take on startup. If the value is 0, there will be no timeout. This is useful to prevent the health check from blocking the startup of the daemon fully.")
 }

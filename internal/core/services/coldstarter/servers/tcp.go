@@ -18,12 +18,12 @@ type TCPServer interface {
 }
 
 type TCP struct {
-	handler  ports.ColdStarterHandlerInterface
+	handler  ports.ColdStarterInterface
 	listener net.Listener
 	onFinish func()
 }
 
-func NewTCP(handler ports.ColdStarterHandlerInterface) *TCP {
+func NewTCP(handler ports.ColdStarterInterface) *TCP {
 	return &TCP{
 		handler: handler,
 	}
@@ -75,6 +75,27 @@ func (t *TCP) handleConnection(conn net.Conn) {
 			logger.Log().Error("Error sending data", zap.Error(err))
 		}
 	}
+	handler, err := t.handler.GetHandler(map[string]func(data ...string){
+		"sendData": sendFunc,
+		"finish": func(data ...string) {
+			fmt.Println("Connection closed")
+			logger.Log().Info("Finish received", zap.Strings("data", data), zap.String("type", "tcp"), zap.String("address", conn.RemoteAddr().String()))
+			<-time.After(time.Second)
+			t.onFinish()
+			<-time.After(time.Second)
+			conn.Close()
+		},
+		"close": func(data ...string) {
+			sendFunc(data...)
+			//wait for 1 second before closing the connection
+			<-time.After(time.Second)
+			conn.Close()
+		},
+	})
+	if err != nil {
+		logger.Log().Error("Error getting handler", zap.Error(err))
+		return
+	}
 
 	reader := bufio.NewReader(conn)
 	for {
@@ -93,22 +114,8 @@ func (t *TCP) handleConnection(conn net.Conn) {
 
 		logger.Log().Info("Received data", zap.String("data", string(data)), zap.String("type", "tcp"), zap.String("address", conn.RemoteAddr().String()))
 
-		err = t.handler.Handle(data, map[string]func(data ...string){
+		err = handler.Handle(data, map[string]func(data ...string){
 			"sendData": sendFunc,
-			"finish": func(data ...string) {
-				fmt.Println("Connection closed")
-				logger.Log().Info("Finish received", zap.Strings("data", data), zap.String("type", "tcp"), zap.String("address", conn.RemoteAddr().String()))
-				<-time.After(time.Second)
-				t.onFinish()
-				<-time.After(time.Second)
-				conn.Close()
-			},
-			"close": func(data ...string) {
-				sendFunc(data...)
-				//wait for 1 second before closing the connection
-				<-time.After(time.Second)
-				conn.Close()
-			},
 		})
 
 		if err != nil {
