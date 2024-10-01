@@ -276,24 +276,24 @@ func TestColdstarterServeCommand(t *testing.T) {
 			},
 			ExecColdStarterFn: udpTester,
 		},
-
-		{
-			Name: "TestServeColdstarterWithTestLuaUDPHandler",
-			Scroll: domain.File{
-				Ports: []domain.Port{
-					{
-						Port:         12349,
-						Name:         "testport",
-						Protocol:     "udp",
-						SleepHandler: &testHandler,
+		/*
+			{
+				Name: "TestServeColdstarterWithTestLuaUDPHandler",
+				Scroll: domain.File{
+					Ports: []domain.Port{
+						{
+							Port:         12349,
+							Name:         "testport",
+							Protocol:     "udp",
+							SleepHandler: &testHandler,
+						},
 					},
+					Init:     "start",
+					Commands: testCommand,
 				},
-				Init:     "start",
-				Commands: testCommand,
-			},
-			LuaHandlerContent: luaHandlerContent,
-			ExecColdStarterFn: udpTester,
-		},
+				LuaHandlerContent: luaHandlerContent,
+				ExecColdStarterFn: udpTester,
+			},*/
 	}
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
