@@ -67,7 +67,7 @@ func (c ColdStarter) Start(ctx context.Context, stopAfterFirst bool) error {
 			var handler ports.ColdStarterInterface
 
 			if sleepHandler == "generic" {
-				handler = lua.NewGenericHandler()
+				handler = lua.NewGenericReturnHandler()
 			} else {
 				handler = lua.NewLuaHandler(path, c.dir)
 			}

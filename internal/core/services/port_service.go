@@ -112,6 +112,27 @@ func (po *PortMonitor) GetPorts() []*domain.AugmentedPort {
 	return po.ports
 }
 
+func (p *PortMonitor) GetPort(port int) *domain.AugmentedPort {
+	for _, p := range p.ports {
+		if p.Port.Port == port {
+			return p
+		}
+	}
+	return nil
+}
+
+func (p *PortMonitor) MandatoryPortsOpen() bool {
+	augmentedPorts := p.GetPorts()
+
+	for _, port := range augmentedPorts {
+		if port.Mandatory && !port.Open {
+			logger.Log().Warn("Mandatory port not open", zap.String("port", port.Port.Name), zap.Int("portnum", port.Port.Port))
+			return false
+		}
+	}
+	return true
+}
+
 func (p *PortMonitor) CheckOpen(port int) bool {
 	//check if port is open
 

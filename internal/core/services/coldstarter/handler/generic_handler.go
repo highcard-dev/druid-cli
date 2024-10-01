@@ -3,25 +3,30 @@ package lua
 import (
 	"fmt"
 
-	"github.com/highcard-dev/daemon/internal/utils/logger"
-	"go.uber.org/zap"
+	"github.com/highcard-dev/daemon/internal/core/ports"
 )
 
-type GenericHandler struct{}
-
-func NewGenericHandler() *GenericHandler {
-	return &GenericHandler{}
+type GenericHandler struct {
+	finishFunc func(data ...string)
 }
 
-func (handler *GenericHandler) Handle(data []byte, funcs map[string]func(data ...string)) error {
-	finishFunc, ok := funcs["finish"]
-
-	if !ok {
-		return fmt.Errorf("finish function not found")
-	}
-
-	logger.Log().Info("Executing finish func in generic handler", zap.String("data", string(data)))
-
-	finishFunc()
+func (handler *GenericHandler) Handle(data []byte, funcs map[string]func(...string)) error {
+	handler.finishFunc()
 	return nil
+}
+
+type GenericReturnHandler struct{}
+
+func NewGenericReturnHandler() *GenericReturnHandler {
+	return &GenericReturnHandler{}
+}
+
+func (handler *GenericReturnHandler) GetHandler(funcs map[string]func(data ...string)) (ports.ColdStarterHandlerInterface, error) {
+	finishFunc, ok := funcs["finish"]
+	if !ok {
+		return nil, fmt.Errorf("finish function not found")
+	}
+	return &GenericHandler{
+		finishFunc: finishFunc,
+	}, nil
 }

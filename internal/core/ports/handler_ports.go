@@ -42,3 +42,6 @@ type QueueHandlerInterface interface {
 type PortHandlerInterface interface {
 	GetPorts(c *fiber.Ctx) error
 }
+type HealthHandlerInterface interface {
+	Health(ctx *fiber.Ctx) error
+}

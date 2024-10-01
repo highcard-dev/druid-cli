@@ -16,12 +16,12 @@ type UDPServer interface {
 }
 
 type UDP struct {
-	handler  ports.ColdStarterHandlerInterface
+	handler  ports.ColdStarterInterface
 	conn     *net.UDPConn
 	onFinish func()
 }
 
-func NewUDP(handler ports.ColdStarterHandlerInterface) *UDP {
+func NewUDP(handler ports.ColdStarterInterface) *UDP {
 	return &UDP{
 		handler: handler,
 	}
@@ -70,8 +70,7 @@ func (u *UDP) handleConnection(data []byte, remoteAddr *net.UDPAddr) {
 		u.conn.WriteToUDP([]byte(data[0]), remoteAddr)
 	}
 
-	err := u.handler.Handle(data, map[string]func(data ...string){
-		"sendData": sendFunc,
+	handler, err := u.handler.GetHandler(map[string]func(data ...string){
 		"finish": func(data ...string) {
 			fmt.Println("Connection closed")
 			logger.Log().Info("Finish received", zap.Strings("data", data), zap.String("type", "udp"), zap.String("address", remoteAddr.String()))
@@ -80,12 +79,15 @@ func (u *UDP) handleConnection(data []byte, remoteAddr *net.UDPAddr) {
 			<-time.After(time.Second)
 			u.conn.Close()
 		},
-		"close": func(data ...string) {
-			sendFunc(data...)
-			//wait for 1 second before closing the connection
-			<-time.After(time.Second)
-			u.conn.Close()
-		},
+	})
+
+	if err != nil {
+		logger.Log().Error("Error getting handler", zap.Error(err))
+		return
+	}
+
+	err = handler.Handle(data, map[string]func(data ...string){
+		"sendData": sendFunc,
 	})
 
 	if err != nil {

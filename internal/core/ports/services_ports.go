@@ -104,6 +104,7 @@ type PortServiceInterface interface {
 	GetLastActivity(port int) uint
 	CheckOpen(prot int) bool
 	GetPorts() []*domain.AugmentedPort
+	MandatoryPortsOpen() bool
 }
 
 type ColdStarterInterface interface {
@@ -111,5 +112,5 @@ type ColdStarterInterface interface {
 }
 
 type ColdStarterHandlerInterface interface {
-	Handle(data []byte) error
+	Handle(data []byte, funcs map[string]func(data ...string)) error
 }

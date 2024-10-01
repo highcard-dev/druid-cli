@@ -66,7 +66,7 @@ func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (po
 	l.SetGlobal("debug_print", l.NewFunction(
 		func(l *lua.LState) int {
 			arg := l.CheckString(1)
-			logger.Log().Debug(arg)
+			logger.Log().Info(arg)
 			return 0
 		},
 	))
@@ -81,17 +81,43 @@ func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (po
 	return &LuaWrapper{luaState: l}, nil
 }
 
-func (handler *LuaWrapper) Handle(data []byte) error {
+func (handler *LuaWrapper) Handle(data []byte, funcs map[string]func(data ...string)) error {
 	//call handler function
-	if err := callLuaFunction(handler.luaState, "handle", data); err != nil {
+	if err := callLuaFunction(handler.luaState, "handle", funcs, data); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func callLuaFunction(l *lua.LState, functionName string, args ...interface{}) error {
+func callLuaFunction(l *lua.LState, functionName string, sendFunc map[string]func(data ...string), args ...interface{}) error {
 	var luaArgs []lua.LValue
+
+	//first argument is a table of functions
+
+	table := l.NewTable()
+
+	for name, f := range sendFunc {
+		// Create a new variable to capture the current function
+		currentFunc := f
+
+		var fn *lua.LFunction
+
+		switch name {
+		case "sendData":
+			fn = l.NewFunction(func(l *lua.LState) int {
+				arg := l.CheckString(1)
+				logger.Log().Debug("Called lua fn sendData", zap.String("arg", arg))
+				currentFunc(arg)
+				return 1
+			})
+		}
+
+		table.RawSetString(name, fn)
+	}
+
+	luaArgs = append(luaArgs, table)
+
 	for _, arg := range args {
 		switch arg.(type) {
 		case []byte:

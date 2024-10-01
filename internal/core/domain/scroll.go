@@ -31,6 +31,7 @@ type Port struct {
 	Protocol     string  `yaml:"protocol" json:"protocol"`
 	Name         string  `yaml:"name" json:"name"`
 	SleepHandler *string `yaml:"sleep_handler" json:"sleep_handler"`
+	Mandatory    bool    `yaml:"mandatory" json:"mandatory"`
 }
 
 type AugmentedPort struct {

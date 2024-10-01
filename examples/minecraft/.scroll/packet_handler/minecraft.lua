@@ -69,42 +69,94 @@ function encodeLEB128(value)
     return bytes
 end
 
-function handle(data)
+function decodeLEB128(bytes)
+    local result = 0
+    local shift = 0
+    local bytesConsumed = 0 -- Track the number of bytes consumed
 
+    for i, byte in ipairs(bytes) do
+        local value = band(byte, 0x7F) -- Get lower 7 bits
+        result = bor(result, lshift(value, shift)) -- Add it to result with the correct shift
+        bytesConsumed = bytesConsumed + 1 -- Increment the byte counter
+        if band(byte, 0x80) == 0 then -- If the highest bit is not set, we are done
+            break
+        end
+        shift = shift + 7 -- Move to the next group of 7 bits
+    end
+
+    return result, bytesConsumed -- Return both the result and the number of bytes consumed
+end
+
+function handle(ctx, data)
     hex = string.tohex(data)
+
+    debug_print("Received Packet: " .. hex)
 
     -- check if hex starts with 0x01 0x00
     if hex:sub(1, 4) == "FE01" then
         debug_print("Received Legacy Ping Packet")
         sendData(string.fromhex(
             "ff002300a7003100000034003700000031002e0034002e0032000000410020004d0069006e006500630072006100660074002000530065007200760065007200000030000000320030"))
-    elseif hex:sub(1, 4) == "0100" then
-        debug_print("Received Status Packet")
-        sendData(pingResponse())
-        return
-        -- check if second byte is 0x01
-    elseif hex:sub(3, 4) == "01" then
-        debug_print("Received Ping Packet")
-        -- send same packet back
-        close(data)
-        return
-        -- login packet 0x20 0x00
-    elseif hex:sub(1, 4) == "2000" then
-        debug_print("Received Login Packet")
-
-        sendData(disconnectResponse())
-
-        -- sleep for a sec before closing
-
-        finish()
-        return
-    else
-        debug_print("Received unknown packet")
-        debug_print("String: " .. data)
-        debug_print("Hex: " .. hex)
-        return
     end
 
+    local packetNo = 0
+
+    local maxLoops = 2
+
+    restBytes = data
+
+    while hex ~= "" do
+
+        hex = string.tohex(restBytes)
+
+        debug_print("Remaining Bytes: " .. hex)
+        packetNo = packetNo + 1
+        debug_print("Packet No: " .. packetNo)
+
+        packetLength, bytesConsumed = decodeLEB128({string.byte(restBytes, 1, 1)})
+        debug_print("Packet Length: " .. packetLength)
+
+        -- cut of consumedBytes and read untul packetLength
+        packetWithLength = string.sub(restBytes, bytesConsumed + 1, packetLength + bytesConsumed)
+
+        -- next varint is the packetid
+        packetId, bytesConsumed = decodeLEB128({string.byte(packetWithLength, 1, 1)})
+
+        debug_print("Packet ID: " .. packetId)
+
+        packetWithLengthHex = string.tohex(packetWithLength)
+
+        debug_print("Trimmed Packet: " .. packetWithLengthHex)
+
+        -- make hex to the rest of the data
+        restBytes = string.sub(restBytes, packetLength + bytesConsumed + 1)
+
+        debug_print("Rest Bytes: " .. string.tohex(restBytes))
+
+        if packetLength == 1 and packetId == 0 then
+            debug_print("Received Status Packet " .. packetWithLengthHex)
+            sendData(pingResponse())
+
+            -- check if second byte is 0x01
+        elseif packetId == 1 then
+            debug_print("Received Ping Packet " .. packetWithLengthHex)
+            -- send same packet back
+            close(data)
+            -- login packet 0x20 0x00
+        elseif packetId == 0 and packetWithLengthHex:sub(-2) == "02" then -- check for enum at the end
+            debug_print("Received Login Packet " .. packetWithLengthHex)
+            -- return
+            -- debug_print("Received Login Packet")
+
+            sendData(disconnectResponse())
+            -- sleep for a sec before closing
+            finish()
+            -- return
+        else
+            debug_print("Received unknown packet " .. packetWithLengthHex)
+            -- close("")
+        end
+    end
 end
 
 function formatResponse(jsonObj)

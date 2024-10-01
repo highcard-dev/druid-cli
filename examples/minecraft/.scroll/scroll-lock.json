@@ -1,1 +1,1 @@
-{"statuses":{"install":{"status":"done","exit_code":null,"last_status_change":1722713341},"start":{"status":"running","exit_code":null,"last_status_change":1722770093}},"scroll_version":"0.0.1","scroll_name":"registry-1.docker.io/highcard/scroll-minecraft-spigot"}
+{"statuses":{"install":{"status":"done","exit_code":null,"last_status_change":1722713341},"start":{"status":"error","exit_code":null,"last_status_change":1727810920}},"scroll_version":"0.0.1","scroll_name":"registry-1.docker.io/highcard/scroll-minecraft-spigot"}

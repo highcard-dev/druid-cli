@@ -29,7 +29,9 @@
                 "${workspaceFolder}/examples/minecraft",
                 "--watch-ports",
                 "-p",
-                "9190"
+                "9190",
+                "--max-health-check-startup-timeount",
+                "10",
             ],
         },
         {
@@ -63,7 +65,7 @@
                 "--coldstarter",
                 "--watch-ports",
                 "-p",
-                "9190"
+                "9190",
             ],
         },
         {

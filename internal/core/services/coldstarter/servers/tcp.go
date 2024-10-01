@@ -112,7 +112,10 @@ func (t *TCP) handleConnection(conn net.Conn) {
 
 		data := buffer[:n]
 
-		err = handler.Handle(data)
+		err = handler.Handle(data, map[string]func(data ...string){
+			"sendData": sendFunc,
+		})
+
 		if err != nil {
 			logger.Log().Error("Error handling packet", zap.Error(err))
 		}
