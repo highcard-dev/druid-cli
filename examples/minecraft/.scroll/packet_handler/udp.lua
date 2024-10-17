@@ -77,15 +77,32 @@ function handle(ctx, data)
 
     if packetId == "54" then
 
-        name = string.tohex("Coldstarter is cool (server is idle, join to start)")
+        name = get_var("ServerListName") or "Coldstarter is cool (server is idle, join to start)"
 
-        map = string.tohex("Starting takes up to 2 min")
+        map = get_var("MapName") or "TheIsland"
 
-        folder = string.tohex("ark_survival_evolved") -- ark: ark_survival_evolved
+        folder = get_var("GameSteamFolder") or "ark_survival_evolved"
 
-        steamIdHex = number_to_little_endian_short(0)
+        gameName = get_var("GameName") or "ARK: Survival Evolved"
 
-        game = string.tohex("ARK: Survival Evolved")
+        steamIdString = get_var("GameSteamId") or "0"
+
+        steamId = tonumber(steamIdString)
+
+        serverPortString = get_var("ServerPort") or "7777"
+
+        serverPort = tonumber(serverPortString)
+
+        -- hex
+        nameHex = string.tohex(name)
+
+        mapHex = string.tohex(map)
+
+        folderHex = string.tohex(folder) -- ark: ark_survival_evolved
+
+        steamIdHex = number_to_little_endian_short(steamId)
+
+        gameHex = string.tohex(gameName)
 
         maxPlayerHex = "50"
         playerHex = "01"
@@ -106,24 +123,23 @@ function handle(ctx, data)
 
         edfFlagHex = "B1"
 
-        port = 12345
-
         -- short as hex
-        gamePortHex = number_to_little_endian_short(port)
+        gamePortHex = number_to_little_endian_short(serverPort)
 
         steamId = "01D075C44C764001"
 
         tags =
             ",OWNINGID:90202064633057281,OWNINGNAME:90202064633057281,NUMOPENPUBCONN:50,P2PADDR:90202064633057281,P2PPORT:" ..
-                port .. ",LEGACY_i:0"
+                serverPort .. ",LEGACY_i:0"
 
         tagsHex = string.tohex(tags)
 
         edfHex = gamePortHex .. steamId .. tagsHex .. "00" .. "FE47050000000000"
 
         res =
-            "FFFFFFFF4911" .. name .. "00" .. map .. "00" .. folder .. "00" .. game .. "00" .. steamIdHex .. playerHex ..
-                maxPlayerHex .. botHex .. serverTypeHex .. osHex .. vacHex .. version .. "00" .. edfFlagHex .. edfHex
+            "FFFFFFFF4911" .. nameHex .. "00" .. mapHex .. "00" .. folderHex .. "00" .. gameHex .. "00" .. steamIdHex ..
+                playerHex .. maxPlayerHex .. botHex .. serverTypeHex .. osHex .. vacHex .. version .. "00" .. edfFlagHex ..
+                edfHex
 
         debug_print("Response length: " .. string.len(tags))
 
@@ -140,7 +156,7 @@ end
 function number_to_little_endian_short(num)
     -- Ensure the number is in the 16-bit range for unsigned short
     if num < 0 or num > 65535 then
-        error("Number out of range for 16-bit unsigned short")
+        error("Number " .. num .. " out of range for 16-bit unsigned short")
     end
 
     -- Convert the number to two bytes in little-endian format

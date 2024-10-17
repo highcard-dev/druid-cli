@@ -10,17 +10,22 @@ import (
 )
 
 type LuaHandler struct {
-	file    string
-	luaPath string
+	file         string
+	luaPath      string
+	externalVars map[string]string
 }
 
 type LuaWrapper struct {
 	luaState *lua.LState
 }
 
-func NewLuaHandler(file string, luaPath string) *LuaHandler {
+func NewLuaHandler(file string, luaPath string, externalVars map[string]string) *LuaHandler {
 
-	handler := &LuaHandler{file: file, luaPath: luaPath}
+	handler := &LuaHandler{
+		file:         file,
+		luaPath:      luaPath,
+		externalVars: externalVars,
+	}
 	return handler
 }
 
@@ -68,6 +73,21 @@ func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (po
 			arg := l.CheckString(1)
 			logger.Log().Info(arg)
 			return 0
+		},
+	))
+
+	l.SetGlobal("get_var", l.NewFunction(
+		func(l *lua.LState) int {
+			arg := l.CheckString(1)
+
+			//get external var
+			value, ok := handler.externalVars[arg]
+			if !ok {
+				l.Push(lua.LNil)
+			} else {
+				l.Push(lua.LString(value))
+			}
+			return 1
 		},
 	))
 

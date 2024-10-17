@@ -12,6 +12,19 @@ ports:
     protocol: udp
     port: 2556
     sleep_handler: packet_handler/udp.lua
+    vars:
+      - name: GameName
+        value: "ARK: Survival Evolved"
+      - name: GameSteamFolder
+        value: ark_survival_evolved
+      - name: GameSteamId
+        value: "0"
+      - name: MapName
+        value: "TheIsland"
+      - name: ServerListName
+        value: "Coldstarter is cool (server is idle, join to start)"
+      - name: ServerPort
+        value: "7777"
   - name: udptest2
     protocol: udp
     port: 12345

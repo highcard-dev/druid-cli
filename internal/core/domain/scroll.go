@@ -26,12 +26,18 @@ type Cronjob struct {
 	Command  string `yaml:"command"`
 }
 
+type ColdStarterVars struct {
+	Name  string `yaml:"name"`
+	Value string `yaml:"value"`
+}
+
 type Port struct {
-	Port         int     `yaml:"port" json:"port"`
-	Protocol     string  `yaml:"protocol" json:"protocol"`
-	Name         string  `yaml:"name" json:"name"`
-	SleepHandler *string `yaml:"sleep_handler" json:"sleep_handler"`
-	Mandatory    bool    `yaml:"mandatory" json:"mandatory"`
+	Port         int               `yaml:"port" json:"port"`
+	Protocol     string            `yaml:"protocol" json:"protocol"`
+	Name         string            `yaml:"name" json:"name"`
+	SleepHandler *string           `yaml:"sleep_handler" json:"sleep_handler"`
+	Mandatory    bool              `yaml:"mandatory" json:"mandatory"`
+	Vars         []ColdStarterVars `yaml:"vars" json:"vars"`
 }
 
 type AugmentedPort struct {
