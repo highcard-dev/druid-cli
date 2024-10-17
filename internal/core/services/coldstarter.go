@@ -69,7 +69,12 @@ func (c ColdStarter) Start(ctx context.Context, stopAfterFirst bool) error {
 			if sleepHandler == "generic" {
 				handler = lua.NewGenericReturnHandler()
 			} else {
-				handler = lua.NewLuaHandler(path, c.dir)
+				vars := make(map[string]string, len(port.Vars))
+				for _, v := range port.Vars {
+					vars[v.Name] = v.Value
+				}
+
+				handler = lua.NewLuaHandler(path, c.dir, vars)
 			}
 
 			if port.Protocol == "udp" {

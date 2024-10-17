@@ -236,6 +236,9 @@ func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo 
 	if annotationInfo.Image != "" {
 		annotations["gg.druid.scroll.image"] = annotationInfo.Image
 	}
+	if annotationInfo.Smart {
+		annotations["gg.druid.scroll.smart"] = "true"
+	}
 
 	for name, port := range annotationInfo.Ports {
 		annotations[fmt.Sprintf("gg.druid.scroll.port.%s", name)] = port

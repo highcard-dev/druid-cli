@@ -13,5 +13,6 @@ type AnnotationInfo struct {
 	MinDisk string
 	MinCpu  string
 	Image   string
+	Smart   bool
 	Ports   map[string]string
 }
