@@ -25,7 +25,7 @@ ports:
         value: "Coldstarter is cool (server is idle, join to start)"
       - name: ServerPort
         value: "7777"
-  - name: udptest2
+  - name: main
     protocol: udp
     port: 12345
     sleep_handler: generic

@@ -3,6 +3,7 @@ package lua
 import (
 	"fmt"
 
+	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	lua "github.com/yuin/gopher-lua"
@@ -13,18 +14,20 @@ type LuaHandler struct {
 	file         string
 	luaPath      string
 	externalVars map[string]string
+	ports        []domain.Port
 }
 
 type LuaWrapper struct {
 	luaState *lua.LState
 }
 
-func NewLuaHandler(file string, luaPath string, externalVars map[string]string) *LuaHandler {
+func NewLuaHandler(file string, luaPath string, externalVars map[string]string, ports []domain.Port) *LuaHandler {
 
 	handler := &LuaHandler{
 		file:         file,
 		luaPath:      luaPath,
 		externalVars: externalVars,
+		ports:        ports,
 	}
 	return handler
 }
@@ -87,6 +90,23 @@ func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (po
 			} else {
 				l.Push(lua.LString(value))
 			}
+			return 1
+		},
+	))
+
+	l.SetGlobal("get_port", l.NewFunction(
+		func(l *lua.LState) int {
+			arg := l.CheckString(1)
+			ports := handler.ports
+
+			for _, port := range ports {
+				if port.Name == arg {
+					l.Push(lua.LNumber(port.Port))
+					return 1
+				}
+			}
+
+			l.Push(lua.LNil)
 			return 1
 		},
 	))

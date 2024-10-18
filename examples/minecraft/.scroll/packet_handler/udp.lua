@@ -91,7 +91,7 @@ function handle(ctx, data)
 
         serverPortString = get_var("ServerPort") or "7777"
 
-        serverPort = tonumber(serverPortString)
+        serverPort = get_port("main")
 
         -- hex
         nameHex = string.tohex(name)
