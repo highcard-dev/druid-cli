@@ -74,7 +74,7 @@ func (c ColdStarter) Start(ctx context.Context, stopAfterFirst bool) error {
 					vars[v.Name] = v.Value
 				}
 
-				handler = lua.NewLuaHandler(path, c.dir, vars)
+				handler = lua.NewLuaHandler(path, c.dir, vars, c.ports)
 			}
 
 			if port.Protocol == "udp" {
