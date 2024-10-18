@@ -7,13 +7,15 @@ else
     URL_PATH=download/$CHANNEL
 fi
 
-wget -O /app/resources/druid https://github.com/highcard-dev/druid-cli/releases/$URL_PATH/druid
-wget -O /app/resources/druid_rcon https://github.com/highcard-dev/druid-cli/releases/$URL_PATH/druid_rcon 
-wget -O /app/resources/druid_rcon_web https://github.com/highcard-dev/druid-cli/releases/$URL_PATH/druid_rcon_web
-wget -O /app/resources/entrypoint.sh https://github.com/highcard-dev/druid-cli/releases/$URL_PATH/entrypoint.sh 
-chmod +x /app/resources/druid /app/resources/druid_rcon /app/resources/druid_rcon_web
+BASEDIR=$(dirname "$0")
+
+wget -O $BASEDIR/druid https://github.com/highcard-dev/druid-cli/releases/$URL_PATH/druid
+wget -O $BASEDIR/druid_rcon https://github.com/highcard-dev/druid-cli/releases/$URL_PATH/druid_rcon 
+wget -O $BASEDIR/druid_rcon_web https://github.com/highcard-dev/druid-cli/releases/$URL_PATH/druid_rcon_web
+wget -O $BASEDIR/entrypoint.sh https://github.com/highcard-dev/druid-cli/releases/$URL_PATH/entrypoint.sh 
+chmod +x $BASEDIR/druid $BASEDIR/druid_rcon $BASEDIR/druid_rcon_web
 
 # Modify the PATH variable to prioritize /app/resources
 export PATH=/app/resources:$PATH
 
-bash /app/resources/entrypoint.sh $@
+bash $BASEDIR/entrypoint.sh $@
