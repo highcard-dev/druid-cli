@@ -75,6 +75,7 @@ var PushCommand = &cobra.Command{
 			MinDisk: minDisk,
 			Image:   image,
 			Ports:   ps,
+			Smart:   smart,
 		}, packMeta)
 
 		if err != nil {
