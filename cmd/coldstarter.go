@@ -29,7 +29,9 @@ var ColdstarterCmd = &cobra.Command{
 
 		logger.Log().Info("Scroll loaded", zap.String("Name", currentScroll.Name), zap.Any("Version", currentScroll.Version), zap.String("AppVersion", currentScroll.AppVersion), zap.Any("Ports", currentScroll.Ports))
 
-		coldStarter := services.NewColdStarter(scrollService.GetDir(), currentScroll.GetColdStartPorts())
+		portsService := services.NewPortServiceWithScrollFile(&currentScroll.File)
+
+		coldStarter := services.NewColdStarter(scrollService.GetDir(), portsService.GetPorts())
 
 		coldStarter.StartOnce(context.TODO())
 		logger.Log().Info("Coldstarter finished")

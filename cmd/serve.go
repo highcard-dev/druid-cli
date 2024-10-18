@@ -108,7 +108,7 @@ to interact and monitor the Scroll Application`,
 
 		portService := services.NewPortServiceWithScrollFile(scrollService.GetFile())
 
-		coldStarter := services.NewColdStarter(scrollService.GetDir(), currentScroll.GetColdStartPorts())
+		coldStarter := services.NewColdStarter(scrollService.GetDir(), portService.GetPorts())
 
 		scrollHandler := handler.NewScrollHandler(scrollService, pluginManager, processLauncher, queueManager)
 		processHandler := handler.NewProcessHandler(processManager)
