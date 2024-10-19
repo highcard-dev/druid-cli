@@ -8,10 +8,9 @@ ports:
     port: 25565
     sleep_handler: packet_handler/minecraft.lua
     mandatory: true
-  - name: udptest
+  - name: query
     protocol: udp
-    port: 2556
-    sleep_handler: packet_handler/udp.lua
+    sleep_handler: packet_handler/query.lua
     vars:
       - name: GameName
         value: "ARK: Survival Evolved"
@@ -20,15 +19,11 @@ ports:
       - name: GameSteamId
         value: "0"
       - name: MapName
-        value: "TheIsland"
+        value: TheIsland
       - name: ServerListName
         value: "Coldstarter is cool (server is idle, join to start)"
-      - name: ServerPort
-        value: "7777"
   - name: main
     protocol: udp
-    port: 12345
-    sleep_handler: generic
 
 init: "start"
 commands:

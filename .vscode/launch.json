@@ -80,6 +80,10 @@
                 "--cwd",
                 "${workspaceFolder}/examples/minecraft",
             ],
+            "env": {
+                "DRUID_PORT_QUERY": "14620",
+                "DRUID_PORT_MAIN": "7771"
+            }
         },
         {
             "name": "Debug Daemon coldstart (minecraft2 example)",

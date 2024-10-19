@@ -66,7 +66,7 @@ func (p *PortMonitor) SyncPortEnv(file *domain.File) []*domain.AugmentedPort {
 
 		if envPort != "" && port.Port == 0 {
 			portInt, err := strconv.Atoi(envPort)
-			if err != nil {
+			if err == nil {
 				port.Port = portInt
 			}
 		}
