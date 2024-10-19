@@ -16,6 +16,6 @@ wget -O $BASEDIR/entrypoint.sh https://github.com/highcard-dev/druid-cli/release
 chmod +x $BASEDIR/druid $BASEDIR/druid_rcon $BASEDIR/druid_rcon_web
 
 # Modify the PATH variable to prioritize /app/resources
-export PATH=/app/resources:$PATH
+export PATH=$BASEDIR:$PATH
 
 bash $BASEDIR/entrypoint.sh $@
