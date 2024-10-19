@@ -105,7 +105,6 @@ func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (po
 				l.Push(lua.LNumber(p))
 			}
 
-			l.Push(lua.LNil)
 			return 1
 		},
 	))

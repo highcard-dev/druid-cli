@@ -81,7 +81,7 @@
                 "${workspaceFolder}/examples/minecraft",
             ],
             "env": {
-                "DRUID_PORT_QUERY": "14620",
+                "DRUID_PORT_QUERY": "2556",
                 "DRUID_PORT_MAIN": "7771"
             }
         },
