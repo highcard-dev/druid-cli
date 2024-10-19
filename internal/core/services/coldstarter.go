@@ -9,6 +9,7 @@ import (
 	lua "github.com/highcard-dev/daemon/internal/core/services/coldstarter/handler"
 	"github.com/highcard-dev/daemon/internal/core/services/coldstarter/servers"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
+	"go.uber.org/zap"
 )
 
 type ColdStarter struct {
@@ -83,7 +84,7 @@ func (c ColdStarter) Start(ctx context.Context, stopAfterFirst bool) error {
 			}
 
 			if port.Protocol == "udp" {
-				logger.Log().Info(fmt.Sprintf("Starting UDP server on port %d", port.Port.Port))
+				logger.Log().Info(fmt.Sprintf("Starting UDP server on port %d", port.Port.Port), zap.String("sleep_handler", sleepHandler), zap.String("port_name", port.Name))
 				udpServer := servers.NewUDP(handler)
 				err := udpServer.Start(luactx, port.Port.Port, finishFunc)
 				if err != nil {
