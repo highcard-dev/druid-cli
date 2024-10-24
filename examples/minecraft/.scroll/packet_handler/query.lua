@@ -89,8 +89,6 @@ function handle(ctx, data)
 
         steamId = tonumber(steamIdString)
 
-        serverPortString = get_var("ServerPort") or "7777"
-
         serverPort = get_port("main")
 
         -- hex
@@ -104,8 +102,8 @@ function handle(ctx, data)
 
         gameHex = string.tohex(gameName)
 
-        maxPlayerHex = "50"
-        playerHex = "01"
+        maxPlayerHex = "00"
+        playerHex = "00"
         botHex = "00"
 
         serverTypeHex = "64" -- dedicated

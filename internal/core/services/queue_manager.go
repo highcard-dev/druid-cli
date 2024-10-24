@@ -146,6 +146,14 @@ func (sc *QueueManager) addQueueItem(cmd string, options AddItemOptions) error {
 	}
 
 	sc.commandQueue[cmd] = item
+
+	if setLock {
+		lock, err := sc.scrollService.GetLock()
+		if err != nil {
+			return err
+		}
+		lock.SetStatus(cmd, domain.ScrollLockStatusWaiting, nil)
+	}
 	sc.taskChan <- cmd
 
 	return nil
