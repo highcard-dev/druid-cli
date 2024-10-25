@@ -19,9 +19,9 @@ ports:
       - name: GameSteamId
         value: "0"
       - name: MapName
-        value: TheIsland
+        value: server idle
       - name: ServerListName
-        value: "Coldstarter is cool (server is idle, join to start)"
+        value: "Druid Gameserver (idle) - Start server by joining"
   - name: main
     protocol: udp
 

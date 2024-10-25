@@ -1,5 +1,6 @@
-*.*
+# Ignore everything:
+*
 
-#except php files
-!.scroll/**
-!.dockerignore
+# Except for the themes directories:
+
+!*/.scroll/**
