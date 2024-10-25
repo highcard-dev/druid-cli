@@ -84,6 +84,11 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]]; then
     then
         args+=("--watch-ports-interfaces" "${DRUID_WATCH_PORTS_INTERFACES}")
     fi
+
+    if [ ! -z "${DRUID_COLDSTARTER}" ];
+    then
+        args+=("--coldstarter")
+    fi
         
     echo "Running druid with args from env: ${args[@]}"
     exec druid "${args[@]}"
