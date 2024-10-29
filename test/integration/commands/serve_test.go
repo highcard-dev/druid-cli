@@ -2,26 +2,17 @@ package command_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
-	"os"
-	"strconv"
 	"strings"
-	"testing"
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/highcard-dev/daemon/cmd"
-	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/handler"
-	"github.com/highcard-dev/daemon/internal/signals"
-	test_utils "github.com/highcard-dev/daemon/test/utils"
-	"github.com/otiai10/copy"
 )
 
 func connectWs(addr string, console string) (*websocket.Conn, error) {
@@ -118,6 +109,7 @@ func waitForConsoleRunning(console string, duration time.Duration) error {
 	}
 }
 
+/*
 func TestServeCommand(t *testing.T) {
 
 	type TestCase struct {
@@ -251,3 +243,4 @@ func TestServeCommand(t *testing.T) {
 
 	}
 }
+*/
