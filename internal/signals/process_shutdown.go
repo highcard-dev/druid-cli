@@ -46,26 +46,41 @@ func SetupSignals(queueManager ports.QueueManagerInterface, processManager ports
 	}()
 }
 
-func GracefulShutdown(queueManager ports.QueueManagerInterface, processManager ports.ProcessManagerInterface, app *fiber.App, waitSeconds int) {
+func ShutdownRoutine(queueManager ports.QueueManagerInterface, processManager ports.ProcessManagerInterface, waitSeconds int) {
 
 	shudownDone := make(chan struct{})
 	go func() {
 		waitForProcessesToStop(processManager)
-		app.Shutdown()
 		shudownDone <- struct{}{}
 	}()
-
 	//we do that non block, in case something is allready down
 	go queueManager.AddShutdownItem("stop")
 
+	//TODO: refactor this
+	done := false
 	go func() {
 		<-time.After(time.Duration(waitSeconds) * time.Second)
+		if done {
+			return
+		}
 		go shutdownRoutine(processManager, syscall.SIGTERM)
 		<-time.After(time.Duration(waitSeconds) * time.Second)
+		if done {
+			return
+		}
 		go shutdownRoutine(processManager, syscall.SIGKILL)
 	}()
 
 	<-shudownDone
+	done = true
+}
+
+func GracefulShutdown(queueManager ports.QueueManagerInterface, processManager ports.ProcessManagerInterface, app *fiber.App, waitSeconds int) {
+
+	ShutdownRoutine(queueManager, processManager, waitSeconds)
+
+	app.Shutdown()
+
 	logger.Log().Info("Shutdown done")
 
 }
@@ -83,7 +98,7 @@ func waitForProcessesToStop(processManager ports.ProcessManagerInterface) {
 
 func shutdownRoutine(processManager ports.ProcessManagerInterface, signal syscall.Signal) {
 
-	logger.Log().Info("Still not done, killing all processes with SIGKILL")
+	logger.Log().Info("Still not done, killing all processes with signal", zap.String("signal", signal.String()))
 	for _, process := range processManager.GetRunningProcesses() {
 		p, err := processutil.NewProcess(int32(process.Status().Pid))
 		if err != nil {
@@ -102,7 +117,7 @@ func shutdownRoutine(processManager ports.ProcessManagerInterface, signal syscal
 	}
 }
 
-func Stop() {
+func SendStopSignal() {
 	SigC <- syscall.SIGTERM
 	<-shutdownDone
 }

@@ -38,6 +38,7 @@ type Port struct {
 	SleepHandler *string           `yaml:"sleep_handler" json:"sleep_handler"`
 	Mandatory    bool              `yaml:"mandatory" json:"mandatory"`
 	Vars         []ColdStarterVars `yaml:"vars" json:"vars"`
+	StartDelay   uint              `yaml:"start_delay" json:"start_delay"`
 }
 
 type AugmentedPort struct {

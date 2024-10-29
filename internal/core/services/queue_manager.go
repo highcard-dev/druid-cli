@@ -221,6 +221,8 @@ func (sc *QueueManager) Work() {
 				sc.notify()
 			})()
 		case <-sc.shutdownChan:
+			//empty queue
+			sc.commandQueue = make(map[string]*domain.QueueItem)
 			return
 		}
 	}
@@ -230,7 +232,12 @@ func (sc *QueueManager) RunQueue() {
 	sc.runQueueMu.Lock()
 	defer sc.runQueueMu.Unlock()
 
-	logger.Log().Info("Running queue")
+	queueKeys := make(map[string]domain.ScrollLockStatus, len(sc.commandQueue))
+	for k, v := range sc.commandQueue {
+		queueKeys[k] = v.Status
+	}
+
+	logger.Log().Info("Running queue", zap.Any("queueKeys", queueKeys))
 
 	for cmd, item := range sc.commandQueue {
 

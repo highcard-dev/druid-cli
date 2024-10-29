@@ -109,6 +109,7 @@ type PortServiceInterface interface {
 
 type ColdStarterInterface interface {
 	GetHandler(funcs map[string]func(data ...string)) (ColdStarterHandlerInterface, error)
+	SetFinishedAt(finishedAt *time.Time)
 }
 
 type ColdStarterHandlerInterface interface {

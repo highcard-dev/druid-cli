@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
@@ -13,49 +14,56 @@ import (
 )
 
 type ColdStarter struct {
-	handler     map[string]uint
-	finishCount uint
-	dir         string
-	ports       []*domain.AugmentedPort
+	handler      map[string]uint
+	finishCount  uint
+	dir          string
+	finishTime   *time.Time
+	portsService ports.PortServiceInterface
+	serveDone    chan error
+	finishChan   chan *domain.AugmentedPort
+	chandlers    []ports.ColdStarterInterface
 }
 
 func NewColdStarter(
 	dir string,
-	ports []*domain.AugmentedPort,
+	portsService ports.PortServiceInterface,
 ) *ColdStarter {
 	return &ColdStarter{
 		make(map[string]uint),
 		0,
 		dir,
-		ports,
+		nil,
+		portsService,
+		make(chan error),
+		make(chan *domain.AugmentedPort),
+		nil,
 	}
 }
 
-func (c ColdStarter) StartLoop(ctx context.Context) error {
-	return c.Start(ctx, false)
+func (c ColdStarter) Start(ctx context.Context) chan *domain.AugmentedPort {
+
+	c.finishChan = make(chan *domain.AugmentedPort)
+
+	go c.Serve(ctx)
+
+	return c.finishChan
 }
-func (c ColdStarter) StartOnce(ctx context.Context) error {
-	return c.Start(ctx, true)
+
+func (c ColdStarter) FinishCount() uint {
+	return c.finishCount
 }
 
-func (c ColdStarter) Start(ctx context.Context, stopAfterFirst bool) error {
-	augmentedPorts := c.ports
-
-	luactx, cancel := context.WithCancel(context.Background())
-
-	doneChan := make(chan error)
-
-	finishFunc := func() {
-		c.finishCount++
-		if stopAfterFirst {
-			doneChan <- nil
-		}
-	}
+func (c ColdStarter) Serve(ctx context.Context) error {
+	augmentedPorts := c.portsService.GetPorts()
 
 	augmentedPortMap := make(map[string]int, len(augmentedPorts))
 	for _, p := range augmentedPorts {
 		augmentedPortMap[p.Name] = p.Port.Port
 	}
+
+	luactx, cancel := context.WithCancel(context.Background())
+
+	c.handler = make(map[string]uint, len(augmentedPorts))
 
 	for _, port := range augmentedPorts {
 		var sleepHandler string
@@ -83,30 +91,45 @@ func (c ColdStarter) Start(ctx context.Context, stopAfterFirst bool) error {
 				handler = lua.NewLuaHandler(path, c.dir, vars, augmentedPortMap)
 			}
 
+			c.chandlers = append(c.chandlers, handler)
+
+			finishFunc := func() {
+				if c.finishTime == nil {
+					now := time.Now()
+					c.finishTime = &now
+
+					for _, handler := range c.chandlers {
+						handler.SetFinishedAt(c.finishTime)
+					}
+				}
+				logger.Log().Info(fmt.Sprintf("Server on port %d received finish signal", port.Port.Port))
+				c.finishChan <- port
+				c.finishCount++
+			}
+
 			if port.Protocol == "udp" {
 				logger.Log().Info(fmt.Sprintf("Starting UDP server on port %d", port.Port.Port), zap.String("sleep_handler", sleepHandler), zap.String("port_name", port.Name))
 				udpServer := servers.NewUDP(handler)
 				err := udpServer.Start(luactx, port.Port.Port, finishFunc)
 				if err != nil {
-					doneChan <- err
+					c.serveDone <- err
 				}
 			} else if port.Protocol == "tcp" {
 				logger.Log().Info(fmt.Sprintf("Starting TCP server on port %d", port.Port.Port))
 				tcpServer := servers.NewTCP(handler)
 				err := tcpServer.Start(luactx, port.Port.Port, finishFunc)
 				if err != nil {
-					doneChan <- err
+					c.serveDone <- err
 				}
 			} else {
 				logger.Log().Warn(fmt.Sprintf("Unknown protocol %s for coldstarter", port.Protocol))
 				return
 			}
-			logger.Log().Info(fmt.Sprintf("Server on port %d received finish signal", port.Port.Port))
 		}(port)
 	}
 
 	select {
-	case err := <-doneChan:
+	case err := <-c.serveDone:
 		cancel()
 		return err
 	case <-ctx.Done():
@@ -115,6 +138,6 @@ func (c ColdStarter) Start(ctx context.Context, stopAfterFirst bool) error {
 	}
 }
 
-func (c ColdStarter) FinishCount() uint {
-	return c.finishCount
+func (c ColdStarter) Stop() {
+	c.serveDone <- nil
 }

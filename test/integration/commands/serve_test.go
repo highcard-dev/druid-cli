@@ -221,7 +221,7 @@ func TestServeCommand(t *testing.T) {
 					}
 				}
 
-				signals.Stop()
+				signals.SendStopSignal()
 
 				err = checkHttpServer(8081)
 				if err == nil {

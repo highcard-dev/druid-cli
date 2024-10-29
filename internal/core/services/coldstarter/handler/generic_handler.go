@@ -2,6 +2,7 @@ package lua
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/ports"
 )
@@ -30,3 +31,5 @@ func (handler *GenericReturnHandler) GetHandler(funcs map[string]func(data ...st
 		finishFunc: finishFunc,
 	}, nil
 }
+
+func (handler *GenericReturnHandler) SetFinishedAt(finishedAt *time.Time) {}

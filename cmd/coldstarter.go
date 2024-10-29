@@ -31,9 +31,10 @@ var ColdstarterCmd = &cobra.Command{
 
 		portsService := services.NewPortServiceWithScrollFile(&currentScroll.File)
 
-		coldStarter := services.NewColdStarter(scrollService.GetDir(), portsService.GetPorts())
+		coldStarter := services.NewColdStarter(scrollService.GetDir(), portsService)
 
-		coldStarter.StartOnce(context.TODO())
+		finish := coldStarter.Start(context.TODO())
+		<-finish
 		logger.Log().Info("Coldstarter finished")
 		return nil
 	},

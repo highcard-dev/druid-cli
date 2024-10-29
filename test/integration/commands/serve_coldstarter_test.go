@@ -314,7 +314,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 			setupServeCmd(ctx, t, path, []string{"--coldstarter"})
 
 			defer func() {
-				signals.Stop()
+				signals.SendStopSignal()
 			}()
 
 			if tc.ExecColdStarterFn != nil {

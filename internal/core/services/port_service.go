@@ -112,6 +112,12 @@ func (po *PortMonitor) GetPorts() []*domain.AugmentedPort {
 	return po.ports
 }
 
+func (p *PortMonitor) ResetOpenPorts() {
+	for _, p := range p.ports {
+		p.InactiveSince = time.Now()
+	}
+}
+
 func (p *PortMonitor) GetPort(port int) *domain.AugmentedPort {
 	for _, p := range p.ports {
 		if p.Port.Port == port {

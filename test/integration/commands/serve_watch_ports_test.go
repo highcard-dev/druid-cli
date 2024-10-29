@@ -75,7 +75,7 @@ func TestWatchPortsServeCommand(t *testing.T) {
 			setupServeCmd(ctx, t, path, []string{"--watch-ports", "--coldstarter=false"})
 
 			defer func() {
-				signals.Stop()
+				signals.SendStopSignal()
 			}()
 
 			//give time to make sure everything is online
