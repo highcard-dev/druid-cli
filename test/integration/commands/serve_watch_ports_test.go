@@ -99,7 +99,7 @@ func TestWatchPortsServeCommand(t *testing.T) {
 			}
 
 			//give time to to get picked up by the watcher
-			time.Sleep(1000 * time.Second)
+			time.Sleep(1 * time.Second)
 
 			ap2, err := fetchPorts()
 			if err != nil {

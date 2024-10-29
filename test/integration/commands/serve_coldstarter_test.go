@@ -186,7 +186,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 		LuaHandlerContent string
 	}
 	var testCases = []TestCase{
-		/*{
+		{
 			Name: "TestServeColdstarterEmtpty",
 			Scroll: domain.File{
 				Ports:    []domain.Port{},
@@ -275,7 +275,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 				Commands: testCommand,
 			},
 			ExecColdStarterFn: udpTester,
-		},*/
+		},
 		/*
 			{
 				Name: "TestServeColdstarterWithTestLuaUDPHandler",
