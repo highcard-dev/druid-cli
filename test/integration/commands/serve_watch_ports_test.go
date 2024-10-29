@@ -72,7 +72,7 @@ func TestWatchPortsServeCommand(t *testing.T) {
 			ctx, cancel := context.WithCancelCause(context.Background())
 			defer cancel(errors.New("test ended"))
 
-			setupServeCmd(ctx, t, path, []string{"--watch-ports", "--coldstarter=false"})
+			setupServeCmd(ctx, t, path, []string{"--coldstarter=false"})
 
 			defer func() {
 				signals.SendStopSignal()
@@ -92,14 +92,14 @@ func TestWatchPortsServeCommand(t *testing.T) {
 			}
 			//give time to to get picked up by the watcher
 			time.Sleep(1 * time.Second)
+
 			err = tcpTester("", 12349)
-
-			//give time to to get picked up by the watcher
-			time.Sleep(1 * time.Second)
-
 			if err != nil {
 				t.Fatalf("Failed to test tcp: %v", err)
 			}
+
+			//give time to to get picked up by the watcher
+			time.Sleep(1000 * time.Second)
 
 			ap2, err := fetchPorts()
 			if err != nil {

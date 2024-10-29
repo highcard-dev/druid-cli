@@ -244,6 +244,8 @@ func TestServeCommand(t *testing.T) {
 						t.Fatalf("Lock file status %s not found, expected: %v, got: %v", status, expectedStatuses, lock.Statuses)
 					}
 				}
+
+				signals.SendStopSignal()
 			}
 		})
 

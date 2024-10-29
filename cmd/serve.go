@@ -25,7 +25,6 @@ var port int
 var shutdownWait int
 var additionalEndpoints []string
 var idleScroll bool
-var watchPorts bool
 var watchPortsInterfaces []string
 var portInactivity uint
 var useColdstarter bool
@@ -133,10 +132,8 @@ to interact and monitor the Scroll Application`,
 
 		signals.SetupSignals(queueManager, processManager, a, shutdownWait)
 
-		if watchPorts {
-			logger.Log().Info("Starting port watcher", zap.Strings("interfaces", watchPortsInterfaces))
-			go portService.StartMonitoring(ctx, watchPortsInterfaces)
-		}
+		logger.Log().Info("Starting port watcher", zap.Strings("interfaces", watchPortsInterfaces))
+		go portService.StartMonitoring(ctx, watchPortsInterfaces)
 
 		if !idleScroll {
 
@@ -232,8 +229,6 @@ func init() {
 	ServeCommand.Flags().StringVarP(&userId, "user-id", "u", "", "Allowed user id")
 
 	ServeCommand.Flags().BoolVarP(&idleScroll, "idle", "", false, "Don't start the queue manager")
-
-	ServeCommand.Flags().BoolVarP(&watchPorts, "watch-ports", "", false, "Track port activity")
 
 	//macOS specific
 

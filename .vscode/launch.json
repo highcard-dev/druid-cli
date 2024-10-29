@@ -63,7 +63,6 @@
                 "--cwd",
                 "${workspaceFolder}/examples/minecraft",
                 "--coldstarter",
-                "--watch-ports",
                 "-p",
                 "9190",
             ],,
