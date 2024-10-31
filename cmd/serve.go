@@ -58,11 +58,12 @@ to interact and monitor the Scroll Application`,
 		logManager := services.NewLogManager()
 		consoleService := services.NewConsoleManager(logManager)
 		processMonitor := services.NewProcessMonitor()
+
+		defer processMonitor.ShutdownPromMetrics()
+
 		ctx := cmd.Context()
-		go func() {
-			<-ctx.Done()
-			processMonitor.ShutdownPromMetrics()
-		}()
+
+		fmt.Printf("Context in serve command %v\n", ctx)
 
 		processManager := services.NewProcessManager(logManager, consoleService, processMonitor)
 
@@ -130,7 +131,7 @@ to interact and monitor the Scroll Application`,
 
 		a := s.Initialize()
 
-		signals.SetupSignals(queueManager, processManager, a, shutdownWait)
+		signalHandler := signals.NewSignalHandler(ctx, queueManager, processManager, a, shutdownWait)
 
 		logger.Log().Info("Starting port watcher", zap.Strings("interfaces", watchPortsInterfaces))
 		go portService.StartMonitoring(ctx, watchPortsInterfaces)
@@ -144,7 +145,7 @@ to interact and monitor the Scroll Application`,
 					err := <-doneChan
 					if err != nil {
 						logger.Log().Error("Error in Daemon Startup", zap.Error(err))
-						signals.SendStopSignal()
+						signalHandler.Stop()
 					}
 					logger.Log().Info("Daemon Startup Complete")
 				}
@@ -177,6 +178,12 @@ to interact and monitor the Scroll Application`,
 							portService.ResetOpenPorts()
 
 							for {
+
+								if ctx.Err() != nil {
+									logger.Log().Info("Context cancelled, stopping shutdown")
+									break
+								}
+
 								ports := portService.GetPorts()
 								inactive := true
 								for _, port := range ports {
@@ -195,7 +202,7 @@ to interact and monitor the Scroll Application`,
 								}
 							}
 
-							signals.ShutdownRoutine(queueManager, processManager, shutdownWait)
+							signalHandler.ShutdownRoutine()
 						}
 					} else {
 						logger.Log().Warn("No ports to start, skipping coldstarter")
@@ -214,6 +221,8 @@ to interact and monitor the Scroll Application`,
 		}
 
 		err = s.Serve(a, port)
+
+		logger.Log().Info("Shutting down")
 
 		return err
 	},

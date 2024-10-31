@@ -2,17 +2,26 @@ package command_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/highcard-dev/daemon/cmd"
+	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/handler"
+	"github.com/highcard-dev/daemon/internal/utils/logger"
+	test_utils "github.com/highcard-dev/daemon/test/utils"
+	"github.com/otiai10/copy"
 )
 
 func connectWs(addr string, console string) (*websocket.Conn, error) {
@@ -109,7 +118,6 @@ func waitForConsoleRunning(console string, duration time.Duration) error {
 	}
 }
 
-/*
 func TestServeCommand(t *testing.T) {
 
 	type TestCase struct {
@@ -136,6 +144,10 @@ func TestServeCommand(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
+			logger.Log(logger.WithStructuredLogging())
+
+			time.Sleep(10 * time.Second)
+
 			//observer := logger.SetupLogsCapture()
 			unixTime := time.Now().Unix()
 			path := "./druid-cli-test/" + strconv.FormatInt(unixTime, 10) + "/"
@@ -161,16 +173,18 @@ func TestServeCommand(t *testing.T) {
 
 				b := bytes.NewBufferString("")
 
-				serveCmd := cmd.RootCmd
-				serveCmd.SetErr(b)
-				serveCmd.SetOut(b)
-				serveCmd.SetArgs([]string{"--cwd", path, "serve"})
+				rootCmd := cmd.RootCmd
+				rootCmd.SetErr(b)
+				rootCmd.SetOut(b)
+				rootCmd.SetArgs([]string{"--cwd", path, "serve", "--coldstarter=false"})
 
-				context, cancel := context.WithCancel(context.Background())
+				ctx, cancel := context.WithCancel(context.Background())
 
 				defer cancel()
 
-				connected, err = startAndTestServeCommand(context, t, serveCmd)
+				fmt.Printf("Context in Test %v\n", ctx)
+				connected, err = startAndTestServeCommand(ctx, t, rootCmd)
+
 				if !connected {
 					t.Fatalf("Failed to connect to daemon web server: %v", err)
 				}
@@ -186,6 +200,7 @@ func TestServeCommand(t *testing.T) {
 				}
 
 				err = waitForWsMessage(wsClient, `For help, type "help"`, 60*time.Second)
+				t.Log("Console message received")
 				if err != nil {
 					t.Fatalf("Failed to get help message: %v", err)
 				}
@@ -196,11 +211,15 @@ func TestServeCommand(t *testing.T) {
 					t.Fatalf("Failed to connect to minecraft server: %v", err)
 				}
 
+				t.Log("Connected to minecraft server")
+
 				//double check that install was never run again
 				lock, err := domain.ReadLock(scrollPath + "scroll-lock.json")
 				if err != nil {
 					t.Fatalf("Failed to read lock file: %v", err)
 				}
+				t.Log("Read lock file")
+
 				if installDate == 0 {
 					installDate = lock.GetStatus("install").LastStatusChange
 
@@ -213,11 +232,20 @@ func TestServeCommand(t *testing.T) {
 					}
 				}
 
-				signals.SendStopSignal()
+				go func() {
+					<-ctx.Done()
+					t.Log("Context done in test")
+				}()
+
+				t.Log("Sending stop signal")
+				cancel()
+				t.Log("Sent stop signal")
+
+				time.Sleep(20 * time.Second) //TODO: wait for server to stop, instead of sleeping
 
 				err = checkHttpServer(8081)
 				if err == nil {
-					t.Fatalf("Failed to stop daemon server: %v", err)
+					t.Fatalf("Failed to stop daemon server, server still online")
 				}
 
 				lock, err = domain.ReadLock(scrollPath + "scroll-lock.json")
@@ -237,10 +265,8 @@ func TestServeCommand(t *testing.T) {
 					}
 				}
 
-				signals.SendStopSignal()
 			}
 		})
 
 	}
 }
-*/

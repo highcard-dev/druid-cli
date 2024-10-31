@@ -56,6 +56,7 @@ func NewProcessMonitorMetricsExported() *ProcessMonitorMetricsExported {
 }
 
 func (po *ProcessMonitor) ShutdownPromMetrics() {
+	logger.Log().Info("Shutting down prometheus metrics")
 	prometheus.DefaultRegisterer.Unregister(po.exportedMetrics.prometheusCpuUsage)
 	prometheus.DefaultRegisterer.Unregister(po.exportedMetrics.prometheusMemoryUsage)
 	prometheus.DefaultRegisterer.Unregister(po.exportedMetrics.prometheusConnectionCount)

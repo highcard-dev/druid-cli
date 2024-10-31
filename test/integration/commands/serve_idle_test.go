@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/highcard-dev/daemon/cmd"
+	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"github.com/spf13/cobra"
 )
 
@@ -22,7 +24,7 @@ func checkHttpServer(port int) error {
 	return err
 }
 
-func startAndTestServeCommand(ctx context.Context, t *testing.T, serveCmd *cobra.Command) (bool, error) {
+func startAndTestServeCommand(ctx context.Context, t *testing.T, rootCmd *cobra.Command) (bool, error) {
 
 	connectedChan := make(chan struct{}, 1)
 	executionDoneChan := make(chan error, 1)
@@ -44,9 +46,18 @@ func startAndTestServeCommand(ctx context.Context, t *testing.T, serveCmd *cobra
 	}()
 
 	go func(ctx context.Context) {
-		serveCmd.SetContext(ctx)
-		err := serveCmd.ExecuteContext(ctx)
-		executionDoneChan <- err
+		cmd.ServeCommand.SetContext(ctx)
+
+		err := rootCmd.ExecuteContext(ctx)
+
+		if err != nil {
+			executionDoneChan <- err
+			return
+		}
+
+		fmt.Printf("Context at serve command %v\n", ctx)
+
+		executionDoneChan <- nil
 	}(ctx)
 
 	select {
@@ -54,6 +65,7 @@ func startAndTestServeCommand(ctx context.Context, t *testing.T, serveCmd *cobra
 		t.Logf("Connected to server")
 		return true, nil
 	case err := <-executionDoneChan:
+		t.Logf("Execution done")
 		return false, err
 	}
 }
@@ -65,12 +77,14 @@ func TestServeIdleCommand(t *testing.T) {
 		Args        []string
 		ExpectedErr error
 	}
+
 	var testCases = []TestCase{
 		{
 			Name:        "TestServeNoArtifact",
 			Args:        []string{"serve"},
 			ExpectedErr: errors.New("no artifact provided"),
 		},
+
 		{
 			Name:        "TestServeNoArtifactTag",
 			Args:        []string{"serve", "invalidscrollwithouttag"},
@@ -87,6 +101,8 @@ func TestServeIdleCommand(t *testing.T) {
 			//return
 			//observer := logger.SetupLogsCapture()
 
+			logger.Log(logger.WithStructuredLogging())
+
 			unixTime := time.Now().Unix()
 			path := "./druid-cli-test/" + strconv.FormatInt(unixTime, 10) + "/"
 
@@ -97,15 +113,20 @@ func TestServeIdleCommand(t *testing.T) {
 
 			b := bytes.NewBufferString("")
 
-			serveCmd := cmd.RootCmd
-			serveCmd.SetErr(b)
-			serveCmd.SetOut(b)
-			serveCmd.SetArgs(append([]string{"--cwd", path}, tc.Args...))
+			rootCmd := cmd.RootCmd
+			rootCmd.SetErr(b)
+			rootCmd.SetOut(b)
+			rootCmd.SetArgs(append([]string{"--cwd", path}, tc.Args...))
 
-			var err error
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			err = serveCmd.ExecuteContext(ctx)
+			ctx := context.Background()
+
+			serveCmd, _, err := rootCmd.Find([]string{"serve"})
+			if err != nil {
+				t.Fatalf("Failed to find serve command: %v", err)
+			}
+			serveCmd.SetContext(ctx)
+
+			err = rootCmd.ExecuteContext(ctx)
 
 			if err != nil {
 				if tc.ExpectedErr == nil {

@@ -1,6 +1,7 @@
 package signals
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -14,14 +15,33 @@ import (
 	"go.uber.org/zap"
 )
 
-var SigC chan os.Signal
-var shutdownDone chan struct{}
+type SignalHandler struct {
+	SigC           chan os.Signal
+	queueManager   ports.QueueManagerInterface
+	processManager ports.ProcessManagerInterface
+	app            *fiber.App
+	waitSeconds    int
+}
 
-func SetupSignals(queueManager ports.QueueManagerInterface, processManager ports.ProcessManagerInterface, app *fiber.App, waitSeconds int) {
-	SigC = make(chan os.Signal, 1)
-	shutdownDone = make(chan struct{})
+func NewSignalHandler(ctx context.Context, queueManager ports.QueueManagerInterface, processManager ports.ProcessManagerInterface, app *fiber.App, waitSeconds int) *SignalHandler {
+	sh := &SignalHandler{
+		SigC:           make(chan os.Signal, 1),
+		queueManager:   queueManager,
+		processManager: processManager,
+		app:            app,
+		waitSeconds:    waitSeconds,
+	}
 
-	signal.Notify(SigC,
+	sh.SetupSignals(ctx)
+
+	return sh
+}
+
+func (sh *SignalHandler) SetupSignals(ctx context.Context) {
+
+	fmt.Printf("Setup Signal for context %v\n", ctx)
+
+	signal.Notify(sh.SigC,
 		syscall.SIGHUP,
 		syscall.SIGINT,
 		syscall.SIGTERM,
@@ -33,53 +53,55 @@ func SetupSignals(queueManager ports.QueueManagerInterface, processManager ports
 	go func() {
 		var s os.Signal
 		select {
-		case s = <-SigC:
+		case s = <-sh.SigC:
+			logger.Log().Info("Received shudown signal", zap.String("signal", s.String()))
+		case <-ctx.Done():
+			println("Context done")
 			//debug timeout for testing
 			//case <-time.After(time.Duration(25) * time.Second):
 			//	s = syscall.SIGTERM
 		}
 
-		logger.Log().Info("Received shudown signal", zap.String("signal", s.String()))
-
-		GracefulShutdown(queueManager, processManager, app, waitSeconds)
-		shutdownDone <- struct{}{}
+		sh.GracefulShutdown()
 	}()
 }
 
-func ShutdownRoutine(queueManager ports.QueueManagerInterface, processManager ports.ProcessManagerInterface, waitSeconds int) {
+func (sh *SignalHandler) ShutdownRoutine() {
 
 	shudownDone := make(chan struct{})
 	go func() {
-		waitForProcessesToStop(processManager)
+		waitForProcessesToStop(sh.processManager)
 		shudownDone <- struct{}{}
 	}()
 	//we do that non block, in case something is allready down
-	go queueManager.AddShutdownItem("stop")
+	go sh.queueManager.AddShutdownItem("stop")
 
 	//TODO: refactor this
 	done := false
 	go func() {
-		<-time.After(time.Duration(waitSeconds) * time.Second)
+		<-time.After(time.Duration(sh.waitSeconds) * time.Second)
 		if done {
 			return
 		}
-		go shutdownRoutine(processManager, syscall.SIGTERM)
-		<-time.After(time.Duration(waitSeconds) * time.Second)
+		go shutdownRoutine(sh.processManager, syscall.SIGTERM)
+		<-time.After(time.Duration(sh.waitSeconds) * time.Second)
 		if done {
 			return
 		}
-		go shutdownRoutine(processManager, syscall.SIGKILL)
+		go shutdownRoutine(sh.processManager, syscall.SIGKILL)
 	}()
 
 	<-shudownDone
 	done = true
 }
 
-func GracefulShutdown(queueManager ports.QueueManagerInterface, processManager ports.ProcessManagerInterface, app *fiber.App, waitSeconds int) {
+func (sh *SignalHandler) GracefulShutdown() {
 
-	ShutdownRoutine(queueManager, processManager, waitSeconds)
+	println("Shutting down routine")
+	sh.ShutdownRoutine()
 
-	app.Shutdown()
+	println("Shutting down app")
+	sh.app.Shutdown()
 
 	logger.Log().Info("Shutdown done")
 
@@ -117,7 +139,7 @@ func shutdownRoutine(processManager ports.ProcessManagerInterface, signal syscal
 	}
 }
 
-func SendStopSignal() {
-	SigC <- syscall.SIGTERM
-	<-shutdownDone
+func (sh *SignalHandler) Stop() {
+	sh.GracefulShutdown()
+
 }
