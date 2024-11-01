@@ -168,7 +168,6 @@ func TestServeCommand(t *testing.T) {
 			var installDate int64
 
 			for i := 0; i < runs; i++ {
-				println("Run: ", i)
 				var connected bool
 
 				b := bytes.NewBufferString("")
@@ -178,7 +177,7 @@ func TestServeCommand(t *testing.T) {
 				rootCmd.SetOut(b)
 				rootCmd.SetArgs([]string{"--cwd", path, "serve", "--coldstarter=false"})
 
-				ctx, cancel := context.WithCancel(context.Background())
+				ctx, cancel := context.WithCancel(context.WithValue(context.Background(), "disablePrometheus", true))
 
 				defer cancel()
 
@@ -237,13 +236,9 @@ func TestServeCommand(t *testing.T) {
 					t.Log("Context done in test")
 				}()
 
-				t.Log("Sending stop signal")
 				cancel()
-				t.Log("Sent stop signal")
 
-				time.Sleep(20 * time.Second) //TODO: wait for server to stop, instead of sleeping
-
-				err = checkHttpServer(8081)
+				err = checkHttpServer(8081, 20*time.Second)
 				if err == nil {
 					t.Fatalf("Failed to stop daemon server, server still online")
 				}

@@ -28,7 +28,7 @@ type ProcessMonitorMetricsExported struct {
 	prometheusConnectionCount *prometheus.GaugeVec
 }
 
-func NewProcessMonitor() *ProcessMonitor {
+func NewProcessMonitor(enableMetrics bool) *ProcessMonitor {
 	return &ProcessMonitor{
 		exportedMetrics: NewProcessMonitorMetricsExported(),
 		processes:       make(map[string]*processutil.Process),

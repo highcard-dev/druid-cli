@@ -310,8 +310,8 @@ func TestColdstarterServeCommand(t *testing.T) {
 					t.Fatalf("Failed to write test lua handler file: %v", err)
 				}
 			}
+			ctx, cancel := context.WithCancelCause(context.WithValue(context.Background(), "disablePrometheus", true))
 
-			ctx, cancel := context.WithCancelCause(context.Background())
 			defer cancel(errors.New("test ended"))
 
 			setupServeCmd(ctx, t, path, []string{"--coldstarter"})

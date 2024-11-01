@@ -57,11 +57,15 @@ to interact and monitor the Scroll Application`,
 		client := registry.NewOciClient(host, user, password)
 		logManager := services.NewLogManager()
 		consoleService := services.NewConsoleManager(logManager)
-		processMonitor := services.NewProcessMonitor()
-
-		defer processMonitor.ShutdownPromMetrics()
 
 		ctx := cmd.Context()
+
+		disablePrometheus, ok := ctx.Value("disablePrometheus").(bool)
+
+		//only disable prometheus if context value is set and true
+		processMonitor := services.NewProcessMonitor(!ok || !disablePrometheus)
+
+		defer processMonitor.ShutdownPromMetrics()
 
 		fmt.Printf("Context in serve command %v\n", ctx)
 

@@ -163,7 +163,6 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 		defer wg.Done()
 		scanner := bufio.NewScanner(stdoutReader)
 		for scanner.Scan() {
-			println(scanner.Text())
 			combinedChannel <- scanner.Text() + "\n"
 		}
 	}()
@@ -174,7 +173,6 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 		defer wg.Done()
 		scanner := bufio.NewScanner(stderrReader)
 		for scanner.Scan() {
-			println(scanner.Text())
 			combinedChannel <- scanner.Text() + "\n"
 		}
 

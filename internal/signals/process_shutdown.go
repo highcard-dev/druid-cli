@@ -56,7 +56,7 @@ func (sh *SignalHandler) SetupSignals(ctx context.Context) {
 		case s = <-sh.SigC:
 			logger.Log().Info("Received shudown signal", zap.String("signal", s.String()))
 		case <-ctx.Done():
-			println("Context done")
+			logger.Log().Info("Context done")
 			//debug timeout for testing
 			//case <-time.After(time.Duration(25) * time.Second):
 			//	s = syscall.SIGTERM

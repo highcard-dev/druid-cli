@@ -70,7 +70,7 @@ func TestWatchPortsServeCommand(t *testing.T) {
 			_, path := setupScroll(t, tc.Scroll)
 			defer os.RemoveAll(path)
 
-			ctx, cancel := context.WithCancelCause(context.Background())
+			ctx, cancel := context.WithCancelCause(context.WithValue(context.Background(), "disablePrometheus", true))
 			defer cancel(errors.New("test ended"))
 
 			setupServeCmd(ctx, t, path, []string{"--coldstarter=false"})

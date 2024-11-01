@@ -16,12 +16,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func checkHttpServer(port int) error {
-	c, err := net.Dial("tcp", "localhost:"+strconv.Itoa(port))
-	if c != nil {
-		defer c.Close()
+func checkHttpServer(port int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		c, err := net.Dial("tcp", "localhost:"+strconv.Itoa(port))
+		if err == nil {
+			// Connection successful, close and return no error
+			c.Close()
+			return nil
+		}
+		// Wait for 1 second before retrying
+		time.Sleep(1 * time.Second)
 	}
-	return err
+	return errors.New("timeout reached while checking HTTP server")
 }
 
 func startAndTestServeCommand(ctx context.Context, t *testing.T, rootCmd *cobra.Command) (bool, error) {
@@ -118,7 +125,7 @@ func TestServeIdleCommand(t *testing.T) {
 			rootCmd.SetOut(b)
 			rootCmd.SetArgs(append([]string{"--cwd", path}, tc.Args...))
 
-			ctx := context.Background()
+			ctx := context.WithValue(context.Background(), "disablePrometheus", true)
 
 			serveCmd, _, err := rootCmd.Find([]string{"serve"})
 			if err != nil {
