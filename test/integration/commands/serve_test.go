@@ -181,7 +181,6 @@ func TestServeCommand(t *testing.T) {
 
 				defer cancel()
 
-				fmt.Printf("Context in Test %v\n", ctx)
 				connected, err = startAndTestServeCommand(ctx, t, rootCmd)
 
 				if !connected {
@@ -233,13 +232,12 @@ func TestServeCommand(t *testing.T) {
 
 				go func() {
 					<-ctx.Done()
-					t.Log("Context done in test")
 				}()
 
 				cancel()
 
-				err = checkHttpServer(8081, 20*time.Second)
-				if err == nil {
+				err = checkHttpServerShutdown(8081, 20*time.Second)
+				if err != nil {
 					t.Fatalf("Failed to stop daemon server, server still online")
 				}
 

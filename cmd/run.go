@@ -23,9 +23,16 @@ var RunCmd = &cobra.Command{
 
 		client := registry.NewOciClient(host, user, password)
 
+		ctx := cmd.Context()
+
+		disablePrometheus, ok := ctx.Value("disablePrometheus").(bool)
+
+		//only disable prometheus if context value is set and true
+		processMonitor := services.NewProcessMonitor(!ok || !disablePrometheus)
+
 		logManager := services.NewLogManager()
 		consoleService := services.NewConsoleManager(logManager)
-		processManager := services.NewProcessManager(logManager, consoleService, services.NewProcessMonitor())
+		processManager := services.NewProcessManager(logManager, consoleService, processMonitor)
 		scrollService, err := services.NewScrollService(cwd)
 		if err != nil {
 			return fmt.Errorf("error creating scroll service: %w", err)

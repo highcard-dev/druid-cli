@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"os"
 	"strconv"
@@ -31,6 +30,21 @@ func checkHttpServer(port int, timeout time.Duration) error {
 	return errors.New("timeout reached while checking HTTP server")
 }
 
+func checkHttpServerShutdown(port int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		c, err := net.Dial("tcp", "localhost:"+strconv.Itoa(port))
+		if err != nil {
+			// Connection successful, close and return no error
+			return nil
+		}
+		c.Close()
+		// Wait for 1 second before retrying
+		time.Sleep(1 * time.Second)
+	}
+	return errors.New("timeout reached while checking HTTP server")
+}
+
 func startAndTestServeCommand(ctx context.Context, t *testing.T, rootCmd *cobra.Command) (bool, error) {
 
 	connectedChan := make(chan struct{}, 1)
@@ -42,7 +56,7 @@ func startAndTestServeCommand(ctx context.Context, t *testing.T, rootCmd *cobra.
 		for {
 			select {
 			case <-ticker.C:
-				if checkHttpServer(8081) == nil {
+				if checkHttpServer(8081, time.Second*20) == nil {
 					connectedChan <- struct{}{}
 					return
 				}
@@ -61,8 +75,6 @@ func startAndTestServeCommand(ctx context.Context, t *testing.T, rootCmd *cobra.
 			executionDoneChan <- err
 			return
 		}
-
-		fmt.Printf("Context at serve command %v\n", ctx)
 
 		executionDoneChan <- nil
 	}(ctx)

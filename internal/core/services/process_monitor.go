@@ -29,10 +29,16 @@ type ProcessMonitorMetricsExported struct {
 }
 
 func NewProcessMonitor(enableMetrics bool) *ProcessMonitor {
-	return &ProcessMonitor{
-		exportedMetrics: NewProcessMonitorMetricsExported(),
-		processes:       make(map[string]*processutil.Process),
+
+	pm := &ProcessMonitor{
+		processes: make(map[string]*processutil.Process),
 	}
+
+	if enableMetrics {
+		pm.exportedMetrics = NewProcessMonitorMetricsExported()
+	}
+
+	return pm
 }
 
 func NewProcessMonitorMetricsExported() *ProcessMonitorMetricsExported {
@@ -56,6 +62,11 @@ func NewProcessMonitorMetricsExported() *ProcessMonitorMetricsExported {
 }
 
 func (po *ProcessMonitor) ShutdownPromMetrics() {
+	if po.exportedMetrics == nil {
+
+		logger.Log().Warn("No metrics registered, skipping")
+		return
+	}
 	logger.Log().Info("Shutting down prometheus metrics")
 	prometheus.DefaultRegisterer.Unregister(po.exportedMetrics.prometheusCpuUsage)
 	prometheus.DefaultRegisterer.Unregister(po.exportedMetrics.prometheusMemoryUsage)
@@ -100,9 +111,12 @@ func (po *ProcessMonitor) GetProcessMetric(name string, p *processutil.Process) 
 	if running {
 		memory, cpu, cons := calcUsageOfProcess(p, true)
 
-		po.exportedMetrics.prometheusCpuUsage.With(prometheus.Labels{"process": name}).Set(cpu)
-		po.exportedMetrics.prometheusMemoryUsage.With(prometheus.Labels{"process": name}).Set(float64(memory))
-		po.exportedMetrics.prometheusConnectionCount.With(prometheus.Labels{"process": name}).Set(float64(len(cons)))
+		if po.exportedMetrics != nil {
+			po.exportedMetrics.prometheusCpuUsage.With(prometheus.Labels{"process": name}).Set(cpu)
+			po.exportedMetrics.prometheusMemoryUsage.With(prometheus.Labels{"process": name}).Set(float64(memory))
+			po.exportedMetrics.prometheusConnectionCount.With(prometheus.Labels{"process": name}).Set(float64(len(cons)))
+		}
+
 		return &domain.ProcessMonitorMetrics{
 			Cpu:         cpu,
 			Memory:      memory,
