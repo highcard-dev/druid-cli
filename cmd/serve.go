@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime"
 	"slices"
+	"time"
 
 	"github.com/highcard-dev/daemon/cmd/server/web"
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -24,7 +25,6 @@ var port int
 var shutdownWait int
 var additionalEndpoints []string
 var idleScroll bool
-var watchPorts bool
 var watchPortsInterfaces []string
 var portInactivity uint
 var useColdstarter bool
@@ -57,12 +57,17 @@ to interact and monitor the Scroll Application`,
 		client := registry.NewOciClient(host, user, password)
 		logManager := services.NewLogManager()
 		consoleService := services.NewConsoleManager(logManager)
-		processMonitor := services.NewProcessMonitor()
+
 		ctx := cmd.Context()
-		go func() {
-			<-ctx.Done()
-			processMonitor.ShutdownPromMetrics()
-		}()
+
+		disablePrometheus, ok := ctx.Value("disablePrometheus").(bool)
+
+		//only disable prometheus if context value is set and true
+		processMonitor := services.NewProcessMonitor(!ok || !disablePrometheus)
+
+		defer processMonitor.ShutdownPromMetrics()
+
+		fmt.Printf("Context in serve command %v\n", ctx)
 
 		processManager := services.NewProcessManager(logManager, consoleService, processMonitor)
 
@@ -108,7 +113,7 @@ to interact and monitor the Scroll Application`,
 
 		portService := services.NewPortServiceWithScrollFile(scrollService.GetFile())
 
-		coldStarter := services.NewColdStarter(scrollService.GetDir(), portService.GetPorts())
+		coldStarter := services.NewColdStarter(scrollService.GetDir(), portService)
 
 		scrollHandler := handler.NewScrollHandler(scrollService, pluginManager, processLauncher, queueManager)
 		processHandler := handler.NewProcessHandler(processManager)
@@ -130,139 +135,98 @@ to interact and monitor the Scroll Application`,
 
 		a := s.Initialize()
 
-		signals.SetupSignals(queueManager, processManager, a, shutdownWait)
+		signalHandler := signals.NewSignalHandler(ctx, queueManager, processManager, a, shutdownWait)
 
-		if watchPorts {
-			logger.Log().Info("Starting port watcher", zap.Strings("interfaces", watchPortsInterfaces))
-			go portService.StartMonitoring(ctx, watchPortsInterfaces)
-		}
+		logger.Log().Info("Starting port watcher", zap.Strings("interfaces", watchPortsInterfaces))
+		go portService.StartMonitoring(ctx, watchPortsInterfaces)
 
 		if !idleScroll {
 
 			doneChan := make(chan error, 1)
 
 			go func() {
-				err := <-doneChan
-				if err != nil {
-					logger.Log().Error("Error in Daemon Startup", zap.Error(err))
-					signals.Stop()
+				for {
+					err := <-doneChan
+					if err != nil {
+						logger.Log().Error("Error in Daemon Startup", zap.Error(err))
+						signalHandler.Stop()
+					}
+					logger.Log().Info("Daemon Startup Complete")
 				}
-				logger.Log().Info("Daemon Startup Complete")
 			}()
 
 			go func() {
 				if useColdstarter {
 					if currentScroll.CanColdStart() {
-						logger.Log().Info("Starting coldstarter")
-						err = coldStarter.StartOnce(ctx)
-						if err != nil {
-							logger.Log().Error("Error in coldstarter", zap.Error(err))
-							doneChan <- err
-							return
+
+						for {
+							logger.Log().Info("Starting coldstarter")
+							finish := coldStarter.Start(ctx)
+							executedPort := <-finish
+
+							if executedPort.StartDelay > 0 {
+								go func() {
+									time.Sleep(time.Duration(executedPort.StartDelay) * time.Second)
+									coldStarter.Stop()
+								}()
+							} else {
+								coldStarter.Stop()
+							}
+
+							logger.Log().Info("Coldstarter done, starting scroll")
+
+							startup(scrollService, processLauncher, queueManager, cwd, doneChan)
+
+							logger.Log().Info("Waiting for inactivity..")
+
+							portService.ResetOpenPorts()
+
+							for {
+
+								if ctx.Err() != nil {
+									logger.Log().Info("Context cancelled, stopping shutdown")
+									break
+								}
+
+								ports := portService.GetPorts()
+								inactive := true
+								for _, port := range ports {
+									if port.InactiveSinceSec < portInactivity {
+										logger.Log().Info("Port still active", zap.Int("port", port.Port.Port), zap.Uint("InactiveSinceSec", port.InactiveSinceSec))
+										inactive = false
+										break
+									}
+								}
+								if inactive {
+									logger.Log().Info("Ports inactive, starting shutdown")
+									break
+								} else {
+									logger.Log().Info("Ports still active, waiting..")
+									time.Sleep(5 * time.Second)
+								}
+							}
+
+							signalHandler.ShutdownRoutine()
 						}
-						logger.Log().Info("Coldstarter done, starting scroll")
 					} else {
 						logger.Log().Warn("No ports to start, skipping coldstarter")
-					}
-				}
-
-				lock, err := scrollService.Bootstrap(ignoreVersionCheck)
-				if err != nil {
-					doneChan <- err
-					return
-				}
-
-				newScroll := len(lock.Statuses) == 0
-
-				if newScroll {
-					logger.Log().Info("No lock file found, but init command available. Bootstrapping...")
-
-					logger.Log().Info("Creating lock and bootstrapping files")
-					//There is an error here. We need to bootstrap the files before we render out the templates in the bootstrap func above
-					err := scrollService.CreateLockAndBootstrapFiles()
-					if err != nil {
-						doneChan <- err
-						return
+						startup(scrollService, processLauncher, queueManager, cwd, doneChan)
 					}
 				} else {
-					logger.Log().Info("Found lock file, bootstrapping done")
+					startup(scrollService, processLauncher, queueManager, cwd, doneChan)
 				}
 
-				logger.Log().Info("Rendering cwd templates")
-				err = scrollService.RenderCwdTemplates()
-				if err != nil {
-					doneChan <- err
-					return
-				}
-
-				logger.Log().Info("Launching plugins")
-				//important to launch plugins, after the templates are rendered, sothat templates can provide for plugins
-				err = processLauncher.LaunchPlugins()
-
-				if err != nil {
-					doneChan <- err
-					return
-				}
-
-				logger.Log().Info("Starting queue manager")
-				go queueManager.Work()
-
-				if newScroll {
-					logger.Log().Info("Starting scroll.init process")
-					//start scroll.init process
-					//initialize if nothing is there
-					err = queueManager.AddAndRememberItem(currentScroll.Init)
-					if err != nil {
-						doneChan <- err
-						return
-					}
-
-					logger.Log().Info("Writing new scroll lock")
-					scrollService.WriteNewScrollLock()
-
-					logger.Log().Info("Bootstrapping done")
-				}
-
-				err = queueManager.QueueLockFile()
-				if err != nil {
-					doneChan <- err
-					return
-				}
-
-				//schedule crons
-				logger.Log().Info("Schedule crons")
-
-				cronManager := services.NewCronManager(currentScroll.Cronjobs, queueManager)
-				err = cronManager.Init()
-
-				if err != nil {
-					doneChan <- err
-					return
-				}
-
-				var version string
-
-				if currentScroll.Version != nil {
-					version = currentScroll.Version.String()
-				} else {
-					version = "N/A"
-				}
-
-				logger.Log().Info("Active Scroll",
-					zap.String("Description", fmt.Sprintf("%s (%s)", currentScroll.Desc, currentScroll.Name)),
-					zap.String("Scroll Version", version),
-					zap.String("cwd", cwd))
-
-				doneChan <- nil
 			}()
 
 		} else {
 			if useColdstarter {
-				go coldStarter.StartLoop(ctx)
+				go coldStarter.Start(ctx)
 			}
 		}
 
 		err = s.Serve(a, port)
+
+		logger.Log().Info("Shutting down")
 
 		return err
 	},
@@ -279,8 +243,6 @@ func init() {
 
 	ServeCommand.Flags().BoolVarP(&idleScroll, "idle", "", false, "Don't start the queue manager")
 
-	ServeCommand.Flags().BoolVarP(&watchPorts, "watch-ports", "", false, "Track port activity")
-
 	//macOS specific
 
 	if runtime.GOOS == "darwin" {
@@ -295,7 +257,102 @@ func init() {
 
 	ServeCommand.Flags().StringArrayVarP(&additionalEndpoints, "additional-endpoints", "", []string{}, "Additional endpoints to serve. Valid values: annotations")
 
-	ServeCommand.Flags().UintVarP(&portInactivity, "port-inactivity", "", 0, "Port inactivity timeout")
+	ServeCommand.Flags().UintVarP(&portInactivity, "port-inactivity", "", 120, "Port inactivity timeout")
 
 	ServeCommand.Flags().UintVarP(&maxStartupHealthCheckTimeout, "max-health-check-startup-timeount", "", 0, "Sets the max amount of time the health check is allowed to take on startup. If the value is 0, there will be no timeout. This is useful to prevent the health check from blocking the startup of the daemon fully.")
+}
+
+func startup(scrollService *services.ScrollService, processLauncher *services.ProcedureLauncher, queueManager *services.QueueManager, cwd string, doneChan chan error) {
+
+	currentScroll := scrollService.GetCurrent()
+
+	lock, err := scrollService.Bootstrap(ignoreVersionCheck)
+	if err != nil {
+		doneChan <- err
+		return
+	}
+
+	newScroll := len(lock.Statuses) == 0
+
+	if newScroll {
+		logger.Log().Info("No lock file found, but init command available. Bootstrapping...")
+
+		logger.Log().Info("Creating lock and bootstrapping files")
+		//There is an error here. We need to bootstrap the files before we render out the templates in the bootstrap func above
+		err := scrollService.CreateLockAndBootstrapFiles()
+		if err != nil {
+			doneChan <- err
+			return
+		}
+	} else {
+		logger.Log().Info("Found lock file, bootstrapping done")
+	}
+
+	logger.Log().Info("Rendering cwd templates")
+	err = scrollService.RenderCwdTemplates()
+	if err != nil {
+		doneChan <- err
+		return
+	}
+
+	logger.Log().Info("Launching plugins")
+	//important to launch plugins, after the templates are rendered, sothat templates can provide for plugins
+	err = processLauncher.LaunchPlugins()
+
+	if err != nil {
+		doneChan <- err
+		return
+	}
+
+	logger.Log().Info("Starting queue manager")
+	go queueManager.Work()
+
+	if newScroll {
+		logger.Log().Info("Starting scroll.init process")
+		//start scroll.init process
+		//initialize if nothing is there
+		err = queueManager.AddAndRememberItem(currentScroll.Init)
+		if err != nil {
+			doneChan <- err
+			return
+		}
+
+		logger.Log().Info("Writing new scroll lock")
+		scrollService.WriteNewScrollLock()
+
+		logger.Log().Info("Bootstrapping done")
+	}
+
+	err = queueManager.QueueLockFile()
+	if err != nil {
+		doneChan <- err
+		return
+	}
+
+	//schedule crons
+	logger.Log().Info("Schedule crons")
+
+	cronManager := services.NewCronManager(currentScroll.Cronjobs, queueManager)
+	err = cronManager.Init()
+
+	if err != nil {
+		doneChan <- err
+		return
+	}
+
+	var version string
+
+	if currentScroll.Version != nil {
+		version = currentScroll.Version.String()
+	} else {
+		version = "N/A"
+	}
+
+	logger.Log().Info("Active Scroll",
+		zap.String("Description", fmt.Sprintf("%s (%s)", currentScroll.Desc, currentScroll.Name)),
+		zap.String("Scroll Version", version),
+		zap.String("cwd", cwd))
+
+	doneChan <- nil
+
 }

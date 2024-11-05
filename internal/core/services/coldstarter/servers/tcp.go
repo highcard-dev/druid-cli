@@ -112,7 +112,7 @@ func (t *TCP) handleConnection(conn net.Conn) {
 
 		data := buffer[:n]
 
-		logger.Log().Info("Received data", zap.String("data", string(data)), zap.String("type", "tcp"), zap.String("address", conn.RemoteAddr().String()))
+		logger.Log().Debug("Received data", zap.String("data", string(data)), zap.String("type", "tcp"), zap.String("address", conn.RemoteAddr().String()))
 
 		err = handler.Handle(data, map[string]func(data ...string){
 			"sendData": sendFunc,

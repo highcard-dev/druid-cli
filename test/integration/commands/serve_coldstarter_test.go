@@ -13,7 +13,6 @@ import (
 
 	"github.com/highcard-dev/daemon/cmd"
 	"github.com/highcard-dev/daemon/internal/core/domain"
-	"github.com/highcard-dev/daemon/internal/signals"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"gopkg.in/yaml.v2"
 )
@@ -144,6 +143,8 @@ var setupScroll = func(t *testing.T, scroll domain.File) (string, string) {
 	cwd := "./druid-cli-test/" + strconv.FormatInt(unixTime, 10) + "/"
 	scrollPath := cwd + ".scroll/"
 
+	t.Logf("Creating test scroll file in %s", scrollPath)
+
 	if err := os.MkdirAll(scrollPath, 0755); err != nil {
 		t.Fatalf("Failed to create test cwd: %v", err)
 	}
@@ -186,6 +187,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 		LuaHandlerContent string
 	}
 	var testCases = []TestCase{
+
 		{
 			Name: "TestServeColdstarterEmtpty",
 			Scroll: domain.File{
@@ -297,6 +299,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
+			logger.Log(logger.WithStructuredLogging())
 			println(tc.Name)
 			scrollPath, path := setupScroll(t, tc.Scroll)
 			defer os.RemoveAll(path)
@@ -307,15 +310,11 @@ func TestColdstarterServeCommand(t *testing.T) {
 					t.Fatalf("Failed to write test lua handler file: %v", err)
 				}
 			}
+			ctx, cancel := context.WithCancelCause(context.WithValue(context.Background(), "disablePrometheus", true))
 
-			ctx, cancel := context.WithCancelCause(context.Background())
 			defer cancel(errors.New("test ended"))
 
 			setupServeCmd(ctx, t, path, []string{"--coldstarter"})
-
-			defer func() {
-				signals.Stop()
-			}()
 
 			if tc.ExecColdStarterFn != nil {
 				//wait for server to start, maybe we can do this better, but we cannot do a tcp dial or somthing like that

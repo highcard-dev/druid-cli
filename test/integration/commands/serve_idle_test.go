@@ -11,18 +11,41 @@ import (
 	"time"
 
 	"github.com/highcard-dev/daemon/cmd"
+	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"github.com/spf13/cobra"
 )
 
-func checkHttpServer(port int) error {
-	c, err := net.Dial("tcp", "localhost:"+strconv.Itoa(port))
-	if c != nil {
-		defer c.Close()
+func checkHttpServer(port int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		c, err := net.Dial("tcp", "localhost:"+strconv.Itoa(port))
+		if err == nil {
+			// Connection successful, close and return no error
+			c.Close()
+			return nil
+		}
+		// Wait for 1 second before retrying
+		time.Sleep(1 * time.Second)
 	}
-	return err
+	return errors.New("timeout reached while checking HTTP server")
 }
 
-func startAndTestServeCommand(ctx context.Context, t *testing.T, serveCmd *cobra.Command) (bool, error) {
+func checkHttpServerShutdown(port int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		c, err := net.Dial("tcp", "localhost:"+strconv.Itoa(port))
+		if err != nil {
+			// Connection successful, close and return no error
+			return nil
+		}
+		c.Close()
+		// Wait for 1 second before retrying
+		time.Sleep(1 * time.Second)
+	}
+	return errors.New("timeout reached while checking HTTP server")
+}
+
+func startAndTestServeCommand(ctx context.Context, t *testing.T, rootCmd *cobra.Command) (bool, error) {
 
 	connectedChan := make(chan struct{}, 1)
 	executionDoneChan := make(chan error, 1)
@@ -33,7 +56,7 @@ func startAndTestServeCommand(ctx context.Context, t *testing.T, serveCmd *cobra
 		for {
 			select {
 			case <-ticker.C:
-				if checkHttpServer(8081) == nil {
+				if checkHttpServer(8081, time.Second*20) == nil {
 					connectedChan <- struct{}{}
 					return
 				}
@@ -44,9 +67,16 @@ func startAndTestServeCommand(ctx context.Context, t *testing.T, serveCmd *cobra
 	}()
 
 	go func(ctx context.Context) {
-		serveCmd.SetContext(ctx)
-		err := serveCmd.ExecuteContext(ctx)
-		executionDoneChan <- err
+		cmd.ServeCommand.SetContext(ctx)
+
+		err := rootCmd.ExecuteContext(ctx)
+
+		if err != nil {
+			executionDoneChan <- err
+			return
+		}
+
+		executionDoneChan <- nil
 	}(ctx)
 
 	select {
@@ -54,6 +84,7 @@ func startAndTestServeCommand(ctx context.Context, t *testing.T, serveCmd *cobra
 		t.Logf("Connected to server")
 		return true, nil
 	case err := <-executionDoneChan:
+		t.Logf("Execution done")
 		return false, err
 	}
 }
@@ -65,12 +96,14 @@ func TestServeIdleCommand(t *testing.T) {
 		Args        []string
 		ExpectedErr error
 	}
+
 	var testCases = []TestCase{
 		{
 			Name:        "TestServeNoArtifact",
 			Args:        []string{"serve"},
 			ExpectedErr: errors.New("no artifact provided"),
 		},
+
 		{
 			Name:        "TestServeNoArtifactTag",
 			Args:        []string{"serve", "invalidscrollwithouttag"},
@@ -87,6 +120,8 @@ func TestServeIdleCommand(t *testing.T) {
 			//return
 			//observer := logger.SetupLogsCapture()
 
+			logger.Log(logger.WithStructuredLogging())
+
 			unixTime := time.Now().Unix()
 			path := "./druid-cli-test/" + strconv.FormatInt(unixTime, 10) + "/"
 
@@ -97,15 +132,20 @@ func TestServeIdleCommand(t *testing.T) {
 
 			b := bytes.NewBufferString("")
 
-			serveCmd := cmd.RootCmd
-			serveCmd.SetErr(b)
-			serveCmd.SetOut(b)
-			serveCmd.SetArgs(append([]string{"--cwd", path}, tc.Args...))
+			rootCmd := cmd.RootCmd
+			rootCmd.SetErr(b)
+			rootCmd.SetOut(b)
+			rootCmd.SetArgs(append([]string{"--cwd", path}, tc.Args...))
 
-			var err error
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			err = serveCmd.ExecuteContext(ctx)
+			ctx := context.WithValue(context.Background(), "disablePrometheus", true)
+
+			serveCmd, _, err := rootCmd.Find([]string{"serve"})
+			if err != nil {
+				t.Fatalf("Failed to find serve command: %v", err)
+			}
+			serveCmd.SetContext(ctx)
+
+			err = rootCmd.ExecuteContext(ctx)
 
 			if err != nil {
 				if tc.ExpectedErr == nil {

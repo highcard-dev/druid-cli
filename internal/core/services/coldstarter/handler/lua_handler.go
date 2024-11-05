@@ -2,6 +2,7 @@ package lua
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
@@ -14,6 +15,7 @@ type LuaHandler struct {
 	luaPath      string
 	externalVars map[string]string
 	ports        map[string]int
+	finishedAt   *time.Time
 }
 
 type LuaWrapper struct {
@@ -29,6 +31,10 @@ func NewLuaHandler(file string, luaPath string, externalVars map[string]string, 
 		ports:        ports,
 	}
 	return handler
+}
+
+func (handler *LuaHandler) SetFinishedAt(finishedAt *time.Time) {
+	handler.finishedAt = finishedAt
 }
 
 func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (ports.ColdStarterHandlerInterface, error) {
@@ -73,7 +79,7 @@ func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (po
 	l.SetGlobal("debug_print", l.NewFunction(
 		func(l *lua.LState) int {
 			arg := l.CheckString(1)
-			logger.Log().Info(arg)
+			logger.Log().Debug(arg)
 			return 0
 		},
 	))
@@ -88,6 +94,18 @@ func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (po
 				l.Push(lua.LNil)
 			} else {
 				l.Push(lua.LString(value))
+			}
+			return 1
+		},
+	))
+
+	l.SetGlobal("get_finish_sec", l.NewFunction(
+		func(l *lua.LState) int {
+			if handler.finishedAt == nil {
+				l.Push(lua.LNil)
+			} else {
+				finishSinceSec := time.Since(*handler.finishedAt).Seconds()
+				l.Push(lua.LNumber(finishSinceSec))
 			}
 			return 1
 		},

@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"runtime"
 	"testing"
 	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
-	"github.com/highcard-dev/daemon/internal/signals"
+	"github.com/highcard-dev/daemon/internal/utils/logger"
 )
 
 func fetchPorts() ([]domain.AugmentedPort, error) {
@@ -64,26 +65,23 @@ func TestWatchPortsServeCommand(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
-			println(tc.Name)
+			logger.Log(logger.WithStructuredLogging())
 
 			_, path := setupScroll(t, tc.Scroll)
 			defer os.RemoveAll(path)
 
-			ctx, cancel := context.WithCancelCause(context.Background())
+			ctx, cancel := context.WithCancelCause(context.WithValue(context.Background(), "disablePrometheus", true))
 			defer cancel(errors.New("test ended"))
 
-			setupServeCmd(ctx, t, path, []string{"--watch-ports", "--coldstarter=false"})
-
-			defer func() {
-				signals.Stop()
-			}()
-
+			setupServeCmd(ctx, t, path, []string{"--coldstarter=false"})
 			//give time to make sure everything is online
 			time.Sleep(1 * time.Second)
 			ap1, err := fetchPorts()
 			if err != nil {
 				t.Fatalf("Failed to fetch ports: %v", err)
 			}
+
+			fmt.Printf("Ports: %v\n", ap1)
 
 			for _, p := range ap1 {
 				if !p.Open {
@@ -92,14 +90,14 @@ func TestWatchPortsServeCommand(t *testing.T) {
 			}
 			//give time to to get picked up by the watcher
 			time.Sleep(1 * time.Second)
+
 			err = tcpTester("", 12349)
-
-			//give time to to get picked up by the watcher
-			time.Sleep(1 * time.Second)
-
 			if err != nil {
 				t.Fatalf("Failed to test tcp: %v", err)
 			}
+
+			//give time to to get picked up by the watcher
+			time.Sleep(1 * time.Second)
 
 			ap2, err := fetchPorts()
 			if err != nil {

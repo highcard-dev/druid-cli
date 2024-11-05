@@ -19,7 +19,7 @@ import (
 	"github.com/highcard-dev/daemon/cmd"
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/handler"
-	"github.com/highcard-dev/daemon/internal/signals"
+	"github.com/highcard-dev/daemon/internal/utils/logger"
 	test_utils "github.com/highcard-dev/daemon/test/utils"
 	"github.com/otiai10/copy"
 )
@@ -144,6 +144,10 @@ func TestServeCommand(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
+			logger.Log(logger.WithStructuredLogging())
+
+			time.Sleep(10 * time.Second)
+
 			//observer := logger.SetupLogsCapture()
 			unixTime := time.Now().Unix()
 			path := "./druid-cli-test/" + strconv.FormatInt(unixTime, 10) + "/"
@@ -164,21 +168,21 @@ func TestServeCommand(t *testing.T) {
 			var installDate int64
 
 			for i := 0; i < runs; i++ {
-				println("Run: ", i)
 				var connected bool
 
 				b := bytes.NewBufferString("")
 
-				serveCmd := cmd.RootCmd
-				serveCmd.SetErr(b)
-				serveCmd.SetOut(b)
-				serveCmd.SetArgs([]string{"--cwd", path, "serve"})
+				rootCmd := cmd.RootCmd
+				rootCmd.SetErr(b)
+				rootCmd.SetOut(b)
+				rootCmd.SetArgs([]string{"--cwd", path, "serve", "--coldstarter=false"})
 
-				context, cancel := context.WithCancel(context.Background())
+				ctx, cancel := context.WithCancel(context.WithValue(context.Background(), "disablePrometheus", true))
 
 				defer cancel()
 
-				connected, err = startAndTestServeCommand(context, t, serveCmd)
+				connected, err = startAndTestServeCommand(ctx, t, rootCmd)
+
 				if !connected {
 					t.Fatalf("Failed to connect to daemon web server: %v", err)
 				}
@@ -194,6 +198,7 @@ func TestServeCommand(t *testing.T) {
 				}
 
 				err = waitForWsMessage(wsClient, `For help, type "help"`, 60*time.Second)
+				t.Log("Console message received")
 				if err != nil {
 					t.Fatalf("Failed to get help message: %v", err)
 				}
@@ -204,11 +209,15 @@ func TestServeCommand(t *testing.T) {
 					t.Fatalf("Failed to connect to minecraft server: %v", err)
 				}
 
+				t.Log("Connected to minecraft server")
+
 				//double check that install was never run again
 				lock, err := domain.ReadLock(scrollPath + "scroll-lock.json")
 				if err != nil {
 					t.Fatalf("Failed to read lock file: %v", err)
 				}
+				t.Log("Read lock file")
+
 				if installDate == 0 {
 					installDate = lock.GetStatus("install").LastStatusChange
 
@@ -221,11 +230,15 @@ func TestServeCommand(t *testing.T) {
 					}
 				}
 
-				signals.Stop()
+				go func() {
+					<-ctx.Done()
+				}()
 
-				err = checkHttpServer(8081)
-				if err == nil {
-					t.Fatalf("Failed to stop daemon server: %v", err)
+				cancel()
+
+				err = checkHttpServerShutdown(8081, 20*time.Second)
+				if err != nil {
+					t.Fatalf("Failed to stop daemon server, server still online")
 				}
 
 				lock, err = domain.ReadLock(scrollPath + "scroll-lock.json")
@@ -244,6 +257,7 @@ func TestServeCommand(t *testing.T) {
 						t.Fatalf("Lock file status %s not found, expected: %v, got: %v", status, expectedStatuses, lock.Statuses)
 					}
 				}
+
 			}
 		})
 

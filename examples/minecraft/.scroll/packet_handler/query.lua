@@ -44,8 +44,7 @@ function handle(ctx, data)
 
         if payload == "4BA1D522" then
             debug_print("Received Packet: " .. hex)
-            resHex = string.fromhex(
-                "FFFFFFFF4402015B445D2D2D2D2D3E542E4E2E573C2D2D2D2D000E000000B4970044024B696C6C65722021212100050000006924D943") -- this is not good to be hardcoded, but fine for now
+            resHex = string.fromhex("FFFFFFFF4400") -- this is not good to be hardcoded, but fine for now
 
             ctx.sendData(resHex)
             return
@@ -78,6 +77,11 @@ function handle(ctx, data)
     if packetId == "54" then
 
         name = get_var("ServerListName") or "Coldstarter is cool (server is idle, join to start)"
+
+        if get_finish_sec() ~= nil then
+            nameTemplate = get_var("ServerListNameStarting") or "Druid Gameserver (starting) - %ds"
+            name = string.format(nameTemplate, math.ceil(get_finish_sec()))
+        end
 
         map = get_var("MapName") or "TheIsland"
 
