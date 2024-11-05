@@ -72,6 +72,8 @@ func (po *ProcessManager) RunTty(commandName string, command []string, cwd strin
 	//slight difference to normal process, as we only attach after the process has started
 	//add console output
 
+	var exitCode int
+
 	combinedChannel := make(chan string, 20)
 	go func() {
 		for {
@@ -82,6 +84,7 @@ func (po *ProcessManager) RunTty(commandName string, command []string, cwd strin
 			if err != nil {
 				return
 			}
+
 			combinedChannel <- string(tmpBuffer[:n])
 		}
 	}()
@@ -90,10 +93,11 @@ func (po *ProcessManager) RunTty(commandName string, command []string, cwd strin
 
 	//reset periodically
 	process.Cmd.Wait()
+
 	po.processMonitor.RemoveProcess(commandName)
 	po.RemoveProcess(commandName)
 	// Wait for goroutine to print everything (watchdog closes stdin)
-	exitCode := process.Cmd.ProcessState.ExitCode()
+	exitCode = process.Cmd.ProcessState.ExitCode()
 	console.MarkExited(exitCode)
 
 	close(combinedChannel)
