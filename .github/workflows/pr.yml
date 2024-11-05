@@ -21,12 +21,12 @@ jobs:
           version_format: "${major}.${minor}.${patch}-${{ env.BRANCH_NAME }}${increment}"
       #- name: Setup tmate session
       #  uses: mxschmitt/action-tmate@v3
-      - run: make test-integration-docker
-        name: Run integration tests inside Docker
       - run: make test
         name: Unit tests
       - run: make build
         name: Build
+      - run: make test-integration-docker
+        name: Run integration tests inside Docker
       - run: make build-plugins
         name: Build Plugins
       - name: Prerelease
