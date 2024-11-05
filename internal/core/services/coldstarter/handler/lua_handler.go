@@ -37,7 +37,7 @@ func (handler *LuaHandler) SetFinishedAt(finishedAt *time.Time) {
 	handler.finishedAt = finishedAt
 }
 
-func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (ports.ColdStarterHandlerInterface, error) {
+func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (ports.ColdStarterServerInterface, error) {
 
 	l := lua.NewState(lua.Options{
 		RegistrySize: 256 * 200,

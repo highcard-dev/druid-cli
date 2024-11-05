@@ -21,27 +21,29 @@ type ColdStarter struct {
 	portsService ports.PortServiceInterface
 	serveDone    chan error
 	finishChan   chan *domain.AugmentedPort
-	chandlers    []ports.ColdStarterInterface
+	chandlers    []ports.ColdStarterHandlerInterface
 }
 
+// NewColdStarter initializes the ColdStarter struct with proper channel initialization and no initial finishTime.
 func NewColdStarter(
 	dir string,
 	portsService ports.PortServiceInterface,
 ) *ColdStarter {
 	return &ColdStarter{
-		make(map[string]uint),
-		0,
-		dir,
-		nil,
-		portsService,
-		make(chan error),
-		make(chan *domain.AugmentedPort),
-		nil,
+		handler:      make(map[string]uint),
+		finishCount:  0,
+		dir:          dir,
+		finishTime:   nil,
+		portsService: portsService,
+		serveDone:    make(chan error),
+		finishChan:   make(chan *domain.AugmentedPort),
+		chandlers:    nil,
 	}
 }
 
-func (c ColdStarter) Start(ctx context.Context) chan *domain.AugmentedPort {
-
+// Start initializes the finishChan channel and begins serving in a separate goroutine.
+func (c *ColdStarter) Start(ctx context.Context) chan *domain.AugmentedPort {
+	// Ensure finishChan is properly initialized.
 	c.finishChan = make(chan *domain.AugmentedPort)
 
 	go c.Serve(ctx)
@@ -49,11 +51,13 @@ func (c ColdStarter) Start(ctx context.Context) chan *domain.AugmentedPort {
 	return c.finishChan
 }
 
-func (c ColdStarter) FinishCount() uint {
+// FinishCount returns the current count of finished ports.
+func (c *ColdStarter) FinishCount() uint {
 	return c.finishCount
 }
 
-func (c ColdStarter) Serve(ctx context.Context) error {
+// Serve starts the servers for each port and listens for context cancellation or errors.
+func (c *ColdStarter) Serve(ctx context.Context) error {
 	augmentedPorts := c.portsService.GetPorts()
 
 	augmentedPortMap := make(map[string]int, len(augmentedPorts))
@@ -62,7 +66,9 @@ func (c ColdStarter) Serve(ctx context.Context) error {
 	}
 
 	luactx, cancel := context.WithCancel(context.Background())
+	defer cancel() // Ensure cancel is called to release resources.
 
+	// Initialize the handler map with a length of augmentedPorts
 	c.handler = make(map[string]uint, len(augmentedPorts))
 
 	for _, port := range augmentedPorts {
@@ -77,8 +83,7 @@ func (c ColdStarter) Serve(ctx context.Context) error {
 		path := fmt.Sprintf("%s/%s", c.dir, sleepHandler)
 
 		go func(port *domain.AugmentedPort) {
-
-			var handler ports.ColdStarterInterface
+			var handler ports.ColdStarterHandlerInterface
 
 			if sleepHandler == "generic" {
 				handler = lua.NewGenericReturnHandler()
@@ -87,24 +92,14 @@ func (c ColdStarter) Serve(ctx context.Context) error {
 				for _, v := range port.Vars {
 					vars[v.Name] = v.Value
 				}
-
 				handler = lua.NewLuaHandler(path, c.dir, vars, augmentedPortMap)
 			}
 
 			c.chandlers = append(c.chandlers, handler)
 
+			// Use the Finish method to handle sending to finishChan.
 			finishFunc := func() {
-				if c.finishTime == nil {
-					now := time.Now()
-					c.finishTime = &now
-
-					for _, handler := range c.chandlers {
-						handler.SetFinishedAt(c.finishTime)
-					}
-				}
-				logger.Log().Info(fmt.Sprintf("Server on port %d received finish signal", port.Port.Port))
-				c.finishChan <- port
-				c.finishCount++
+				c.Finish(port)
 			}
 
 			if port.Protocol == "udp" {
@@ -138,6 +133,27 @@ func (c ColdStarter) Serve(ctx context.Context) error {
 	}
 }
 
-func (c ColdStarter) Stop() {
+// Stop sends a nil error to the serveDone channel to gracefully stop the Serve function.
+func (c *ColdStarter) Stop() {
 	c.serveDone <- nil
+}
+
+// Finish increments the finishCount, logs, and sends the port to the finishChan channel.
+// This method uses a pointer receiver to ensure it modifies the original struct.
+func (c *ColdStarter) Finish(port *domain.AugmentedPort) {
+	if c.finishTime == nil {
+		now := time.Now()
+		c.finishTime = &now
+
+		for _, handler := range c.chandlers {
+			handler.SetFinishedAt(c.finishTime)
+		}
+	}
+	if port == nil {
+		logger.Log().Info("Received finish signal without port")
+	} else {
+		logger.Log().Info(fmt.Sprintf("Server on port %d received finish signal", port.Port.Port))
+	}
+	c.finishChan <- port
+	c.finishCount++
 }

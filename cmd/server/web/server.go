@@ -35,6 +35,7 @@ type Server struct {
 	websocketHandler              ports.WebsocketHandlerInterface
 	portHandler                   ports.PortHandlerInterface
 	healthHandler                 ports.HealthHandlerInterface
+	coldstarterHandler            ports.ColdstarterHandlerInterface
 	webdavPath                    string
 }
 
@@ -49,6 +50,7 @@ func NewServer(
 	websocketHandler ports.WebsocketHandlerInterface,
 	portHandler ports.PortHandlerInterface,
 	healthHandler ports.HealthHandlerInterface,
+	coldstarterHandler ports.ColdstarterHandlerInterface,
 	authorizerService ports.AuthorizerServiceInterface,
 	webdavPath string,
 ) *Server {
@@ -69,6 +71,7 @@ func NewServer(
 		portHandler:                   portHandler,
 		tokenAuthenticationMiddleware: middlewares.TokenAuthentication(authorizerService),
 		healthHandler:                 healthHandler,
+		coldstarterHandler:            coldstarterHandler,
 		webdavPath:                    webdavPath,
 	}
 
@@ -144,6 +147,8 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 
 	//Websocket Group
 	apiRoutes.Get("/consoles", s.websocketHandler.Consoles).Name("consoles.list")
+
+	apiRoutes.Post("/coldstarter/finish", s.coldstarterHandler.Finish).Name("coldstarter.finish")
 
 	// Create the WebDAV handler
 	webdavHandler := &webdav.Handler{

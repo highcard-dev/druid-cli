@@ -22,7 +22,7 @@ func NewGenericReturnHandler() *GenericReturnHandler {
 	return &GenericReturnHandler{}
 }
 
-func (handler *GenericReturnHandler) GetHandler(funcs map[string]func(data ...string)) (ports.ColdStarterHandlerInterface, error) {
+func (handler *GenericReturnHandler) GetHandler(funcs map[string]func(data ...string)) (ports.ColdStarterServerInterface, error) {
 	finishFunc, ok := funcs["finish"]
 	if !ok {
 		return nil, fmt.Errorf("finish function not found")

@@ -107,11 +107,16 @@ type PortServiceInterface interface {
 	MandatoryPortsOpen() bool
 }
 
-type ColdStarterInterface interface {
-	GetHandler(funcs map[string]func(data ...string)) (ColdStarterHandlerInterface, error)
+type ColdStarterHandlerInterface interface {
+	GetHandler(funcs map[string]func(data ...string)) (ColdStarterServerInterface, error)
 	SetFinishedAt(finishedAt *time.Time)
 }
 
-type ColdStarterHandlerInterface interface {
+type ColdStarterServerInterface interface {
 	Handle(data []byte, funcs map[string]func(data ...string)) error
+}
+
+type ColdStarterInterface interface {
+	Stop()
+	Finish(*domain.AugmentedPort)
 }

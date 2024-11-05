@@ -123,6 +123,7 @@ to interact and monitor the Scroll Application`,
 		queueHandler := handler.NewQueueHandler(queueManager)
 		portHandler := handler.NewPortHandler(portService)
 		healthHandler := handler.NewHealthHandler(portService, maxStartupHealthCheckTimeout)
+		coldstarterHandler := handler.NewColdstarterHandler(coldStarter)
 
 		var annotationHandler *handler.AnnotationHandler = nil
 
@@ -132,16 +133,13 @@ to interact and monitor the Scroll Application`,
 
 		websocketHandler := handler.NewWebsocketHandler(authorizer, scrollService, consoleService)
 
-		s := web.NewServer(jwksUrl, scrollHandler, scrollLogHandler, scrollMetricHandler, annotationHandler, processHandler, queueHandler, websocketHandler, portHandler, healthHandler, authorizer, cwd)
+		s := web.NewServer(jwksUrl, scrollHandler, scrollLogHandler, scrollMetricHandler, annotationHandler, processHandler, queueHandler, websocketHandler, portHandler, healthHandler, coldstarterHandler, authorizer, cwd)
 
 		a := s.Initialize()
 
 		signalHandler := signals.NewSignalHandler(ctx, queueManager, processManager, a, shutdownWait)
 
-		if useColdstarter || watchPorts {
-			if useColdstarter && watchPorts {
-				logger.Log().Warn("watch-ports flag is redundant, when coldstarter is active")
-			}
+		if watchPorts {
 			logger.Log().Info("Starting port watcher", zap.Strings("interfaces", watchPortsInterfaces))
 			go portService.StartMonitoring(ctx, watchPortsInterfaces)
 		}
@@ -170,7 +168,7 @@ to interact and monitor the Scroll Application`,
 							finish := coldStarter.Start(ctx)
 							executedPort := <-finish
 
-							if executedPort.StartDelay > 0 {
+							if executedPort != nil && executedPort.StartDelay > 0 {
 								go func() {
 									time.Sleep(time.Duration(executedPort.StartDelay) * time.Second)
 									coldStarter.Stop()
@@ -182,6 +180,11 @@ to interact and monitor the Scroll Application`,
 							logger.Log().Info("Coldstarter done, starting scroll")
 
 							startup(scrollService, processLauncher, queueManager, cwd, doneChan)
+
+							if !watchPorts {
+								logger.Log().Warn("watch-port is disabled, skipping inactivty watch")
+								return
+							}
 
 							logger.Log().Info("Waiting for inactivity..")
 

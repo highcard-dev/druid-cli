@@ -45,3 +45,7 @@ type PortHandlerInterface interface {
 type HealthHandlerInterface interface {
 	Health(ctx *fiber.Ctx) error
 }
+
+type ColdstarterHandlerInterface interface {
+	Finish(ctx *fiber.Ctx) error
+}

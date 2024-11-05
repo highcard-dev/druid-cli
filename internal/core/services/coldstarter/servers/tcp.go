@@ -18,12 +18,12 @@ type TCPServer interface {
 }
 
 type TCP struct {
-	handler  ports.ColdStarterInterface
+	handler  ports.ColdStarterHandlerInterface
 	listener net.Listener
 	onFinish func()
 }
 
-func NewTCP(handler ports.ColdStarterInterface) *TCP {
+func NewTCP(handler ports.ColdStarterHandlerInterface) *TCP {
 	return &TCP{
 		handler: handler,
 	}

@@ -16,12 +16,12 @@ type UDPServer interface {
 }
 
 type UDP struct {
-	handler  ports.ColdStarterInterface
+	handler  ports.ColdStarterHandlerInterface
 	conn     *net.UDPConn
 	onFinish func()
 }
 
-func NewUDP(handler ports.ColdStarterInterface) *UDP {
+func NewUDP(handler ports.ColdStarterHandlerInterface) *UDP {
 	return &UDP{
 		handler: handler,
 	}
