@@ -73,7 +73,7 @@ func TestWatchPortsServeCommand(t *testing.T) {
 			ctx, cancel := context.WithCancelCause(context.WithValue(context.Background(), "disablePrometheus", true))
 			defer cancel(errors.New("test ended"))
 
-			setupServeCmd(ctx, t, path, []string{"--coldstarter=false"})
+			setupServeCmd(ctx, t, path, []string{"--coldstarter=false", "--watch-ports"})
 			//give time to make sure everything is online
 			time.Sleep(1 * time.Second)
 			ap1, err := fetchPorts()

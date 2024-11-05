@@ -25,6 +25,7 @@ var port int
 var shutdownWait int
 var additionalEndpoints []string
 var idleScroll bool
+var watchPorts bool
 var watchPortsInterfaces []string
 var portInactivity uint
 var useColdstarter bool
@@ -137,8 +138,13 @@ to interact and monitor the Scroll Application`,
 
 		signalHandler := signals.NewSignalHandler(ctx, queueManager, processManager, a, shutdownWait)
 
-		logger.Log().Info("Starting port watcher", zap.Strings("interfaces", watchPortsInterfaces))
-		go portService.StartMonitoring(ctx, watchPortsInterfaces)
+		if useColdstarter || watchPorts {
+			if useColdstarter && watchPorts {
+				logger.Log().Warn("watch-ports flag is redundant, when coldstarter is active")
+			}
+			logger.Log().Info("Starting port watcher", zap.Strings("interfaces", watchPortsInterfaces))
+			go portService.StartMonitoring(ctx, watchPortsInterfaces)
+		}
 
 		if !idleScroll {
 
@@ -243,8 +249,9 @@ func init() {
 
 	ServeCommand.Flags().BoolVarP(&idleScroll, "idle", "", false, "Don't start the queue manager")
 
-	//macOS specific
+	ServeCommand.Flags().BoolVarP(&watchPorts, "watch-ports", "", false, "Watch ports, even when coldstarter is not active")
 
+	//macOS specific
 	if runtime.GOOS == "darwin" {
 		ServeCommand.Flags().StringArrayVarP(&watchPortsInterfaces, "watch-ports-interfaces", "", []string{"lo0", "en0"}, "Interfaces to watch for port activity")
 	} else {
