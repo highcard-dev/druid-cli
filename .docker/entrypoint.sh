@@ -73,11 +73,11 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]]; then
 
     if [ ! -z "${DRUID_IDLE}" ];
     then
-        args+=("--idle")
+        args+=("--idle=$DRUID_IDLE")
     fi
     if [ ! -z "${DRUID_WATCH_PORTS}" ];
     then
-        args+=("--watch-ports")
+        args+=("--watch-ports=$DRUID_WATCH_PORTS")
     fi
 
     if [ ! -z "${DRUID_WATCH_PORTS_INTERFACES}" ];
@@ -87,11 +87,11 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]]; then
 
     if [ ! -z "${DRUID_COLDSTARTER}" ];
     then
-        args+=("--coldstarter")
+        args+=("--coldstarter=$DRUID_COLDSTARTER")
     fi
         
     echo "Running druid with args from env: ${args[@]}"
-    exec druid "${args[@]}"
+    #exec druid "${args[@]}"
 else
     exec druid "$@"
 fi
