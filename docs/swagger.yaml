@@ -36,6 +36,8 @@ definitions:
   Procedure:
     properties:
       data: {}
+      id:
+        type: string
       mode:
         type: string
       wait: {}
@@ -56,33 +58,6 @@ definitions:
   ProcessMonitorMetricsMap:
     additionalProperties:
       $ref: '#/definitions/ProcessMonitorMetrics'
-    type: object
-  ProcessTreeNode:
-    properties:
-      children:
-        items:
-          $ref: '#/definitions/ProcessTreeNode'
-        type: array
-      cmdline:
-        type: string
-      cpu_percent:
-        type: number
-      gids:
-        items:
-          type: integer
-        type: array
-      io_counters:
-        type: string
-      memory:
-        type: string
-      memory_ex:
-        type: string
-      name:
-        type: string
-      process:
-        type: string
-      username:
-        type: string
     type: object
   ProcessTreeRoot:
     properties:
@@ -132,6 +107,10 @@ definitions:
             type: string
           type: object
         type: object
+      ports:
+        items:
+          $ref: '#/definitions/domain.Port'
+        type: array
       version:
         type: string
     type: object
@@ -154,6 +133,38 @@ definitions:
     required:
     - token
     type: object
+  domain.AugmentedPort:
+    properties:
+      inactive_since:
+        type: string
+      inactive_since_sec:
+        type: integer
+      mandatory:
+        type: boolean
+      name:
+        type: string
+      open:
+        type: boolean
+      port:
+        type: integer
+      protocol:
+        type: string
+      sleep_handler:
+        type: string
+      start_delay:
+        type: integer
+      vars:
+        items:
+          $ref: '#/definitions/domain.ColdStarterVars'
+        type: array
+    type: object
+  domain.ColdStarterVars:
+    properties:
+      name:
+        type: string
+      value:
+        type: string
+    type: object
   domain.ConsoleType:
     enum:
     - tty
@@ -173,11 +184,57 @@ definitions:
       schedule:
         type: string
     type: object
+  domain.Port:
+    properties:
+      mandatory:
+        type: boolean
+      name:
+        type: string
+      port:
+        type: integer
+      protocol:
+        type: string
+      sleep_handler:
+        type: string
+      start_delay:
+        type: integer
+      vars:
+        items:
+          $ref: '#/definitions/domain.ColdStarterVars'
+        type: array
+    type: object
   domain.Process:
     properties:
       name:
         type: string
       type:
+        type: string
+    type: object
+  domain.ProcessTreeNode:
+    properties:
+      children:
+        items:
+          $ref: '#/definitions/domain.ProcessTreeNode'
+        type: array
+      cmdline:
+        type: string
+      cpu_percent:
+        type: number
+      gids:
+        items:
+          type: integer
+        type: array
+      io_counters:
+        type: string
+      memory:
+        type: string
+      memory_ex:
+        type: string
+      name:
+        type: string
+      process:
+        type: string
+      username:
         type: string
     type: object
   domain.RunMode:
@@ -231,7 +288,24 @@ definitions:
     type: object
 info:
   contact: {}
+  description: Druid CLI is a process runner to launches and manages various sorts
+    of applications, like gameservers, databases or webservers.
+  title: Druid CLI
+  version: 0.1.0
 paths:
+  /api/v1/coldstarter/finish:
+    post:
+      consumes:
+      - '*/*'
+      operationId: finishColdStarter
+      responses:
+        "202":
+          description: Accepted
+      summary: Finish Coldstarter
+      tags:
+      - coldstarter
+      - druid
+      - daemon
   /api/v1/command:
     post:
       consumes:
@@ -278,6 +352,27 @@ paths:
       - druid
       - daemon
       - console
+  /api/v1/health:
+    get:
+      consumes:
+      - '*/*'
+      operationId: getHealth
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "503":
+          description: Service Unavailable
+          schema:
+            type: string
+      summary: Get ports from scroll with additional information
+      tags:
+      - health
+      - druid
+      - daemon
   /api/v1/logs:
     get:
       consumes:
@@ -337,6 +432,23 @@ paths:
       - metrics
       - druid
       - daemon
+  /api/v1/ports:
+    get:
+      consumes:
+      - '*/*'
+      operationId: getPorts
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.AugmentedPort'
+      summary: Get ports from scroll with additional information
+      tags:
+      - port
+      - druid
+      - daemon
   /api/v1/procedure:
     post:
       consumes:
@@ -354,8 +466,7 @@ paths:
       responses:
         "200":
           description: OK
-          schema:
-            type: object
+          schema: {}
         "201":
           description: Created
       summary: Run procedure

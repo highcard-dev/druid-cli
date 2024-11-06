@@ -15,6 +15,25 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/v1/coldstarter/finish": {
+            "post": {
+                "consumes": [
+                    "*/*"
+                ],
+                "tags": [
+                    "coldstarter",
+                    "druid",
+                    "daemon"
+                ],
+                "summary": "Finish Coldstarter",
+                "operationId": "finishColdStarter",
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    }
+                }
+            }
+        },
         "/api/v1/command": {
             "post": {
                 "consumes": [
@@ -78,6 +97,37 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/ConsolesResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/health": {
+            "get": {
+                "consumes": [
+                    "*/*"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "health",
+                    "druid",
+                    "daemon"
+                ],
+                "summary": "Get ports from scroll with additional information",
+                "operationId": "getHealth",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "string"
                         }
                     }
                 }
@@ -170,6 +220,31 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/ports": {
+            "get": {
+                "consumes": [
+                    "*/*"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "port",
+                    "druid",
+                    "daemon"
+                ],
+                "summary": "Get ports from scroll with additional information",
+                "operationId": "getPorts",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/domain.AugmentedPort"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/procedure": {
             "post": {
                 "consumes": [
@@ -199,9 +274,7 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK",
-                        "schema": {
-                            "type": "object"
-                        }
+                        "schema": {}
                     },
                     "201": {
                         "description": "Created"
@@ -396,6 +469,9 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "data": {},
+                "id": {
+                    "type": "string"
+                },
                 "mode": {
                     "type": "string"
                 },
@@ -426,47 +502,6 @@ const docTemplate = `{
             "type": "object",
             "additionalProperties": {
                 "$ref": "#/definitions/ProcessMonitorMetrics"
-            }
-        },
-        "ProcessTreeNode": {
-            "type": "object",
-            "properties": {
-                "children": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/ProcessTreeNode"
-                    }
-                },
-                "cmdline": {
-                    "type": "string"
-                },
-                "cpu_percent": {
-                    "type": "number"
-                },
-                "gids": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "io_counters": {
-                    "type": "string"
-                },
-                "memory": {
-                    "type": "string"
-                },
-                "memory_ex": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "process": {
-                    "type": "string"
-                },
-                "username": {
-                    "type": "string"
-                }
             }
         },
         "ProcessTreeRoot": {
@@ -541,6 +576,12 @@ const docTemplate = `{
                         }
                     }
                 },
+                "ports": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domain.Port"
+                    }
+                },
                 "version": {
                     "type": "string"
                 }
@@ -575,6 +616,55 @@ const docTemplate = `{
                 }
             }
         },
+        "domain.AugmentedPort": {
+            "type": "object",
+            "properties": {
+                "inactive_since": {
+                    "type": "string"
+                },
+                "inactive_since_sec": {
+                    "type": "integer"
+                },
+                "mandatory": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "open": {
+                    "type": "boolean"
+                },
+                "port": {
+                    "type": "integer"
+                },
+                "protocol": {
+                    "type": "string"
+                },
+                "sleep_handler": {
+                    "type": "string"
+                },
+                "start_delay": {
+                    "type": "integer"
+                },
+                "vars": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domain.ColdStarterVars"
+                    }
+                }
+            }
+        },
+        "domain.ColdStarterVars": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
         "domain.ConsoleType": {
             "type": "string",
             "enum": [
@@ -602,6 +692,35 @@ const docTemplate = `{
                 }
             }
         },
+        "domain.Port": {
+            "type": "object",
+            "properties": {
+                "mandatory": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "port": {
+                    "type": "integer"
+                },
+                "protocol": {
+                    "type": "string"
+                },
+                "sleep_handler": {
+                    "type": "string"
+                },
+                "start_delay": {
+                    "type": "integer"
+                },
+                "vars": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domain.ColdStarterVars"
+                    }
+                }
+            }
+        },
         "domain.Process": {
             "type": "object",
             "properties": {
@@ -609,6 +728,47 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "domain.ProcessTreeNode": {
+            "type": "object",
+            "properties": {
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domain.ProcessTreeNode"
+                    }
+                },
+                "cmdline": {
+                    "type": "string"
+                },
+                "cpu_percent": {
+                    "type": "number"
+                },
+                "gids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "io_counters": {
+                    "type": "string"
+                },
+                "memory": {
+                    "type": "string"
+                },
+                "memory_ex": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "process": {
+                    "type": "string"
+                },
+                "username": {
                     "type": "string"
                 }
             }
@@ -688,12 +848,12 @@ const docTemplate = `{
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "",
+	Version:          "0.1.0",
 	Host:             "",
 	BasePath:         "",
 	Schemes:          []string{},
-	Title:            "",
-	Description:      "",
+	Title:            "Druid CLI",
+	Description:      "Druid CLI is a process runner to launches and manages various sorts of applications, like gameservers, databases or webservers.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

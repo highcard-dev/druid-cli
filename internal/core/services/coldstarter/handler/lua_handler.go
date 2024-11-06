@@ -40,7 +40,7 @@ func (handler *LuaHandler) SetFinishedAt(finishedAt *time.Time) {
 func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (ports.ColdStarterServerInterface, error) {
 
 	l := lua.NewState(lua.Options{
-		RegistrySize: 256 * 200,
+		RegistrySize: 256 * 40,
 	})
 
 	for name, f := range funcs {

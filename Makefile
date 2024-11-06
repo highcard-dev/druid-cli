@@ -19,7 +19,10 @@ proto:
 	protoc --go_out=paths=source_relative:./ --go-grpc_out=paths=source_relative:./ --go-grpc_opt=paths=source_relative plugin/proto/*.proto
 
 generate-swagger:
-	swag init -g ./cmd/server/web/server.go --overridesFile override.swag
+	swag init -g ./main.go --overridesFile override.swag
+
+serve-swagger: generate-swagger
+	npx serve ./docs
 
 generate-md-docs:
 	go run ./docs_md/main.go
