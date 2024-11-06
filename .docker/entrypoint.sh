@@ -91,7 +91,7 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]]; then
     fi
         
     echo "Running druid with args from env: ${args[@]}"
-    #exec druid "${args[@]}"
+    exec druid "${args[@]}"
 else
     exec druid "$@"
 fi
