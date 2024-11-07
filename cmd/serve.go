@@ -141,13 +141,12 @@ to interact and monitor the Scroll Application`,
 
 		if watchPorts {
 			logger.Log().Info("Starting port watcher", zap.Strings("interfaces", watchPortsInterfaces))
-			go portService.StartMonitoring(ctx, watchPortsInterfaces)
+			go portService.StartMonitoring(ctx, watchPortsInterfaces, currentScroll.KeepAlivePPM)
 		}
 
 		if !idleScroll {
 
 			doneChan := make(chan error, 1)
-
 			go func() {
 				for {
 					err := <-doneChan

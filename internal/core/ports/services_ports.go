@@ -100,7 +100,7 @@ type QueueManagerInterface interface {
 }
 
 type PortServiceInterface interface {
-	StartMonitoring(context.Context, []string)
+	StartMonitoring(context.Context, []string, uint)
 	GetLastActivity(port int) uint
 	CheckOpen(prot int) bool
 	GetPorts() []*domain.AugmentedPort
