@@ -207,7 +207,7 @@ func (p *PortMonitor) StartMonitorPorts(ports []int, ifaces []string, timeout ti
 
 	for _, iface := range ifaces {
 		go func(po []int, i string) {
-			port, err := p.waitForPortActiviy(ctx, ports, i)
+			port, err := p.waitForPortActiviy(ctx, ports, i, 1)
 			if err != nil {
 				logger.Log().Error("Error on port monitoring", zap.String("iface", i), zap.Ints("ports", po), zap.Error(err))
 				return
