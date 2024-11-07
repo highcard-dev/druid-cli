@@ -68,8 +68,6 @@ to interact and monitor the Scroll Application`,
 
 		defer processMonitor.ShutdownPromMetrics()
 
-		fmt.Printf("Context in serve command %v\n", ctx)
-
 		processManager := services.NewProcessManager(logManager, consoleService, processMonitor)
 
 		pluginManager := services.NewPluginManager()
@@ -141,13 +139,12 @@ to interact and monitor the Scroll Application`,
 
 		if watchPorts {
 			logger.Log().Info("Starting port watcher", zap.Strings("interfaces", watchPortsInterfaces))
-			go portService.StartMonitoring(ctx, watchPortsInterfaces)
+			go portService.StartMonitoring(ctx, watchPortsInterfaces, currentScroll.KeepAlivePPM)
 		}
 
 		if !idleScroll {
 
 			doneChan := make(chan error, 1)
-
 			go func() {
 				for {
 					err := <-doneChan

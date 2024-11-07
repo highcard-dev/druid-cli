@@ -28,7 +28,7 @@ var PortMonitorCmd = &cobra.Command{
 
 		portMonitor := services.NewPortService(ports)
 
-		go portMonitor.StartMonitoring(cmd.Context(), watchPortsInterfaces)
+		go portMonitor.StartMonitoring(cmd.Context(), watchPortsInterfaces, 1)
 
 		for {
 			ps := portMonitor.GetPorts()

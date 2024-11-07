@@ -49,15 +49,16 @@ type AugmentedPort struct {
 }
 
 type File struct {
-	Name       string                            `yaml:"name" json:"name"`
-	Desc       string                            `yaml:"desc" json:"desc"`
-	Version    *semver.Version                   `yaml:"version" json:"version"`
-	AppVersion string                            `yaml:"app_version" json:"app_version"` //don't make this a semver, it's not allways
-	Init       string                            `yaml:"init" json:"init"`
-	Ports      []Port                            `yaml:"ports" json:"ports"`
-	Commands   map[string]*CommandInstructionSet `yaml:"commands" json:"commands"`
-	Plugins    map[string]map[string]string      `yaml:"plugins" json:"plugins"`
-	Cronjobs   []*Cronjob                        `yaml:"cronjobs" json:"cronjobs"`
+	Name         string                            `yaml:"name" json:"name"`
+	Desc         string                            `yaml:"desc" json:"desc"`
+	Version      *semver.Version                   `yaml:"version" json:"version"`
+	AppVersion   string                            `yaml:"app_version" json:"app_version"` //don't make this a semver, it's not allways
+	Init         string                            `yaml:"init" json:"init"`
+	Ports        []Port                            `yaml:"ports" json:"ports"`
+	KeepAlivePPM uint                              `yaml:"keepAlivePPM" json:"keepAlivePPM"`
+	Commands     map[string]*CommandInstructionSet `yaml:"commands" json:"commands"`
+	Plugins      map[string]map[string]string      `yaml:"plugins" json:"plugins"`
+	Cronjobs     []*Cronjob                        `yaml:"cronjobs" json:"cronjobs"`
 } // @name ScrollFile
 
 type Scroll struct {

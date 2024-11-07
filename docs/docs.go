@@ -274,7 +274,9 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK",
-                        "schema": {}
+                        "schema": {
+                            "type": "object"
+                        }
                     },
                     "201": {
                         "description": "Created"
@@ -504,6 +506,47 @@ const docTemplate = `{
                 "$ref": "#/definitions/ProcessMonitorMetrics"
             }
         },
+        "ProcessTreeNode": {
+            "type": "object",
+            "properties": {
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ProcessTreeNode"
+                    }
+                },
+                "cmdline": {
+                    "type": "string"
+                },
+                "cpu_percent": {
+                    "type": "number"
+                },
+                "gids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "io_counters": {
+                    "type": "string"
+                },
+                "memory": {
+                    "type": "string"
+                },
+                "memory_ex": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "process": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
         "ProcessTreeRoot": {
             "type": "object",
             "properties": {
@@ -728,47 +771,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "type": {
-                    "type": "string"
-                }
-            }
-        },
-        "domain.ProcessTreeNode": {
-            "type": "object",
-            "properties": {
-                "children": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/domain.ProcessTreeNode"
-                    }
-                },
-                "cmdline": {
-                    "type": "string"
-                },
-                "cpu_percent": {
-                    "type": "number"
-                },
-                "gids": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "io_counters": {
-                    "type": "string"
-                },
-                "memory": {
-                    "type": "string"
-                },
-                "memory_ex": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "process": {
-                    "type": "string"
-                },
-                "username": {
                     "type": "string"
                 }
             }

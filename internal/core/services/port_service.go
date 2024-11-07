@@ -155,7 +155,7 @@ func (p *PortMonitor) CheckOpen(port int) bool {
 	return false
 }
 
-func (p *PortMonitor) WaitForConnection(ifaces []string) {
+func (p *PortMonitor) WaitForConnection(ifaces []string, ppm uint) {
 
 	for {
 		ports := make([]int, len(p.ports))
@@ -182,14 +182,14 @@ func (p *PortMonitor) WaitForConnection(ifaces []string) {
 	}
 }
 
-func (p *PortMonitor) StartMonitoring(ctx context.Context, ifaces []string) {
+func (p *PortMonitor) StartMonitoring(ctx context.Context, ifaces []string, ppm uint) {
 	//start monitoring the ports
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-			p.WaitForConnection(ifaces)
+			p.WaitForConnection(ifaces, ppm)
 		}
 	}
 }
@@ -207,7 +207,7 @@ func (p *PortMonitor) StartMonitorPorts(ports []int, ifaces []string, timeout ti
 
 	for _, iface := range ifaces {
 		go func(po []int, i string) {
-			port, err := p.waitForPortActiviy(ctx, ports, i)
+			port, err := p.waitForPortActiviy(ctx, ports, i, 1)
 			if err != nil {
 				logger.Log().Error("Error on port monitoring", zap.String("iface", i), zap.Ints("ports", po), zap.Error(err))
 				return
@@ -236,8 +236,7 @@ func (p *PortMonitor) StartMonitorPorts(ports []int, ifaces []string, timeout ti
 	}
 
 }
-
-func (p *PortMonitor) waitForPortActiviy(ctx context.Context, ports []int, interfaceName string) (int, error) {
+func (p *PortMonitor) waitForPortActiviy(ctx context.Context, ports []int, interfaceName string, ppm uint) (int, error) {
 
 	handle, err := pcap.OpenLive(interfaceName, 1600, true, time.Hour, false)
 	if err != nil {
@@ -265,21 +264,45 @@ func (p *PortMonitor) waitForPortActiviy(ctx context.Context, ports []int, inter
 	logger.Log().Debug("Listening on iface", zap.String("iface", interfaceName), zap.Ints("ports", ports))
 
 	lt1 := layers.LinkType(handle.LinkType())
-
 	packetSource := gopacket.NewPacketSource(handle, lt1)
-	for packet := range packetSource.Packets() {
-		// Process the packet here
-		if packet.ApplicationLayer() == nil {
-			continue
-		} else {
+
+	// Introduce a ticker to reset packet count every minute
+	packetCount := 0
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case packet := <-packetSource.Packets():
+			if packet == nil {
+				continue
+			}
+
+			// Process the packet and check if it has an application layer
+			if packet.ApplicationLayer() == nil {
+				continue
+			}
+
 			packetPort := packet.TransportLayer().TransportFlow().Dst().String()
 			packetPortInt, err := strconv.Atoi(packetPort)
 			if err != nil {
 				packetPortInt = 0
 			}
 			logger.Log().Debug("Packet found on iface", zap.String("iface", interfaceName), zap.Int("port", packetPortInt))
-			return packetPortInt, nil
+
+			// Increment packet count
+			packetCount++
+
+			// Check if we have reached the packets per minute threshold
+			if packetCount >= int(ppm) {
+				logger.Log().Info("PPM threshold reached", zap.String("iface", interfaceName), zap.Int("ppm", int(ppm)))
+				return packetCount, nil
+			}
+		case <-ticker.C:
+			// Reset packet count every minute
+			packetCount = 0
 		}
 	}
-	return 0, nil
 }
