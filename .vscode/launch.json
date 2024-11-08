@@ -146,7 +146,7 @@
                 "${workspaceFolder}/examples/scroll-cwd",
                 "-p",
                 "9190",
-                "registry-1.docker.io/highcard/scroll-lgsm:arkserver"
+                "artifacts.druid.gg/druid-team/scroll-lgsm:arkserver"
             ],
         },
         {

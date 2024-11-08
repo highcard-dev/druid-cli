@@ -2,6 +2,7 @@ name: registry-1.docker.io/highcard/scroll-minecraft-spigot
 desc: Minecraft Spigot
 version: 0.0.1
 app_version: 1.20.4
+keepAlivePPM: 5
 ports:
   - name: minecraft
     protocol: tcp

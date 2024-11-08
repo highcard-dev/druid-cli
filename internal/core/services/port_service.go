@@ -163,7 +163,7 @@ func (p *PortMonitor) WaitForConnection(ifaces []string, ppm uint) {
 			ports[idx] = port.Port.Port
 		}
 
-		firstOnlinePort, err := p.StartMonitorPorts(ports, ifaces, 5*time.Minute)
+		firstOnlinePort, err := p.StartMonitorPorts(ports, ifaces, 5*time.Minute, ppm)
 
 		if err != nil {
 			logger.Log().Error("Error on port monitoring", zap.Error(err))
@@ -194,7 +194,7 @@ func (p *PortMonitor) StartMonitoring(ctx context.Context, ifaces []string, ppm 
 	}
 }
 
-func (p *PortMonitor) StartMonitorPorts(ports []int, ifaces []string, timeout time.Duration) (*int, error) {
+func (p *PortMonitor) StartMonitorPorts(ports []int, ifaces []string, timeout time.Duration, ppm uint) (*int, error) {
 
 	// Find all network interfaces
 
@@ -207,7 +207,7 @@ func (p *PortMonitor) StartMonitorPorts(ports []int, ifaces []string, timeout ti
 
 	for _, iface := range ifaces {
 		go func(po []int, i string) {
-			port, err := p.waitForPortActiviy(ctx, ports, i, 1)
+			port, err := p.waitForPortActiviy(ctx, ports, i, ppm)
 			if err != nil {
 				logger.Log().Error("Error on port monitoring", zap.String("iface", i), zap.Ints("ports", po), zap.Error(err))
 				return
@@ -297,7 +297,7 @@ func (p *PortMonitor) waitForPortActiviy(ctx context.Context, ports []int, inter
 
 			// Check if we have reached the packets per minute threshold
 			if packetCount >= int(ppm) {
-				logger.Log().Info("PPM threshold reached", zap.String("iface", interfaceName), zap.Int("ppm", int(ppm)))
+				logger.Log().Info("PPM threshhold reached", zap.String("iface", interfaceName), zap.Int("ppm", int(ppm)))
 				return packetCount, nil
 			}
 		case <-ticker.C:
