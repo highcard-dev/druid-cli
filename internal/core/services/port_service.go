@@ -286,11 +286,24 @@ func (p *PortMonitor) waitForPortActiviy(ctx context.Context, ports []int, inter
 			}
 
 			packetPort := packet.TransportLayer().TransportFlow().Dst().String()
+
+			var srcIP, dstIP string
+			if netLayer := packet.NetworkLayer(); netLayer != nil {
+				srcIP = netLayer.NetworkFlow().Src().String()
+				dstIP = netLayer.NetworkFlow().Dst().String()
+			}
+
+			data := packet.Data()
+
 			packetPortInt, err := strconv.Atoi(packetPort)
 			if err != nil {
 				packetPortInt = 0
 			}
-			logger.Log().Debug("Packet found on iface", zap.String("iface", interfaceName), zap.Int("port", packetPortInt))
+			logger.Log().Info("Packet found on iface",
+				zap.String("iface", interfaceName), zap.Int("port", packetPortInt),
+				zap.String("srcIP", srcIP), zap.String("dstIP", dstIP),
+				zap.ByteString("data", data),
+			)
 
 			// Increment packet count
 			packetCount++
