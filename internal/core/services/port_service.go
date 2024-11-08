@@ -163,19 +163,15 @@ func (p *PortMonitor) WaitForConnection(ifaces []string, ppm uint) {
 			ports[idx] = port.Port.Port
 		}
 
-		firstOnlinePort, err := p.StartMonitorPorts(ports, ifaces, 5*time.Minute, ppm)
+		firstOnlinePort := p.StartMonitorPorts(ports, ifaces, 5*time.Minute, ppm)
 
-		if err != nil {
-			logger.Log().Error("Error on port monitoring", zap.Error(err))
-		} else {
-			if firstOnlinePort == nil {
-				break
-			}
+		if firstOnlinePort == nil {
+			continue
+		}
 
-			for _, port := range p.ports {
-				//this is not right but sufficient for now, later we should only update one port
-				port.InactiveSince = time.Now()
-			}
+		for _, port := range p.ports {
+			//this is not right but sufficient for now, later we should only update one port
+			port.InactiveSince = time.Now()
 		}
 
 		time.Sleep(p.portPoolInterval)
@@ -194,7 +190,7 @@ func (p *PortMonitor) StartMonitoring(ctx context.Context, ifaces []string, ppm 
 	}
 }
 
-func (p *PortMonitor) StartMonitorPorts(ports []int, ifaces []string, timeout time.Duration, ppm uint) (*int, error) {
+func (p *PortMonitor) StartMonitorPorts(ports []int, ifaces []string, timeout time.Duration, ppm uint) *int {
 
 	// Find all network interfaces
 
@@ -229,10 +225,10 @@ func (p *PortMonitor) StartMonitorPorts(ports []int, ifaces []string, timeout ti
 
 	if doneIface != "" {
 		logger.Log().Debug("Port activity found", zap.String("iface", doneIface), zap.Int("port", donePort))
-		return &donePort, nil
+		return &donePort
 	} else {
 		logger.Log().Debug("No port activity found on any interface\n")
-		return nil, nil
+		return nil
 	}
 
 }
@@ -274,7 +270,7 @@ func (p *PortMonitor) waitForPortActiviy(ctx context.Context, ports []int, inter
 	for {
 		select {
 		case <-ctx.Done():
-			return 0, ctx.Err()
+			return 0, nil
 		case packet := <-packetSource.Packets():
 			if packet == nil {
 				continue
@@ -311,7 +307,7 @@ func (p *PortMonitor) waitForPortActiviy(ctx context.Context, ports []int, inter
 			// Check if we have reached the packets per minute threshold
 			if packetCount >= int(ppm) {
 				logger.Log().Info("PPM threshhold reached", zap.String("iface", interfaceName), zap.Int("ppm", int(ppm)))
-				return packetCount, nil
+				return packetPortInt, nil
 			}
 		case <-ticker.C:
 			// Reset packet count every minute

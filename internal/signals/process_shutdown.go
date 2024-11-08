@@ -39,8 +39,6 @@ func NewSignalHandler(ctx context.Context, queueManager ports.QueueManagerInterf
 
 func (sh *SignalHandler) SetupSignals(ctx context.Context) {
 
-	fmt.Printf("Setup Signal for context %v\n", ctx)
-
 	signal.Notify(sh.SigC,
 		syscall.SIGHUP,
 		syscall.SIGINT,
