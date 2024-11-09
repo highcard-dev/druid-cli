@@ -178,14 +178,14 @@ to interact and monitor the Scroll Application`,
 
 							startup(scrollService, processLauncher, queueManager, cwd, doneChan)
 
+							portService.ResetOpenPorts()
+
 							if !watchPorts {
 								logger.Log().Warn("watch-port is disabled, skipping inactivty watch")
 								return
 							}
 
 							logger.Log().Info("Waiting for inactivity..")
-
-							portService.ResetOpenPorts()
 
 							for {
 
