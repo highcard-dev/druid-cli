@@ -281,7 +281,15 @@ func (p *PortMonitor) waitForPortActiviy(ctx context.Context, ports []int, inter
 				continue
 			}
 
-			packetPort := packet.TransportLayer().TransportFlow().Dst().String()
+			var packetPort = 0
+
+			if transportLayer := packet.TransportLayer(); transportLayer != nil {
+				packetPortStr := transportLayer.TransportFlow().Dst().String()
+				packetPort, err = strconv.Atoi(packetPortStr)
+				if err != nil {
+					packetPort = 0
+				}
+			}
 
 			var srcIP, dstIP string
 			if netLayer := packet.NetworkLayer(); netLayer != nil {
@@ -289,12 +297,8 @@ func (p *PortMonitor) waitForPortActiviy(ctx context.Context, ports []int, inter
 				dstIP = netLayer.NetworkFlow().Dst().String()
 			}
 
-			packetPortInt, err := strconv.Atoi(packetPort)
-			if err != nil {
-				packetPortInt = 0
-			}
 			logger.Log().Debug("Packet found on iface",
-				zap.String("iface", interfaceName), zap.Int("port", packetPortInt),
+				zap.String("iface", interfaceName), zap.Int("port", packetPort),
 				zap.String("srcIP", srcIP), zap.String("dstIP", dstIP),
 			)
 
@@ -304,7 +308,7 @@ func (p *PortMonitor) waitForPortActiviy(ctx context.Context, ports []int, inter
 			// Check if we have reached the packets per minute threshold
 			if packetCount >= int(ppm) {
 				logger.Log().Info("PPM threshhold reached", zap.String("iface", interfaceName), zap.Int("ppm", int(ppm)))
-				return packetPortInt, nil
+				return packetPort, nil
 			}
 		case <-ticker.C:
 			// Reset packet count every minute
