@@ -76,14 +76,18 @@ function handle(ctx, data)
 
     if packetId == "54" then
 
+        queue = get_queue()
         name = get_var("ServerListName") or "Coldstarter is cool (server is idle, join to start)"
 
-        if get_finish_sec() ~= nil then
+        map = get_var("MapName") or "server idle"
+
+        if queue ~= nil and queue["install"] == "running" then
+            name = get_var("ServerListNameInstalling") or "INSTALLING, this might take a moment"
+            map = get_var("MapNameInstalling") or "installing server"
+        elseif get_finish_sec() ~= nil then
             nameTemplate = get_var("ServerListNameStarting") or "Druid Gameserver (starting) - %ds"
             name = string.format(nameTemplate, math.ceil(get_finish_sec()))
         end
-
-        map = get_var("MapName") or "TheIsland"
 
         folder = get_var("GameSteamFolder") or "ark_survival_evolved"
 

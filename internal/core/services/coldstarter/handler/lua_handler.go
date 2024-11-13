@@ -16,19 +16,21 @@ type LuaHandler struct {
 	externalVars map[string]string
 	ports        map[string]int
 	finishedAt   *time.Time
+	queueManager ports.QueueManagerInterface
 }
 
 type LuaWrapper struct {
 	luaState *lua.LState
 }
 
-func NewLuaHandler(file string, luaPath string, externalVars map[string]string, ports map[string]int) *LuaHandler {
+func NewLuaHandler(queueManager ports.QueueManagerInterface, file string, luaPath string, externalVars map[string]string, ports map[string]int) *LuaHandler {
 
 	handler := &LuaHandler{
 		file:         file,
 		luaPath:      luaPath,
 		externalVars: externalVars,
 		ports:        ports,
+		queueManager: queueManager,
 	}
 	return handler
 }
@@ -123,6 +125,24 @@ func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (po
 				l.Push(lua.LNumber(p))
 			}
 
+			return 1
+		},
+	))
+
+	l.SetGlobal("get_queue", l.NewFunction(
+		func(l *lua.LState) int {
+			if handler.queueManager == nil {
+				return 0
+			}
+
+			queueMap := handler.queueManager.GetQueue()
+			table := l.NewTable()
+
+			for key, value := range queueMap {
+				l.SetField(table, key, lua.LString(value))
+			}
+
+			l.Push(table)
 			return 1
 		},
 	))

@@ -9,10 +9,12 @@ ports:
     port: 25565
     sleep_handler: packet_handler/minecraft.lua
     start_delay: 10
+    finish_after_command: install
     mandatory: true
   - name: query
     protocol: udp
     sleep_handler: packet_handler/query.lua
+    finish_after_command: install
     vars:
       - name: GameName
         value: "ARK: Survival Evolved"
@@ -29,6 +31,7 @@ ports:
   - name: main
     start_delay: 10
     protocol: udp
+    finish_after_command: install
 
 init: "start"
 commands:
@@ -64,6 +67,10 @@ commands:
           - bash
           - -c
           - echo eula=true > eula.txt
+      - mode: exec
+        data:
+          - sleep
+          - "1000"
   restart:
     procedures:
       - mode: command

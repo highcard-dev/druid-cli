@@ -2,7 +2,6 @@ package services
 
 import (
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -16,8 +15,8 @@ var ErrCommandNotFound = fmt.Errorf("command not found")
 var ErrCommandDoneOnce = fmt.Errorf("command is already done and has run mode once")
 
 type AddItemOptions struct {
-	Remember bool
-	Shutdown bool
+	Remember          bool
+	RunAfterExecution func()
 }
 
 type QueueManager struct {
@@ -98,7 +97,15 @@ func (sc *QueueManager) AddAndRememberItem(cmd string) error {
 
 func (sc *QueueManager) AddShutdownItem(cmd string) error {
 	return sc.addQueueItem(cmd, AddItemOptions{
-		Shutdown: true,
+		RunAfterExecution: func() {
+			sc.Shutdown()
+		},
+	})
+}
+
+func (sc *QueueManager) AddItemWithCallback(cmd string, cb func()) error {
+	return sc.addQueueItem(cmd, AddItemOptions{
+		RunAfterExecution: cb,
 	})
 }
 
@@ -139,10 +146,8 @@ func (sc *QueueManager) addQueueItem(cmd string, options AddItemOptions) error {
 		UpdateLockStatus: setLock,
 	}
 
-	if options.Shutdown {
-		item.RunAfterExecution = func() {
-			sc.Shutdown()
-		}
+	if options.RunAfterExecution != nil {
+		item.RunAfterExecution = options.RunAfterExecution
 	}
 
 	sc.commandQueue[cmd] = item
@@ -159,34 +164,29 @@ func (sc *QueueManager) addQueueItem(cmd string, options AddItemOptions) error {
 	return nil
 }
 
-func (sc *QueueManager) QueueLockFile() error {
+func (sc *QueueManager) QueueLockFile(callbacks map[string]func()) error {
 	lock, err := sc.scrollService.GetLock()
 
 	if err != nil {
 		return err
 	}
 	for cmd, status := range lock.Statuses {
+		//finish directly
+		fn := callbacks[cmd]
 
 		//convert legacy command names
 		command, err := sc.scrollService.GetCommand(cmd)
 		if err != nil {
-
-			parts := strings.Split(cmd, ".")
-			if len(parts) > 1 {
-				cmd = parts[1]
-			} else {
-				return err
-			}
-
-			command, err = sc.scrollService.GetCommand(cmd)
-			if err != nil {
-				return err
-			}
+			return err
 		}
 
 		if status.Status == domain.ScrollLockStatusDone {
-			//not sure if this can even happen
+			//not sure if this can even happen, maybe on updates
 			if command.Run != domain.RunModeRestart {
+
+				if fn != nil {
+					fn()
+				}
 
 				//TODO: use addQueueItem here
 				sc.mu.Lock()
@@ -200,7 +200,10 @@ func (sc *QueueManager) QueueLockFile() error {
 		}
 		status.Status = domain.ScrollLockStatusWaiting
 
-		sc.AddAndRememberItem(cmd)
+		sc.addQueueItem(cmd, AddItemOptions{
+			Remember:          true,
+			RunAfterExecution: fn,
+		})
 	}
 
 	return nil

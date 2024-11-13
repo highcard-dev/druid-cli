@@ -112,7 +112,7 @@ to interact and monitor the Scroll Application`,
 
 		portService := services.NewPortServiceWithScrollFile(scrollService.GetFile())
 
-		coldStarter := services.NewColdStarter(scrollService.GetDir(), portService)
+		coldStarter := services.NewColdStarter(portService, queueManager, scrollService.GetDir())
 
 		scrollHandler := handler.NewScrollHandler(scrollService, pluginManager, processLauncher, queueManager)
 		processHandler := handler.NewProcessHandler(processManager)
@@ -165,18 +165,13 @@ to interact and monitor the Scroll Application`,
 							finish := coldStarter.Start(ctx)
 							executedPort := <-finish
 
-							if executedPort != nil && executedPort.StartDelay > 0 {
-								go func() {
-									time.Sleep(time.Duration(executedPort.StartDelay) * time.Second)
-									coldStarter.Stop()
-								}()
-							} else {
-								coldStarter.Stop()
+							if executedPort.FinishAfterCommand == "" {
+								coldStarter.Stop(executedPort.StartDelay)
 							}
 
 							logger.Log().Info("Coldstarter done, starting scroll")
 
-							startup(scrollService, processLauncher, queueManager, cwd, doneChan)
+							startup(scrollService, processLauncher, queueManager, portService, coldStarter, cwd, doneChan)
 
 							portService.ResetOpenPorts()
 
@@ -216,10 +211,10 @@ to interact and monitor the Scroll Application`,
 						}
 					} else {
 						logger.Log().Warn("No ports to start, skipping coldstarter")
-						startup(scrollService, processLauncher, queueManager, cwd, doneChan)
+						startup(scrollService, processLauncher, queueManager, portService, coldStarter, cwd, doneChan)
 					}
 				} else {
-					startup(scrollService, processLauncher, queueManager, cwd, doneChan)
+					startup(scrollService, processLauncher, queueManager, portService, coldStarter, cwd, doneChan)
 				}
 
 			}()
@@ -269,7 +264,7 @@ func init() {
 	ServeCommand.Flags().UintVarP(&maxStartupHealthCheckTimeout, "max-health-check-startup-timeount", "", 0, "Sets the max amount of time the health check is allowed to take on startup. If the value is 0, there will be no timeout. This is useful to prevent the health check from blocking the startup of the daemon fully.")
 }
 
-func startup(scrollService *services.ScrollService, processLauncher *services.ProcedureLauncher, queueManager *services.QueueManager, cwd string, doneChan chan error) {
+func startup(scrollService *services.ScrollService, processLauncher *services.ProcedureLauncher, queueManager *services.QueueManager, portSerivce *services.PortMonitor, coldStarter *services.ColdStarter, cwd string, doneChan chan error) {
 
 	currentScroll := scrollService.GetCurrent()
 
@@ -330,7 +325,17 @@ func startup(scrollService *services.ScrollService, processLauncher *services.Pr
 		logger.Log().Info("Bootstrapping done")
 	}
 
-	err = queueManager.QueueLockFile()
+	callbacks := map[string]func(){}
+
+	for _, port := range portSerivce.GetPorts() {
+		if port.FinishAfterCommand != "" {
+			callbacks[port.FinishAfterCommand] = func() {
+				coldStarter.Stop(port.StartDelay)
+			}
+		}
+	}
+
+	err = queueManager.QueueLockFile(callbacks)
 	if err != nil {
 		doneChan <- err
 		return
