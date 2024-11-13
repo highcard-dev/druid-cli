@@ -67,10 +67,6 @@ commands:
           - bash
           - -c
           - echo eula=true > eula.txt
-      - mode: exec
-        data:
-          - sleep
-          - "1000"
   restart:
     procedures:
       - mode: command
