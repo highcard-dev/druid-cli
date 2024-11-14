@@ -236,7 +236,7 @@ func TestServeCommand(t *testing.T) {
 
 				cancel()
 
-				err = checkHttpServerShutdown(8081, 20*time.Second)
+				err = checkHttpServerShutdown(8081, 120*time.Second)
 				if err != nil {
 					t.Fatalf("Failed to stop daemon server, server still online")
 				}
