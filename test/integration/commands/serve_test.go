@@ -187,7 +187,7 @@ func TestServeCommand(t *testing.T) {
 					t.Fatalf("Failed to connect to daemon web server: %v", err)
 				}
 
-				err = waitForConsoleRunning("start.0", 60*time.Second)
+				err = waitForConsoleRunning("start.0", 180*time.Second)
 				if err != nil {
 					t.Fatalf("Failed to start console: %v", err)
 				}

@@ -8,13 +8,10 @@ ports:
     protocol: tcp
     port: 25565
     sleep_handler: packet_handler/minecraft.lua
-    start_delay: 10
-    finish_after_command: install
     mandatory: true
   - name: query
     protocol: udp
     sleep_handler: packet_handler/query.lua
-    finish_after_command: install
     vars:
       - name: GameName
         value: "ARK: Survival Evolved"
@@ -29,9 +26,7 @@ ports:
       - name: ServerListNameStarting
         value: "▶️ Druid Gameserver (starting) - %ds"
   - name: main
-    start_delay: 10
     protocol: udp
-    finish_after_command: install
 
 init: "start"
 commands:
