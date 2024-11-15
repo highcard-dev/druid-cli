@@ -136,11 +136,11 @@ func TestServeCommand(t *testing.T) {
 			ScrollFile: "../../../examples/minecraft/.scroll/scroll.yaml",
 			Restarts:   1,
 		},
-		/*{
+		{
 			Name:       "TestServeFull With 5 Restarts",
 			ScrollFile: "../../../examples/minecraft/.scroll/scroll.yaml",
 			Restarts:   5,
-		},*/
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
@@ -180,6 +180,8 @@ func TestServeCommand(t *testing.T) {
 				ctx, cancel := context.WithCancel(context.WithValue(context.Background(), "disablePrometheus", true))
 
 				defer cancel()
+
+				logger.Log().Info("Starting serve command")
 
 				connected, err = startAndTestServeCommand(ctx, t, rootCmd)
 
@@ -234,6 +236,8 @@ func TestServeCommand(t *testing.T) {
 					<-ctx.Done()
 				}()
 
+				t.Log("Stopping daemon server")
+
 				cancel()
 
 				err = checkHttpServerShutdown(8081, 120*time.Second)
@@ -257,6 +261,8 @@ func TestServeCommand(t *testing.T) {
 						t.Fatalf("Lock file status %s not found, expected: %v, got: %v", status, expectedStatuses, lock.Statuses)
 					}
 				}
+
+				t.Log("Stopped daemon server, lock file status look good")
 
 			}
 		})
