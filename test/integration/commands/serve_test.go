@@ -76,7 +76,7 @@ func waitForWsMessage(wsClient *websocket.Conn, message string, timeout time.Dur
 			if err != nil {
 				return err
 			}
-			print(string(readMsg))
+			//print(string(readMsg))
 			if strings.Contains(string(readMsg), message) {
 				return nil
 			}
