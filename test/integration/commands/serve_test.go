@@ -262,7 +262,7 @@ func TestServeCommand(t *testing.T) {
 					}
 				}
 
-				t.Log("Stopped daemon server, lock file status look good")
+				t.Log("Stopped daemon server, lock file status looks good")
 
 			}
 		})
