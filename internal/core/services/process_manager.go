@@ -74,18 +74,24 @@ func (po *ProcessManager) RunTty(commandName string, command []string, cwd strin
 
 	var exitCode int
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	combinedChannel := make(chan string, 20)
 	go func() {
+		defer close(combinedChannel)
 		for {
-			//io.Reader to channel chunks
-			tmpBuffer := make([]byte, 1024)
-			n, err := out.Read(tmpBuffer)
-
-			if err != nil {
+			select {
+			case <-ctx.Done():
 				return
+			default:
+				tmpBuffer := make([]byte, 1024)
+				n, err := out.Read(tmpBuffer)
+				if err != nil {
+					return
+				}
+				combinedChannel <- string(tmpBuffer[:n])
 			}
-
-			combinedChannel <- string(tmpBuffer[:n])
 		}
 	}()
 
@@ -93,6 +99,7 @@ func (po *ProcessManager) RunTty(commandName string, command []string, cwd strin
 
 	//reset periodically
 	process.Cmd.Wait()
+	cancel() // Signal the goroutine to stop
 
 	po.processMonitor.RemoveProcess(commandName)
 	po.RemoveProcess(commandName)
@@ -100,9 +107,6 @@ func (po *ProcessManager) RunTty(commandName string, command []string, cwd strin
 	exitCode = process.Cmd.ProcessState.ExitCode()
 	console.MarkExited(exitCode)
 
-	close(combinedChannel)
-
-	//we wait, sothat we are sure all data is written to the console
 	<-doneChan
 
 	process.Cmd = nil
