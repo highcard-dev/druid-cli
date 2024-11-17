@@ -120,6 +120,13 @@ func (sc *ProcedureLauncher) Run(cmd string, runCommandCb func(cmd string) error
 		}
 
 		if exitCode != nil && *exitCode != 0 {
+			if proc.IgnoreFailure {
+				logger.Log().Warn("Procedure failed but ignoring failure",
+					zap.String("cmd", commandIdx),
+					zap.Int("exitCode", *exitCode),
+				)
+				continue
+			}
 			logger.Log().Error("Procedure ended with exit code "+fmt.Sprintf("%d", *exitCode),
 				zap.String("cmd", commandIdx),
 				zap.Int("exitCode", *exitCode),

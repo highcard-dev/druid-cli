@@ -32,13 +32,14 @@ type ColdStarterVars struct {
 }
 
 type Port struct {
-	Port         int               `yaml:"port" json:"port"`
-	Protocol     string            `yaml:"protocol" json:"protocol"`
-	Name         string            `yaml:"name" json:"name"`
-	SleepHandler *string           `yaml:"sleep_handler" json:"sleep_handler"`
-	Mandatory    bool              `yaml:"mandatory" json:"mandatory"`
-	Vars         []ColdStarterVars `yaml:"vars" json:"vars"`
-	StartDelay   uint              `yaml:"start_delay" json:"start_delay"`
+	Port               int               `yaml:"port" json:"port"`
+	Protocol           string            `yaml:"protocol" json:"protocol"`
+	Name               string            `yaml:"name" json:"name"`
+	SleepHandler       *string           `yaml:"sleep_handler" json:"sleep_handler"`
+	Mandatory          bool              `yaml:"mandatory" json:"mandatory"`
+	Vars               []ColdStarterVars `yaml:"vars" json:"vars"`
+	StartDelay         uint              `yaml:"start_delay" json:"start_delay"`
+	FinishAfterCommand string            `yaml:"finish_after_command" json:"finish_after_command"`
 }
 
 type AugmentedPort struct {
@@ -66,10 +67,11 @@ type Scroll struct {
 } // @name Scroll
 
 type Procedure struct {
-	Mode string      `yaml:"mode"`
-	Id   *string     `yaml:"id"`
-	Wait interface{} `yaml:"wait"`
-	Data interface{} `yaml:"data"`
+	Mode          string      `yaml:"mode"`
+	Id            *string     `yaml:"id"`
+	Wait          interface{} `yaml:"wait"`
+	Data          interface{} `yaml:"data"`
+	IgnoreFailure bool        `yaml:"ignore_failure"`
 } // @name Procedure
 
 type CommandInstructionSet struct {

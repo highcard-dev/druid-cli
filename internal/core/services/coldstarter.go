@@ -22,12 +22,14 @@ type ColdStarter struct {
 	serveDone    chan error
 	finishChan   chan *domain.AugmentedPort
 	chandlers    []ports.ColdStarterHandlerInterface
+	queueManager ports.QueueManagerInterface
 }
 
 // NewColdStarter initializes the ColdStarter struct with proper channel initialization and no initial finishTime.
 func NewColdStarter(
-	dir string,
 	portsService ports.PortServiceInterface,
+	queueManager ports.QueueManagerInterface,
+	dir string,
 ) *ColdStarter {
 	return &ColdStarter{
 		handler:      make(map[string]uint),
@@ -38,6 +40,7 @@ func NewColdStarter(
 		serveDone:    make(chan error),
 		finishChan:   make(chan *domain.AugmentedPort),
 		chandlers:    nil,
+		queueManager: queueManager,
 	}
 }
 
@@ -92,7 +95,7 @@ func (c *ColdStarter) Serve(ctx context.Context) error {
 				for _, v := range port.Vars {
 					vars[v.Name] = v.Value
 				}
-				handler = lua.NewLuaHandler(path, c.dir, vars, augmentedPortMap)
+				handler = lua.NewLuaHandler(c.queueManager, path, c.dir, vars, augmentedPortMap)
 			}
 
 			c.chandlers = append(c.chandlers, handler)
@@ -134,7 +137,16 @@ func (c *ColdStarter) Serve(ctx context.Context) error {
 }
 
 // Stop sends a nil error to the serveDone channel to gracefully stop the Serve function.
-func (c *ColdStarter) Stop() {
+func (c *ColdStarter) Stop(startDelay uint) {
+
+	if startDelay > 0 {
+		go func() {
+			time.Sleep(time.Duration(startDelay) * time.Second)
+			c.serveDone <- nil
+		}()
+		return
+	}
+
 	c.serveDone <- nil
 }
 

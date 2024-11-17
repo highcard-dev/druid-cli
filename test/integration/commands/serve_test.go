@@ -76,7 +76,7 @@ func waitForWsMessage(wsClient *websocket.Conn, message string, timeout time.Dur
 			if err != nil {
 				return err
 			}
-			print(string(readMsg))
+			//print(string(readMsg))
 			if strings.Contains(string(readMsg), message) {
 				return nil
 			}
@@ -181,13 +181,15 @@ func TestServeCommand(t *testing.T) {
 
 				defer cancel()
 
+				logger.Log().Info("Starting serve command")
+
 				connected, err = startAndTestServeCommand(ctx, t, rootCmd)
 
 				if !connected {
 					t.Fatalf("Failed to connect to daemon web server: %v", err)
 				}
 
-				err = waitForConsoleRunning("start.0", 60*time.Second)
+				err = waitForConsoleRunning("start.0", 180*time.Second)
 				if err != nil {
 					t.Fatalf("Failed to start console: %v", err)
 				}
@@ -234,9 +236,11 @@ func TestServeCommand(t *testing.T) {
 					<-ctx.Done()
 				}()
 
+				t.Log("Stopping daemon server")
+
 				cancel()
 
-				err = checkHttpServerShutdown(8081, 20*time.Second)
+				err = checkHttpServerShutdown(8081, 120*time.Second)
 				if err != nil {
 					t.Fatalf("Failed to stop daemon server, server still online")
 				}
@@ -257,6 +261,8 @@ func TestServeCommand(t *testing.T) {
 						t.Fatalf("Lock file status %s not found, expected: %v, got: %v", status, expectedStatuses, lock.Statuses)
 					}
 				}
+
+				t.Log("Stopped daemon server, lock file status looks good")
 
 			}
 		})

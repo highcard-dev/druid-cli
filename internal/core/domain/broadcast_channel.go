@@ -48,7 +48,9 @@ func (h *BroadcastChannel) Run() {
 			select {
 			case client <- &message: // Try to send the message.
 			default:
-				logger.Log().Warn("Failed to Broadcast message to channel.. closing channel")
+				// logger.Log().Warn("Channel seems to be closed, removing")
+				logger.Log().Warn("Channel seems to be closed")
+				// delete(h.Clients, client)
 				// h.Unsubscribe(client)
 			}
 		}

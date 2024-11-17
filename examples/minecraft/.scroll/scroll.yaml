@@ -8,7 +8,6 @@ ports:
     protocol: tcp
     port: 25565
     sleep_handler: packet_handler/minecraft.lua
-    start_delay: 10
     mandatory: true
   - name: query
     protocol: udp
@@ -27,7 +26,6 @@ ports:
       - name: ServerListNameStarting
         value: "▶️ Druid Gameserver (starting) - %ds"
   - name: main
-    start_delay: 10
     protocol: udp
 
 init: "start"

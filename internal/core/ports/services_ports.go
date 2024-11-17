@@ -117,6 +117,6 @@ type ColdStarterServerInterface interface {
 }
 
 type ColdStarterInterface interface {
-	Stop()
+	Stop(uint)
 	Finish(*domain.AugmentedPort)
 }

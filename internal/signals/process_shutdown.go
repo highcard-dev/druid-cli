@@ -95,10 +95,12 @@ func (sh *SignalHandler) ShutdownRoutine() {
 
 func (sh *SignalHandler) GracefulShutdown() {
 
-	println("Shutting down routine")
+	logger.Log().Info("Graceful shutdown started")
+
+	logger.Log().Info("Shutdown Routine")
 	sh.ShutdownRoutine()
 
-	println("Shutting down app")
+	logger.Log().Info("Shutting down app")
 	sh.app.Shutdown()
 
 	logger.Log().Info("Shutdown done")
