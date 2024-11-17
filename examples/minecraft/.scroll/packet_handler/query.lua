@@ -81,12 +81,25 @@ function handle(ctx, data)
 
         map = get_var("MapName") or "server idle"
 
+        local finishSec = get_finish_sec()
+
+        if finishSec ~= nil then
+            finishSec = math.ceil(finishSec)
+        end
+
         if queue ~= nil and queue["install"] == "running" then
-            name = get_var("ServerListNameInstalling") or "INSTALLING, this might take a moment"
+            if finishSec ~= nil then
+                -- finish sec is not necissary applicable, but it's better to show something I guess
+                name = get_var("ServerListNameInstalling") or
+                           string.format("INSTALLING, this might take a moment - %ds", finishSec)
+            else
+                name = get_var("ServerListNameInstalling") or "INSTALLING, this might take a moment"
+            end
+
             map = get_var("MapNameInstalling") or "installing server"
-        elseif get_finish_sec() ~= nil then
+        elseif finishSec ~= nil then
             nameTemplate = get_var("ServerListNameStarting") or "Druid Gameserver (starting) - %ds"
-            name = string.format(nameTemplate, math.ceil(get_finish_sec()))
+            name = string.format(nameTemplate, finishSec)
         end
 
         folder = get_var("GameSteamFolder") or "ark_survival_evolved"
