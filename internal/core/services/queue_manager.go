@@ -235,17 +235,21 @@ func (sc *QueueManager) RunQueue() {
 	sc.runQueueMu.Lock()
 	defer sc.runQueueMu.Unlock()
 
+	sc.mu.Lock()
+
 	queueKeys := make(map[string]domain.ScrollLockStatus, len(sc.commandQueue))
 	for k, v := range sc.commandQueue {
 		queueKeys[k] = v.Status
 	}
 
+	sc.mu.Unlock()
+
 	logger.Log().Info("Running queue", zap.Any("queueKeys", queueKeys))
 
-	for cmd, item := range sc.commandQueue {
+	for cmd, status := range queueKeys {
 
 		//if already running, skip
-		if sc.getStatus(cmd) == domain.ScrollLockStatusRunning {
+		if status == domain.ScrollLockStatusRunning {
 			continue
 		}
 
@@ -259,12 +263,12 @@ func (sc *QueueManager) RunQueue() {
 		}
 
 		//if run Mode is restart, we need to run it again
-		if sc.getStatus(cmd) == domain.ScrollLockStatusError {
+		if status == domain.ScrollLockStatusError {
 			continue
 		}
 
 		//if run Mode is restart, we need to run it again
-		if (sc.getStatus(cmd) == domain.ScrollLockStatusDone) && command.Run != domain.RunModeRestart {
+		if (status == domain.ScrollLockStatusDone) && command.Run != domain.RunModeRestart {
 			continue
 		}
 
@@ -285,6 +289,7 @@ func (sc *QueueManager) RunQueue() {
 			}
 		}
 		if dependenciesReady {
+			item := sc.GetQueueItem(cmd)
 			//we only run one process at a time, this is not optimal, but it is simple
 			sc.setStatus(cmd, domain.ScrollLockStatusRunning, item.UpdateLockStatus)
 			logger.Log().Info("Running command", zap.String("command", cmd))
