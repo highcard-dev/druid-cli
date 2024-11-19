@@ -10,6 +10,7 @@ import (
 type HealthHandler struct {
 	portService ports.PortServiceInterface
 	timeoutDone bool
+	Started     bool
 }
 
 func NewHealthHandler(
@@ -19,6 +20,7 @@ func NewHealthHandler(
 
 	h := &HealthHandler{
 		portService,
+		false,
 		false,
 	}
 
@@ -48,7 +50,9 @@ func (p *HealthHandler) Health(c *fiber.Ctx) error {
 		return c.SendString("Manditory ports are not open")
 
 	}
-
+	if !p.Started {
+		return c.SendString("idle")
+	}
 	return c.SendString("ok")
 }
 

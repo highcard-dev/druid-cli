@@ -161,6 +161,7 @@ to interact and monitor the Scroll Application`,
 					if currentScroll.CanColdStart() {
 
 						for {
+							healthHandler.Started = false
 							logger.Log().Info("Starting coldstarter")
 							finish := coldStarter.Start(ctx)
 							executedPort := <-finish
@@ -171,7 +172,7 @@ to interact and monitor the Scroll Application`,
 
 							logger.Log().Info("Coldstarter done, starting scroll")
 
-							startup(scrollService, processLauncher, queueManager, portService, coldStarter, cwd, doneChan)
+							startup(scrollService, processLauncher, queueManager, portService, coldStarter, healthHandler, cwd, doneChan)
 
 							portService.ResetOpenPorts()
 
@@ -211,10 +212,10 @@ to interact and monitor the Scroll Application`,
 						}
 					} else {
 						logger.Log().Warn("No ports to start, skipping coldstarter")
-						startup(scrollService, processLauncher, queueManager, portService, coldStarter, cwd, doneChan)
+						startup(scrollService, processLauncher, queueManager, portService, coldStarter, healthHandler, cwd, doneChan)
 					}
 				} else {
-					startup(scrollService, processLauncher, queueManager, portService, coldStarter, cwd, doneChan)
+					startup(scrollService, processLauncher, queueManager, portService, coldStarter, healthHandler, cwd, doneChan)
 				}
 
 			}()
@@ -264,7 +265,9 @@ func init() {
 	ServeCommand.Flags().UintVarP(&maxStartupHealthCheckTimeout, "max-health-check-startup-timeount", "", 0, "Sets the max amount of time the health check is allowed to take on startup. If the value is 0, there will be no timeout. This is useful to prevent the health check from blocking the startup of the daemon fully.")
 }
 
-func startup(scrollService *services.ScrollService, processLauncher *services.ProcedureLauncher, queueManager *services.QueueManager, portSerivce *services.PortMonitor, coldStarter *services.ColdStarter, cwd string, doneChan chan error) {
+func startup(scrollService *services.ScrollService, processLauncher *services.ProcedureLauncher, queueManager *services.QueueManager, portSerivce *services.PortMonitor, coldStarter *services.ColdStarter, healthHandler *handler.HealthHandler, cwd string, doneChan chan error) {
+
+	healthHandler.Started = true
 
 	currentScroll := scrollService.GetCurrent()
 
