@@ -45,7 +45,7 @@ func (u *UDP) Start(ctx context.Context, port int, onFinish func()) error {
 			n, remoteAddr, err := u.conn.ReadFromUDP(buf)
 			if err != nil {
 				if opErr, ok := err.(*net.OpError); ok && opErr.Err.Error() == "use of closed network connection" {
-					logger.Log().Info("UDP Server stopped")
+					logger.Log().Info("UDP Server stopped", zap.Error(err))
 					return
 				}
 				logger.Log().Warn("Error reading from UDP connection", zap.Error(err))
