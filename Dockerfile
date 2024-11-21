@@ -12,5 +12,6 @@ RUN make build-plugins
 
 RUN cp ./bin/druid* /usr/bin/
 
+USER 1000:1000
 
 ENTRYPOINT [ "/entrypoint.sh" ]
