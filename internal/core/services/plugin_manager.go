@@ -131,7 +131,7 @@ func (pm *PluginManager) LoadGoPlugin(name string) (commons.DruidPluginInterface
 	// but removes the SecureConfig is nil warning.
 	pluginChecksum, err := getPluginExecutableChecksum(path)
 	if err != nil {
-		return nil, fmt.Errorf("unable to generate a checksum for the plugin %s", path)
+		return nil, fmt.Errorf("unable to generate a checksum for the plugin %s: %w", path, err)
 	}
 
 	// We're a host! Start by launching the plugin process.
