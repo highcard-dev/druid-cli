@@ -338,7 +338,9 @@ func startup(scrollService *services.ScrollService, processLauncher *services.Pr
 		}
 	}
 
-	err = queueManager.QueueLockFile(callbacks)
+	queueManager.RegisterCallbacks(callbacks)
+
+	err = queueManager.QueueLockFile()
 	if err != nil {
 		doneChan <- err
 		return

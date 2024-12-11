@@ -20,15 +20,16 @@ type AddItemOptions struct {
 }
 
 type QueueManager struct {
-	mu              sync.Mutex
-	runQueueMu      sync.Mutex
-	scrollService   ports.ScrollServiceInterface
-	processLauncher ports.ProcedureLauchnerInterface
-	commandQueue    map[string]*domain.QueueItem
-	taskChan        chan string
-	taskDoneChan    chan struct{}
-	shutdownChan    chan struct{}
-	notifierChan    []chan []string
+	mu               sync.Mutex
+	runQueueMu       sync.Mutex
+	scrollService    ports.ScrollServiceInterface
+	processLauncher  ports.ProcedureLauchnerInterface
+	commandQueue     map[string]*domain.QueueItem
+	taskChan         chan string
+	taskDoneChan     chan struct{}
+	shutdownChan     chan struct{}
+	notifierChan     []chan []string
+	callbacksPostRun map[string]func()
 }
 
 func NewQueueManager(
@@ -36,13 +37,14 @@ func NewQueueManager(
 	processLauncher ports.ProcedureLauchnerInterface,
 ) *QueueManager {
 	return &QueueManager{
-		scrollService:   scrollService,
-		processLauncher: processLauncher,
-		commandQueue:    make(map[string]*domain.QueueItem),
-		taskChan:        make(chan string),
-		taskDoneChan:    make(chan struct{}),
-		shutdownChan:    make(chan struct{}),
-		notifierChan:    make([]chan []string, 0),
+		scrollService:    scrollService,
+		processLauncher:  processLauncher,
+		commandQueue:     make(map[string]*domain.QueueItem),
+		taskChan:         make(chan string),
+		taskDoneChan:     make(chan struct{}),
+		shutdownChan:     make(chan struct{}),
+		notifierChan:     make([]chan []string, 0),
+		callbacksPostRun: make(map[string]func()),
 	}
 }
 
@@ -164,16 +166,22 @@ func (sc *QueueManager) addQueueItem(cmd string, options AddItemOptions) error {
 	return nil
 }
 
-func (sc *QueueManager) QueueLockFile(callbacks map[string]func()) error {
+func (sc *QueueManager) RegisterCallbacks(callbacks map[string]func()) {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+
+	for cmd, cb := range callbacks {
+		sc.callbacksPostRun[cmd] = cb
+	}
+}
+
+func (sc *QueueManager) QueueLockFile() error {
 	lock, err := sc.scrollService.GetLock()
 
 	if err != nil {
 		return err
 	}
 	for cmd, status := range lock.Statuses {
-		//finish directly
-		fn := callbacks[cmd]
-
 		//convert legacy command names
 		command, err := sc.scrollService.GetCommand(cmd)
 		if err != nil {
@@ -183,10 +191,6 @@ func (sc *QueueManager) QueueLockFile(callbacks map[string]func()) error {
 		if status.Status == domain.ScrollLockStatusDone {
 			//not sure if this can even happen, maybe on updates
 			if command.Run != domain.RunModeRestart {
-
-				if fn != nil {
-					fn()
-				}
 
 				//TODO: use addQueueItem here
 				sc.mu.Lock()
@@ -201,8 +205,7 @@ func (sc *QueueManager) QueueLockFile(callbacks map[string]func()) error {
 		status.Status = domain.ScrollLockStatusWaiting
 
 		sc.addQueueItem(cmd, AddItemOptions{
-			Remember:          true,
-			RunAfterExecution: fn,
+			Remember: true,
 		})
 	}
 
@@ -298,6 +301,10 @@ func (sc *QueueManager) RunQueue() {
 					if i.RunAfterExecution != nil {
 						i.RunAfterExecution()
 					}
+					if callback, ok := sc.callbacksPostRun[c]; ok && callback != nil {
+						callback()
+					}
+
 					sc.taskDoneChan <- struct{}{}
 				}()
 				err := sc.workItem(c)
