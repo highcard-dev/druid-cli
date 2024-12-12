@@ -166,7 +166,9 @@ to interact and monitor the Scroll Application`,
 							finish := coldStarter.Start(ctx)
 							executedPort := <-finish
 
-							if executedPort == nil || executedPort.FinishAfterCommand == "" {
+							if executedPort == nil {
+								coldStarter.Stop(0)
+							} else if executedPort.FinishAfterCommand == "" {
 								coldStarter.Stop(executedPort.StartDelay)
 							}
 
