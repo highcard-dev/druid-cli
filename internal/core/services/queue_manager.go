@@ -189,6 +189,11 @@ func (sc *QueueManager) QueueLockFile() error {
 		}
 
 		if status.Status == domain.ScrollLockStatusDone {
+			//check callback
+			if callback, ok := sc.callbacksPostRun[cmd]; ok && callback != nil {
+				callback()
+			}
+
 			//not sure if this can even happen, maybe on updates
 			if command.Run != domain.RunModeRestart {
 
