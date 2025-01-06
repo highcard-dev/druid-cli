@@ -120,3 +120,8 @@ type ColdStarterInterface interface {
 	Stop(uint)
 	Finish(*domain.AugmentedPort)
 }
+
+type SnapshotService interface {
+	Snapshot(dir string, destination string) error
+	RestoreSnapshot(dir string, source string) error
+}
