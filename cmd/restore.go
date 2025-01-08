@@ -23,7 +23,7 @@ var RestoreCmd = &cobra.Command{
 
 		snapshotService := services.NewRestoreService()
 
-		err = snapshotService.Restore(scrollService.GetCwd(), source)
+		err = snapshotService.RestoreSnapshot(scrollService.GetCwd(), source)
 
 		return err
 	},
