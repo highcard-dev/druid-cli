@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/core/services"
 	"github.com/spf13/cobra"
 )
@@ -26,9 +27,12 @@ var RestoreCmd = &cobra.Command{
 
 		snapshotService := services.NewRestoreService()
 
-		err = snapshotService.RestoreSnapshot(scrollService.GetCwd(), source)
+		options := ports.RestoreSnapshotOptions{
+			Safe:    !skipSafety,
+			TempDir: tempDir,
+		}
 
-		return err
+		return snapshotService.RestoreSnapshot(scrollService.GetCwd(), source, options)
 	},
 }
 
