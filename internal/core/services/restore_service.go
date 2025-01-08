@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/hashicorp/go-getter"
+	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"go.uber.org/zap"
 )
@@ -46,16 +47,27 @@ func (rc *RestoreService) Snapshot(dir string, destination string) error {
 	return os.Remove(target)
 }
 
-func (rc *RestoreService) RestoreSnapshot(dir string, source string) error {
+func (rc *RestoreService) RestoreSnapshot(dir string, source string, options ports.RestoreSnapshotOptions) error {
+
+	temDir := options.TempDir
+	if temDir == "" {
+		temDir = dir + "-bck"
+	}
 
 	//move dir if possible
 	if _, err := os.Stat(dir); err == nil {
-		logger.Log().Info("Creating backup", zap.String("dir", dir), zap.String("backup_dir", dir+"-bck"))
-		err := os.Rename(dir, dir+"-bck")
-		if err != nil {
-			return nil
+		if options.Safe {
+			logger.Log().Info("Moving folder to make space for backup", zap.String("dir", dir), zap.String("backup_dir", dir+"-bck"))
+			err := os.Rename(dir, temDir)
+			if err != nil {
+				return nil
+			}
+		} else {
+			err := os.Remove(dir)
+			if err != nil {
+				return nil
+			}
 		}
-		defer os.RemoveAll(dir + "-bck")
 	}
 
 	// Create a new client
@@ -66,7 +78,18 @@ func (rc *RestoreService) RestoreSnapshot(dir string, source string) error {
 	}
 
 	// Download the file
-	return client.Get()
+	err := client.Get()
+	if err != nil {
+		if options.Safe {
+			logger.Log().Warn("Restoring old state, as error occured while getting backup", zap.Error(err))
+			errRename := os.Rename(dir, temDir)
+			if errRename != nil {
+				return errRename
+			}
+		}
+		return err
+	}
+	return os.RemoveAll(temDir)
 }
 
 func (rc *RestoreService) createTarGz(source, target string) error {
@@ -89,6 +112,15 @@ func (rc *RestoreService) createTarGz(source, target string) error {
 	return filepath.Walk(source, func(file string, fi os.FileInfo, err error) error {
 		if err != nil {
 			return err
+		}
+
+		// Skip the target file
+		if absTarget, err := filepath.Abs(target); err != nil {
+			return err
+		} else if absFile, err := filepath.Abs(file); err != nil {
+			return err
+		} else if absFile == absTarget {
+			return nil
 		}
 
 		// Create a tar header for the current file

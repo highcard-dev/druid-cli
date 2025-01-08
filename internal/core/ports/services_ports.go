@@ -121,6 +121,11 @@ type ColdStarterInterface interface {
 	Finish(*domain.AugmentedPort)
 }
 
+type RestoreSnapshotOptions struct {
+	Safe    bool
+	TempDir string
+}
+
 type SnapshotService interface {
 	Snapshot(dir string, destination string) error
 	RestoreSnapshot(dir string, source string) error
