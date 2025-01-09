@@ -24,9 +24,14 @@ func NewRestoreService() *RestoreService {
 	return &RestoreService{}
 }
 
-func (rc *RestoreService) Snapshot(dir string, destination string) error {
+func (rc *RestoreService) Snapshot(dir string, destination string, options ports.SnapshotOptions) error {
 
-	target := filepath.Join(dir, "snapshot.tgz")
+	var target string
+	if options.TempDir == "" {
+		target = filepath.Join(dir, "snapshot.tgz")
+	} else {
+		target = filepath.Join(options.TempDir, "snapshot.tgz")
+	}
 
 	// Define the source URL and destination directory
 	err := rc.createTarGz(dir, target)

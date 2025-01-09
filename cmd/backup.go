@@ -3,9 +3,12 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/core/services"
 	"github.com/spf13/cobra"
 )
+
+var tgzTempDir string
 
 var BackupCmd = &cobra.Command{
 	Use:   "backup",
@@ -23,9 +26,14 @@ var BackupCmd = &cobra.Command{
 
 		snapshotService := services.NewRestoreService()
 
-		return snapshotService.Snapshot(scrollService.GetCwd(), destination)
+		options := ports.SnapshotOptions{
+			TempDir: tempDir,
+		}
+
+		return snapshotService.Snapshot(scrollService.GetCwd(), destination, options)
 	},
 }
 
 func init() {
+	BackupCmd.Flags().StringVarP(&tgzTempDir, "tgz-temp-dir", "", "", "Temporary location for the backup tgz file")
 }
