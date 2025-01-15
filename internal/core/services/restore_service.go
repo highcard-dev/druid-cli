@@ -92,7 +92,7 @@ func (rc *RestoreService) RestoreSnapshot(dir string, source string, options por
 		logger.Log().Error("Error occured while getting backup", zap.Error(err))
 		if options.Safe {
 			logger.Log().Warn("Restoring old state, as error occured while getting backup", zap.Error(err))
-			errRename := os.Rename(dir, temDir)
+			errRename := os.Rename(temDir, dir)
 			if errRename != nil {
 				return errRename
 			}
