@@ -75,8 +75,8 @@ require (
 	github.com/valyala/tcplisten v1.0.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.3 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.30.0 // indirect
-	golang.org/x/net v0.32.0
+	golang.org/x/crypto v0.31.0 // indirect
+	golang.org/x/net v0.33.0
 	golang.org/x/sync v0.10.0 // indirect
 	golang.org/x/sys v0.28.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
@@ -104,7 +104,6 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
 	github.com/googleapis/gax-go/v2 v2.12.3 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
-	github.com/hashicorp/go-getter v1.7.6 // indirect
 	github.com/hashicorp/go-safetemp v1.0.0 // indirect
 	github.com/hashicorp/go-version v1.6.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
@@ -141,6 +140,7 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.5.0
 	github.com/gopacket/gopacket v1.2.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/hashicorp/go-getter v1.7.6
 	github.com/highcard-dev/gorcon v1.3.10
 	github.com/otiai10/copy v1.14.0
 	github.com/packetcap/go-pcap v0.0.0-20240528124601-8c87ecf5dbc5
