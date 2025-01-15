@@ -81,10 +81,15 @@ func (rc *RestoreService) RestoreSnapshot(dir string, source string, options por
 		Dst:  dir,    // Destination path
 		Mode: getter.ClientModeDir,
 	}
+	logger.Log().Info("Restoring backup", zap.String("source", source), zap.String("destination", dir))
 
 	// Download the file
 	err := client.Get()
+
+	logger.Log().Info("Backup restored", zap.String("source", source), zap.String("destination", dir))
+
 	if err != nil {
+		logger.Log().Error("Error occured while getting backup", zap.Error(err))
 		if options.Safe {
 			logger.Log().Warn("Restoring old state, as error occured while getting backup", zap.Error(err))
 			errRename := os.Rename(dir, temDir)
