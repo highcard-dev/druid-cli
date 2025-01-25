@@ -8,6 +8,7 @@ import (
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.uber.org/zap"
 )
 
 var RunCmd = &cobra.Command{
@@ -16,6 +17,7 @@ var RunCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Long:  `This command runs a single command from the scroll file.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		command := args[0]
 
 		host := viper.GetString("registry.host")
 		user := viper.GetString("registry.user")
@@ -63,10 +65,18 @@ var RunCmd = &cobra.Command{
 			return err
 		}
 
-		command := args[0]
+		logger.Log().Info("Staring queue")
+		go queueManager.Work()
 
+		logger.Log().Info("Adding command to queue", zap.String("command", command))
 		err = queueManager.AddTempItem(command)
-		return err
+		if err != nil {
+			return err
+		}
+
+		queueManager.WaitUntilEmpty()
+
+		return nil
 	},
 }
 

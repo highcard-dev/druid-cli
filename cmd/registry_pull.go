@@ -23,7 +23,11 @@ var PullCommand = &cobra.Command{
 
 		registryClient := registry.NewOciClient(host, user, password)
 
-		registryClient.Pull(filepath.Join(cwd, ".scroll"), artifact)
+		err := registryClient.Pull(filepath.Join(cwd, ".scroll"), artifact)
+		if err != nil {
+			logger.Log().Error("Failed to pull from registry")
+			return err
+		}
 
 		logger.Log().Info("Pulled from registry")
 		return nil

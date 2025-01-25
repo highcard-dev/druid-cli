@@ -179,7 +179,7 @@
             ],
         },
         {
-            "name": "Debug Daemon start",
+            "name": "Debug Daemon run (touch example)",
             "type": "go",
             "request": "launch",
             "mode": "debug",
@@ -188,21 +188,8 @@
             "args": [
                 "run",
                 "--cwd",
-                "${workspaceFolder}/examples/scroll-cwd",
-                "main.start"
-            ],
-        },
-        {
-            "name": "Debug Daemon run switch scroll",
-            "type": "go",
-            "request": "launch",
-            "mode": "debug",
-            "program": "${workspaceFolder}/main.go",
-            "args": [
-                "run",
-                "scroll-switch.registry-1.docker.io/highcard/scroll-minecraft-forge:1.20.2",
-                "--cwd",
-                "${workspaceFolder}/examples/scroll-cwd",
+                "${workspaceFolder}/examples/touch",
+                "start"
             ],
         },
         {
