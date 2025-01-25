@@ -243,9 +243,9 @@ func init() {
 
 	ServeCommand.Flags().StringVarP(&jwksUrl, "jwks-server", "", "", "JWKS Server to authenticate requests against")
 
-	ServeCommand.Flags().StringVarP(&userId, "user-id", "u", "", "Allowed user id")
+	ServeCommand.Flags().StringVarP(&userId, "user-id", "u", "", "Allowed user ID, if JWKS is not set. It checks claims.sub of the JWT token")
 
-	ServeCommand.Flags().BoolVarP(&idleScroll, "idle", "", false, "Don't start the queue manager")
+	ServeCommand.Flags().BoolVarP(&idleScroll, "idle", "", false, "Don't start the queue manager, just use coldstarter")
 
 	ServeCommand.Flags().BoolVarP(&watchPorts, "watch-ports", "", false, "Watch ports, even when coldstarter is not active")
 

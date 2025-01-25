@@ -5,8 +5,7 @@ SD=".scroll"
 input=$@
 
 #Check if we should serve as default or when only artifact is specified
-if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]]; then
-    artifact="${input}"
+if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]] &&  [[ $input != *" "* ]]; then    artifact="${input}"
     if [ -z "${artifact}" ];
     then
         artifact=$DRUID_SCROLL_ARTIFACT
