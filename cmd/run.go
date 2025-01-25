@@ -42,31 +42,7 @@ var RunCmd = &cobra.Command{
 		processLauncher := services.NewProcedureLauncher(client, processManager, services.NewPluginManager(), consoleService, logManager, scrollService)
 
 		queueManager := services.NewQueueManager(scrollService, processLauncher)
-
-		if !scrollService.LockExists() {
-			scrollService.WriteNewScrollLock()
-			logger.Log().Info("Lock file created")
-		}
-
-		_, err = scrollService.Bootstrap(ignoreVersionCheck)
-
-		if err != nil {
-			return fmt.Errorf("error loading scroll: %w", err)
-		}
-
-		err = scrollService.RenderCwdTemplates()
-		if err != nil {
-			return err
-		}
-
-		err = processLauncher.LaunchPlugins()
-
-		if err != nil {
-			return err
-		}
-
-		logger.Log().Info("Staring queue")
-		go queueManager.Work()
+		_, err = initScroll(scrollService, processLauncher, queueManager)
 
 		logger.Log().Info("Adding command to queue", zap.String("command", command))
 		err = queueManager.AddTempItem(command)

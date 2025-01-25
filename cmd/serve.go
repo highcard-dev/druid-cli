@@ -270,49 +270,14 @@ func init() {
 func startup(scrollService *services.ScrollService, processLauncher *services.ProcedureLauncher, queueManager *services.QueueManager, portSerivce *services.PortMonitor, coldStarter *services.ColdStarter, healthHandler *handler.HealthHandler, cwd string, doneChan chan error) {
 
 	healthHandler.Started = true
-
 	currentScroll := scrollService.GetCurrent()
 
-	lock, err := scrollService.Bootstrap(ignoreVersionCheck)
-	if err != nil {
-		doneChan <- err
-		return
-	}
-
-	newScroll := len(lock.Statuses) == 0
-
-	if newScroll {
-		logger.Log().Info("No lock file found, but init command available. Bootstrapping...")
-
-		logger.Log().Info("Creating lock and bootstrapping files")
-		//There is an error here. We need to bootstrap the files before we render out the templates in the bootstrap func above
-		err := scrollService.CreateLockAndBootstrapFiles()
-		if err != nil {
-			doneChan <- err
-			return
-		}
-	} else {
-		logger.Log().Info("Found lock file, bootstrapping done")
-	}
-
-	logger.Log().Info("Rendering cwd templates")
-	err = scrollService.RenderCwdTemplates()
-	if err != nil {
-		doneChan <- err
-		return
-	}
-
-	logger.Log().Info("Launching plugins")
-	//important to launch plugins, after the templates are rendered, sothat templates can provide for plugins
-	err = processLauncher.LaunchPlugins()
+	newScroll, err := initScroll(scrollService, processLauncher, queueManager)
 
 	if err != nil {
 		doneChan <- err
 		return
 	}
-
-	logger.Log().Info("Starting queue manager")
-	go queueManager.Work()
 
 	if newScroll {
 		logger.Log().Info("Starting scroll.init process")
@@ -374,4 +339,46 @@ func startup(scrollService *services.ScrollService, processLauncher *services.Pr
 
 	doneChan <- nil
 
+}
+
+func initScroll(scrollService *services.ScrollService, processLauncher *services.ProcedureLauncher, queueManager *services.QueueManager) (bool, error) {
+
+	lock, err := scrollService.Bootstrap(ignoreVersionCheck)
+	if err != nil {
+		return false, err
+	}
+
+	newScroll := len(lock.Statuses) == 0
+
+	if newScroll {
+		logger.Log().Info("No lock file found, but init command available. Bootstrapping...")
+
+		logger.Log().Info("Creating lock and bootstrapping files")
+		//There is an error here. We need to bootstrap the files before we render out the templates in the bootstrap func above
+		err := scrollService.CreateLockAndBootstrapFiles()
+		if err != nil {
+			return newScroll, err
+		}
+	} else {
+		logger.Log().Info("Found lock file, bootstrapping done")
+	}
+
+	logger.Log().Info("Rendering cwd templates")
+	err = scrollService.RenderCwdTemplates()
+	if err != nil {
+		return newScroll, err
+	}
+
+	logger.Log().Info("Launching plugins")
+	//important to launch plugins, after the templates are rendered, sothat templates can provide for plugins
+	err = processLauncher.LaunchPlugins()
+
+	if err != nil {
+		return newScroll, err
+	}
+
+	logger.Log().Info("Starting queue manager")
+	go queueManager.Work()
+
+	return newScroll, nil
 }
