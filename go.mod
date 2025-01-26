@@ -104,7 +104,6 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
 	github.com/googleapis/gax-go/v2 v2.12.3 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
-	github.com/hashicorp/go-getter v1.7.6 // indirect
 	github.com/hashicorp/go-safetemp v1.0.0 // indirect
 	github.com/hashicorp/go-version v1.6.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
@@ -137,10 +136,12 @@ require (
 	github.com/MicahParks/keyfunc v1.9.0
 	github.com/creack/pty v1.1.21
 	github.com/go-co-op/gocron v1.37.0
+	github.com/go-co-op/gocron/v2 v2.15.0
 	github.com/gofiber/jwt/v3 v3.3.10
 	github.com/golang-jwt/jwt/v4 v4.5.0
 	github.com/gopacket/gopacket v1.2.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/hashicorp/go-getter v1.7.6
 	github.com/highcard-dev/gorcon v1.3.10
 	github.com/otiai10/copy v1.14.0
 	github.com/packetcap/go-pcap v0.0.0-20240528124601-8c87ecf5dbc5
