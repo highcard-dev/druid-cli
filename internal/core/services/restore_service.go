@@ -102,7 +102,7 @@ func (rc *RestoreService) RestoreSnapshot(dir string, source string, options por
 	return os.RemoveAll(temDir)
 }
 
-func (rc *RestoreService) createTarGz(source, target string) error {
+func (rc *RestoreService) createTarGz(rootPath, target string) error {
 	// Create the target .tgz file
 	tgzFile, err := os.Create(target)
 	if err != nil {
@@ -119,7 +119,7 @@ func (rc *RestoreService) createTarGz(source, target string) error {
 	defer tarWriter.Close()
 
 	// Walk through the source directory
-	return filepath.Walk(source, func(file string, fi os.FileInfo, err error) error {
+	return filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -127,41 +127,43 @@ func (rc *RestoreService) createTarGz(source, target string) error {
 		// Skip the target file
 		if absTarget, err := filepath.Abs(target); err != nil {
 			return err
-		} else if absFile, err := filepath.Abs(file); err != nil {
+		} else if absFile, err := filepath.Abs(path); err != nil {
 			return err
 		} else if absFile == absTarget {
 			return nil
 		}
 
-		// Create a tar header for the current file
-		header, err := tar.FileInfoHeader(fi, fi.Name())
+		linkName := ""
+		if info.Mode()&os.ModeSymlink == os.ModeSymlink {
+			linkName, err = os.Readlink(path)
+			if err != nil {
+				return err
+			}
+		}
+
+		hdr, err := tar.FileInfoHeader(info, linkName)
 		if err != nil {
 			return err
 		}
 
-		// Update the header name to maintain folder structure
-		header.Name, _ = filepath.Rel(source, file)
+		hdr.Name, _ = filepath.Rel(rootPath, path)
 
-		// Write the header to the tar file
-		if err := tarWriter.WriteHeader(header); err != nil {
+		if err := tarWriter.WriteHeader(hdr); err != nil {
 			return err
 		}
 
-		// If the file is a directory, return early
-		if fi.IsDir() {
-			return nil
-		}
+		if info.Mode().IsRegular() {
+			file, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
 
-		// Open the file for reading
-		fileReader, err := os.Open(file)
-		if err != nil {
+			_, err = io.Copy(tarWriter, file)
 			return err
 		}
-		defer fileReader.Close()
 
-		// Copy the file content into the tar writer
-		_, err = io.Copy(tarWriter, fileReader)
-		return err
+		return nil
 	})
 }
 
