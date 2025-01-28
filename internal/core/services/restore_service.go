@@ -4,10 +4,10 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -190,7 +190,7 @@ func (pr *ProgressReader) Read(p []byte) (int, error) {
 
 	// Update progress if we've moved at least 0.1% or it's been more than the update frequency since the last update
 	if currentPercent > pr.lastPercent+0.1 {
-		logger.Log().Info("Upload progress", zap.Float64("percentage", currentPercent))
+		logger.Log().Info("Upload progress", zap.String("percentage", fmt.Sprintf("%.1f%%", currentPercent)))
 		pr.lastPercent = currentPercent
 	}
 
@@ -224,17 +224,18 @@ func (rc *RestoreService) uploadFileUsingPresignedURL(presignedURL, filePath str
 		return fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 
-	// Define GetBody to allow retries by providing a new reader each time
-	req.GetBody = func() (io.ReadCloser, error) {
-		return ioutil.NopCloser(bytes.NewReader(data)), nil
-	}
-
 	// Set required headers
 	req.Header.Set("Content-Type", "application/octet-stream") // Adjust as needed
 	req.Header.Set("Content-Length", fmt.Sprintf("%d", len(data)))
 
+	transport := &http.Transport{
+		ForceAttemptHTTP2: false, // disable http, to prevent REFUSED_STREAM errors
+		TLSNextProto:      map[string]func(string, *tls.Conn) http.RoundTripper{},
+	}
 	// Use a HTTP client with automatic retries configured, if possible
-	client := &http.Client{}
+	client := &http.Client{
+		Transport: transport,
+	}
 
 	// Execute the request
 	resp, err := client.Do(req)
