@@ -2,10 +2,12 @@ package services
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -33,18 +35,23 @@ func (rc *RestoreService) Snapshot(dir string, destination string, options ports
 		target = filepath.Join(options.TempDir, "snapshot.tgz")
 	}
 
+	logger.Log().Info("Creating snapshot", zap.String("source", dir), zap.String("destination", target))
 	// Define the source URL and destination directory
 	err := rc.createTarGz(dir, target)
 	if err != nil {
 		return err
 	}
+	logger.Log().Info("Snapshot created", zap.String("source", dir), zap.String("destination", target))
 
 	//TODO: upload
 	if strings.HasPrefix(destination, "http") {
+		logger.Log().Info("Uploading snapshot", zap.String("source", target), zap.String("destination", destination))
 		err = rc.uploadFileUsingPresignedURL(destination, target)
 		if err != nil {
+			logger.Log().Error("Error occured while uploading snapshot", zap.Error(err))
 			return err
 		}
+		logger.Log().Info("Snapshot uploaded", zap.String("source", target), zap.String("destination", destination))
 	} else {
 		return errors.New("destination must be a presigned S3 URL")
 	}
@@ -167,33 +174,65 @@ func (rc *RestoreService) createTarGz(rootPath, target string) error {
 	})
 }
 
-func (rc *RestoreService) uploadFileUsingPresignedURL(presignedURL, filePath string) error {
-	// Open the file
-	file, err := os.Open(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to open file: %w", err)
-	}
-	defer file.Close()
+type ProgressReader struct {
+	reader   io.Reader
+	total    int64
+	read     int64
+	fileSize int64
+}
 
-	// Get file info to set the Content-Length header
-	fileInfo, err := file.Stat()
-	if err != nil {
-		return fmt.Errorf("failed to get file info: %w", err)
+func (pr *ProgressReader) Read(p []byte) (int, error) {
+	n, err := pr.reader.Read(p)
+	pr.read += int64(n)
+
+	// Update progress
+	percentage := float64(pr.read*100) / float64(pr.fileSize)
+	logger.Log().Info("Upload progress", zap.Float64("percentage", percentage))
+
+	// Check if the upload is finished
+	if pr.read == pr.fileSize {
+		logger.Log().Info("Upload complete")
 	}
-	fileSize := fileInfo.Size()
+
+	return n, err
+}
+
+func (rc *RestoreService) uploadFileUsingPresignedURL(presignedURL, filePath string) error {
+	// Read the file into memory
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to read file: %w", err)
+	}
+
+	// Convert data to io.Reader/io.ReadCloser
+	fileReader := bytes.NewReader(data)
+
+	// Wrap the reader in the ProgressReader
+	progressReader := &ProgressReader{
+		reader:   fileReader,
+		total:    0, // Initially no bytes read
+		fileSize: int64(len(data)),
+	}
 
 	// Create an HTTP request with the presigned URL
-	req, err := http.NewRequest("PUT", presignedURL, file)
+	req, err := http.NewRequest("PUT", presignedURL, progressReader)
 	if err != nil {
 		return fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 
+	// Define GetBody to allow retries by providing a new reader each time
+	req.GetBody = func() (io.ReadCloser, error) {
+		return ioutil.NopCloser(bytes.NewReader(data)), nil
+	}
+
 	// Set required headers
 	req.Header.Set("Content-Type", "application/octet-stream") // Adjust as needed
-	req.Header.Set("Content-Length", fmt.Sprintf("%d", fileSize))
+	req.Header.Set("Content-Length", fmt.Sprintf("%d", len(data)))
+
+	// Use a HTTP client with automatic retries configured, if possible
+	client := &http.Client{}
 
 	// Execute the request
-	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to execute HTTP request: %w", err)
