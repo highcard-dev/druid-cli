@@ -190,7 +190,7 @@ func (pr *ProgressReader) Read(p []byte) (int, error) {
 
 	// Update progress if we've moved at least 0.1% or it's been more than the update frequency since the last update
 	if currentPercent > pr.lastPercent+0.1 {
-		logger.Log().Info("Upload progress", zap.String("percentage", fmt.Sprintf("%.1f%%", currentPercent)))
+		logger.Log().Info("Upload progress", zap.String("percentage", fmt.Sprintf("%.1f%%", currentPercent)), zap.String("read", fmt.Sprintf("%d/%d", pr.read, pr.fileSize)))
 		pr.lastPercent = currentPercent
 	}
 
@@ -229,7 +229,7 @@ func (rc *RestoreService) uploadFileUsingPresignedURL(presignedURL, filePath str
 	req.Header.Set("Content-Length", fmt.Sprintf("%d", len(data)))
 
 	transport := &http.Transport{
-		ForceAttemptHTTP2: false, // disable http, to prevent REFUSED_STREAM errors
+		ForceAttemptHTTP2: false, // disable http2, to prevent REFUSED_STREAM errors
 		TLSNextProto:      map[string]func(string, *tls.Conn) http.RoundTripper{},
 	}
 	// Use a HTTP client with automatic retries configured, if possible
