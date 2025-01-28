@@ -175,21 +175,26 @@ func (rc *RestoreService) createTarGz(rootPath, target string) error {
 }
 
 type ProgressReader struct {
-	reader   io.Reader
-	total    int64
-	read     int64
-	fileSize int64
+	reader      io.Reader
+	read        int64
+	fileSize    int64
+	lastPercent float64
 }
 
 func (pr *ProgressReader) Read(p []byte) (int, error) {
 	n, err := pr.reader.Read(p)
 	pr.read += int64(n)
 
-	// Update progress
-	percentage := float64(pr.read*100) / float64(pr.fileSize)
-	logger.Log().Info("Upload progress", zap.Float64("percentage", percentage))
+	// Calculate current percentage of upload progress
+	currentPercent := (float64(pr.read) * 100) / float64(pr.fileSize)
 
-	// Check if the upload is finished
+	// Update progress if we've moved at least 0.1% or it's been more than the update frequency since the last update
+	if currentPercent > pr.lastPercent+0.1 {
+		logger.Log().Info("Upload progress", zap.Float64("percentage", currentPercent))
+		pr.lastPercent = currentPercent
+	}
+
+	// If the upload is finished
 	if pr.read == pr.fileSize {
 		logger.Log().Info("Upload complete")
 	}
@@ -210,7 +215,6 @@ func (rc *RestoreService) uploadFileUsingPresignedURL(presignedURL, filePath str
 	// Wrap the reader in the ProgressReader
 	progressReader := &ProgressReader{
 		reader:   fileReader,
-		total:    0, // Initially no bytes read
 		fileSize: int64(len(data)),
 	}
 
