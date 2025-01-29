@@ -87,6 +87,9 @@ func (rc *RestoreService) uploadFileUsingS3(objectKey, filePath string, s3Destin
 		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
 		Secure: true,
 	})
+	if err != nil {
+		return fmt.Errorf("Failed to create S3 client: %v", err)
+	}
 
 	// Open the file
 	file, err := os.Open(filePath)
