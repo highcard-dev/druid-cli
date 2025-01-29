@@ -125,8 +125,17 @@ type RestoreSnapshotOptions struct {
 	Safe    bool
 	TempDir string
 }
+
+type S3Destination struct {
+	AccessKey string
+	SecretKey string
+	Bucket    string
+	Endpoint  string
+	Region    string
+}
 type SnapshotOptions struct {
-	TempDir string
+	TempDir       string
+	S3Destination *S3Destination
 }
 
 type SnapshotService interface {

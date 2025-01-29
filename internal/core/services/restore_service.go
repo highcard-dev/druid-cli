@@ -3,6 +3,7 @@ package services
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -15,6 +16,8 @@ import (
 	"github.com/hashicorp/go-getter"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"go.uber.org/zap"
 )
 
@@ -51,11 +54,67 @@ func (rc *RestoreService) Snapshot(dir string, destination string, options ports
 			return err
 		}
 		logger.Log().Info("Snapshot uploaded", zap.String("source", target), zap.String("destination", destination))
+	} else if options.S3Destination != nil {
+		logger.Log().Info("Uploading snapshot", zap.String("source", target), zap.String("destination", destination))
+		err = rc.uploadFileUsingS3(destination, target, options.S3Destination)
+		if err != nil {
+			logger.Log().Error("Error occured while uploading snapshot", zap.Error(err))
+			return err
+		}
+		logger.Log().Info("Snapshot uploaded", zap.String("source", target), zap.String("destination", destination))
 	} else {
 		return errors.New("destination must be a presigned S3 URL")
 	}
 
 	return os.Remove(target)
+}
+
+func (rc *RestoreService) uploadFileUsingS3(objectKey, filePath string, s3Destination *ports.S3Destination) error {
+
+	ctx := context.TODO()
+
+	endpoint := s3Destination.Endpoint
+	region := s3Destination.Region
+	if region == "" {
+		region = "us-east-1"
+	}
+	accessKey := s3Destination.AccessKey
+	secretKey := s3Destination.SecretKey
+	bucketName := s3Destination.Bucket
+
+	// Load AWS config with custom S3-compatible settings
+	minioClient, err := minio.New(endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
+		Secure: true,
+	})
+
+	// Open the file
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	// Get the file size
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to get file info: %w", err)
+	}
+	fileSize := fileInfo.Size()
+
+	// Wrap the file reader in the ProgressReader with an update frequency of 1 second
+	progressReader := &ProgressReader{
+		reader:   file,
+		fileSize: fileSize,
+	}
+
+	contentType := "application/octet-stream"
+	_, err = minioClient.PutObject(ctx, bucketName, objectKey, progressReader, fileSize, minio.PutObjectOptions{ContentType: contentType})
+	if err != nil {
+		return fmt.Errorf("Failed to upload file: %v", err)
+	}
+	return nil
+
 }
 
 func (rc *RestoreService) RestoreSnapshot(dir string, source string, options ports.RestoreSnapshotOptions) error {

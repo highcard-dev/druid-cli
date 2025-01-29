@@ -10,6 +10,11 @@ import (
 
 var tgzTempDir string
 
+var s3AccessKey string
+var s3SecretKey string
+var s3Bucket string
+var s3Endpoint string
+
 var BackupCmd = &cobra.Command{
 	Use:   "backup",
 	Short: "Backup the current scroll",
@@ -26,8 +31,20 @@ var BackupCmd = &cobra.Command{
 
 		snapshotService := services.NewRestoreService()
 
+		var s3Destination ports.S3Destination
+
+		if s3AccessKey != "" && s3SecretKey != "" && s3Bucket != "" {
+			s3Destination = ports.S3Destination{
+				AccessKey: s3AccessKey,
+				SecretKey: s3SecretKey,
+				Bucket:    s3Bucket,
+				Endpoint:  s3Endpoint,
+			}
+		}
+
 		options := ports.SnapshotOptions{
-			TempDir: tempDir,
+			TempDir:       tempDir,
+			S3Destination: &s3Destination,
 		}
 
 		return snapshotService.Snapshot(scrollService.GetCwd(), destination, options)
@@ -36,4 +53,8 @@ var BackupCmd = &cobra.Command{
 
 func init() {
 	BackupCmd.Flags().StringVarP(&tgzTempDir, "tgz-temp-dir", "", "", "Temporary location for the backup tgz file")
+	BackupCmd.Flags().StringVarP(&s3AccessKey, "s3-access-key", "", "", "S3 access key")
+	BackupCmd.Flags().StringVarP(&s3SecretKey, "s3-secret-key", "", "", "S3 secret key")
+	BackupCmd.Flags().StringVarP(&s3Bucket, "s3-bucket", "", "", "S3 bucket")
+	BackupCmd.Flags().StringVarP(&s3Endpoint, "s3-endpoint", "", "", "S3 endpoint")
 }
