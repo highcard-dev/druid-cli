@@ -2,7 +2,6 @@ package services
 
 import (
 	"archive/tar"
-	"bytes"
 	"compress/gzip"
 	"crypto/tls"
 	"errors"
@@ -203,19 +202,24 @@ func (pr *ProgressReader) Read(p []byte) (int, error) {
 }
 
 func (rc *RestoreService) uploadFileUsingPresignedURL(presignedURL, filePath string) error {
-	// Read the file into memory
-	data, err := os.ReadFile(filePath)
+	// Open the file
+	file, err := os.Open(filePath)
 	if err != nil {
-		return fmt.Errorf("failed to read file: %w", err)
+		return fmt.Errorf("failed to open file: %w", err)
 	}
+	defer file.Close()
 
-	// Convert data to io.Reader/io.ReadCloser
-	fileReader := bytes.NewReader(data)
+	// Get the file size
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to get file info: %w", err)
+	}
+	fileSize := fileInfo.Size()
 
-	// Wrap the reader in the ProgressReader
+	// Wrap the file reader in the ProgressReader with an update frequency of 1 second
 	progressReader := &ProgressReader{
-		reader:   fileReader,
-		fileSize: int64(len(data)),
+		reader:   file,
+		fileSize: fileSize,
 	}
 
 	// Create an HTTP request with the presigned URL
@@ -226,7 +230,7 @@ func (rc *RestoreService) uploadFileUsingPresignedURL(presignedURL, filePath str
 
 	// Set required headers
 	req.Header.Set("Content-Type", "application/octet-stream") // Adjust as needed
-	req.Header.Set("Content-Length", fmt.Sprintf("%d", len(data)))
+	req.Header.Set("Content-Length", fmt.Sprintf("%d", fileSize))
 
 	transport := &http.Transport{
 		ForceAttemptHTTP2: false, // disable http2, to prevent REFUSED_STREAM errors
