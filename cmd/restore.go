@@ -5,6 +5,7 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/core/services"
+	snapshotServices "github.com/highcard-dev/daemon/internal/core/services/snapshot"
 	"github.com/spf13/cobra"
 )
 
@@ -25,7 +26,7 @@ var RestoreCmd = &cobra.Command{
 			return fmt.Errorf("failed to load scroll - %w", err)
 		}
 
-		snapshotService := services.NewRestoreService()
+		snapshotService := snapshotServices.NewSnapshotService()
 
 		options := ports.RestoreSnapshotOptions{
 			Safe:    !skipSafety,

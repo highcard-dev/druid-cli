@@ -14,33 +14,36 @@ import (
 )
 
 type ColdStarter struct {
-	handler      map[string]uint
-	finishCount  uint
-	dir          string
-	finishTime   *time.Time
-	portsService ports.PortServiceInterface
-	serveDone    chan error
-	finishChan   chan *domain.AugmentedPort
-	chandlers    []ports.ColdStarterHandlerInterface
-	queueManager ports.QueueManagerInterface
+	handler        map[string]uint
+	finishCount    uint
+	dir            string
+	finishTime     *time.Time
+	portsService   ports.PortServiceInterface
+	serveDone      chan error
+	finishChan     chan *domain.AugmentedPort
+	chandlers      []ports.ColdStarterHandlerInterface
+	queueManager   ports.QueueManagerInterface
+	restoreService ports.SnapshotService
 }
 
 // NewColdStarter initializes the ColdStarter struct with proper channel initialization and no initial finishTime.
 func NewColdStarter(
 	portsService ports.PortServiceInterface,
 	queueManager ports.QueueManagerInterface,
+	restoreService ports.SnapshotService,
 	dir string,
 ) *ColdStarter {
 	return &ColdStarter{
-		handler:      make(map[string]uint),
-		finishCount:  0,
-		dir:          dir,
-		finishTime:   nil,
-		portsService: portsService,
-		serveDone:    make(chan error),
-		finishChan:   make(chan *domain.AugmentedPort),
-		chandlers:    nil,
-		queueManager: queueManager,
+		handler:        make(map[string]uint),
+		finishCount:    0,
+		dir:            dir,
+		finishTime:     nil,
+		portsService:   portsService,
+		serveDone:      make(chan error),
+		finishChan:     make(chan *domain.AugmentedPort),
+		chandlers:      nil,
+		queueManager:   queueManager,
+		restoreService: restoreService,
 	}
 }
 
@@ -95,7 +98,7 @@ func (c *ColdStarter) Serve(ctx context.Context) error {
 				for _, v := range port.Vars {
 					vars[v.Name] = v.Value
 				}
-				handler = lua.NewLuaHandler(c.queueManager, path, c.dir, vars, augmentedPortMap)
+				handler = lua.NewLuaHandler(c.queueManager, c.restoreService, path, c.dir, vars, augmentedPortMap)
 			}
 
 			c.chandlers = append(c.chandlers, handler)

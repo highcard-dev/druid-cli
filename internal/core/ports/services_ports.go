@@ -11,6 +11,14 @@ import (
 	"oras.land/oras-go/v2/registry/remote"
 )
 
+type SnapshotMode string
+
+const (
+	SnapshotModeSnapshot SnapshotMode = "snapshot"
+	SnapshotModeRestore  SnapshotMode = "restore"
+	SnapshotModeNoop     SnapshotMode = "noop"
+)
+
 type AuthorizerServiceInterface interface {
 	CheckHeader(r *fiber.Ctx) (*time.Time, error)
 	CheckQuery(token string) (*time.Time, error)
@@ -138,7 +146,14 @@ type SnapshotOptions struct {
 	S3Destination *S3Destination
 }
 
+type ProgressTracker interface {
+	GetPercent() float64
+}
+
 type SnapshotService interface {
-	Snapshot(dir string, destination string) error
-	RestoreSnapshot(dir string, source string) error
+	Snapshot(dir string, destination string, options SnapshotOptions) error
+	RestoreSnapshot(dir string, source string, options RestoreSnapshotOptions) error
+
+	GetProgressTracker() ProgressTracker
+	GetCurrentMode() SnapshotMode
 }

@@ -30,6 +30,24 @@
             ],
         },
         {
+            "name": "Debug Daemon serve (restore example)",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/main.go",
+            "args": [
+                "serve",
+                "--cwd",
+                "${workspaceFolder}/examples/ark-restore",
+                "--init-snapshot-url", "https://fsn1.your-objectstorage.com/druid-deployment-assets/lgsm/ark-snapshot-latest.tar.gz",
+                "-p",
+                "9190",
+                "artifacts.druid.gg/druid-team/scroll-lgsm:arkserver",
+                "--coldstarter"
+            ],
+        },
+        {
             "name": "Debug Daemon serve (htop example)",
             "type": "go",
             "request": "launch",
@@ -93,7 +111,7 @@
                 "--coldstarter",
                 "-p",
                 "9190",
-            ],,
+            ],
             "env": {
                 "DRUID_PORT_QUERY": "2556",
                 "DRUID_PORT_MAIN": "7771"

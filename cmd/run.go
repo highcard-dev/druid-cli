@@ -5,6 +5,7 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/services"
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
+	snapshotService "github.com/highcard-dev/daemon/internal/core/services/snapshot"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -42,7 +43,9 @@ var RunCmd = &cobra.Command{
 		processLauncher := services.NewProcedureLauncher(client, processManager, services.NewPluginManager(), consoleService, logManager, scrollService)
 
 		queueManager := services.NewQueueManager(scrollService, processLauncher)
-		_, err = initScroll(scrollService, processLauncher, queueManager)
+		snapshotService := snapshotService.NewSnapshotService()
+
+		_, err = initScroll(scrollService, snapshotService, processLauncher, queueManager)
 
 		logger.Log().Info("Adding command to queue", zap.String("command", command))
 		err = queueManager.AddTempItem(command)

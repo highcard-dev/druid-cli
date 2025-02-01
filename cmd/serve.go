@@ -9,8 +9,10 @@ import (
 
 	"github.com/highcard-dev/daemon/cmd/server/web"
 	"github.com/highcard-dev/daemon/internal/core/domain"
+	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/core/services"
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
+	snapshotServices "github.com/highcard-dev/daemon/internal/core/services/snapshot"
 	"github.com/highcard-dev/daemon/internal/handler"
 	"github.com/highcard-dev/daemon/internal/signals"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
@@ -30,6 +32,7 @@ var watchPortsInterfaces []string
 var portInactivity uint
 var useColdstarter bool
 var maxStartupHealthCheckTimeout uint
+var initSnapshotUrl string
 
 var ServeCommand = &cobra.Command{
 	Use:   "serve",
@@ -91,7 +94,7 @@ to interact and monitor the Scroll Application`,
 					return err
 				}
 
-				_, err = scrollService.LoadScroll()
+				_, err = scrollService.ReloadScroll()
 				if err != nil {
 					return err
 				}
@@ -112,7 +115,8 @@ to interact and monitor the Scroll Application`,
 
 		portService := services.NewPortServiceWithScrollFile(scrollService.GetFile())
 
-		coldStarter := services.NewColdStarter(portService, queueManager, scrollService.GetDir())
+		snapshotService := snapshotServices.NewSnapshotService()
+		coldStarter := services.NewColdStarter(portService, queueManager, snapshotService, scrollService.GetDir())
 
 		scrollHandler := handler.NewScrollHandler(scrollService, pluginManager, processLauncher, queueManager)
 		processHandler := handler.NewProcessHandler(processManager)
@@ -174,7 +178,7 @@ to interact and monitor the Scroll Application`,
 
 							logger.Log().Info("Coldstarter done, starting scroll")
 
-							startup(scrollService, processLauncher, queueManager, portService, coldStarter, healthHandler, cwd, doneChan)
+							startup(scrollService, snapshotService, processLauncher, queueManager, portService, coldStarter, healthHandler, cwd, doneChan)
 
 							portService.ResetOpenPorts()
 
@@ -214,10 +218,10 @@ to interact and monitor the Scroll Application`,
 						}
 					} else {
 						logger.Log().Warn("No ports to start, skipping coldstarter")
-						startup(scrollService, processLauncher, queueManager, portService, coldStarter, healthHandler, cwd, doneChan)
+						startup(scrollService, snapshotService, processLauncher, queueManager, portService, coldStarter, healthHandler, cwd, doneChan)
 					}
 				} else {
-					startup(scrollService, processLauncher, queueManager, portService, coldStarter, healthHandler, cwd, doneChan)
+					startup(scrollService, snapshotService, processLauncher, queueManager, portService, coldStarter, healthHandler, cwd, doneChan)
 				}
 
 			}()
@@ -265,14 +269,17 @@ func init() {
 	ServeCommand.Flags().UintVarP(&portInactivity, "port-inactivity", "", 120, "Port inactivity timeout")
 
 	ServeCommand.Flags().UintVarP(&maxStartupHealthCheckTimeout, "max-health-check-startup-timeount", "", 0, "Sets the max amount of time the health check is allowed to take on startup. If the value is 0, there will be no timeout. This is useful to prevent the health check from blocking the startup of the daemon fully.")
+
+	ServeCommand.Flags().StringVarP(&initSnapshotUrl, "init-snapshot-url", "", "", "Snapshot to restore on startup")
 }
 
-func startup(scrollService *services.ScrollService, processLauncher *services.ProcedureLauncher, queueManager *services.QueueManager, portSerivce *services.PortMonitor, coldStarter *services.ColdStarter, healthHandler *handler.HealthHandler, cwd string, doneChan chan error) {
+func startup(scrollService *services.ScrollService, snapshotService ports.SnapshotService, processLauncher *services.ProcedureLauncher, queueManager *services.QueueManager, portSerivce *services.PortMonitor, coldStarter *services.ColdStarter, healthHandler *handler.HealthHandler, cwd string, doneChan chan error) {
 
 	healthHandler.Started = true
-	currentScroll := scrollService.GetCurrent()
 
-	newScroll, err := initScroll(scrollService, processLauncher, queueManager)
+	newScroll, err := initScroll(scrollService, snapshotService, processLauncher, queueManager)
+
+	currentScroll := scrollService.GetCurrent()
 
 	if err != nil {
 		doneChan <- err
@@ -341,7 +348,7 @@ func startup(scrollService *services.ScrollService, processLauncher *services.Pr
 
 }
 
-func initScroll(scrollService *services.ScrollService, processLauncher *services.ProcedureLauncher, queueManager *services.QueueManager) (bool, error) {
+func initScroll(scrollService *services.ScrollService, snapshotService ports.SnapshotService, processLauncher *services.ProcedureLauncher, queueManager *services.QueueManager) (bool, error) {
 
 	lock, err := scrollService.Bootstrap(ignoreVersionCheck)
 	if err != nil {
@@ -351,6 +358,28 @@ func initScroll(scrollService *services.ScrollService, processLauncher *services
 	newScroll := len(lock.Statuses) == 0
 
 	if newScroll {
+
+		if initSnapshotUrl != "" {
+			logger.Log().Info("Starting restore process")
+			err := snapshotService.RestoreSnapshot(scrollService.GetCwd(), initSnapshotUrl, ports.RestoreSnapshotOptions{
+				Safe: false,
+			})
+
+			if err != nil {
+				return false, err
+			}
+
+			_, err = scrollService.ReloadScroll()
+			if err != nil {
+				return false, err
+			}
+
+			lock, err = scrollService.Bootstrap(ignoreVersionCheck)
+			if err != nil {
+				return false, err
+			}
+		}
+
 		logger.Log().Info("No lock file found, but init command available. Bootstrapping...")
 
 		logger.Log().Info("Creating lock and bootstrapping files")

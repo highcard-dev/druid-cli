@@ -21,14 +21,23 @@ import (
 	"go.uber.org/zap"
 )
 
-type RestoreService struct {
+type SnapshotService struct {
+	currentProgressTracker ports.ProgressTracker
+	currentMode            ports.SnapshotMode
 }
 
-func NewRestoreService() *RestoreService {
-	return &RestoreService{}
+func NewSnapshotService() *SnapshotService {
+	return &SnapshotService{
+		currentMode: ports.SnapshotModeNoop,
+	}
 }
 
-func (rc *RestoreService) Snapshot(dir string, destination string, options ports.SnapshotOptions) error {
+func (rc *SnapshotService) setActivity(mode ports.SnapshotMode, progressTracker *ProgressTracker) {
+	rc.currentMode = mode
+	rc.currentProgressTracker = progressTracker
+}
+
+func (rc *SnapshotService) Snapshot(dir string, destination string, options ports.SnapshotOptions) error {
 
 	var target string
 	if options.TempDir == "" {
@@ -69,7 +78,7 @@ func (rc *RestoreService) Snapshot(dir string, destination string, options ports
 	return os.Remove(target)
 }
 
-func (rc *RestoreService) uploadFileUsingS3(objectKey, filePath string, s3Destination *ports.S3Destination) error {
+func (rc *SnapshotService) uploadFileUsingS3(objectKey, filePath string, s3Destination *ports.S3Destination) error {
 
 	ctx := context.TODO()
 
@@ -106,10 +115,12 @@ func (rc *RestoreService) uploadFileUsingS3(objectKey, filePath string, s3Destin
 	fileSize := fileInfo.Size()
 
 	// Wrap the file reader in the ProgressReader with an update frequency of 1 second
-	progressReader := &ProgressReader{
+	progressReader := &ProgressTracker{
 		reader:   file,
 		fileSize: fileSize,
 	}
+	rc.setActivity(ports.SnapshotModeSnapshot, progressReader)
+	defer rc.setActivity(ports.SnapshotModeNoop, nil)
 
 	contentType := "application/octet-stream"
 	_, err = minioClient.PutObject(ctx, bucketName, objectKey, progressReader, fileSize, minio.PutObjectOptions{ContentType: contentType})
@@ -120,7 +131,7 @@ func (rc *RestoreService) uploadFileUsingS3(objectKey, filePath string, s3Destin
 
 }
 
-func (rc *RestoreService) RestoreSnapshot(dir string, source string, options ports.RestoreSnapshotOptions) error {
+func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options ports.RestoreSnapshotOptions) error {
 
 	temDir := options.TempDir
 	if temDir == "" {
@@ -133,21 +144,26 @@ func (rc *RestoreService) RestoreSnapshot(dir string, source string, options por
 			logger.Log().Info("Moving folder to make space for backup", zap.String("dir", dir), zap.String("backup_dir", dir+"-bck"))
 			err := os.Rename(dir, temDir)
 			if err != nil {
-				return nil
+				return err
 			}
 		} else {
-			err := os.Remove(dir)
+			err := os.RemoveAll(dir)
 			if err != nil {
-				return nil
+				return err
 			}
 		}
 	}
+	progressReader := &ProgressTracker{}
+
+	rc.setActivity(ports.SnapshotModeRestore, progressReader)
+	defer rc.setActivity(ports.SnapshotModeNoop, nil)
 
 	// Create a new client
 	client := &getter.Client{
-		Src:  source, // Source URL
-		Dst:  dir,    // Destination path
-		Mode: getter.ClientModeDir,
+		Src:              source, // Source URL
+		Dst:              dir,    // Destination path
+		Mode:             getter.ClientModeDir,
+		ProgressListener: progressReader,
 	}
 	logger.Log().Info("Restoring backup", zap.String("source", source), zap.String("destination", dir))
 
@@ -170,7 +186,7 @@ func (rc *RestoreService) RestoreSnapshot(dir string, source string, options por
 	return os.RemoveAll(temDir)
 }
 
-func (rc *RestoreService) createTarGz(rootPath, target string) error {
+func (rc *SnapshotService) createTarGz(rootPath, target string) error {
 	// Create the target .tgz file
 	tgzFile, err := os.Create(target)
 	if err != nil {
@@ -235,35 +251,7 @@ func (rc *RestoreService) createTarGz(rootPath, target string) error {
 	})
 }
 
-type ProgressReader struct {
-	reader      io.Reader
-	read        int64
-	fileSize    int64
-	lastPercent float64
-}
-
-func (pr *ProgressReader) Read(p []byte) (int, error) {
-	n, err := pr.reader.Read(p)
-	pr.read += int64(n)
-
-	// Calculate current percentage of upload progress
-	currentPercent := (float64(pr.read) * 100) / float64(pr.fileSize)
-
-	// Update progress if we've moved at least 0.1% or it's been more than the update frequency since the last update
-	if currentPercent > pr.lastPercent+0.1 {
-		logger.Log().Info("Upload progress", zap.String("percentage", fmt.Sprintf("%.1f%%", currentPercent)), zap.String("read", fmt.Sprintf("%d/%d", pr.read, pr.fileSize)))
-		pr.lastPercent = currentPercent
-	}
-
-	// If the upload is finished
-	if pr.read == pr.fileSize {
-		logger.Log().Info("Upload complete")
-	}
-
-	return n, err
-}
-
-func (rc *RestoreService) uploadFileUsingPresignedURL(presignedURL, filePath string) error {
+func (rc *SnapshotService) uploadFileUsingPresignedURL(presignedURL, filePath string) error {
 	// Open the file
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -279,7 +267,7 @@ func (rc *RestoreService) uploadFileUsingPresignedURL(presignedURL, filePath str
 	fileSize := fileInfo.Size()
 
 	// Wrap the file reader in the ProgressReader with an update frequency of 1 second
-	progressReader := &ProgressReader{
+	progressReader := &ProgressTracker{
 		reader:   file,
 		fileSize: fileSize,
 	}
@@ -317,4 +305,12 @@ func (rc *RestoreService) uploadFileUsingPresignedURL(presignedURL, filePath str
 
 	fmt.Println("File uploaded successfully")
 	return nil
+}
+
+func (rc *SnapshotService) GetProgressTracker() ports.ProgressTracker {
+	return rc.currentProgressTracker
+}
+
+func (rc *SnapshotService) GetCurrentMode() ports.SnapshotMode {
+	return rc.currentMode
 }

@@ -31,12 +31,12 @@ func NewScrollService(
 		templateRenderer: NewTemplateRenderer(),
 	}
 
-	_, err := s.LoadScroll()
+	_, err := s.ReloadScroll()
 
 	return s, err
 }
 
-func (sc *ScrollService) LoadScroll() (*domain.Scroll, error) {
+func (sc *ScrollService) ReloadScroll() (*domain.Scroll, error) {
 	// TODO: better templating for scrolls in next version or so
 	os.Setenv("SCROLL_DIR", sc.GetDir())
 	scroll, err := domain.NewScroll(sc.GetDir())

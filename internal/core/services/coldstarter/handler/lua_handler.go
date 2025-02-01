@@ -11,26 +11,31 @@ import (
 )
 
 type LuaHandler struct {
-	file         string
-	luaPath      string
-	externalVars map[string]string
-	ports        map[string]int
-	finishedAt   *time.Time
-	queueManager ports.QueueManagerInterface
+	file            string
+	luaPath         string
+	externalVars    map[string]string
+	ports           map[string]int
+	finishedAt      *time.Time
+	queueManager    ports.QueueManagerInterface
+	snapshotService ports.SnapshotService
+	stateWrapper    *LuaWrapper
 }
 
 type LuaWrapper struct {
 	luaState *lua.LState
 }
 
-func NewLuaHandler(queueManager ports.QueueManagerInterface, file string, luaPath string, externalVars map[string]string, ports map[string]int) *LuaHandler {
+func NewLuaHandler(queueManager ports.QueueManagerInterface, snapshotService ports.SnapshotService,
+	file string, luaPath string, externalVars map[string]string, ports map[string]int) *LuaHandler {
 
 	handler := &LuaHandler{
-		file:         file,
-		luaPath:      luaPath,
-		externalVars: externalVars,
-		ports:        ports,
-		queueManager: queueManager,
+		file:            file,
+		luaPath:         luaPath,
+		externalVars:    externalVars,
+		ports:           ports,
+		queueManager:    queueManager,
+		snapshotService: snapshotService,
+		stateWrapper:    nil,
 	}
 	return handler
 }
@@ -41,9 +46,15 @@ func (handler *LuaHandler) SetFinishedAt(finishedAt *time.Time) {
 
 func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (ports.ColdStarterServerInterface, error) {
 
-	l := lua.NewState(lua.Options{
-		RegistrySize: 256 * 40,
-	})
+	var l *lua.LState
+
+	if handler.stateWrapper != nil {
+		l = handler.stateWrapper.luaState
+	} else {
+		l = lua.NewState(lua.Options{
+			RegistrySize: 256 * 40,
+		})
+	}
 
 	for name, f := range funcs {
 		// Create a new variable to capture the current function
@@ -147,14 +158,38 @@ func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (po
 		},
 	))
 
-	// set package.path to include the luaPath
-	l.DoString(fmt.Sprintf("package.path = package.path .. ';;%s/?.lua'", handler.luaPath))
+	l.SetGlobal("get_snapshot_percentage", l.NewFunction(
+		func(l *lua.LState) int {
+			progressTracker := handler.snapshotService.GetProgressTracker()
+			if progressTracker == nil {
+				return 0
+			}
+			percent := progressTracker.GetPercent()
+			l.Push(lua.LNumber(percent))
+			return 1
+		},
+	))
 
-	if err := l.DoFile(handler.file); err != nil {
-		return nil, err
+	l.SetGlobal("get_snapshot_mode", l.NewFunction(
+		func(l *lua.LState) int {
+			mode := handler.snapshotService.GetCurrentMode()
+			l.Push(lua.LString(mode))
+			return 1
+		},
+	))
+
+	if handler.stateWrapper == nil {
+		// set package.path to include the luaPath
+		l.DoString(fmt.Sprintf("package.path = package.path .. ';;%s/?.lua'", handler.luaPath))
+
+		if err := l.DoFile(handler.file); err != nil {
+			return nil, err
+		}
 	}
 
-	return &LuaWrapper{luaState: l}, nil
+	handler.stateWrapper = &LuaWrapper{luaState: l}
+
+	return handler.stateWrapper, nil
 }
 
 func (handler *LuaWrapper) Handle(data []byte, funcs map[string]func(data ...string)) error {
