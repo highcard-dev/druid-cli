@@ -88,6 +88,11 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]] &&  [[ $input != *
     then
         args+=("--coldstarter=$DRUID_COLDSTARTER")
     fi
+
+    if [ ! -z "${DRUID_INIT_SNAPSHOT_URL}" ];
+    then
+        args+=("--init-snapshot-url=$DRUID_INIT_SNAPSHOT_URL")
+    fi
         
     echo "Running druid with args from env: ${args[@]}"
     exec druid "${args[@]}"
