@@ -9,7 +9,6 @@ ports:
     port: 25565
     sleep_handler: packet_handler/minecraft.lua
     mandatory: true
-    finish_after_command: install
   - name: query
     protocol: udp
     sleep_handler: packet_handler/query.lua
