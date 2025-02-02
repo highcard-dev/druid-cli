@@ -307,8 +307,11 @@ func (rc *SnapshotService) uploadFileUsingPresignedURL(presignedURL, filePath st
 	return nil
 }
 
-func (rc *SnapshotService) GetProgressTracker() ports.ProgressTracker {
-	return rc.currentProgressTracker
+func (rc *SnapshotService) GetProgressTracker() *ports.ProgressTracker {
+	if rc.currentMode == ports.SnapshotModeNoop {
+		return nil
+	}
+	return &rc.currentProgressTracker
 }
 
 func (rc *SnapshotService) GetCurrentMode() ports.SnapshotMode {

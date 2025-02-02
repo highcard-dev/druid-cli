@@ -162,9 +162,10 @@ func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (po
 		func(l *lua.LState) int {
 			progressTracker := handler.snapshotService.GetProgressTracker()
 			if progressTracker == nil {
-				return 0
+				l.Push(lua.LNumber(100))
+				return 1
 			}
-			percent := progressTracker.GetPercent()
+			percent := (*progressTracker).GetPercent()
 			l.Push(lua.LNumber(percent))
 			return 1
 		},

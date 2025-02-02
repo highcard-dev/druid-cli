@@ -154,6 +154,6 @@ type SnapshotService interface {
 	Snapshot(dir string, destination string, options SnapshotOptions) error
 	RestoreSnapshot(dir string, source string, options RestoreSnapshotOptions) error
 
-	GetProgressTracker() ProgressTracker
+	GetProgressTracker() *ProgressTracker
 	GetCurrentMode() SnapshotMode
 }
