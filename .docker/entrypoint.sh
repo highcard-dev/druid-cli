@@ -93,6 +93,11 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]] &&  [[ $input != *
     then
         args+=("--init-snapshot-url=$DRUID_INIT_SNAPSHOT_URL")
     fi
+
+    if [ ! -z "${DRUID_SKIP_ARTIFACT_DOWNLOAD}" ];
+    then
+        args+=("--skip-artifact-download")
+    fi
         
     echo "Running druid with args from env: ${args[@]}"
     exec druid "${args[@]}"

@@ -33,6 +33,7 @@ var portInactivity uint
 var useColdstarter bool
 var maxStartupHealthCheckTimeout uint
 var initSnapshotUrl string
+var skipArtifactDownload bool
 
 var ServeCommand = &cobra.Command{
 	Use:   "serve",
@@ -85,6 +86,10 @@ to interact and monitor the Scroll Application`,
 
 				if artifact == "" {
 					return fmt.Errorf("no artifact provided")
+				}
+
+				if skipArtifactDownload {
+					return fmt.Errorf("artifact download is disabled")
 				}
 
 				logger.Log().Info("Downloading " + artifact + " into " + scrollService.GetDir())
@@ -271,6 +276,8 @@ func init() {
 	ServeCommand.Flags().UintVarP(&maxStartupHealthCheckTimeout, "max-health-check-startup-timeount", "", 0, "Sets the max amount of time the health check is allowed to take on startup. If the value is 0, there will be no timeout. This is useful to prevent the health check from blocking the startup of the daemon fully.")
 
 	ServeCommand.Flags().StringVarP(&initSnapshotUrl, "init-snapshot-url", "", "", "Snapshot to restore on startup")
+
+	ServeCommand.Flags().BoolVarP(&skipArtifactDownload, "skip-artifact-download", "", false, "Skip downloading the artifact on startup")
 }
 
 func startup(scrollService *services.ScrollService, snapshotService ports.SnapshotService, processLauncher *services.ProcedureLauncher, queueManager *services.QueueManager, portSerivce *services.PortMonitor, coldStarter *services.ColdStarter, healthHandler *handler.HealthHandler, cwd string, doneChan chan error) {
