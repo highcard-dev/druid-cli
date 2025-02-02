@@ -385,15 +385,19 @@ func initScroll(scrollService *services.ScrollService, snapshotService ports.Sna
 			if err != nil {
 				return false, err
 			}
+
+			newScroll = len(lock.Statuses) == 0
 		}
 
-		logger.Log().Info("No lock file found, but init command available. Bootstrapping...")
+		if newScroll {
+			logger.Log().Info("No lock file found, but init command available. Bootstrapping...")
 
-		logger.Log().Info("Creating lock and bootstrapping files")
-		//There is an error here. We need to bootstrap the files before we render out the templates in the bootstrap func above
-		err := scrollService.CreateLockAndBootstrapFiles()
-		if err != nil {
-			return newScroll, err
+			logger.Log().Info("Creating lock and bootstrapping files")
+			//There is an error here. We need to bootstrap the files before we render out the templates in the bootstrap func above
+			err := scrollService.CreateLockAndBootstrapFiles()
+			if err != nil {
+				return newScroll, err
+			}
 		}
 	} else {
 		logger.Log().Info("Found lock file, bootstrapping done")
