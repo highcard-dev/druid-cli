@@ -376,7 +376,7 @@ func initScroll(scrollService *services.ScrollService, snapshotService ports.Sna
 				return false, err
 			}
 
-			_, err = scrollService.ReloadScroll()
+			currentScroll, err := scrollService.ReloadScroll()
 			if err != nil {
 				return false, err
 			}
@@ -387,6 +387,12 @@ func initScroll(scrollService *services.ScrollService, snapshotService ports.Sna
 			}
 
 			newScroll = len(lock.Statuses) == 0
+
+			//if we have a new scroll, we do this anyways, just ensure that the init command is there, also allready initialized stuff
+			if !newScroll {
+				//initialize if nothing is there
+				queueManager.AddAndRememberItem(currentScroll.Init)
+			}
 		}
 
 		if newScroll {
