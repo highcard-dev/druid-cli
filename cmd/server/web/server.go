@@ -150,6 +150,8 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 
 	apiRoutes.Post("/coldstarter/finish", s.coldstarterHandler.Finish).Name("coldstarter.finish")
 
+	apiRoutes.Get("/health", s.healthHandler.Health).Name("health-authenticated")
+
 	// Create the WebDAV handler
 	webdavHandler := &webdav.Handler{
 		Prefix:     "/webdav",
