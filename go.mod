@@ -2,7 +2,7 @@ module github.com/highcard-dev/daemon
 
 go 1.22.0
 
-toolchain go1.22.8
+toolchain go1.24.1
 
 require (
 	github.com/Masterminds/semver/v3 v3.2.1
