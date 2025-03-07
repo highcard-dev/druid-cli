@@ -153,6 +153,14 @@ func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options po
 			}
 		}
 	}
+
+	//recreate dir with 775 permission
+	const FileMode = 0775
+	err := os.MkdirAll(dir, FileMode)
+	if err != nil {
+		return err
+	}
+
 	progressReader := &ProgressTracker{}
 
 	rc.setActivity(ports.SnapshotModeRestore, progressReader)
@@ -168,10 +176,7 @@ func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options po
 	logger.Log().Info("Restoring backup", zap.String("source", source), zap.String("destination", dir))
 
 	// Download the file
-	err := client.Get()
-
-	logger.Log().Info("Backup restored", zap.String("source", source), zap.String("destination", dir))
-
+	err = client.Get()
 	if err != nil {
 		logger.Log().Error("Error occured while getting backup", zap.Error(err))
 		if options.Safe {
@@ -183,6 +188,8 @@ func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options po
 		}
 		return err
 	}
+
+	logger.Log().Info("Backup restored", zap.String("source", source), zap.String("destination", dir))
 	return os.RemoveAll(temDir)
 }
 
