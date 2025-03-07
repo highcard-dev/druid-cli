@@ -134,6 +134,20 @@ func (rc *SnapshotService) uploadFileUsingS3(objectKey, filePath string, s3Desti
 
 func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options ports.RestoreSnapshotOptions) error {
 
+	progressReader := &ProgressTracker{}
+
+	// Create a new client
+	client := &getter.Client{
+		Src:              source, // Source URL
+		Dst:              dir,    // Destination path
+		Mode:             getter.ClientModeDir,
+		ProgressListener: progressReader,
+	}
+	_, err := getter.Detect(client.Src, client.Pwd, client.Detectors)
+	if err != nil {
+		return fmt.Errorf("failed to validate source: %w", err)
+	}
+
 	temDir := options.TempDir
 	if temDir == "" {
 		temDir = dir + "-bck"
@@ -161,22 +175,13 @@ func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options po
 		}
 	}
 
-	progressReader := &ProgressTracker{}
-
 	rc.setActivity(ports.SnapshotModeRestore, progressReader)
 	defer rc.setActivity(ports.SnapshotModeNoop, nil)
 
-	// Create a new client
-	client := &getter.Client{
-		Src:              source, // Source URL
-		Dst:              dir,    // Destination path
-		Mode:             getter.ClientModeDir,
-		ProgressListener: progressReader,
-	}
 	logger.Log().Info("Restoring backup", zap.String("source", source), zap.String("destination", dir))
 
 	// Download the file
-	err := client.Get()
+	err = client.Get()
 	if err != nil {
 		logger.Log().Error("Error occured while getting backup", zap.Error(err))
 		if options.Safe {
