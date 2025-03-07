@@ -15,6 +15,7 @@ import (
 
 	"github.com/hashicorp/go-getter"
 	"github.com/highcard-dev/daemon/internal/core/ports"
+	"github.com/highcard-dev/daemon/internal/utils"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -142,23 +143,22 @@ func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options po
 	if _, err := os.Stat(dir); err == nil {
 		if options.Safe {
 			logger.Log().Info("Moving folder to make space for backup", zap.String("dir", dir), zap.String("backup_dir", dir+"-bck"))
-			err := os.Rename(dir, temDir)
+
+			err := os.MkdirAll(temDir, 0755)
+			if err != nil {
+				return err
+			}
+			err = utils.MoveContents(dir, temDir)
 			if err != nil {
 				return err
 			}
 		} else {
-			err := os.RemoveAll(dir)
+			logger.Log().Info("Removing folder to make space for backup", zap.String("dir", dir))
+			err := utils.RemoveContents(dir)
 			if err != nil {
 				return err
 			}
 		}
-	}
-
-	//recreate dir with 775 permission
-	const FileMode = 0775
-	err := os.MkdirAll(dir, FileMode)
-	if err != nil {
-		return err
 	}
 
 	progressReader := &ProgressTracker{}
@@ -176,7 +176,7 @@ func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options po
 	logger.Log().Info("Restoring backup", zap.String("source", source), zap.String("destination", dir))
 
 	// Download the file
-	err = client.Get()
+	err := client.Get()
 	if err != nil {
 		logger.Log().Error("Error occured while getting backup", zap.Error(err))
 		if options.Safe {
