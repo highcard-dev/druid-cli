@@ -61,6 +61,33 @@ definitions:
     additionalProperties:
       $ref: '#/definitions/ProcessMonitorMetrics'
     type: object
+  ProcessTreeNode:
+    properties:
+      children:
+        items:
+          $ref: '#/definitions/ProcessTreeNode'
+        type: array
+      cmdline:
+        type: string
+      cpu_percent:
+        type: number
+      gids:
+        items:
+          type: integer
+        type: array
+      io_counters:
+        type: string
+      memory:
+        type: string
+      memory_ex:
+        type: string
+      name:
+        type: string
+      process:
+        type: string
+      username:
+        type: string
+    type: object
   ProcessTreeRoot:
     properties:
       root:
@@ -216,33 +243,6 @@ definitions:
       name:
         type: string
       type:
-        type: string
-    type: object
-  domain.ProcessTreeNode:
-    properties:
-      children:
-        items:
-          $ref: '#/definitions/domain.ProcessTreeNode'
-        type: array
-      cmdline:
-        type: string
-      cpu_percent:
-        type: number
-      gids:
-        items:
-          type: integer
-        type: array
-      io_counters:
-        type: string
-      memory:
-        type: string
-      memory_ex:
-        type: string
-      name:
-        type: string
-      process:
-        type: string
-      username:
         type: string
     type: object
   domain.RunMode:
@@ -474,7 +474,8 @@ paths:
       responses:
         "200":
           description: OK
-          schema: {}
+          schema:
+            type: object
         "201":
           description: Created
       summary: Run procedure
