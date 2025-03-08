@@ -123,7 +123,7 @@ to interact and monitor the Scroll Application`,
 		snapshotService := snapshotServices.NewSnapshotService()
 		coldStarter := services.NewColdStarter(portService, queueManager, snapshotService, scrollService.GetDir())
 
-		scrollHandler := handler.NewScrollHandler(scrollService, pluginManager, processLauncher, queueManager)
+		scrollHandler := handler.NewScrollHandler(scrollService, pluginManager, processLauncher, queueManager, processManager)
 		processHandler := handler.NewProcessHandler(processManager)
 		scrollLogHandler := handler.NewScrollLogHandler(scrollService, logManager, processManager)
 		scrollMetricHandler := handler.NewScrollMetricHandler(scrollService, processMonitor)

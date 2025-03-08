@@ -13,6 +13,7 @@ type ScrollHandler struct {
 	PluginManager   ports.PluginManagerInterface
 	ProcessLauncher ports.ProcedureLauchnerInterface
 	QueueManager    ports.QueueManagerInterface
+	ProcessManager  ports.ProcessManagerInterface
 }
 
 type StartScrollRequestBody struct {
@@ -27,8 +28,14 @@ type StartProcedureRequestBody struct {
 	Sync    bool   `json:"sync"`
 }
 
-func NewScrollHandler(scrollService ports.ScrollServiceInterface, pluginManager ports.PluginManagerInterface, processLauncher ports.ProcedureLauchnerInterface, queueManager ports.QueueManagerInterface) *ScrollHandler {
-	return &ScrollHandler{ScrollService: scrollService, PluginManager: pluginManager, ProcessLauncher: processLauncher, QueueManager: queueManager}
+func NewScrollHandler(
+	scrollService ports.ScrollServiceInterface,
+	pluginManager ports.PluginManagerInterface,
+	processLauncher ports.ProcedureLauchnerInterface,
+	queueManager ports.QueueManagerInterface,
+	processManager ports.ProcessManagerInterface,
+) *ScrollHandler {
+	return &ScrollHandler{ScrollService: scrollService, PluginManager: pluginManager, ProcessLauncher: processLauncher, QueueManager: queueManager, ProcessManager: processManager}
 }
 
 // @Summary Get current scroll
@@ -125,10 +132,9 @@ func (sl ScrollHandler) RunProcedure(c *fiber.Ctx) error {
 	}
 
 	command := requestBody.Process
-	_, err = sl.ScrollService.GetCommand(command)
-
-	if err != nil {
-		c.SendString("Command not found")
+	process := sl.ProcessManager.GetRunningProcess(command)
+	if process == nil {
+		c.SendString("Running process not found")
 		return c.SendStatus(400)
 	}
 
