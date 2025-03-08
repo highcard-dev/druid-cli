@@ -226,7 +226,26 @@ function pingResponse()
         favicon = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAAXNSR0IArs4c6QAAAMlQTFRFR3BM6ndq5Wxb3WBQ6HFi0EUvvVxI8IBzzTwm0EUv11RC3GBQ7X1w00w50EUv42pa1lRB3mNT4WZV0Ugz2VlH0ks22lpJ0ks332RU1VI/6XZo8oV4421e63Zn32JR0046ytvZ2FZEieHa5nBgb+fZFerZ1NrZDOrZDurZ1tjYQunZztrZO+jZruDZFOrZDOrZDOrZ6HVoDOrZ09rZ0cvJn+LZbebZi+PZkOPZC+rZ942B7Xpr9op98oR29Id67n1uz9vZH+rZjeTZHadAYQAAADl0Uk5TAOr9sP4WBv4CDXqV8kcf3m277CmGPaAzx1Pg8tD90lw3YxDx/mzTQ+aq/nYk/bT50NSS71SwxIbiWYkesQAABERJREFUeNqll2tfozgUxkshIeF+vxWoiNfRUaszuztDC7rf/0PtISAlpR1dfPLzTZLzz3POIUgXp0XD2PJUkGetfbT4fyJI9+xNsuqVbGx1beDPh7uKnazq7e+96lWSqj79XLihpKv691SrRPU/4YLGtsbCp9quNp5BPjreE1j4KYT9ZxPYDbQt7GObW9XwxxHqTUz/EB/a8hbC2+iVJpiRbUdpokE92RwbdVJQcjp+x3Ztay0N1iFClFLk6oqYMEa3thUKeqp74q7zLYjQdUzIgjBhGiqRBohOdaLjo/FIldm6FhWIEH4NG8pGHgiReywJagnd8eqwzCF0cTAhq/TIDt+stzAE79Rz76pAYKMW4ukZKJDr9nzldJcMIHSd3dloYiAWapCm8iu83ECrO00tIHEH87JojCfP78/O7u/x/pQw3bEcYCM9MKALANht9HH42d3Pn389PF9enw/bLNjWapf4vAUcyDCreaMGn91dfb/49gv09HxNegAS5ZohNIUHuGlrIHVH8bcv/0I40+MDEDoVYGEHkkXMZbAWYBIMjOJfIX7Qw3W/0YjkHSBqOTW4DFQNAElIhvxvX76z+MHDfU+AnUyJPwZQG7jjyv64er34NdbNZb/CvMJmYT0GGCkANAXvDbyCAU7vFkJTZgRNGQP8RAamTsYVeOPiH5/6KqD2LNiteWNALMCUaewBXAZcDjTtHajjJhSCLMvRtARTAAEAEwdYWABoRPwhgJWrkYcUeEAAgNMpPF0P5WLii7g+AJxzReS6AGcxCRZXxKQZAwi5ezlo4+Mz7i9NxeKbRB8DQrPhasD1kcsgTJsOwD/KKAcAdGGv9iq+jUvYG1AE2Amj4l8IWKyaxkRkNANJ7Ak3z+e9gahqmAT+OhMAN6VPRjOYvQ7euqfwso9HQdZ0Mn0eoJtVkymYmzu7vfrn4tvNDbxP+gWqJL0BlgF/HbPJJI5/3N39fXk5vBSRBcd0KteEBxClrCoz5Gf1IEYLMvBc7z2+ykQ0eWPnVVUqmLcV5J6PujnqFmJZNf0wdXIIwB5YyN3FQWWWqWrFuh4Xnlhm1btKDx/51xxl/QJPlcrSNM1SyqpBknjsQwdbZZWZOk81RKmaSLLDaTzrsVSVosFT/UiqMhhVto8/9ZlEQpYE5Qk6EDpl3XACLp7vu5llpoUPPKgOIDIIbSHLyOLy50ULJ5PMNTmoQ6zmzlICLR3bCunitAi1gJDH+MAZaj+7PU8pdJd+9I2ttIQ1nmRHEUIUk8WHQpYjSXlBF3NFaGFKkqkgMhtB41ySnMDFswlYt5fSMorpbBPEDRww4bl4LgKakbcm1gh/IY3WhKjPRhDDa004wXwE1kWzQxhzEciynRYhFuHcx8JQGGKZe7FLZ3a0RbB7qIRzERbUorURWWhuQ9Zq5CyXS0dBs++HbwU5EKwv3FJDh2rk/uILoqFlT38O/QdGyOZnTVzZRwAAAABJRU5ErkJggg=="
     }
 
-    if queue ~= nil and queue["install"] == "running" then
+    local snapshotMode = get_snapshot_mode()
+    local snapshotPercentage = get_snapshot_percentage()
+
+    if snapshotMode ~= "noop" then
+        if snapshotMode == "restore" then
+            if snapshotPercentage == nil or snapshotPercentage == 100 then
+                obj.version.name = "§2▶ Extracting snapshot..."
+            else
+                obj.version.name = "§2▶ Downloading snapshot... " + string.format("%.2f", snapshotPercentage) + "%"
+            end
+            obj.description = "Restoring Minecraft Server, this might take a moment"
+        else 
+            if snapshotPercentage == nil or snapshotPercentage == 100 then
+                obj.version.name = "§2▶ Backing up..."
+            else
+                obj.version.name = "§2▶ Backing up... " + string.format("%.2f", snapshotPercentage) + "%"
+            end
+            obj.description = "Backing up Minecraft Server, this might take a moment"
+        end
+    elseif queue ~= nil and queue["install"] == "running" then
         obj.version.name = "§2▶ Installing..."
         obj.description = "Installing Minecraft Server, this might take a moment"
     elseif get_finish_sec() ~= nil then

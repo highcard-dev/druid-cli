@@ -67,11 +67,11 @@ type Scroll struct {
 } // @name Scroll
 
 type Procedure struct {
-	Mode          string      `yaml:"mode"`
-	Id            *string     `yaml:"id"`
-	Wait          interface{} `yaml:"wait"`
-	Data          interface{} `yaml:"data"`
-	IgnoreFailure bool        `yaml:"ignore_failure"`
+	Mode          string      `yaml:"mode" json:"mode"`
+	Id            *string     `yaml:"id" json:"id"`
+	Wait          interface{} `yaml:"wait" json:"wait"`
+	Data          interface{} `yaml:"data" json:"data"`
+	IgnoreFailure bool        `yaml:"ignore_failure" json:"ignore_failure"`
 } // @name Procedure
 
 type CommandInstructionSet struct {

@@ -38,6 +38,8 @@ definitions:
       data: {}
       id:
         type: string
+      ignore_failure:
+        type: boolean
       mode:
         type: string
       wait: {}
@@ -58,33 +60,6 @@ definitions:
   ProcessMonitorMetricsMap:
     additionalProperties:
       $ref: '#/definitions/ProcessMonitorMetrics'
-    type: object
-  ProcessTreeNode:
-    properties:
-      children:
-        items:
-          $ref: '#/definitions/ProcessTreeNode'
-        type: array
-      cmdline:
-        type: string
-      cpu_percent:
-        type: number
-      gids:
-        items:
-          type: integer
-        type: array
-      io_counters:
-        type: string
-      memory:
-        type: string
-      memory_ex:
-        type: string
-      name:
-        type: string
-      process:
-        type: string
-      username:
-        type: string
     type: object
   ProcessTreeRoot:
     properties:
@@ -126,6 +101,8 @@ definitions:
         type: string
       init:
         type: string
+      keepAlivePPM:
+        type: integer
       name:
         type: string
       plugins:
@@ -162,6 +139,8 @@ definitions:
     type: object
   domain.AugmentedPort:
     properties:
+      finish_after_command:
+        type: string
       inactive_since:
         type: string
       inactive_since_sec:
@@ -213,6 +192,8 @@ definitions:
     type: object
   domain.Port:
     properties:
+      finish_after_command:
+        type: string
       mandatory:
         type: boolean
       name:
@@ -235,6 +216,33 @@ definitions:
       name:
         type: string
       type:
+        type: string
+    type: object
+  domain.ProcessTreeNode:
+    properties:
+      children:
+        items:
+          $ref: '#/definitions/domain.ProcessTreeNode'
+        type: array
+      cmdline:
+        type: string
+      cpu_percent:
+        type: number
+      gids:
+        items:
+          type: integer
+        type: array
+      io_counters:
+        type: string
+      memory:
+        type: string
+      memory_ex:
+        type: string
+      name:
+        type: string
+      process:
+        type: string
+      username:
         type: string
     type: object
   domain.RunMode:
@@ -466,13 +474,32 @@ paths:
       responses:
         "200":
           description: OK
-          schema:
-            type: object
+          schema: {}
         "201":
           description: Created
       summary: Run procedure
       tags:
       - scroll
+      - druid
+      - daemon
+  /api/v1/procedures:
+    get:
+      consumes:
+      - '*/*'
+      operationId: getProcedures
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/domain.ScrollLockStatus'
+            type: object
+      summary: Get process procedure statuses
+      tags:
+      - process
+      - procedures
       - druid
       - daemon
   /api/v1/processes:

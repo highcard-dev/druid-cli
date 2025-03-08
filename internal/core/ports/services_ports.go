@@ -40,6 +40,7 @@ type ProcedureLauchnerInterface interface {
 	LaunchPlugins() error
 	RunProcedure(*domain.Procedure, string) (string, *int, error)
 	Run(cmd string, runCommandCb func(cmd string) error) error
+	GetProcedureStatuses() map[string]domain.ScrollLockStatus
 }
 
 type PluginManagerInterface interface {

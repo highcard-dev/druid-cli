@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -13,12 +14,14 @@ import (
 )
 
 type ProcedureLauncher struct {
-	pluginManager  ports.PluginManagerInterface
-	processManager ports.ProcessManagerInterface
-	ociRegistry    ports.OciRegistryInterface
-	consoleManager ports.ConsoleManagerInterface
-	logManager     ports.LogManagerInterface
-	scrollService  ports.ScrollServiceInterface
+	pluginManager   ports.PluginManagerInterface
+	processManager  ports.ProcessManagerInterface
+	ociRegistry     ports.OciRegistryInterface
+	consoleManager  ports.ConsoleManagerInterface
+	logManager      ports.LogManagerInterface
+	scrollService   ports.ScrollServiceInterface
+	procedures      map[string]domain.ScrollLockStatus
+	proceduresMutex *sync.Mutex
 }
 
 func NewProcedureLauncher(
@@ -30,15 +33,29 @@ func NewProcedureLauncher(
 	scrollService ports.ScrollServiceInterface,
 ) *ProcedureLauncher {
 	s := &ProcedureLauncher{
-		processManager: processManager,
-		ociRegistry:    ociRegistry,
-		pluginManager:  pluginManager,
-		consoleManager: consoleManager,
-		logManager:     logManager,
-		scrollService:  scrollService,
+		processManager:  processManager,
+		ociRegistry:     ociRegistry,
+		pluginManager:   pluginManager,
+		consoleManager:  consoleManager,
+		logManager:      logManager,
+		scrollService:   scrollService,
+		procedures:      make(map[string]domain.ScrollLockStatus),
+		proceduresMutex: &sync.Mutex{},
 	}
 
 	return s
+}
+
+func (sc *ProcedureLauncher) setProcedureStatus(procedure string, status domain.ScrollLockStatus) {
+	sc.proceduresMutex.Lock()
+	defer sc.proceduresMutex.Unlock()
+	sc.procedures[procedure] = status
+}
+
+func (sc *ProcedureLauncher) GetProcedureStatuses() map[string]domain.ScrollLockStatus {
+	sc.proceduresMutex.Lock()
+	defer sc.proceduresMutex.Unlock()
+	return sc.procedures
 }
 
 func (sc *ProcedureLauncher) LaunchPlugins() error {
@@ -70,20 +87,28 @@ func (sc *ProcedureLauncher) Run(cmd string, runCommandCb func(cmd string) error
 
 	command, err := sc.scrollService.GetCommand(cmd)
 	if err != nil {
+		sc.setProcedureStatus(cmd, domain.ScrollLockStatusError)
 		return err
 	}
 
 	for idx, proc := range command.Procedures {
 
+		commandIdx := fmt.Sprintf("%s.%d", cmd, idx)
+
+		sc.setProcedureStatus(commandIdx, domain.ScrollLockStatusRunning)
+
 		if proc.Mode == "command" {
 			if proc.Wait != nil {
+				sc.setProcedureStatus(commandIdx, domain.ScrollLockStatusError)
 				return errors.New("command mode does not support wait")
 			}
 			err = runCommandCb(proc.Data.(string))
-			return err
+			if err != nil {
+				sc.setProcedureStatus(commandIdx, domain.ScrollLockStatusError)
+				return err
+			}
+			continue
 		}
-
-		commandIdx := fmt.Sprintf("%s.%d", cmd, idx)
 
 		if proc.Id != nil {
 			commandIdx = *proc.Id
@@ -105,21 +130,31 @@ func (sc *ProcedureLauncher) Run(cmd string, runCommandCb func(cmd string) error
 		case bool: //run in go routine maybe wait
 			if wait {
 				_, exitCode, err = sc.RunProcedure(proc, commandIdx)
+				if err != nil {
+					sc.setProcedureStatus(commandIdx, domain.ScrollLockStatusError)
+					return err
+				}
 			} else {
 				go sc.RunProcedure(proc, commandIdx)
 			}
 		default: //run and wait
 			_, exitCode, err = sc.RunProcedure(proc, commandIdx)
+			if err != nil {
+				sc.setProcedureStatus(commandIdx, domain.ScrollLockStatusError)
+				return err
+			}
 		}
 
 		if err != nil {
 			logger.Log().Error("Error running procedure",
 				zap.String("cmd", commandIdx),
 				zap.Error(err))
+			sc.setProcedureStatus(commandIdx, domain.ScrollLockStatusError)
 			return err
 		}
 
 		if exitCode != nil && *exitCode != 0 {
+			sc.setProcedureStatus(commandIdx, domain.ScrollLockStatusError)
 			if proc.IgnoreFailure {
 				logger.Log().Warn("Procedure failed but ignoring failure",
 					zap.String("cmd", commandIdx),
@@ -139,6 +174,7 @@ func (sc *ProcedureLauncher) Run(cmd string, runCommandCb func(cmd string) error
 		} else {
 			logger.Log().Debug("Procedure ended with exit code 0")
 		}
+		sc.setProcedureStatus(commandIdx, domain.ScrollLockStatusDone)
 	}
 
 	return nil

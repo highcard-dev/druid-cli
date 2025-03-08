@@ -128,6 +128,7 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 	apiRoutes.Get("/scroll", s.scrollHandler.GetScroll).Name("scrolls.current")
 	apiRoutes.Post("/command", s.scrollHandler.RunCommand).Name("command.start")
 	apiRoutes.Post("/procedure", s.scrollHandler.RunProcedure).Name("procedure.start")
+	apiRoutes.Get("/procedures", s.scrollHandler.Procedures).Name("procedures.list")
 
 	//Scroll Logs Group
 	apiRoutes.Get("/logs", s.scrollLogHandler.ListAllLogs).Name("scrolls.logs")

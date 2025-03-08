@@ -274,12 +274,39 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK",
-                        "schema": {
-                            "type": "object"
-                        }
+                        "schema": {}
                     },
                     "201": {
                         "description": "Created"
+                    }
+                }
+            }
+        },
+        "/api/v1/procedures": {
+            "get": {
+                "consumes": [
+                    "*/*"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "process",
+                    "procedures",
+                    "druid",
+                    "daemon"
+                ],
+                "summary": "Get process procedure statuses",
+                "operationId": "getProcedures",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/domain.ScrollLockStatus"
+                            }
+                        }
                     }
                 }
             }
@@ -474,6 +501,9 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "ignore_failure": {
+                    "type": "boolean"
+                },
                 "mode": {
                     "type": "string"
                 },
@@ -504,47 +534,6 @@ const docTemplate = `{
             "type": "object",
             "additionalProperties": {
                 "$ref": "#/definitions/ProcessMonitorMetrics"
-            }
-        },
-        "ProcessTreeNode": {
-            "type": "object",
-            "properties": {
-                "children": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/ProcessTreeNode"
-                    }
-                },
-                "cmdline": {
-                    "type": "string"
-                },
-                "cpu_percent": {
-                    "type": "number"
-                },
-                "gids": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "io_counters": {
-                    "type": "string"
-                },
-                "memory": {
-                    "type": "string"
-                },
-                "memory_ex": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "process": {
-                    "type": "string"
-                },
-                "username": {
-                    "type": "string"
-                }
             }
         },
         "ProcessTreeRoot": {
@@ -607,6 +596,9 @@ const docTemplate = `{
                 "init": {
                     "type": "string"
                 },
+                "keepAlivePPM": {
+                    "type": "integer"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -662,6 +654,9 @@ const docTemplate = `{
         "domain.AugmentedPort": {
             "type": "object",
             "properties": {
+                "finish_after_command": {
+                    "type": "string"
+                },
                 "inactive_since": {
                     "type": "string"
                 },
@@ -738,6 +733,9 @@ const docTemplate = `{
         "domain.Port": {
             "type": "object",
             "properties": {
+                "finish_after_command": {
+                    "type": "string"
+                },
                 "mandatory": {
                     "type": "boolean"
                 },
@@ -771,6 +769,47 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "domain.ProcessTreeNode": {
+            "type": "object",
+            "properties": {
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domain.ProcessTreeNode"
+                    }
+                },
+                "cmdline": {
+                    "type": "string"
+                },
+                "cpu_percent": {
+                    "type": "number"
+                },
+                "gids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "io_counters": {
+                    "type": "string"
+                },
+                "memory": {
+                    "type": "string"
+                },
+                "memory_ex": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "process": {
+                    "type": "string"
+                },
+                "username": {
                     "type": "string"
                 }
             }

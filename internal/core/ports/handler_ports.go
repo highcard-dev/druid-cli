@@ -9,6 +9,7 @@ type ScrollHandlerInterface interface {
 	GetScroll(c *fiber.Ctx) error
 	RunCommand(c *fiber.Ctx) error
 	RunProcedure(c *fiber.Ctx) error
+	Procedures(c *fiber.Ctx) error
 }
 
 type ScrollLogHandlerInterface interface {
