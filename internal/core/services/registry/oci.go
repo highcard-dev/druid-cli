@@ -79,6 +79,11 @@ func (c *OciClient) Pull(dir string, artifact string) error {
 		return err
 	}
 
+	err = os.MkdirAll(dir, 0755)
+	if err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
 	fs, err := file.New(filepath.Join(dir))
 
 	if err != nil {
