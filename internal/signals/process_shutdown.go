@@ -3,8 +3,10 @@ package signals
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 	"time"
 
@@ -37,6 +39,10 @@ func NewSignalHandler(ctx context.Context, queueManager ports.QueueManagerInterf
 	return sh
 }
 
+func (sh *SignalHandler) SetApp(app *fiber.App) {
+	sh.app = app
+}
+
 func (sh *SignalHandler) SetupSignals(ctx context.Context) {
 
 	signal.Notify(sh.SigC,
@@ -58,25 +64,27 @@ func (sh *SignalHandler) SetupSignals(ctx context.Context) {
 			//debug timeout for testing
 			//case <-time.After(time.Duration(25) * time.Second):
 			//	s = syscall.SIGTERM
+			go sh.queueManager.AddShutdownItem("stop")
 		}
 
 		sh.GracefulShutdown()
 	}()
 }
 
-func (sh *SignalHandler) ShutdownRoutine() {
+func (sh *SignalHandler) ExtendedShutdownRoutine() {
 
 	shudownDone := make(chan struct{})
 	go func() {
 		waitForProcessesToStop(sh.processManager)
 		shudownDone <- struct{}{}
 	}()
-	//we do that non block, in case something is allready down
-	go sh.queueManager.AddShutdownItem("stop")
 
 	//TODO: refactor this
 	done := false
 	go func() {
+		//wait for some time to await the sigterm
+		<-time.After(time.Duration(sh.waitSeconds) * time.Second)
+		go sh.queueManager.AddShutdownItem("stop")
 		<-time.After(time.Duration(sh.waitSeconds) * time.Second)
 		if done {
 			return
@@ -98,10 +106,12 @@ func (sh *SignalHandler) GracefulShutdown() {
 	logger.Log().Info("Graceful shutdown started")
 
 	logger.Log().Info("Shutdown Routine")
-	sh.ShutdownRoutine()
+	sh.ExtendedShutdownRoutine()
 
 	logger.Log().Info("Shutting down app")
-	sh.app.Shutdown()
+	if sh.app != nil {
+		sh.app.Shutdown()
+	}
 
 	logger.Log().Info("Shutdown done")
 
@@ -113,7 +123,10 @@ func waitForProcessesToStop(processManager ports.ProcessManagerInterface) {
 			logger.Log().Info("No running processes")
 			break
 		}
-		logger.Log().Info(fmt.Sprintf("Waiting for %d processes to stop...", len(processManager.GetRunningProcesses())))
+		runningPorcesses := processManager.GetRunningProcesses()
+		keys := slices.Collect(maps.Keys(runningPorcesses))
+
+		logger.Log().Info(fmt.Sprintf("Waiting for %d processes to stop...", len(runningPorcesses)), zap.Strings("processes", keys))
 		time.Sleep(time.Second)
 	}
 }

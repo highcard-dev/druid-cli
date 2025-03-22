@@ -36,6 +36,7 @@ type Server struct {
 	portHandler                   ports.PortHandlerInterface
 	healthHandler                 ports.HealthHandlerInterface
 	coldstarterHandler            ports.ColdstarterHandlerInterface
+	daemonHander                  ports.SignalHandlerInterface
 	webdavPath                    string
 }
 
@@ -51,6 +52,7 @@ func NewServer(
 	portHandler ports.PortHandlerInterface,
 	healthHandler ports.HealthHandlerInterface,
 	coldstarterHandler ports.ColdstarterHandlerInterface,
+	daemonHander ports.SignalHandlerInterface,
 	authorizerService ports.AuthorizerServiceInterface,
 	webdavPath string,
 ) *Server {
@@ -73,6 +75,7 @@ func NewServer(
 		healthHandler:                 healthHandler,
 		coldstarterHandler:            coldstarterHandler,
 		webdavPath:                    webdavPath,
+		daemonHander:                  daemonHander,
 	}
 
 	if jwlsUrl != "" {
@@ -153,6 +156,8 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 
 	apiRoutes.Get("/health", s.healthHandler.Health).Name("health-authenticated")
 
+	apiRoutes.Post("/daemon/stop", s.daemonHander.Stop).Name("daemon.stop")
+
 	// Create the WebDAV handler
 	webdavHandler := &webdav.Handler{
 		Prefix:     "/webdav",
@@ -187,6 +192,10 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 	})
 
 	return app
+}
+
+func (s *Server) SetDaemonRoute(app *fiber.App, signalHandler ports.SignalHandlerInterface) {
+	app.Post("/stop", signalHandler.Stop).Name("daemon.stop")
 }
 
 func (s *Server) Serve(app *fiber.App, port int) error {

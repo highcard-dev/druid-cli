@@ -194,8 +194,8 @@ func (sc *QueueManager) QueueLockFile() error {
 				callback()
 			}
 
-			//not sure if this can even happen, maybe on updates
-			if command.Run != domain.RunModeRestart {
+			//not sure if this can even happen for "restart", maybe on updates
+			if command.Run != domain.RunModeRestart && command.Run != domain.RunModePersistent {
 
 				//TODO: use addQueueItem here
 				sc.mu.Lock()
@@ -276,7 +276,7 @@ func (sc *QueueManager) RunQueue() {
 		}
 
 		//if run Mode is restart, we need to run it again
-		if (status == domain.ScrollLockStatusDone) && command.Run != domain.RunModeRestart {
+		if status == domain.ScrollLockStatusDone && command.Run != domain.RunModeRestart {
 			continue
 		}
 

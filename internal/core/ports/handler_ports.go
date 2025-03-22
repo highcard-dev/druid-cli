@@ -50,3 +50,7 @@ type HealthHandlerInterface interface {
 type ColdstarterHandlerInterface interface {
 	Finish(ctx *fiber.Ctx) error
 }
+
+type SignalHandlerInterface interface {
+	Stop(ctx *fiber.Ctx) error
+}

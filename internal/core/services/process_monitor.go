@@ -89,6 +89,8 @@ func (po *ProcessMonitor) StartMonitoring() {
 }
 
 func (po *ProcessMonitor) RefreshMetrics() {
+	po.mu.Lock()
+	defer po.mu.Unlock()
 	for name, process := range po.processes {
 
 		_, err := po.GetProcessMetric(name, process)

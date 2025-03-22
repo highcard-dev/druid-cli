@@ -46,6 +46,9 @@ var RunCmd = &cobra.Command{
 		snapshotService := snapshotService.NewSnapshotService()
 
 		_, err = initScroll(scrollService, snapshotService, processLauncher, queueManager)
+		if err != nil {
+			return fmt.Errorf("error initializing scroll: %w", err)
+		}
 
 		logger.Log().Info("Adding command to queue", zap.String("command", command))
 		err = queueManager.AddTempItem(command)

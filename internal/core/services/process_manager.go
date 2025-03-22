@@ -140,6 +140,10 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 	process.Cmd = exec.Command(name, args...)
 	process.Cmd.Dir = dir
 
+	//process.Cmd.SysProcAttr = &syscall.SysProcAttr{
+	//	Setpgid: true,
+	//}
+
 	stdoutReader, err := process.Cmd.StdoutPipe()
 	if err != nil {
 		cmdDone()
@@ -171,7 +175,9 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 		defer wg.Done()
 		scanner := bufio.NewScanner(stdoutReader)
 		for scanner.Scan() {
-			combinedChannel <- scanner.Text() + "\n"
+			text := scanner.Text()
+			logger.Log().Debug(text)
+			combinedChannel <- text + "\n"
 		}
 	}()
 
@@ -181,7 +187,9 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 		defer wg.Done()
 		scanner := bufio.NewScanner(stderrReader)
 		for scanner.Scan() {
-			combinedChannel <- scanner.Text() + "\n"
+			text := scanner.Text()
+			logger.Log().Debug(text)
+			combinedChannel <- text + "\n"
 		}
 
 	}()
