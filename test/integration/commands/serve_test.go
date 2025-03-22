@@ -22,6 +22,7 @@ import (
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	test_utils "github.com/highcard-dev/daemon/test/utils"
 	"github.com/otiai10/copy"
+	"gopkg.in/yaml.v2"
 )
 
 func connectWs(addr string, console string) (*websocket.Conn, error) {
@@ -121,9 +122,10 @@ func waitForConsoleRunning(console string, duration time.Duration) error {
 func TestServeCommand(t *testing.T) {
 
 	type TestCase struct {
-		Name       string
-		ScrollFile string
-		Restarts   int
+		Name             string
+		ScrollFile       string
+		Restarts         int
+		RunModeOverwrite domain.RunMode
 	}
 	var testCases = []TestCase{
 		{
@@ -141,6 +143,12 @@ func TestServeCommand(t *testing.T) {
 			ScrollFile: "../../../examples/minecraft/.scroll/scroll.yaml",
 			Restarts:   5,
 		},
+		{
+			Name:             "TestServeFull With Restart (Persistent)",
+			ScrollFile:       "../../../examples/minecraft/.scroll/scroll.yaml",
+			Restarts:         1,
+			RunModeOverwrite: domain.RunModePersistent,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
@@ -156,6 +164,27 @@ func TestServeCommand(t *testing.T) {
 			err := copy.Copy(tc.ScrollFile, scrollPath+"scroll.yaml")
 			if err != nil {
 				t.Fatalf("Failed to copy test scroll file: %v", err)
+			}
+
+			if tc.RunModeOverwrite != "" {
+				//overwrite "restart" with RunModeOverwrite
+				scroll, err := domain.NewScroll(scrollPath)
+				if err != nil {
+					t.Fatalf("Failed to read scroll file: %v", err)
+				}
+				for i, command := range scroll.File.Commands {
+					if command.Run == domain.RunModeRestart {
+						scroll.File.Commands[i].Run = domain.RunMode(tc.RunModeOverwrite)
+					}
+				}
+				scrollBytes, err := yaml.Marshal(scroll.File)
+				if err != nil {
+					t.Fatalf("Failed to marshal scroll file: %v", err)
+				}
+				err = os.WriteFile(scrollPath+"scroll.yaml", scrollBytes, 0644)
+				if err != nil {
+					t.Fatalf("Failed to write scroll file: %v", err)
+				}
 			}
 
 			if err := os.MkdirAll(path, 0755); err != nil {
@@ -253,6 +282,9 @@ func TestServeCommand(t *testing.T) {
 				expectedStatuses := map[string]domain.ScrollLockStatus{
 					"install": "done",
 					"start":   "waiting",
+				}
+				if tc.RunModeOverwrite == domain.RunModePersistent {
+					expectedStatuses["start"] = "done"
 				}
 
 				for command, status := range expectedStatuses {
