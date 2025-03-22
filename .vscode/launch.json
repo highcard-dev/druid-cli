@@ -27,7 +27,7 @@
                 "--cwd",
                 "${workspaceFolder}/examples/restore-test",
                 "https://gist.github.com/jlmaccal/ca6b08a307800f80986661075c82c432/raw/dbd5e7a38d0660b7047476de33da142bd79c22ef/test.tgz"
-            ],
+            ]
         },
         {
             "name": "Debug Daemon serve (restore example)",
@@ -46,6 +46,32 @@
                 "artifacts.druid.gg/druid-team/scroll-lgsm:arkserver",
                 "--coldstarter"
             ],
+            "env": {
+                "DRUID_PORT_QUERY": "2556",
+                "DRUID_PORT_MAIN": "7771"
+            }
+        },
+        {
+            "name": "Debug Daemon serve (restore example no snap)",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/main.go",
+            "args": [
+                "serve",
+                "--cwd",
+                "${workspaceFolder}/examples/ark-restore-t",
+                "-p",
+                "9190",
+                "artifacts.druid.gg/druid-team/scroll-minecraft-spigot:1.21.1",
+                "--coldstarter",
+                "--init-snapshot-url", "nil"
+            ],
+            "env": {
+                "DRUID_PORT_QUERY": "2556",
+                "DRUID_PORT_MAIN": "7771"
+            }
         },
         {
             "name": "Debug Daemon serve (htop example)",
@@ -114,7 +140,8 @@
             ],
             "env": {
                 "DRUID_PORT_QUERY": "2556",
-                "DRUID_PORT_MAIN": "7771"
+                "DRUID_PORT_MAIN": "7771",
+                "LOG_LEVEL": "debug"
             }
         },
         {

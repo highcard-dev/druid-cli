@@ -140,11 +140,14 @@ to interact and monitor the Scroll Application`,
 
 		websocketHandler := handler.NewWebsocketHandler(authorizer, scrollService, consoleService)
 
-		s := web.NewServer(jwksUrl, scrollHandler, scrollLogHandler, scrollMetricHandler, annotationHandler, processHandler, queueHandler, websocketHandler, portHandler, healthHandler, coldstarterHandler, authorizer, cwd)
+		signalHandler := signals.NewSignalHandler(ctx, queueManager, processManager, nil, shutdownWait)
+		daemonHander := handler.NewDaemonHandler(signalHandler)
+
+		s := web.NewServer(jwksUrl, scrollHandler, scrollLogHandler, scrollMetricHandler, annotationHandler, processHandler, queueHandler, websocketHandler, portHandler, healthHandler, coldstarterHandler, daemonHander, authorizer, cwd)
 
 		a := s.Initialize()
 
-		signalHandler := signals.NewSignalHandler(ctx, queueManager, processManager, a, shutdownWait)
+		signalHandler.SetApp(a)
 
 		if watchPorts {
 			logger.Log().Info("Starting port watcher", zap.Strings("interfaces", watchPortsInterfaces))
@@ -219,7 +222,7 @@ to interact and monitor the Scroll Application`,
 								}
 							}
 
-							signalHandler.ShutdownRoutine()
+							signalHandler.ExtendedShutdownRoutine()
 						}
 					} else {
 						logger.Log().Warn("No ports to start, skipping coldstarter")
@@ -248,7 +251,7 @@ to interact and monitor the Scroll Application`,
 func init() {
 	ServeCommand.Flags().IntVarP(&port, "port", "p", 8081, "Port")
 
-	ServeCommand.Flags().IntVarP(&shutdownWait, "shutdown-wait", "", 60, "Wait interval how long the process is allowed to shutdown. First normal shutdown, then forced shutdown")
+	ServeCommand.Flags().IntVarP(&shutdownWait, "shutdown-wait", "", 10, "Wait interval how long the process is allowed to shutdown. First normal shutdown, then forced shutdown")
 
 	ServeCommand.Flags().StringVarP(&jwksUrl, "jwks-server", "", "", "JWKS Server to authenticate requests against")
 

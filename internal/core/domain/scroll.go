@@ -15,9 +15,10 @@ import (
 type RunMode string
 
 const (
-	RunModeAlways  RunMode = "always" //default
-	RunModeOnce    RunMode = "once"
-	RunModeRestart RunMode = "restart"
+	RunModeAlways     RunMode = "always" //default
+	RunModeOnce       RunMode = "once"
+	RunModeRestart    RunMode = "restart"
+	RunModePersistent RunMode = "persistent" //restarts on failure and on program restart
 )
 
 type Cronjob struct {
