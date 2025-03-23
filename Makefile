@@ -45,7 +45,7 @@ test-integration:
 
 test-integration-docker:
 	docker build . -f Dockerfile.testing -t druid-cli-test
-	docker run -v ./:/app --entrypoint=/bin/bash --rm druid-cli-test -c "go test -timeout 1200s -tags=integration ./..."
+	docker run -v ./:/app --entrypoint=/bin/bash --rm druid-cli-test -c "go test -timeout 1200s -tags=integration ./test/integration/..."
 
 test-integration-docker-debug:
 	docker build . -f Dockerfile.testing -t druid-cli-test
