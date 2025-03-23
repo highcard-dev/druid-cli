@@ -1,10 +1,11 @@
+//go:build integration
+
 package command_test
 
 import (
 	"bytes"
 	"context"
 	"errors"
-	"net"
 	"os"
 	"strconv"
 	"testing"
@@ -12,82 +13,7 @@ import (
 
 	"github.com/highcard-dev/daemon/cmd"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
-	"github.com/spf13/cobra"
 )
-
-func checkHttpServer(port int, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		c, err := net.Dial("tcp", "localhost:"+strconv.Itoa(port))
-		if err == nil {
-			// Connection successful, close and return no error
-			c.Close()
-			return nil
-		}
-		// Wait for 1 second before retrying
-		time.Sleep(1 * time.Second)
-	}
-	return errors.New("timeout reached while checking HTTP server")
-}
-
-func checkHttpServerShutdown(port int, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		c, err := net.Dial("tcp", "localhost:"+strconv.Itoa(port))
-		if err != nil {
-			// Connection successful, close and return no error
-			return nil
-		}
-		c.Close()
-		// Wait for 1 second before retrying
-		time.Sleep(1 * time.Second)
-	}
-	return errors.New("timeout reached while checking HTTP server")
-}
-
-func startAndTestServeCommand(ctx context.Context, t *testing.T, rootCmd *cobra.Command) (bool, error) {
-
-	connectedChan := make(chan struct{}, 1)
-	executionDoneChan := make(chan error, 1)
-
-	go func() {
-		ticker := time.NewTicker(1 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				if checkHttpServer(8081, time.Second*20) == nil {
-					connectedChan <- struct{}{}
-					return
-				}
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	go func(ctx context.Context) {
-		cmd.ServeCommand.SetContext(ctx)
-
-		err := rootCmd.ExecuteContext(ctx)
-
-		if err != nil {
-			executionDoneChan <- err
-			return
-		}
-
-		executionDoneChan <- nil
-	}(ctx)
-
-	select {
-	case <-connectedChan:
-		t.Logf("Connected to server")
-		return true, nil
-	case err := <-executionDoneChan:
-		t.Logf("Execution done")
-		return false, err
-	}
-}
 
 func TestServeIdleCommand(t *testing.T) {
 

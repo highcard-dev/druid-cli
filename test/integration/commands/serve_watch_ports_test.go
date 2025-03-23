@@ -1,8 +1,9 @@
+//go:build integration
+
 package command_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -12,17 +13,8 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
+	test_utils "github.com/highcard-dev/daemon/test/utils"
 )
-
-func fetchPorts() ([]domain.AugmentedPort, error) {
-	body, err := fetch("http://localhost:8081/api/v1/ports")
-	if err != nil {
-		return nil, err
-	}
-	var ap []domain.AugmentedPort
-	json.Unmarshal([]byte(body), &ap)
-	return ap, nil
-}
 
 var testCommandTCP = func() map[string]*domain.CommandInstructionSet {
 	var ncCommand = []string{"nc", "-l", "-p", "12349"}
@@ -67,16 +59,16 @@ func TestWatchPortsServeCommand(t *testing.T) {
 		t.Run(tc.Name, func(t *testing.T) {
 			logger.Log(logger.WithStructuredLogging())
 
-			_, path := setupScroll(t, tc.Scroll)
+			_, path := test_utils.SetupScroll(t, tc.Scroll)
 			defer os.RemoveAll(path)
 
 			ctx, cancel := context.WithCancelCause(context.WithValue(context.Background(), "disablePrometheus", true))
 			defer cancel(errors.New("test ended"))
 
-			setupServeCmd(ctx, t, path, []string{"--coldstarter=false", "--watch-ports"})
+			test_utils.SetupServeCmd(ctx, t, path, []string{"--coldstarter=false", "--watch-ports"})
 			//give time to make sure everything is online
 			time.Sleep(1 * time.Second)
-			ap1, err := fetchPorts()
+			ap1, err := test_utils.FetchPorts()
 			if err != nil {
 				t.Fatalf("Failed to fetch ports: %v", err)
 			}
@@ -91,7 +83,7 @@ func TestWatchPortsServeCommand(t *testing.T) {
 			//give time to to get picked up by the watcher
 			time.Sleep(1 * time.Second)
 
-			err = tcpTester("", 12349)
+			err = test_utils.TcpTester("", 12349)
 			if err != nil {
 				t.Fatalf("Failed to test tcp: %v", err)
 			}
@@ -99,7 +91,7 @@ func TestWatchPortsServeCommand(t *testing.T) {
 			//give time to to get picked up by the watcher
 			time.Sleep(1 * time.Second)
 
-			ap2, err := fetchPorts()
+			ap2, err := test_utils.FetchPorts()
 			if err != nil {
 				t.Fatalf("Failed to fetch ports: %v", err)
 			}
