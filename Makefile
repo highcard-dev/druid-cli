@@ -36,9 +36,14 @@ mock:
 test:
 	go test -v ./...
 
-test_clean:
+test-clean:
 	go clean -testcache
 	go test -v ./test
+
+test-docker:
+	docker build . -f Dockerfile.testing -t druid-cli-test
+	docker run -v ./:/app --entrypoint=/bin/bash --rm druid-cli-test -c "go test -v ./..."
+
 
 test-integration:
 	go test -timeout 1200s -tags=integration ./test/integration

@@ -314,7 +314,7 @@ func (sc *QueueManager) RunQueue() {
 				}()
 				err := sc.workItem(c)
 				if err != nil {
-					sc.setStatus(c, domain.ScrollLockStatusError, i.UpdateLockStatus)
+					sc.setError(c, err, i.UpdateLockStatus)
 					logger.Log().Error("Error running command", zap.String("command", c), zap.Error(err))
 					return
 				}
@@ -342,7 +342,14 @@ func (sc *QueueManager) Shutdown() {
 func (sc *QueueManager) WaitUntilEmpty() {
 	notifier := make(chan []string)
 	sc.notifierChan = append(sc.notifierChan, notifier)
-
+	println("WaitUntilEmpty")
+	for k, n := range sc.commandQueue {
+		if n.Status == domain.ScrollLockStatusError {
+			println(k + "---: " + string(n.Status) + " " + n.Error.Error())
+		} else {
+			println(k + "---: " + string(n.Status))
+		}
+	}
 	for {
 		cmds := <-notifier
 		if len(cmds) == 0 {
@@ -353,9 +360,17 @@ func (sc *QueueManager) WaitUntilEmpty() {
 					break
 				}
 			}
+			for k, n := range sc.commandQueue {
+				if n.Status == domain.ScrollLockStatusError {
+					println(k + ": " + string(n.Status) + " " + n.Error.Error())
+				} else {
+					println(k + ": " + string(n.Status))
+				}
+			}
 			return
 		}
 	}
+
 }
 
 func (sc *QueueManager) GetQueueItem(cmd string) *domain.QueueItem {
@@ -376,6 +391,22 @@ func (sc *QueueManager) getStatus(cmd string) domain.ScrollLockStatus {
 		return value.Status
 	}
 	return domain.ScrollLockStatusDone
+}
+
+func (sc *QueueManager) setError(cmd string, err error, writeLock bool) {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	if value, ok := sc.commandQueue[cmd]; ok {
+		value.Status = domain.ScrollLockStatusError
+		value.Error = err
+	}
+	if writeLock {
+		lock, err := sc.scrollService.GetLock()
+		if err != nil {
+			return
+		}
+		lock.SetStatus(cmd, domain.ScrollLockStatusError, nil)
+	}
 }
 
 func (sc *QueueManager) setStatus(cmd string, status domain.ScrollLockStatus, writeLock bool) {

@@ -66,6 +66,8 @@ func NewLogManager() *LogManager {
 }
 
 func (hm *LogManager) AddLine(stream string, line []byte) {
+
+	println("log: " + string(line))
 	if _, ok := hm.Streams[stream]; !ok {
 		hm.Streams[stream] = NewLog(100)
 	}

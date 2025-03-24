@@ -7,6 +7,7 @@ import (
 	"io"
 	"os/exec"
 	"sync"
+	"time"
 
 	"github.com/creack/pty"
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -137,6 +138,8 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 		zap.String("dir", dir),
 	)
 
+	println("Starting process", commandName, name, args, dir)
+
 	process.Cmd = exec.Command(name, args...)
 	process.Cmd.Dir = dir
 
@@ -175,7 +178,10 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 		defer wg.Done()
 		scanner := bufio.NewScanner(stdoutReader)
 		for scanner.Scan() {
-			combinedChannel <- scanner.Text() + "\n"
+			text := scanner.Text()
+			logger.Log().Debug(text)
+			println(text)
+			combinedChannel <- text + "\n"
 		}
 	}()
 
@@ -185,7 +191,10 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 		defer wg.Done()
 		scanner := bufio.NewScanner(stderrReader)
 		for scanner.Scan() {
-			combinedChannel <- scanner.Text() + "\n"
+			text := scanner.Text()
+			logger.Log().Debug(text)
+			println(text)
+			combinedChannel <- text + "\n"
 		}
 
 	}()
@@ -196,6 +205,7 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 	err = process.Cmd.Start()
 
 	if err != nil {
+		println("Error starting process", err)
 		cmdDone()
 		process.Cmd = nil
 		return nil, err
@@ -213,6 +223,7 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 	//stdReader := io.MultiReader(stdoutReader, stderrReader)
 
 	go func() {
+		<-time.After(1 * time.Second)
 		_ = process.Cmd.Wait()
 		cmdDone()
 
@@ -227,6 +238,8 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 	po.RemoveProcess(commandName)
 	// Wait for goroutine to print everything (watchdog closes stdin)
 	exitCode := process.Cmd.ProcessState.ExitCode()
+
+	println("Exit code", exitCode)
 	console.MarkExited(exitCode)
 
 	wg.Wait()
