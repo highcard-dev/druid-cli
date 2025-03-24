@@ -7,7 +7,6 @@ import (
 	"io"
 	"os/exec"
 	"sync"
-	"time"
 
 	"github.com/creack/pty"
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -223,13 +222,17 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 	//stdReader := io.MultiReader(stdoutReader, stderrReader)
 
 	go func() {
-		<-time.After(1 * time.Second)
-		_ = process.Cmd.Wait()
+		wg.Wait()
+
+		err := process.Cmd.Wait()
+		if err != nil {
+			logger.Log().Error("Error waiting for process", zap.Error(err))
+		}
 		cmdDone()
 
-		stderrReader.Close()
-		stdoutReader.Close()
-		stdin.Close()
+		//stderrReader.Close()
+		//stdoutReader.Close()
+		//stdin.Close()
 	}()
 
 	<-cmdCtx.Done()
@@ -241,8 +244,6 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 
 	println("Exit code", exitCode)
 	console.MarkExited(exitCode)
-
-	wg.Wait()
 
 	close(combinedChannel)
 	//we wait, sothat we are sure all data is written to the console
