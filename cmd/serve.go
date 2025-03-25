@@ -289,12 +289,13 @@ func startup(scrollService *services.ScrollService, snapshotService ports.Snapsh
 
 	newScroll, err := initScroll(scrollService, snapshotService, processLauncher, queueManager)
 
-	currentScroll := scrollService.GetCurrent()
-
 	if err != nil {
 		doneChan <- err
 		return
 	}
+	logger.Log().Info("Initializing scroll done")
+
+	currentScroll := scrollService.GetCurrent()
 
 	if newScroll {
 		logger.Log().Info("Starting scroll.init process")
@@ -323,6 +324,8 @@ func startup(scrollService *services.ScrollService, snapshotService ports.Snapsh
 	}
 
 	queueManager.RegisterCallbacks(callbacks)
+
+	logger.Log().Info("Queuing lock file")
 
 	err = queueManager.QueueLockFile()
 	if err != nil {
