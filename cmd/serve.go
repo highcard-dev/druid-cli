@@ -287,13 +287,15 @@ func startup(scrollService *services.ScrollService, snapshotService ports.Snapsh
 
 	healthHandler.Started = true
 
+	logger.Log().Info("Initializing scroll")
+
 	newScroll, err := initScroll(scrollService, snapshotService, processLauncher, queueManager)
 
 	if err != nil {
 		doneChan <- err
 		return
 	}
-	logger.Log().Info("Initializing scroll done")
+	logger.Log().Info("Initialized scroll done")
 
 	currentScroll := scrollService.GetCurrent()
 

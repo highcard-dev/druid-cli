@@ -14,6 +14,8 @@ jobs:
           go-version: "^1.21"
       - uses: paulhatch/semantic-version@v5.4.0
         id: version
+        with:
+          bump_each_commit: true
       - run: make test-integration-docker
         name: Run integration tests inside Docker
       - run: make test
