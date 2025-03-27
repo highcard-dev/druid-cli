@@ -179,8 +179,10 @@ to interact and monitor the Scroll Application`,
 							executedPort := <-finish
 
 							if executedPort == nil {
+								logger.Log().Info("No port responsible for coldstarter finish, stopping coldstarter immediately")
 								coldStarter.Stop(0)
 							} else if executedPort.FinishAfterCommand == "" {
+								logger.Log().Info("No finish command set, stopping coldstarter ", zap.Uint("startDelay", executedPort.StartDelay), zap.String("port", executedPort.Name))
 								coldStarter.Stop(executedPort.StartDelay)
 							}
 
