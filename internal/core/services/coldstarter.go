@@ -131,9 +131,11 @@ func (c *ColdStarter) Serve(ctx context.Context) error {
 
 	select {
 	case err := <-c.serveDone:
+		logger.Log().Info("ColdStarter serve done", zap.Error(err))
 		cancel()
 		return err
 	case <-ctx.Done():
+		logger.Log().Info("ColdStarter serve done, context ended")
 		cancel()
 		return nil
 	}
