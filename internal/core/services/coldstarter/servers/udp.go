@@ -76,8 +76,10 @@ func (u *UDP) handleConnection(data []byte, remoteAddr *net.UDPAddr) {
 			logger.Log().Info("Finish received", zap.Strings("data", data), zap.String("type", "udp"), zap.String("address", remoteAddr.String()))
 			<-time.After(time.Second)
 			u.onFinish()
-			<-time.After(time.Second)
-			u.conn.Close()
+			//closing connection here is not smart most likely
+			//<-time.After(time.Second)
+			//u.conn.Close()
+
 		},
 	})
 

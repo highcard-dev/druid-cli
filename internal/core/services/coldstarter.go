@@ -144,6 +144,8 @@ func (c *ColdStarter) Serve(ctx context.Context) error {
 // Stop sends a nil error to the serveDone channel to gracefully stop the Serve function.
 func (c *ColdStarter) Stop(startDelay uint) {
 
+	logger.Log().Info("Stopping ColdStarter", zap.Uint("startDelay", startDelay))
+
 	if startDelay > 0 {
 		go func() {
 			time.Sleep(time.Duration(startDelay) * time.Second)
