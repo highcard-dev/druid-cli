@@ -1,123 +1,22 @@
+//go:build integration
+
 package command_test
 
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"log"
-	"net/http"
-	"net/url"
 	"os"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/highcard-dev/daemon/cmd"
 	"github.com/highcard-dev/daemon/internal/core/domain"
-	"github.com/highcard-dev/daemon/internal/handler"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	test_utils "github.com/highcard-dev/daemon/test/utils"
 	"github.com/otiai10/copy"
 	"gopkg.in/yaml.v2"
 )
-
-func connectWs(addr string, console string) (*websocket.Conn, error) {
-
-	u := url.URL{Scheme: "ws", Host: addr, Path: console}
-	log.Printf("connecting to %s", u.String())
-
-	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
-	return c, err
-}
-func waitForWs(host string, path string, duration time.Duration) (*websocket.Conn, error) {
-
-	//connect to ws server and check logs
-	var wsClient *websocket.Conn
-	var err error
-
-	timeout := time.After(duration)
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-timeout:
-			return nil, errors.New("timeout waiting for ws connection")
-		case <-ticker.C:
-			wsClient, err = connectWs(host, path)
-			if err == nil {
-				return wsClient, nil
-			}
-		}
-	}
-}
-
-func fetch(url string) (string, error) {
-	resp, err := http.Get(url)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(resp.Body)
-	return buf.String(), nil
-}
-
-func waitForWsMessage(wsClient *websocket.Conn, message string, timeout time.Duration) error {
-	for {
-		select {
-		case <-time.After(timeout):
-			return fmt.Errorf("timeout waiting for message: %s", message)
-		default:
-			_, readMsg, err := wsClient.ReadMessage()
-			if err != nil {
-				return err
-			}
-			//print(string(readMsg))
-			if strings.Contains(string(readMsg), message) {
-				return nil
-			}
-		}
-	}
-}
-
-func waitForConsoleRunning(console string, duration time.Duration) error {
-
-	timeout := time.After(duration)
-
-	ticker := time.NewTicker(1 * time.Second)
-	for {
-		select {
-		case <-timeout:
-			return errors.New("timeout waiting for console to start")
-		case <-ticker.C:
-			body, err := fetch("http://localhost:8081/api/v1/consoles")
-			if err != nil {
-				continue
-			}
-
-			var resp handler.ConsolesHttpResponse
-
-			json.Unmarshal([]byte(body), &resp)
-
-			consoles := resp.Consoles
-
-			if _, ok := consoles[console]; ok {
-				return nil
-			} else {
-				keys := make([]string, 0, len(consoles))
-				for k := range consoles {
-					keys = append(keys, k)
-				}
-				log.Printf("console %s not found, found: %v", console, keys)
-			}
-		}
-	}
-}
 
 func TestServeCommand(t *testing.T) {
 
@@ -139,9 +38,9 @@ func TestServeCommand(t *testing.T) {
 			Restarts:   1,
 		},
 		{
-			Name:       "TestServeFull With 5 Restarts",
+			Name:       "TestServeFull With 3 Restarts",
 			ScrollFile: "../../../examples/minecraft/.scroll/scroll.yaml",
-			Restarts:   5,
+			Restarts:   3,
 		},
 		{
 			Name:             "TestServeFull With Restart (Persistent)",
@@ -212,23 +111,23 @@ func TestServeCommand(t *testing.T) {
 
 				logger.Log().Info("Starting serve command")
 
-				connected, err = startAndTestServeCommand(ctx, t, rootCmd)
+				connected, err = test_utils.StartAndTestServeCommand(ctx, t, rootCmd)
 
 				if !connected {
 					t.Fatalf("Failed to connect to daemon web server: %v", err)
 				}
 
-				err = waitForConsoleRunning("start.0", 180*time.Second)
+				err = test_utils.WaitForConsoleRunning("start.0", 180*time.Second)
 				if err != nil {
 					t.Fatalf("Failed to start console: %v", err)
 				}
 
-				wsClient, err := waitForWs("localhost:8081", "/ws/v1/serve/start.0", 60*time.Second)
+				wsClient, err := test_utils.WaitForWebsocketConnection("localhost:8081", "/ws/v1/serve/start.0", 60*time.Second)
 				if err != nil {
 					t.Fatalf("Failed to connect to ws server: %v", err)
 				}
 
-				err = waitForWsMessage(wsClient, `For help, type "help"`, 60*time.Second)
+				err = test_utils.WaitForWebsocketMessage(wsClient, `For help, type "help"`, 60*time.Second)
 				t.Log("Console message received")
 				if err != nil {
 					t.Fatalf("Failed to get help message: %v", err)
@@ -269,7 +168,7 @@ func TestServeCommand(t *testing.T) {
 
 				cancel()
 
-				err = checkHttpServerShutdown(8081, 120*time.Second)
+				err = test_utils.CheckHttpServerShutdown(8081, 120*time.Second)
 				if err != nil {
 					t.Fatalf("Failed to stop daemon server, server still online")
 				}

@@ -51,5 +51,5 @@ func main() {
 
 	println("done")
 	<-cmdCtx.Done()
-	println("exit " + string(cmd.ProcessState.ExitCode()))
+	println(fmt.Sprintf("exit %d", cmd.ProcessState.ExitCode()))
 }
