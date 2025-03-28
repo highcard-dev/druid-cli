@@ -1,7 +1,6 @@
 package servers
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"time"
@@ -27,7 +26,7 @@ func NewUDP(handler ports.ColdStarterHandlerInterface) *UDP {
 	}
 }
 
-func (u *UDP) Start(ctx context.Context, port int, onFinish func()) error {
+func (u *UDP) Start(port int, onFinish func()) error {
 	addr := net.UDPAddr{
 		Port: port,
 		IP:   net.IPv4zero,
@@ -55,9 +54,6 @@ func (u *UDP) Start(ctx context.Context, port int, onFinish func()) error {
 			go u.handleConnection(buf[:n], remoteAddr)
 		}
 	}()
-
-	<-ctx.Done()
-	u.conn.Close()
 
 	return nil
 }
@@ -95,4 +91,19 @@ func (u *UDP) handleConnection(data []byte, remoteAddr *net.UDPAddr) {
 	if err != nil {
 		logger.Log().Error("Error handling packet", zap.Error(err))
 	}
+}
+
+func (u *UDP) Close() error {
+	if u.conn != nil {
+		err := u.conn.Close()
+		if err != nil {
+			return fmt.Errorf("failed to close UDP connection: %v", err)
+		}
+
+		err = u.handler.Close()
+		if err != nil {
+			return fmt.Errorf("failed to close handler: %v", err)
+		}
+	}
+	return nil
 }
