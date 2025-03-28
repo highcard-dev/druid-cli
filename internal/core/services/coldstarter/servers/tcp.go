@@ -133,8 +133,5 @@ func (t *TCP) Close() error {
 		return fmt.Errorf("failed to close handler: %v", err)
 	}
 
-	if t.onFinish != nil {
-		t.onFinish()
-	}
 	return nil
 }
