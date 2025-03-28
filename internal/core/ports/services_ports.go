@@ -117,16 +117,18 @@ type PortServiceInterface interface {
 }
 
 type ColdStarterHandlerInterface interface {
-	GetHandler(funcs map[string]func(data ...string)) (ColdStarterServerInterface, error)
+	GetHandler(funcs map[string]func(data ...string)) (ColdStarterPacketHandlerInterface, error)
 	SetFinishedAt(finishedAt *time.Time)
+	Close() error
 }
 
-type ColdStarterServerInterface interface {
+type ColdStarterPacketHandlerInterface interface {
 	Handle(data []byte, funcs map[string]func(data ...string)) error
 }
 
 type ColdStarterInterface interface {
-	Stop(uint)
+	Stop()
+	StopWithDeplay(uint)
 	Finish(*domain.AugmentedPort)
 }
 
@@ -157,4 +159,9 @@ type SnapshotService interface {
 
 	GetProgressTracker() *ProgressTracker
 	GetCurrentMode() SnapshotMode
+}
+
+type ColdStarterServerInterface interface {
+	Start(port int, onFinish func()) error
+	Close() error
 }

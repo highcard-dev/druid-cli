@@ -44,7 +44,8 @@
                 "-p",
                 "9190",
                 "artifacts.druid.gg/druid-team/scroll-lgsm:arkserver",
-                "--coldstarter"
+                "--coldstarter=true",
+                "--watch-ports=false"
             ],
             "env": {
                 "DRUID_PORT_QUERY": "2556",

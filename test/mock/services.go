@@ -1159,10 +1159,10 @@ func (m *MockColdStarterHandlerInterface) EXPECT() *MockColdStarterHandlerInterf
 }
 
 // GetHandler mocks base method.
-func (m *MockColdStarterHandlerInterface) GetHandler(funcs map[string]func(...string)) (ports.ColdStarterServerInterface, error) {
+func (m *MockColdStarterHandlerInterface) GetHandler(funcs map[string]func(...string)) (ports.ColdStarterPacketHandlerInterface, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetHandler", funcs)
-	ret0, _ := ret[0].(ports.ColdStarterServerInterface)
+	ret0, _ := ret[0].(ports.ColdStarterPacketHandlerInterface)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

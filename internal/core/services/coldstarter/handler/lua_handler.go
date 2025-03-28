@@ -44,7 +44,15 @@ func (handler *LuaHandler) SetFinishedAt(finishedAt *time.Time) {
 	handler.finishedAt = finishedAt
 }
 
-func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (ports.ColdStarterServerInterface, error) {
+func (handler *LuaHandler) Close() error {
+	if handler.stateWrapper != nil {
+		handler.stateWrapper.luaState.Close()
+		return nil
+	}
+	return nil
+}
+
+func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (ports.ColdStarterPacketHandlerInterface, error) {
 
 	var l *lua.LState
 

@@ -180,10 +180,10 @@ to interact and monitor the Scroll Application`,
 
 							if executedPort == nil {
 								logger.Log().Info("No port responsible for coldstarter finish, stopping coldstarter immediately")
-								coldStarter.Stop(0)
+								coldStarter.Stop()
 							} else if executedPort.FinishAfterCommand == "" {
 								logger.Log().Info("No finish command set, stopping coldstarter ", zap.Uint("startDelay", executedPort.StartDelay), zap.String("port", executedPort.Name))
-								coldStarter.Stop(executedPort.StartDelay)
+								coldStarter.StopWithDeplay(executedPort.StartDelay)
 							}
 
 							logger.Log().Info("Coldstarter done, starting scroll")
@@ -322,7 +322,7 @@ func startup(scrollService *services.ScrollService, snapshotService ports.Snapsh
 	for _, port := range portSerivce.GetPorts() {
 		if port.FinishAfterCommand != "" {
 			callbacks[port.FinishAfterCommand] = func() {
-				coldStarter.Stop(port.StartDelay)
+				coldStarter.StopWithDeplay(port.StartDelay)
 			}
 		}
 	}
