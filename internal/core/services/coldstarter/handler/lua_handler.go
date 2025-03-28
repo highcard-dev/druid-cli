@@ -2,6 +2,7 @@ package lua
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/ports"
@@ -19,10 +20,14 @@ type LuaHandler struct {
 	queueManager    ports.QueueManagerInterface
 	snapshotService ports.SnapshotService
 	stateWrapper    *LuaWrapper
+	execWg          *sync.WaitGroup
+	closed          bool
 }
 
 type LuaWrapper struct {
 	luaState *lua.LState
+	execWg   *sync.WaitGroup
+	closed   *bool
 }
 
 func NewLuaHandler(queueManager ports.QueueManagerInterface, snapshotService ports.SnapshotService,
@@ -36,6 +41,8 @@ func NewLuaHandler(queueManager ports.QueueManagerInterface, snapshotService por
 		queueManager:    queueManager,
 		snapshotService: snapshotService,
 		stateWrapper:    nil,
+		execWg:          &sync.WaitGroup{},
+		closed:          false,
 	}
 	return handler
 }
@@ -45,7 +52,11 @@ func (handler *LuaHandler) SetFinishedAt(finishedAt *time.Time) {
 }
 
 func (handler *LuaHandler) Close() error {
+	//gopher-lua goes not officially support state in multiple goroutines
+	//so we need to do some tricks to ensure close does not panic
+	handler.closed = true
 	if handler.stateWrapper != nil {
+		handler.execWg.Wait()
 		handler.stateWrapper.luaState.Close()
 		return nil
 	}
@@ -62,6 +73,9 @@ func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (po
 		l = lua.NewState(lua.Options{
 			RegistrySize: 256 * 40,
 		})
+	}
+	if l.IsClosed() {
+		return nil, fmt.Errorf("lua state is closed")
 	}
 
 	for name, f := range funcs {
@@ -196,21 +210,29 @@ func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (po
 		}
 	}
 
-	handler.stateWrapper = &LuaWrapper{luaState: l}
+	handler.stateWrapper = &LuaWrapper{luaState: l, execWg: handler.execWg, closed: &handler.closed}
 
 	return handler.stateWrapper, nil
 }
 
 func (handler *LuaWrapper) Handle(data []byte, funcs map[string]func(data ...string)) error {
+	if handler.luaState.IsClosed() {
+		return fmt.Errorf("lua state is closed")
+	}
 	//call handler function
-	if err := callLuaFunction(handler.luaState, "handle", funcs, data); err != nil {
+	if err := handler.callLuaFunction(handler.luaState, "handle", funcs, data); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func callLuaFunction(l *lua.LState, functionName string, sendFunc map[string]func(data ...string), args ...interface{}) error {
+func (handler *LuaWrapper) callLuaFunction(l *lua.LState, functionName string, sendFunc map[string]func(data ...string), args ...interface{}) error {
+
+	if *handler.closed {
+		return fmt.Errorf("lua state is closed")
+	}
+
 	var luaArgs []lua.LValue
 
 	//first argument is a table of functions
@@ -239,18 +261,20 @@ func callLuaFunction(l *lua.LState, functionName string, sendFunc map[string]fun
 	luaArgs = append(luaArgs, table)
 
 	for _, arg := range args {
-		switch arg.(type) {
+		switch a := arg.(type) {
 		case []byte:
-			luaArgs = append(luaArgs, lua.LString(string(arg.([]byte))))
+			luaArgs = append(luaArgs, lua.LString(string(a)))
 		case string:
-			luaArgs = append(luaArgs, lua.LString(arg.(string)))
+			luaArgs = append(luaArgs, lua.LString(a))
 		case int:
-			luaArgs = append(luaArgs, lua.LNumber(arg.(int)))
+			luaArgs = append(luaArgs, lua.LNumber(a))
 		default:
 			return fmt.Errorf("unsupported argument type: %T", arg)
 		}
 	}
 
+	handler.execWg.Add(1)
+	defer handler.execWg.Done()
 	if err := l.CallByParam(lua.P{
 		Fn:      l.GetGlobal(functionName),
 		NRet:    len(luaArgs),

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -23,6 +24,7 @@ type ColdStarter struct {
 	chandlers      []ports.ColdStarterHandlerInterface
 	queueManager   ports.QueueManagerInterface
 	restoreService ports.SnapshotService
+	handlerMu      sync.Mutex
 }
 
 // NewColdStarter initializes the ColdStarter struct with proper channel initialization and no initial finishTime.
@@ -42,6 +44,7 @@ func NewColdStarter(
 		chandlers:      nil,
 		queueManager:   queueManager,
 		restoreService: restoreService,
+		handlerMu:      sync.Mutex{},
 	}
 }
 
@@ -110,6 +113,8 @@ func (c *ColdStarter) Serve(ctx context.Context) {
 				if err != nil {
 					return
 				}
+				c.handlerMu.Lock()
+				defer c.handlerMu.Unlock()
 				c.handler[port.Name] = udpServer
 			} else if port.Protocol == "tcp" {
 				logger.Log().Info(fmt.Sprintf("Starting TCP server on port %d", port.Port.Port))
@@ -118,6 +123,8 @@ func (c *ColdStarter) Serve(ctx context.Context) {
 				if err != nil {
 					return
 				}
+				c.handlerMu.Lock()
+				defer c.handlerMu.Unlock()
 				c.handler[port.Name] = tcpServer
 			} else {
 				return
