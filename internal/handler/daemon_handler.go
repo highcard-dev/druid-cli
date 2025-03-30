@@ -16,7 +16,7 @@ func NewDaemonHandler(shutdown *signals.SignalHandler) *DaemonHandler {
 }
 
 // @Summary Finish Coldstarter
-// @ID finishColdStarter
+// @ID stopDaemon
 // @Tags druid, daemon
 // @Accept */*
 // @Success 202

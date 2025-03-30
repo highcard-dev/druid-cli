@@ -130,7 +130,7 @@ to interact and monitor the Scroll Application`,
 		scrollMetricHandler := handler.NewScrollMetricHandler(scrollService, processMonitor)
 		queueHandler := handler.NewQueueHandler(queueManager)
 		portHandler := handler.NewPortHandler(portService)
-		healthHandler := handler.NewHealthHandler(portService, maxStartupHealthCheckTimeout)
+		healthHandler := handler.NewHealthHandler(portService, maxStartupHealthCheckTimeout, snapshotService)
 		coldstarterHandler := handler.NewColdstarterHandler(coldStarter)
 
 		var annotationHandler *handler.AnnotationHandler = nil

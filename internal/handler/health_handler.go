@@ -7,21 +7,29 @@ import (
 	"github.com/highcard-dev/daemon/internal/core/ports"
 )
 
+type HealhResponse struct {
+	Mode     string  `json:"mode"`
+	Progress float64 `json:"progress"`
+}
+
 type HealthHandler struct {
-	portService ports.PortServiceInterface
-	timeoutDone bool
-	Started     bool
+	portService     ports.PortServiceInterface
+	timeoutDone     bool
+	Started         bool
+	snapshotService ports.SnapshotService
 }
 
 func NewHealthHandler(
 	portService ports.PortServiceInterface,
 	timeoutSec uint,
+	snapshotService ports.SnapshotService,
 ) *HealthHandler {
 
 	h := &HealthHandler{
 		portService,
 		false,
 		false,
+		snapshotService,
 	}
 
 	// if timeoutSec == 0, we want at some point to not show a bad health status
@@ -38,8 +46,8 @@ func NewHealthHandler(
 // @Tags health, druid, daemon
 // @Accept */*
 // @Produce json
-// @Success 200 {object} string
-// @Success 503 {object} string
+// @Success 200 {object} HealhResponse
+// @Success 503 {object} HealhResponse
 // @Router /api/v1/health [get]
 func (p *HealthHandler) Health(c *fiber.Ctx) error {
 
@@ -47,13 +55,33 @@ func (p *HealthHandler) Health(c *fiber.Ctx) error {
 
 	if !p.timeoutDone && !portsOpen {
 		c.SendStatus(503)
-		return c.SendString("Manditory ports are not open")
+		return c.JSON(HealhResponse{
+			Mode: "manditory_ports",
+		})
 
 	}
 	if !p.Started {
-		return c.SendString("idle")
+		return c.JSON(HealhResponse{
+			Mode: "idle",
+		})
 	}
-	return c.SendString("ok")
+
+	if p.snapshotService.GetCurrentMode() != ports.SnapshotModeNoop {
+		pt := p.snapshotService.GetCurrentProgressTracker()
+		var perc float64
+		if pt != nil {
+			perc = (*pt).GetPercent()
+		}
+
+		return c.JSON(HealhResponse{
+			Mode:     string(p.snapshotService.GetCurrentMode()),
+			Progress: perc,
+		})
+	}
+
+	return c.JSON(HealhResponse{
+		Mode: "ok",
+	})
 }
 
 func (p *HealthHandler) countdown(timeout *time.Timer) {

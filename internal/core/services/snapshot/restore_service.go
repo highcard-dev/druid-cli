@@ -39,6 +39,13 @@ func (rc *SnapshotService) setActivity(mode ports.SnapshotMode, progressTracker 
 	rc.currentProgressTracker = progressTracker
 }
 
+func (rc *SnapshotService) GetCurrentProgressTracker() *ports.ProgressTracker {
+	if rc.currentMode == ports.SnapshotModeNoop {
+		return nil
+	}
+	return &rc.currentProgressTracker
+}
+
 func (rc *SnapshotService) Snapshot(dir string, destination string, options ports.SnapshotOptions) error {
 
 	var target string

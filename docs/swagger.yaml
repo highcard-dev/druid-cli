@@ -250,13 +250,16 @@ definitions:
     - always
     - once
     - restart
+    - persistent
     type: string
     x-enum-comments:
       RunModeAlways: default
+      RunModePersistent: restarts on failure and on program restart
     x-enum-varnames:
     - RunModeAlways
     - RunModeOnce
     - RunModeRestart
+    - RunModePersistent
   domain.ScrollLockStatus:
     enum:
     - running
@@ -269,6 +272,13 @@ definitions:
     - ScrollLockStatusDone
     - ScrollLockStatusError
     - ScrollLockStatusWaiting
+  handler.HealhResponse:
+    properties:
+      mode:
+        type: string
+      progress:
+        type: number
+    type: object
   handler.ProcessesBody:
     properties:
       processes:
@@ -360,6 +370,18 @@ paths:
       - druid
       - daemon
       - console
+  /api/v1/daemon/stop:
+    post:
+      consumes:
+      - '*/*'
+      operationId: stopDaemon
+      responses:
+        "202":
+          description: Accepted
+      summary: Finish Coldstarter
+      tags:
+      - druid
+      - daemon
   /api/v1/health:
     get:
       consumes:
@@ -371,11 +393,11 @@ paths:
         "200":
           description: OK
           schema:
-            type: string
+            $ref: '#/definitions/handler.HealhResponse'
         "503":
           description: Service Unavailable
           schema:
-            type: string
+            $ref: '#/definitions/handler.HealhResponse'
       summary: Get ports from scroll with additional information
       tags:
       - health

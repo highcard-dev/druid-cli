@@ -159,6 +159,7 @@ type SnapshotService interface {
 
 	GetProgressTracker() *ProgressTracker
 	GetCurrentMode() SnapshotMode
+	GetCurrentProgressTracker() *ProgressTracker
 }
 
 type ColdStarterServerInterface interface {
