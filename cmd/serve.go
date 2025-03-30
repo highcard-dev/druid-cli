@@ -34,6 +34,7 @@ var useColdstarter bool
 var maxStartupHealthCheckTimeout uint
 var initSnapshotUrl string
 var skipArtifactDownload bool
+var allowPluginErrors bool
 
 var ServeCommand = &cobra.Command{
 	Use:   "serve",
@@ -283,6 +284,8 @@ func init() {
 	ServeCommand.Flags().StringVarP(&initSnapshotUrl, "init-snapshot-url", "", "", "Snapshot to restore on startup")
 
 	ServeCommand.Flags().BoolVarP(&skipArtifactDownload, "skip-artifact-download", "", false, "Skip downloading the artifact on startup")
+
+	ServeCommand.Flags().BoolVarP(&allowPluginErrors, "allow-plugin-errors", "", false, "Ignore plugin errors on startup")
 }
 
 func startup(scrollService *services.ScrollService, snapshotService ports.SnapshotService, processLauncher *services.ProcedureLauncher, queueManager *services.QueueManager, portSerivce *services.PortMonitor, coldStarter *services.ColdStarter, healthHandler *handler.HealthHandler, cwd string, doneChan chan error) {
@@ -429,7 +432,11 @@ func initScroll(scrollService *services.ScrollService, snapshotService ports.Sna
 	err = processLauncher.LaunchPlugins()
 
 	if err != nil {
-		return newScroll, err
+		if allowPluginErrors {
+			logger.Log().Warn("Error launching plugins", zap.Error(err))
+		} else {
+			return newScroll, err
+		}
 	}
 
 	logger.Log().Info("Starting queue manager")
