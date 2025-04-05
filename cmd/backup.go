@@ -61,7 +61,7 @@ func init() {
 	bucketEnv := os.Getenv("DRUID_S3_BUCKET")
 	endpointEnv := os.Getenv("DRUID_S3_ENDPOINT")
 
-	BackupCmd.Flags().StringVarP(&tgzTempDir, "tgz-temp-dir", "", "", "Temporary location for the backup tgz file")
+	BackupCmd.Flags().StringVarP(&tgzTempDir, "temp-dir", "", "", "Temporary location for the backup tgz file")
 	BackupCmd.Flags().StringVarP(&s3AccessKey, "s3-access-key", "", accessKeyEnv, "S3 access key. You can also set the DRUID_S3_ACCESS_KEY environment variable")
 	BackupCmd.Flags().StringVarP(&s3SecretKey, "s3-secret-key", "", secretKeyEnv, "S3 secret key. You can also set the DRUID_S3_SECRET_KEY environment variable")
 	BackupCmd.Flags().StringVarP(&s3Bucket, "s3-bucket", "", bucketEnv, "S3 bucket. You can also set the DRUID_S3_BUCKET environment variable")
