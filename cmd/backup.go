@@ -46,7 +46,7 @@ var BackupCmd = &cobra.Command{
 		}
 
 		options := ports.SnapshotOptions{
-			TempDir:       tempDir,
+			TempDir:       tgzTempDir,
 			S3Destination: &s3Destination,
 		}
 
