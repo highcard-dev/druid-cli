@@ -5,6 +5,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      version_tag: ${{ steps.version.outputs.version_tag }}
+      increment: ${{ steps.version.outputs.increment }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,15 +59,14 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
-          context: .docker
-          file: .docker/Dockerfile
+          file: Dockerfile
           tags: |
-            druid:${{ steps.version.outputs.version }}
             druid:latest
             druid:stable
-            druid:${{ steps.version.outputs.version_tag }}
+            druid:${{ needs.build.outputs.version }}
+            druid:${{ needs.build.outputs.version_tag }}
           push: true
           build-args: |
-            VERSION=${{ steps.version.outputs.version }}
+            VERSION=${{ needs.build.outputs.version }}
             GIT_COMMIT=${{ github.sha }}
             GIT_BRANCH=${{ github.ref_name }}
