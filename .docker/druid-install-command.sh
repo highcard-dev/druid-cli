@@ -18,4 +18,4 @@ chmod +x $BASEDIR/druid $BASEDIR/druid_rcon $BASEDIR/druid_rcon_web_rust
 # Modify the PATH variable to prioritize /app/resources
 export PATH=$BASEDIR:$PATH
 
-bash $BASEDIR/entrypoint.sh $@
+exec bash $BASEDIR/entrypoint.sh $@

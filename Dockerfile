@@ -1,4 +1,4 @@
-FROM golang:bullseye AS build
+FROM golang:bullseye AS builder
 
 COPY . .
 COPY .docker/entrypoint.sh /entrypoint.sh
@@ -10,8 +10,17 @@ ENV VERSION=docker
 RUN make build
 RUN make build-plugins
 
-RUN cp ./bin/druid* /usr/bin/
+# The binaries are in ./bin/ directory after build
 
+# Second stage: minimal runtime image
+FROM debian:bullseye-slim
+
+# Copy only the built binaries and entrypoint from builder
+COPY --from=builder /go/bin/druid* /usr/bin/
+COPY --from=builder /entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Set up user with the same UID/GID
 ARG UID=1000
 ARG GID=1000
 RUN groupadd -g $GID -o druid

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -14,16 +15,16 @@ import (
 )
 
 type ColdStarter struct {
-	handler        map[string]uint
+	handler        map[string]ports.ColdStarterServerInterface
 	finishCount    uint
 	dir            string
 	finishTime     *time.Time
 	portsService   ports.PortServiceInterface
-	serveDone      chan error
 	finishChan     chan *domain.AugmentedPort
 	chandlers      []ports.ColdStarterHandlerInterface
 	queueManager   ports.QueueManagerInterface
 	restoreService ports.SnapshotService
+	handlerMu      sync.Mutex
 }
 
 // NewColdStarter initializes the ColdStarter struct with proper channel initialization and no initial finishTime.
@@ -34,16 +35,16 @@ func NewColdStarter(
 	dir string,
 ) *ColdStarter {
 	return &ColdStarter{
-		handler:        make(map[string]uint),
+		handler:        make(map[string]ports.ColdStarterServerInterface),
 		finishCount:    0,
 		dir:            dir,
 		finishTime:     nil,
 		portsService:   portsService,
-		serveDone:      make(chan error),
 		finishChan:     make(chan *domain.AugmentedPort),
 		chandlers:      nil,
 		queueManager:   queueManager,
 		restoreService: restoreService,
+		handlerMu:      sync.Mutex{},
 	}
 }
 
@@ -63,7 +64,7 @@ func (c *ColdStarter) FinishCount() uint {
 }
 
 // Serve starts the servers for each port and listens for context cancellation or errors.
-func (c *ColdStarter) Serve(ctx context.Context) error {
+func (c *ColdStarter) Serve(ctx context.Context) {
 	augmentedPorts := c.portsService.GetPorts()
 
 	augmentedPortMap := make(map[string]int, len(augmentedPorts))
@@ -71,11 +72,8 @@ func (c *ColdStarter) Serve(ctx context.Context) error {
 		augmentedPortMap[p.Name] = p.Port.Port
 	}
 
-	luactx, cancel := context.WithCancel(context.Background())
-	defer cancel() // Ensure cancel is called to release resources.
-
 	// Initialize the handler map with a length of augmentedPorts
-	c.handler = make(map[string]uint, len(augmentedPorts))
+	c.handler = make(map[string]ports.ColdStarterServerInterface, len(augmentedPorts))
 
 	for _, port := range augmentedPorts {
 		var sleepHandler string
@@ -111,46 +109,47 @@ func (c *ColdStarter) Serve(ctx context.Context) error {
 			if port.Protocol == "udp" {
 				logger.Log().Info(fmt.Sprintf("Starting UDP server on port %d", port.Port.Port), zap.String("sleep_handler", sleepHandler), zap.String("port_name", port.Name))
 				udpServer := servers.NewUDP(handler)
-				err := udpServer.Start(luactx, port.Port.Port, finishFunc)
+				err := udpServer.Start(port.Port.Port, finishFunc)
 				if err != nil {
-					c.serveDone <- err
+					return
 				}
+				c.handlerMu.Lock()
+				defer c.handlerMu.Unlock()
+				c.handler[port.Name] = udpServer
 			} else if port.Protocol == "tcp" {
 				logger.Log().Info(fmt.Sprintf("Starting TCP server on port %d", port.Port.Port))
 				tcpServer := servers.NewTCP(handler)
-				err := tcpServer.Start(luactx, port.Port.Port, finishFunc)
+				err := tcpServer.Start(port.Port.Port, finishFunc)
 				if err != nil {
-					c.serveDone <- err
+					return
 				}
+				c.handlerMu.Lock()
+				defer c.handlerMu.Unlock()
+				c.handler[port.Name] = tcpServer
 			} else {
-				logger.Log().Warn(fmt.Sprintf("Unknown protocol %s for coldstarter", port.Protocol))
 				return
 			}
 		}(port)
 	}
 
-	select {
-	case err := <-c.serveDone:
-		cancel()
-		return err
-	case <-ctx.Done():
-		cancel()
-		return nil
-	}
+}
+
+func (c *ColdStarter) StopWithDeplay(startDelay uint) {
+	logger.Log().Info("Stopping ColdStarter with deplay", zap.Uint("startDelay", startDelay))
+	time.Sleep(time.Duration(startDelay) * time.Second)
+	c.Stop()
 }
 
 // Stop sends a nil error to the serveDone channel to gracefully stop the Serve function.
-func (c *ColdStarter) Stop(startDelay uint) {
+func (c *ColdStarter) Stop() {
+	logger.Log().Info("Stopping ColdStarter")
 
-	if startDelay > 0 {
-		go func() {
-			time.Sleep(time.Duration(startDelay) * time.Second)
-			c.serveDone <- nil
-		}()
-		return
+	for _, handler := range c.handler {
+		err := handler.Close()
+		if err != nil {
+			logger.Log().Error("Error closing handler", zap.Error(err))
+		}
 	}
-
-	c.serveDone <- nil
 }
 
 // Finish increments the finishCount, logs, and sends the port to the finishChan channel.

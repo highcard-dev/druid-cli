@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -36,6 +37,13 @@ func NewSnapshotService() *SnapshotService {
 func (rc *SnapshotService) setActivity(mode ports.SnapshotMode, progressTracker *ProgressTracker) {
 	rc.currentMode = mode
 	rc.currentProgressTracker = progressTracker
+}
+
+func (rc *SnapshotService) GetCurrentProgressTracker() *ports.ProgressTracker {
+	if rc.currentMode == ports.SnapshotModeNoop {
+		return nil
+	}
+	return &rc.currentProgressTracker
 }
 
 func (rc *SnapshotService) Snapshot(dir string, destination string, options ports.SnapshotOptions) error {
@@ -126,7 +134,7 @@ func (rc *SnapshotService) uploadFileUsingS3(objectKey, filePath string, s3Desti
 	contentType := "application/octet-stream"
 	_, err = minioClient.PutObject(ctx, bucketName, objectKey, progressReader, fileSize, minio.PutObjectOptions{ContentType: contentType})
 	if err != nil {
-		return fmt.Errorf("Failed to upload file: %v", err)
+		return fmt.Errorf("failed to upload file: %v", err)
 	}
 	return nil
 
@@ -136,10 +144,14 @@ func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options po
 
 	progressReader := &ProgressTracker{}
 
+	dest := path.Join(dir, ".snap_dl")
+	os.RemoveAll(dest)
+	defer os.RemoveAll(dest)
+
 	// Create a new client
 	client := &getter.Client{
 		Src:              source, // Source URL
-		Dst:              dir,    // Destination path
+		Dst:              dest,
 		Mode:             getter.ClientModeDir,
 		ProgressListener: progressReader,
 	}
@@ -183,6 +195,7 @@ func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options po
 	// Download the file
 	err = client.Get()
 	if err != nil {
+		os.RemoveAll(dest)
 		logger.Log().Error("Error occured while getting backup", zap.Error(err))
 		if options.Safe {
 			logger.Log().Warn("Restoring old state, as error occured while getting backup", zap.Error(err))
@@ -191,6 +204,12 @@ func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options po
 				return errRename
 			}
 		}
+		return err
+	}
+
+	// Move the downloaded file to the destination
+	err = utils.MoveContents(dest, dir)
+	if err != nil {
 		return err
 	}
 

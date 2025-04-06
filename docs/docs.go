@@ -102,6 +102,24 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/daemon/stop": {
+            "post": {
+                "consumes": [
+                    "*/*"
+                ],
+                "tags": [
+                    "druid",
+                    "daemon"
+                ],
+                "summary": "Finish Coldstarter",
+                "operationId": "stopDaemon",
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    }
+                }
+            }
+        },
         "/api/v1/health": {
             "get": {
                 "consumes": [
@@ -121,13 +139,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/handler.HealhResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/handler.HealhResponse"
                         }
                     }
                 }
@@ -821,15 +839,18 @@ const docTemplate = `{
             "enum": [
                 "always",
                 "once",
-                "restart"
+                "restart",
+                "persistent"
             ],
             "x-enum-comments": {
-                "RunModeAlways": "default"
+                "RunModeAlways": "default",
+                "RunModePersistent": "restarts on failure and on program restart"
             },
             "x-enum-varnames": [
                 "RunModeAlways",
                 "RunModeOnce",
-                "RunModeRestart"
+                "RunModeRestart",
+                "RunModePersistent"
             ]
         },
         "domain.ScrollLockStatus": {
@@ -846,6 +867,17 @@ const docTemplate = `{
                 "ScrollLockStatusError",
                 "ScrollLockStatusWaiting"
             ]
+        },
+        "handler.HealhResponse": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string"
+                },
+                "progress": {
+                    "type": "number"
+                }
+            }
         },
         "handler.ProcessesBody": {
             "type": "object",

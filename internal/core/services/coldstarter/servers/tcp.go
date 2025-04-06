@@ -2,7 +2,6 @@ package servers
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"io"
 	"net"
@@ -29,7 +28,7 @@ func NewTCP(handler ports.ColdStarterHandlerInterface) *TCP {
 	}
 }
 
-func (t *TCP) Start(ctx context.Context, port int, onFinish func()) error {
+func (t *TCP) Start(port int, onFinish func()) error {
 	ser, err := net.ResolveTCPAddr("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return fmt.Errorf("failed to resolve address [%v]", err)
@@ -58,9 +57,6 @@ func (t *TCP) Start(ctx context.Context, port int, onFinish func()) error {
 			go t.handleConnection(con)
 		}
 	}()
-
-	<-ctx.Done()
-	t.listener.Close()
 
 	return nil
 }
@@ -122,4 +118,20 @@ func (t *TCP) handleConnection(conn net.Conn) {
 			logger.Log().Error("Error handling packet", zap.Error(err))
 		}
 	}
+}
+
+func (t *TCP) Close() error {
+	if t.listener != nil {
+		err := t.listener.Close()
+		if err != nil {
+			return fmt.Errorf("failed to close listener [%v]", err)
+		}
+	}
+
+	err := t.handler.Close()
+	if err != nil {
+		return fmt.Errorf("failed to close handler: %v", err)
+	}
+
+	return nil
 }

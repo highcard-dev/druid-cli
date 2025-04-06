@@ -34,6 +34,7 @@ var useColdstarter bool
 var maxStartupHealthCheckTimeout uint
 var initSnapshotUrl string
 var skipArtifactDownload bool
+var allowPluginErrors bool
 
 var ServeCommand = &cobra.Command{
 	Use:   "serve",
@@ -129,7 +130,7 @@ to interact and monitor the Scroll Application`,
 		scrollMetricHandler := handler.NewScrollMetricHandler(scrollService, processMonitor)
 		queueHandler := handler.NewQueueHandler(queueManager)
 		portHandler := handler.NewPortHandler(portService)
-		healthHandler := handler.NewHealthHandler(portService, maxStartupHealthCheckTimeout)
+		healthHandler := handler.NewHealthHandler(portService, maxStartupHealthCheckTimeout, snapshotService)
 		coldstarterHandler := handler.NewColdstarterHandler(coldStarter)
 
 		var annotationHandler *handler.AnnotationHandler = nil
@@ -179,9 +180,11 @@ to interact and monitor the Scroll Application`,
 							executedPort := <-finish
 
 							if executedPort == nil {
-								coldStarter.Stop(0)
+								logger.Log().Info("No port responsible for coldstarter finish, stopping coldstarter immediately")
+								coldStarter.Stop()
 							} else if executedPort.FinishAfterCommand == "" {
-								coldStarter.Stop(executedPort.StartDelay)
+								logger.Log().Info("No finish command set, stopping coldstarter ", zap.Uint("startDelay", executedPort.StartDelay), zap.String("port", executedPort.Name))
+								coldStarter.StopWithDeplay(executedPort.StartDelay)
 							}
 
 							logger.Log().Info("Coldstarter done, starting scroll")
@@ -281,20 +284,25 @@ func init() {
 	ServeCommand.Flags().StringVarP(&initSnapshotUrl, "init-snapshot-url", "", "", "Snapshot to restore on startup")
 
 	ServeCommand.Flags().BoolVarP(&skipArtifactDownload, "skip-artifact-download", "", false, "Skip downloading the artifact on startup")
+
+	ServeCommand.Flags().BoolVarP(&allowPluginErrors, "allow-plugin-errors", "", false, "Ignore plugin errors on startup")
 }
 
 func startup(scrollService *services.ScrollService, snapshotService ports.SnapshotService, processLauncher *services.ProcedureLauncher, queueManager *services.QueueManager, portSerivce *services.PortMonitor, coldStarter *services.ColdStarter, healthHandler *handler.HealthHandler, cwd string, doneChan chan error) {
 
 	healthHandler.Started = true
 
-	newScroll, err := initScroll(scrollService, snapshotService, processLauncher, queueManager)
+	logger.Log().Info("Initializing scroll")
 
-	currentScroll := scrollService.GetCurrent()
+	newScroll, err := initScroll(scrollService, snapshotService, processLauncher, queueManager)
 
 	if err != nil {
 		doneChan <- err
 		return
 	}
+	logger.Log().Info("Initialized scroll done")
+
+	currentScroll := scrollService.GetCurrent()
 
 	if newScroll {
 		logger.Log().Info("Starting scroll.init process")
@@ -317,12 +325,14 @@ func startup(scrollService *services.ScrollService, snapshotService ports.Snapsh
 	for _, port := range portSerivce.GetPorts() {
 		if port.FinishAfterCommand != "" {
 			callbacks[port.FinishAfterCommand] = func() {
-				coldStarter.Stop(port.StartDelay)
+				coldStarter.StopWithDeplay(port.StartDelay)
 			}
 		}
 	}
 
 	queueManager.RegisterCallbacks(callbacks)
+
+	logger.Log().Info("Queuing lock file")
 
 	err = queueManager.QueueLockFile()
 	if err != nil {
@@ -393,8 +403,7 @@ func initScroll(scrollService *services.ScrollService, snapshotService ports.Sna
 
 			//if we have a new scroll, we do this anyways, just ensure that the init command is there, also allready initialized stuff
 			if !newScroll {
-				//initialize if nothing is there
-				queueManager.AddAndRememberItem(currentScroll.Init)
+				lock.SetStatus(currentScroll.Init, domain.ScrollLockStatusWaiting, nil)
 			}
 		}
 
@@ -423,7 +432,11 @@ func initScroll(scrollService *services.ScrollService, snapshotService ports.Sna
 	err = processLauncher.LaunchPlugins()
 
 	if err != nil {
-		return newScroll, err
+		if allowPluginErrors {
+			logger.Log().Warn("Error launching plugins", zap.Error(err))
+		} else {
+			return newScroll, err
+		}
 	}
 
 	logger.Log().Info("Starting queue manager")

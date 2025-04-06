@@ -98,6 +98,11 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]] &&  [[ $input != *
     then
         args+=("--skip-artifact-download")
     fi
+
+    if [ ! -z "${DRUID_CWD}" ];
+    then
+        args+=("--cwd=$DRUID_CWD")
+    fi
         
     echo "Running druid with args from env: ${args[@]}"
     exec druid "${args[@]}"
