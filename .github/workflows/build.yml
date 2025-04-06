@@ -61,10 +61,10 @@ jobs:
         with:
           file: Dockerfile
           tags: |
-            druid:latest
-            druid:stable
-            druid:${{ needs.build.outputs.version }}
-            druid:${{ needs.build.outputs.version_tag }}
+            highcard/druidd-base:latest
+            highcard/druidd-base:stable
+            highcard/druidd-base:${{ needs.build.outputs.version }}
+            highcard/druidd-base:${{ needs.build.outputs.version_tag }}
           push: true
           build-args: |
             VERSION=${{ needs.build.outputs.version }}
