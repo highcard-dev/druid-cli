@@ -15,6 +15,10 @@ RUN make build-plugins
 # Second stage: minimal runtime image
 FROM debian:bullseye-slim
 
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy only the built binaries and entrypoint from builder
 COPY --from=builder /go/bin/druid* /usr/bin/
 COPY --from=builder /entrypoint.sh /entrypoint.sh
