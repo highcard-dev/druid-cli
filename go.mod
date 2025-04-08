@@ -141,7 +141,7 @@ require (
 	github.com/go-co-op/gocron v1.37.0
 	github.com/gofiber/jwt/v3 v3.3.10
 	github.com/golang-jwt/jwt/v4 v4.5.0
-	github.com/gopacket/gopacket v1.2.0
+	github.com/gopacket/gopacket v1.3.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/hashicorp/go-getter v1.7.6
 	github.com/highcard-dev/gorcon v1.3.10
