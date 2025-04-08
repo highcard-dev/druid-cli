@@ -147,7 +147,7 @@ require (
 	github.com/highcard-dev/gorcon v1.3.10
 	github.com/minio/minio-go/v7 v7.0.84
 	github.com/otiai10/copy v1.14.0
-	github.com/packetcap/go-pcap v0.0.0-20240528124601-8c87ecf5dbc5
+	github.com/packetcap/go-pcap v0.0.0-20250210145516-70cf19242e90
 	github.com/yuin/gopher-lua v1.1.1
 	go.uber.org/mock v0.4.0
 	gopkg.in/yaml.v2 v2.4.0
