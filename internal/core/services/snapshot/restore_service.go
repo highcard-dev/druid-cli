@@ -144,8 +144,7 @@ func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options po
 
 	progressReader := &ProgressTracker{}
 
-	tmpDir := os.TempDir()
-	dest := path.Join(tmpDir, ".snap_dl")
+	dest := path.Join(dir, ".snap_dl")
 
 	os.RemoveAll(dest)
 	defer os.RemoveAll(dest)

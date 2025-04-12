@@ -9,8 +9,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var tempDir string
-
 var RestoreCmd = &cobra.Command{
 	Use:   "restore",
 	Short: "Restore the current scroll",
@@ -34,5 +32,4 @@ var RestoreCmd = &cobra.Command{
 }
 
 func init() {
-	RestoreCmd.Flags().StringVarP(&tempDir, "temp-dir", "", "", "Temporary directory where to move the soon to be deleted files to. Files will be restored, in case an error occured while fetching / extracting the snapshot. Only works when --skip-safety is not set.")
 }
