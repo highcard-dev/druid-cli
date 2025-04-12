@@ -257,7 +257,10 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/domain.AugmentedPort"
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/domain.AugmentedPort"
+                            }
                         }
                     }
                 }

@@ -22,7 +22,7 @@ func NewPortHandler(
 // @Tags port, druid, daemon
 // @Accept */*
 // @Produce json
-// @Success 200 {object} domain.AugmentedPort
+// @Success 200 {object} []domain.AugmentedPort
 // @Router /api/v1/ports [get]
 func (p PortHandler) GetPorts(c *fiber.Ctx) error {
 	augmentedPorts := p.portService.GetPorts()

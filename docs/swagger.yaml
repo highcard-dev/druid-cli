@@ -473,7 +473,9 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/domain.AugmentedPort'
+            items:
+              $ref: '#/definitions/domain.AugmentedPort'
+            type: array
       summary: Get ports from scroll with additional information
       tags:
       - port

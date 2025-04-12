@@ -144,7 +144,9 @@ func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options po
 
 	progressReader := &ProgressTracker{}
 
-	dest := path.Join(dir, ".snap_dl")
+	tmpDir := os.TempDir()
+	dest := path.Join(tmpDir, ".snap_dl")
+
 	os.RemoveAll(dest)
 	defer os.RemoveAll(dest)
 
@@ -160,30 +162,11 @@ func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options po
 		return fmt.Errorf("failed to validate source: %w", err)
 	}
 
-	temDir := options.TempDir
-	if temDir == "" {
-		temDir = dir + "-bck"
-	}
-
-	//move dir if possible
 	if _, err := os.Stat(dir); err == nil {
-		if options.Safe {
-			logger.Log().Info("Moving folder to make space for backup", zap.String("dir", dir), zap.String("backup_dir", dir+"-bck"))
-
-			err := os.MkdirAll(temDir, 0755)
-			if err != nil {
-				return err
-			}
-			err = utils.MoveContents(dir, temDir)
-			if err != nil {
-				return err
-			}
-		} else {
-			logger.Log().Info("Removing folder to make space for backup", zap.String("dir", dir))
-			err := utils.RemoveContents(dir)
-			if err != nil {
-				return err
-			}
+		logger.Log().Info("Removing folder to make space for backup", zap.String("dir", dir))
+		err := utils.RemoveContents(dir)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -197,13 +180,6 @@ func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options po
 	if err != nil {
 		os.RemoveAll(dest)
 		logger.Log().Error("Error occured while getting backup", zap.Error(err))
-		if options.Safe {
-			logger.Log().Warn("Restoring old state, as error occured while getting backup", zap.Error(err))
-			errRename := os.Rename(temDir, dir)
-			if errRename != nil {
-				return errRename
-			}
-		}
 		return err
 	}
 
@@ -214,7 +190,7 @@ func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options po
 	}
 
 	logger.Log().Info("Backup restored", zap.String("source", source), zap.String("destination", dir))
-	return os.RemoveAll(temDir)
+	return nil
 }
 
 func (rc *SnapshotService) createTarGz(rootPath, target string) error {

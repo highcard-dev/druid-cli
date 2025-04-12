@@ -381,9 +381,7 @@ func initScroll(scrollService *services.ScrollService, snapshotService ports.Sna
 
 		if initSnapshotUrl != "" {
 			logger.Log().Info("Starting restore process")
-			err := snapshotService.RestoreSnapshot(scrollService.GetCwd(), initSnapshotUrl, ports.RestoreSnapshotOptions{
-				Safe: false,
-			})
+			err := snapshotService.RestoreSnapshot(scrollService.GetCwd(), initSnapshotUrl, ports.RestoreSnapshotOptions{})
 
 			if err != nil {
 				return false, err

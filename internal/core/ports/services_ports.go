@@ -133,8 +133,6 @@ type ColdStarterInterface interface {
 }
 
 type RestoreSnapshotOptions struct {
-	Safe    bool
-	TempDir string
 }
 
 type S3Destination struct {

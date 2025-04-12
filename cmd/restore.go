@@ -10,7 +10,6 @@ import (
 )
 
 var tempDir string
-var skipSafety bool
 
 var RestoreCmd = &cobra.Command{
 	Use:   "restore",
@@ -28,10 +27,7 @@ var RestoreCmd = &cobra.Command{
 
 		snapshotService := snapshotServices.NewSnapshotService()
 
-		options := ports.RestoreSnapshotOptions{
-			Safe:    !skipSafety,
-			TempDir: tempDir,
-		}
+		options := ports.RestoreSnapshotOptions{}
 
 		return snapshotService.RestoreSnapshot(scrollService.GetCwd(), source, options)
 	},
@@ -39,5 +35,4 @@ var RestoreCmd = &cobra.Command{
 
 func init() {
 	RestoreCmd.Flags().StringVarP(&tempDir, "temp-dir", "", "", "Temporary directory where to move the soon to be deleted files to. Files will be restored, in case an error occured while fetching / extracting the snapshot. Only works when --skip-safety is not set.")
-	RestoreCmd.Flags().BoolVarP(&skipSafety, "skip-safety", "", false, "Skips the renaming of the soon to be deleted files. If set the original state will NOT be recovered, if an error happens during fetching / extracting of the snapshot.")
 }
