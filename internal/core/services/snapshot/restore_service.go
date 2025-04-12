@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -144,16 +143,10 @@ func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options po
 
 	progressReader := &ProgressTracker{}
 
-	tmpDir := os.TempDir()
-	dest := path.Join(tmpDir, ".snap_dl")
-
-	os.RemoveAll(dest)
-	defer os.RemoveAll(dest)
-
 	// Create a new client
 	client := &getter.Client{
 		Src:              source, // Source URL
-		Dst:              dest,
+		Dst:              dir,
 		Mode:             getter.ClientModeDir,
 		ProgressListener: progressReader,
 	}
@@ -178,14 +171,7 @@ func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options po
 	// Download the file
 	err = client.Get()
 	if err != nil {
-		os.RemoveAll(dest)
 		logger.Log().Error("Error occured while getting backup", zap.Error(err))
-		return err
-	}
-
-	// Move the downloaded file to the destination
-	err = utils.MoveContents(dest, dir)
-	if err != nil {
 		return err
 	}
 
