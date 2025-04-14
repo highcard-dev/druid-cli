@@ -1,11 +1,13 @@
 FROM golang:bullseye AS builder
 
+ARG VERSION=docker
+
 COPY . .
 COPY .docker/entrypoint.sh /entrypoint.sh
 
 WORKDIR /go
 
-ENV VERSION=docker
+ENV VERSION=${VERSION}
 
 RUN make build
 RUN make build-plugins
