@@ -34,19 +34,24 @@ mock:
 	mockgen -source=internal/core/ports/services_ports.go -destination test/mock/services.go
 
 test:
-	go test -v ./test
+	go test -v ./...
 
-test_clean:
+test-clean:
 	go clean -testcache
 	go test -v ./test
 
+test-docker:
+	docker build . -f Dockerfile.testing -t druid-cli-test
+	docker run -v ./:/app --entrypoint=/bin/bash --rm druid-cli-test -c "go test -v ./..."
+
+
 test-integration:
-	go test -timeout 1200s -v ./test/integration
+	go test -timeout 1200s -tags=integration ./test/integration
 
 test-integration-docker:
 	docker build . -f Dockerfile.testing -t druid-cli-test
-	docker run -v ./:/app --entrypoint=/bin/bash --rm druid-cli-test -c "go test -timeout 1200s -v ./test/integration"
-	docker run -v ./:/app --entrypoint=/bin/bash --rm druid-cli-test -c "go test -timeout 1200s -v ./test/integration/commands"
+	docker run -v ./:/app --entrypoint=/bin/bash --rm druid-cli-test -c "go test -timeout 1200s -tags=integration -v ./test/integration"
+	docker run -v ./:/app --entrypoint=/bin/bash --rm druid-cli-test -c "go test -timeout 1200s -tags=integration -v ./test/integration/commands"
 
 test-integration-docker-debug:
 	docker build . -f Dockerfile.testing -t druid-cli-test

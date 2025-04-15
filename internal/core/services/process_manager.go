@@ -137,6 +137,8 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 		zap.String("dir", dir),
 	)
 
+	println("Starting process", commandName, name, args, dir)
+
 	process.Cmd = exec.Command(name, args...)
 	process.Cmd.Dir = dir
 
@@ -177,6 +179,7 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 		for scanner.Scan() {
 			text := scanner.Text()
 			logger.Log().Debug(text)
+			println(text)
 			combinedChannel <- text + "\n"
 		}
 	}()
@@ -189,6 +192,7 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 		for scanner.Scan() {
 			text := scanner.Text()
 			logger.Log().Debug(text)
+			println(text)
 			combinedChannel <- text + "\n"
 		}
 
@@ -200,6 +204,7 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 	err = process.Cmd.Start()
 
 	if err != nil {
+		println("Error starting process", err)
 		cmdDone()
 		process.Cmd = nil
 		return nil, err
@@ -217,12 +222,17 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 	//stdReader := io.MultiReader(stdoutReader, stderrReader)
 
 	go func() {
-		_ = process.Cmd.Wait()
+		wg.Wait()
+
+		err := process.Cmd.Wait()
+		if err != nil {
+			logger.Log().Error("Error waiting for process", zap.Error(err))
+		}
 		cmdDone()
 
-		stderrReader.Close()
-		stdoutReader.Close()
-		stdin.Close()
+		//stderrReader.Close()
+		//stdoutReader.Close()
+		//stdin.Close()
 	}()
 
 	<-cmdCtx.Done()
@@ -231,9 +241,9 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 	po.RemoveProcess(commandName)
 	// Wait for goroutine to print everything (watchdog closes stdin)
 	exitCode := process.Cmd.ProcessState.ExitCode()
-	console.MarkExited(exitCode)
 
-	wg.Wait()
+	println("Exit code", exitCode)
+	console.MarkExited(exitCode)
 
 	close(combinedChannel)
 	//we wait, sothat we are sure all data is written to the console
