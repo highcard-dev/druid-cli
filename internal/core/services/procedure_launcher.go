@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -261,6 +262,43 @@ func (sc *ProcedureLauncher) RunProcedure(proc *domain.Procedure, cmd string) (s
 
 		err := sc.ociRegistry.Pull(sc.scrollService.GetDir(), proc.Data.(string))
 		return "", nil, err
+	case "init-files":
+		fallthrough
+	case "init-files-template":
+		instructions, err := utils.InterfaceToStringSlice(proc.Data)
+		if err != nil {
+			return "", nil, err
+		}
+		var files []string
+
+		if len(instructions) > 0 {
+			for _, instruction := range instructions {
+				parts := strings.Split(instruction, ";")
+				if len(parts) > 1 {
+					if parts[1] == "IfNotExist" {
+						exist, _ := utils.FileExists(parts[0])
+						if exist {
+							continue
+						}
+					}
+				}
+				files = append(files, parts[0])
+			}
+			if len(files) == 0 {
+				return "", nil, nil
+			}
+		}
+		if proc.Mode == "init-files-template" {
+			err = sc.scrollService.InitTemplateFiles(files...)
+			if err != nil {
+				return "", nil, err
+			}
+		} else {
+			err = sc.scrollService.InitFiles(files...)
+			if err != nil {
+				return "", nil, err
+			}
+		}
 	default:
 		return "", nil, errors.New("Unknown mode " + proc.Mode)
 	}

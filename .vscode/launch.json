@@ -104,8 +104,6 @@
                 "--watch-ports",
                 "-p",
                 "9190",
-                "--max-health-check-startup-timeount",
-                "10",
             ],
         },
         {

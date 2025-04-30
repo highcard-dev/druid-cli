@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"html/template"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -32,23 +33,26 @@ func (tr *TemplateRenderer) RenderTemplate(templatePath string, data interface{}
 	return tpl.String(), err
 }
 
-func (tr *TemplateRenderer) RenderScrollTemplateFiles(templateFiles []string, data any, outputDir string) error {
-
-	// Parse the template files
-	templates, err := template.New("scroll_template").Funcs(sprig.TxtFuncMap()).ParseFiles(templateFiles...)
-	if err != nil {
-		return err
-	}
+func (tr *TemplateRenderer) RenderScrollTemplateFiles(templateBase string, templateFiles []string, data any, outputDir string) error {
 
 	for _, templateFile := range templateFiles {
+		// Parse the template files
+		templates, err := template.New("scroll_template").Funcs(sprig.TxtFuncMap()).ParseFiles(path.Join(templateBase, templateFile))
+		if err != nil {
+			return err
+		}
 		// Remove the "template" suffix from the file name
 		outputFileName := strings.TrimSuffix(templateFile, ".scroll_template")
 
 		if outputDir != "" {
-			filename := filepath.Base(outputFileName)
-
 			// Prepend the output directory if specified
-			outputFileName = filepath.Join(outputDir, filename)
+			outputFileName = filepath.Join(outputDir, outputFileName)
+		}
+
+		//ensure the output directory exists
+		outputDirPath := filepath.Dir(outputFileName)
+		if err := os.MkdirAll(outputDirPath, os.ModePerm); err != nil {
+			return err
 		}
 
 		// Create a new file for the rendered output

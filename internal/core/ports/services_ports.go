@@ -34,6 +34,8 @@ type ScrollServiceInterface interface {
 	WriteNewScrollLock() *domain.ScrollLock
 	GetLock() (*domain.ScrollLock, error)
 	GetCommand(cmd string) (*domain.CommandInstructionSet, error)
+	InitFiles(files ...string) error
+	InitTemplateFiles(files ...string) error
 }
 
 type ProcedureLauchnerInterface interface {
@@ -84,7 +86,7 @@ type ProcessMonitorInterface interface {
 
 type TemplateRendererInterface interface {
 	RenderTemplate(templatePath string, data interface{}) (string, error)
-	RenderScrollTemplateFiles(templateFiles []string, data interface{}, ouputPath string) error
+	RenderScrollTemplateFiles(templateBase string, templateFiles []string, data interface{}, ouputPath string) error
 }
 
 type OciRegistryInterface interface {
