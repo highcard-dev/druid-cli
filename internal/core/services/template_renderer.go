@@ -34,10 +34,10 @@ func (tr *TemplateRenderer) RenderTemplate(templatePath string, data interface{}
 }
 
 func (tr *TemplateRenderer) RenderScrollTemplateFiles(templateBase string, templateFiles []string, data any, outputDir string) error {
-
+	tpl := template.New("scroll_template").Funcs(sprig.TxtFuncMap())
 	for _, templateFile := range templateFiles {
 		// Parse the template files
-		templates, err := template.New("scroll_template").Funcs(sprig.TxtFuncMap()).ParseFiles(path.Join(templateBase, templateFile))
+		templates, err := tpl.ParseFiles(path.Join(templateBase, templateFile))
 		if err != nil {
 			return err
 		}
