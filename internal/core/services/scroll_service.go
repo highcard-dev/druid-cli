@@ -53,7 +53,7 @@ func (sc *ScrollService) ReloadScroll() (*domain.Scroll, error) {
 }
 
 // Load Scroll and render templates in the cwd
-func (sc *ScrollService) Bootstrap(ignoreVersionCheck bool) (*domain.ScrollLock, error) {
+func (sc *ScrollService) ReloadLock(ignoreVersionCheck bool) (*domain.ScrollLock, error) {
 
 	var scroll = sc.scroll
 
@@ -142,7 +142,7 @@ func (sc *ScrollService) InitTemplateFiles(fls ...string) error {
 	return sc.templateRenderer.RenderScrollTemplateFiles(templateBase, files, sc.scroll, sc.processCwd)
 }
 
-func (sc *ScrollService) CreateLockAndBootstrapFiles() error {
+func (sc *ScrollService) CopyingInitFiles() error {
 	err := sc.InitFiles()
 	if err != nil {
 		return err
