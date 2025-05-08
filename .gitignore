@@ -14,3 +14,5 @@ debug**
 druid-cli-test
 
 !.docker/**
+
+.env

@@ -122,7 +122,7 @@ func TestExamples(t *testing.T) {
 			go queueManager.Work()
 
 			scrollService.WriteNewScrollLock()
-			scrollService.Bootstrap(false)
+			scrollService.ReloadLock(false)
 
 			err = queueManager.AddAndRememberItem("start")
 

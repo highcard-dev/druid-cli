@@ -370,7 +370,7 @@ func startup(scrollService *services.ScrollService, snapshotService ports.Snapsh
 
 func initScroll(scrollService *services.ScrollService, snapshotService ports.SnapshotService, processLauncher *services.ProcedureLauncher, queueManager *services.QueueManager) (bool, error) {
 
-	lock, err := scrollService.Bootstrap(ignoreVersionCheck)
+	lock, err := scrollService.ReloadLock(ignoreVersionCheck)
 	if err != nil {
 		return false, err
 	}
@@ -380,19 +380,22 @@ func initScroll(scrollService *services.ScrollService, snapshotService ports.Sna
 	if newScroll {
 
 		if initSnapshotUrl != "" {
-			logger.Log().Info("Starting restore process")
+			logger.Log().Info("Starting restore process from Init Snapshot")
 			err := snapshotService.RestoreSnapshot(scrollService.GetCwd(), initSnapshotUrl, ports.RestoreSnapshotOptions{})
 
 			if err != nil {
 				return false, err
 			}
 
+			logger.Log().Info("Restore process from Init Snapshot done")
+
 			currentScroll, err := scrollService.ReloadScroll()
 			if err != nil {
 				return false, err
 			}
+			logger.Log().Info("Reloaded scroll after restore", zap.String("Name", currentScroll.Name), zap.Any("Version", currentScroll.Version), zap.String("AppVersion", currentScroll.AppVersion), zap.Any("Ports", currentScroll.Ports))
 
-			lock, err = scrollService.Bootstrap(ignoreVersionCheck)
+			lock, err = scrollService.ReloadLock(ignoreVersionCheck)
 			if err != nil {
 				return false, err
 			}
@@ -403,18 +406,16 @@ func initScroll(scrollService *services.ScrollService, snapshotService ports.Sna
 			if !newScroll {
 				lock.SetStatus(currentScroll.Init, domain.ScrollLockStatusWaiting, nil)
 			}
+
 		}
 
-		if newScroll {
-			logger.Log().Info("No lock file found, but init command available. Bootstrapping...")
-
-			logger.Log().Info("Creating lock and bootstrapping files")
-			//There is an error here. We need to bootstrap the files before we render out the templates in the bootstrap func above
-			err := scrollService.CreateLockAndBootstrapFiles()
-			if err != nil {
-				return newScroll, err
-			}
+		logger.Log().Info("Creating lock and bootstrapping files")
+		//There is an error here. We need to bootstrap the files before we render out the templates in the bootstrap func above
+		err := scrollService.CopyingInitFiles()
+		if err != nil {
+			return newScroll, err
 		}
+
 	} else {
 		logger.Log().Info("Found lock file, bootstrapping done")
 	}

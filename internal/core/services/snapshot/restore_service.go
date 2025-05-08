@@ -5,14 +5,12 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 
 	"github.com/hashicorp/go-getter"
 	"github.com/highcard-dev/daemon/internal/core/ports"
@@ -34,7 +32,7 @@ func NewSnapshotService() *SnapshotService {
 	}
 }
 
-func (rc *SnapshotService) setActivity(mode ports.SnapshotMode, progressTracker *ProgressTracker) {
+func (rc *SnapshotService) setActivity(mode ports.SnapshotMode, progressTracker ports.ProgressTracker) {
 	rc.currentMode = mode
 	rc.currentProgressTracker = progressTracker
 }
@@ -46,98 +44,37 @@ func (rc *SnapshotService) GetCurrentProgressTracker() *ports.ProgressTracker {
 	return &rc.currentProgressTracker
 }
 
-func (rc *SnapshotService) Snapshot(dir string, destination string, options ports.SnapshotOptions) error {
-
-	var target string
-	if options.TempDir == "" {
-		target = filepath.Join(dir, "snapshot.tgz")
-	} else {
-		target = filepath.Join(options.TempDir, "snapshot.tgz")
-	}
-
-	logger.Log().Info("Creating snapshot", zap.String("source", dir), zap.String("destination", target))
-	// Define the source URL and destination directory
-	err := rc.createTarGz(dir, target)
-	if err != nil {
-		return err
-	}
-	logger.Log().Info("Snapshot created", zap.String("source", dir), zap.String("destination", target))
-
-	//TODO: upload
-	if strings.HasPrefix(destination, "http") {
-		logger.Log().Info("Uploading snapshot", zap.String("source", target), zap.String("destination", destination))
-		err = rc.uploadFileUsingPresignedURL(destination, target)
+func (rc *SnapshotService) countFilesRec(dir string) (int64, error) {
+	var fileCount int64
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			logger.Log().Error("Error occured while uploading snapshot", zap.Error(err))
 			return err
 		}
-		logger.Log().Info("Snapshot uploaded", zap.String("source", target), zap.String("destination", destination))
-	} else if options.S3Destination != nil {
-		logger.Log().Info("Uploading snapshot", zap.String("source", target), zap.String("destination", destination))
-		err = rc.uploadFileUsingS3(destination, target, options.S3Destination)
-		if err != nil {
-			logger.Log().Error("Error occured while uploading snapshot", zap.Error(err))
-			return err
+		if info.Mode().IsRegular() {
+			fileCount++
 		}
-		logger.Log().Info("Snapshot uploaded", zap.String("source", target), zap.String("destination", destination))
-	} else {
-		return errors.New("destination must be a presigned S3 URL")
-	}
-
-	return os.Remove(target)
-}
-
-func (rc *SnapshotService) uploadFileUsingS3(objectKey, filePath string, s3Destination *ports.S3Destination) error {
-
-	ctx := context.TODO()
-
-	endpoint := s3Destination.Endpoint
-	region := s3Destination.Region
-	if region == "" {
-		region = "us-east-1"
-	}
-	accessKey := s3Destination.AccessKey
-	secretKey := s3Destination.SecretKey
-	bucketName := s3Destination.Bucket
-
-	// Load AWS config with custom S3-compatible settings
-	minioClient, err := minio.New(endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: true,
+		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to create S3 client: %v", err)
+		return 0, err
+	}
+	return fileCount, nil
+}
+
+func (rc *SnapshotService) Snapshot(dir string, destination string, options ports.SnapshotOptions) error {
+
+	totalFiles := int64(0)
+	totalFiles, _ = rc.countFilesRec(dir)
+	progessTracker := NewGeneralProgressTracker(totalFiles)
+
+	rc.setActivity(ports.SnapshotModeSnapshot, progessTracker)
+	defer rc.setActivity(ports.SnapshotModeNoop, progessTracker)
+	//check if rootPath exists
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return fmt.Errorf("source path does not exist: %s", dir)
 	}
 
-	// Open the file
-	file, err := os.Open(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to open file: %w", err)
-	}
-	defer file.Close()
-
-	// Get the file size
-	fileInfo, err := file.Stat()
-	if err != nil {
-		return fmt.Errorf("failed to get file info: %w", err)
-	}
-	fileSize := fileInfo.Size()
-
-	// Wrap the file reader in the ProgressReader with an update frequency of 1 second
-	progressReader := &ProgressTracker{
-		reader:   file,
-		fileSize: fileSize,
-	}
-	rc.setActivity(ports.SnapshotModeSnapshot, progressReader)
-	defer rc.setActivity(ports.SnapshotModeNoop, nil)
-
-	contentType := "application/octet-stream"
-	_, err = minioClient.PutObject(ctx, bucketName, objectKey, progressReader, fileSize, minio.PutObjectOptions{ContentType: contentType})
-	if err != nil {
-		return fmt.Errorf("failed to upload file: %v", err)
-	}
-	return nil
-
+	return rc.uploadS3(dir, destination, options.S3Destination, progessTracker)
 }
 
 func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options ports.RestoreSnapshotOptions) error {
@@ -192,71 +129,86 @@ func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options po
 	return nil
 }
 
-func (rc *SnapshotService) createTarGz(rootPath, target string) error {
-	// Create the target .tgz file
-	tgzFile, err := os.Create(target)
-	if err != nil {
-		return err
-	}
-	defer tgzFile.Close()
+func (rc *SnapshotService) uploadS3(rootPath, objectKey string, s3Destination *ports.S3Destination, progessTracker *GeneralProgressTracker) error {
 
-	// Create a gzip writer
-	gzipWriter := gzip.NewWriter(tgzFile)
-	defer gzipWriter.Close()
+	pipeReader, pipeWriter := io.Pipe()
 
-	// Create a tar writer
-	tarWriter := tar.NewWriter(gzipWriter)
-	defer tarWriter.Close()
+	go func() {
+		defer pipeWriter.Close()
 
-	// Walk through the source directory
-	return filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
+		// Create a gzip writer
+		gzipWriter := gzip.NewWriter(pipeWriter)
+		defer gzipWriter.Close()
 
-		// Skip the target file
-		if absTarget, err := filepath.Abs(target); err != nil {
-			return err
-		} else if absFile, err := filepath.Abs(path); err != nil {
-			return err
-		} else if absFile == absTarget {
+		// Create a tar writer
+		tarWriter := tar.NewWriter(gzipWriter)
+		defer tarWriter.Close()
+
+		// Walk through the source directory
+		filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+
+			linkName := ""
+			if info.Mode()&os.ModeSymlink == os.ModeSymlink {
+				linkName, err = os.Readlink(path)
+				if err != nil {
+					return err
+				}
+			}
+
+			hdr, err := tar.FileInfoHeader(info, linkName)
+			if err != nil {
+				return err
+			}
+
+			hdr.Name, _ = filepath.Rel(rootPath, path)
+
+			if err := tarWriter.WriteHeader(hdr); err != nil {
+				return err
+			}
+
+			if info.Mode().IsRegular() {
+				file, err := os.Open(path)
+				if err != nil {
+					return err
+				}
+				defer file.Close()
+
+				_, err = io.Copy(tarWriter, file)
+				progessTracker.TrackProgress()
+				return err
+			}
+
 			return nil
-		}
+		})
+	}()
 
-		linkName := ""
-		if info.Mode()&os.ModeSymlink == os.ModeSymlink {
-			linkName, err = os.Readlink(path)
-			if err != nil {
-				return err
-			}
-		}
+	endpoint := s3Destination.Endpoint
+	region := s3Destination.Region
+	if region == "" {
+		region = "us-east-1"
+	}
+	accessKey := s3Destination.AccessKey
+	secretKey := s3Destination.SecretKey
+	bucketName := s3Destination.Bucket
 
-		hdr, err := tar.FileInfoHeader(info, linkName)
-		if err != nil {
-			return err
-		}
-
-		hdr.Name, _ = filepath.Rel(rootPath, path)
-
-		if err := tarWriter.WriteHeader(hdr); err != nil {
-			return err
-		}
-
-		if info.Mode().IsRegular() {
-			file, err := os.Open(path)
-			if err != nil {
-				return err
-			}
-			defer file.Close()
-
-			_, err = io.Copy(tarWriter, file)
-			return err
-		}
-
-		return nil
+	// Load AWS config with custom S3-compatible settings
+	minioClient, err := minio.New(endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
+		Secure: true,
 	})
+	if err != nil {
+		return fmt.Errorf("failed to create S3 client: %v", err)
+	}
+
+	contentType := "application/octet-stream"
+	_, err = minioClient.PutObject(context.TODO(), bucketName, objectKey, pipeReader, -1, minio.PutObjectOptions{ContentType: contentType})
+	return err
 }
 
+// Todo: refactor this to do streaming upload
 func (rc *SnapshotService) uploadFileUsingPresignedURL(presignedURL, filePath string) error {
 	// Open the file
 	file, err := os.Open(filePath)

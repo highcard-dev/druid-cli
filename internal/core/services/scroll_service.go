@@ -3,8 +3,10 @@ package services
 import (
 	"errors"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -51,7 +53,7 @@ func (sc *ScrollService) ReloadScroll() (*domain.Scroll, error) {
 }
 
 // Load Scroll and render templates in the cwd
-func (sc *ScrollService) Bootstrap(ignoreVersionCheck bool) (*domain.ScrollLock, error) {
+func (sc *ScrollService) ReloadLock(ignoreVersionCheck bool) (*domain.ScrollLock, error) {
 
 	var scroll = sc.scroll
 
@@ -73,73 +75,79 @@ func (sc *ScrollService) Bootstrap(ignoreVersionCheck bool) (*domain.ScrollLock,
 	return lock, nil
 
 }
-func (sc *ScrollService) CreateLockAndBootstrapFiles() error {
 
-	//init-files just get copied over
-	initPath := strings.TrimRight(sc.GetDir(), "/") + "/init-files"
-	exist, _ := utils.FileExists(initPath)
-	if exist {
-		err := filepath.Walk(initPath, func(path string, f os.FileInfo, err error) error {
-			strippedPath := strings.TrimPrefix(filepath.Clean(path), filepath.Clean(initPath))
-			realPath := filepath.Join(sc.processCwd, strippedPath)
-			if f.IsDir() {
-				if strippedPath == "" {
-					return nil
-				}
-				err := os.MkdirAll(realPath, f.Mode())
-				if err != nil {
-					return err
-				}
-			} else {
+func (sc *ScrollService) InitFiles(fls ...string) error {
+	//init-files-template needs to be rendered
+	files, err := sc.filterFiles("init-files", fls...)
+	if err != nil {
+		return err
+	}
+	initFileDir := path.Join(sc.GetDir(), "init-files")
 
-				b, err := os.ReadFile(path)
+	for _, file := range files {
+		basePath := strings.TrimPrefix(file, initFileDir)
+		dest := path.Join(sc.processCwd, basePath)
 
-				if err != nil {
-					return err
-				}
-
-				return os.WriteFile(realPath, b, f.Mode())
-			}
-
-			return err
-		})
+		err := utils.CopyFile(file, dest)
 		if err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+func (sc *ScrollService) filterFiles(path string, fls ...string) ([]string, error) {
 	//init-files-template needs to be rendered
-	initPath = strings.TrimRight(sc.GetDir(), "/") + "/init-files-template"
-	exist, _ = utils.FileExists(initPath)
+	initPath := strings.TrimRight(sc.GetDir(), "/") + "/" + path + "/"
+	exist, _ := utils.FileExists(initPath)
 
 	files := []string{}
 
 	if exist {
 		err := filepath.Walk(initPath, func(path string, f os.FileInfo, err error) error {
-			if f.IsDir() {
-				err := os.MkdirAll(path, f.Mode())
-				if err != nil {
-					return err
-				}
-			} else {
+			basePath := strings.TrimPrefix(path, initPath)
+			if !f.IsDir() && (slices.Contains(fls, basePath) || len(fls) == 0) {
 				files = append(files, path)
 			}
-
 			return nil
 		})
-		if len(files) == 0 {
-			return nil
-		}
+
 		if err != nil {
-			return err
+			return []string{}, err
 		}
 
-		err = sc.templateRenderer.RenderScrollTemplateFiles(files, sc.scroll, sc.processCwd)
-		if err != nil {
-			return err
-		}
+		return files, nil
 	}
 
-	return nil
+	return []string{}, nil
+}
+
+func (sc *ScrollService) InitTemplateFiles(fls ...string) error {
+
+	//init-files-template needs to be rendered
+	files, err := sc.filterFiles("init-files-template", fls...)
+	if err != nil {
+		return err
+	}
+	if len(files) == 0 {
+		return nil
+	}
+	templateBase := path.Join(sc.GetDir(), "init-files-template")
+
+	for i, file := range files {
+		basePath := strings.TrimPrefix(file, templateBase)
+		files[i] = basePath
+	}
+
+	return sc.templateRenderer.RenderScrollTemplateFiles(templateBase, files, sc.scroll, sc.processCwd)
+}
+
+func (sc *ScrollService) CopyingInitFiles() error {
+	err := sc.InitFiles()
+	if err != nil {
+		return err
+	}
+	return sc.InitTemplateFiles()
 }
 
 func (sc *ScrollService) LockExists() bool {
@@ -217,7 +225,7 @@ func (s ScrollService) RenderCwdTemplates() error {
 
 	config := TemplateData{Config: s.GetScrollConfig()}
 
-	return s.templateRenderer.RenderScrollTemplateFiles(files, config, "")
+	return s.templateRenderer.RenderScrollTemplateFiles("", files, config, "")
 
 }
 
