@@ -105,6 +105,8 @@
                 "--watch-ports",
                 "-p",
                 "9190",
+                "--pprof", 
+                ":6060"
             ],
         },
         {
@@ -156,6 +158,8 @@
                 "coldstarter",
                 "--cwd",
                 "${workspaceFolder}/examples/minecraft",
+                "--pprof", 
+                ":6060"
             ],
             "env": {
                 "DRUID_PORT_QUERY": "2556",

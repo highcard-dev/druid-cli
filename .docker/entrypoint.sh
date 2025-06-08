@@ -103,6 +103,11 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]] &&  [[ $input != *
     then
         args+=("--cwd=$DRUID_CWD")
     fi
+
+    if [ ! -z "${PPROF_BIND}" ];
+    then
+        args+=("--pprof=$PPROF_BIND")
+    fi
         
     echo "Running druid with args from env: ${args[@]}"
     exec druid "${args[@]}"

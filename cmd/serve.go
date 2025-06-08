@@ -3,6 +3,8 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"runtime"
 	"slices"
 	"time"
@@ -35,6 +37,7 @@ var maxStartupHealthCheckTimeout uint
 var initSnapshotUrl string
 var skipArtifactDownload bool
 var allowPluginErrors bool
+var pprofBind string
 
 var ServeCommand = &cobra.Command{
 	Use:   "serve",
@@ -242,7 +245,9 @@ to interact and monitor the Scroll Application`,
 				go coldStarter.Start(ctx)
 			}
 		}
-
+		if pprofBind != "" {
+			go http.ListenAndServe(pprofBind, nil)
+		}
 		err = s.Serve(a, port)
 
 		logger.Log().Info("Shutting down")
@@ -252,6 +257,8 @@ to interact and monitor the Scroll Application`,
 }
 
 func init() {
+	ServeCommand.Flags().StringVarP(&pprofBind, "pprof", "", "", "Enable pprof on the given bind. This is useful for debugging purposes. E.g. --pprof=localhost:6060 or --pprof=:6060")
+
 	ServeCommand.Flags().IntVarP(&port, "port", "p", 8081, "Port")
 
 	ServeCommand.Flags().IntVarP(&shutdownWait, "shutdown-wait", "", 10, "Wait interval how long the process is allowed to shutdown. First normal shutdown, then forced shutdown")
