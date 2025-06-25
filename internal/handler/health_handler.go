@@ -8,14 +8,15 @@ import (
 )
 
 type HealhResponse struct {
-	Mode     string  `json:"mode"`
-	Progress float64 `json:"progress"`
+	Mode      string     `json:"mode"`
+	Progress  float64    `json:"progress"`
+	StartDate *time.Time `json:"start_date,omitempty"`
 }
 
 type HealthHandler struct {
 	portService     ports.PortServiceInterface
 	timeoutDone     bool
-	Started         bool
+	Started         *time.Time
 	snapshotService ports.SnapshotService
 }
 
@@ -28,7 +29,7 @@ func NewHealthHandler(
 	h := &HealthHandler{
 		portService,
 		false,
-		false,
+		nil,
 		snapshotService,
 	}
 
@@ -60,7 +61,7 @@ func (p *HealthHandler) Health(c *fiber.Ctx) error {
 		})
 
 	}
-	if !p.Started {
+	if p.Started == nil {
 		return c.JSON(HealhResponse{
 			Mode: "idle",
 		})
@@ -80,7 +81,8 @@ func (p *HealthHandler) Health(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(HealhResponse{
-		Mode: "ok",
+		Mode:      "ok",
+		StartDate: p.Started,
 	})
 }
 

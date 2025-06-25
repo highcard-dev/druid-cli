@@ -177,7 +177,7 @@ to interact and monitor the Scroll Application`,
 					if currentScroll.CanColdStart() {
 
 						for {
-							healthHandler.Started = false
+							healthHandler.Started = nil
 							logger.Log().Info("Starting coldstarter")
 							finish := coldStarter.Start(ctx)
 							executedPort := <-finish
@@ -296,8 +296,8 @@ func init() {
 }
 
 func startup(scrollService *services.ScrollService, snapshotService ports.SnapshotService, processLauncher *services.ProcedureLauncher, queueManager *services.QueueManager, portSerivce *services.PortMonitor, coldStarter *services.ColdStarter, healthHandler *handler.HealthHandler, cwd string, doneChan chan error) {
-
-	healthHandler.Started = true
+	now := time.Now()
+	healthHandler.Started = &now
 
 	logger.Log().Info("Initializing scroll")
 
