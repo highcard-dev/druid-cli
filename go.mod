@@ -139,6 +139,7 @@ require (
 	github.com/MicahParks/keyfunc v1.9.0
 	github.com/creack/pty v1.1.21
 	github.com/go-co-op/gocron v1.37.0
+	github.com/go-co-op/gocron/v2 v2.16.2
 	github.com/gofiber/jwt/v3 v3.3.10
 	github.com/golang-jwt/jwt/v4 v4.5.0
 	github.com/gopacket/gopacket v1.2.0
