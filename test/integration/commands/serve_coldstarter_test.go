@@ -68,7 +68,6 @@ func TestColdstarterServeCommand(t *testing.T) {
 				Init:     "start",
 				Commands: testCommand,
 			},
-			ExecColdStarterFn: test_utils.NoTcpTester,
 		},
 		{
 			Name: "TestServeColdstarterWithoutHandler2",
@@ -102,6 +101,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 				Init:     "start",
 				Commands: testCommand,
 			},
+			ExecColdStarterFn: test_utils.TcpTester,
 		}, {
 			Name: "TestServeColdstarterWithTestLuaTCPHandler",
 			Scroll: domain.File{
