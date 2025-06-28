@@ -3,7 +3,19 @@ package test_utils
 import (
 	"fmt"
 	"net"
+	"time"
 )
+
+var NoTcpTester = func(answer string, port int) error {
+
+	time.Sleep(1000 * time.Millisecond) // Simulate some delay
+
+	err := TcpTester(answer, port)
+	if err != nil {
+		return nil
+	}
+	return fmt.Errorf("tcpTester should not have been called, but it was")
+}
 
 var TcpTester = func(answer string, port int) error {
 	println("dial tcpTester")
