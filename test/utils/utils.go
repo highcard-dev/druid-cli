@@ -21,10 +21,6 @@ func GetMockedProcessMonitor(ctrl *gomock.Controller) *mock_ports.MockProcessMon
 	return processMonitor
 }
 
-func testDial(testAddress string) (net.Conn, error) {
-	return net.DialTimeout("tcp", testAddress, 1*time.Second)
-}
-
 func ConnectionTest(testAddress string, checkOnline bool) error {
 	doneConnecting := make(chan error)
 
@@ -36,10 +32,10 @@ func ConnectionTest(testAddress string, checkOnline bool) error {
 		for {
 			select {
 			case <-timeout:
-				doneConnecting <- errors.New("Timeout Connecting")
+				doneConnecting <- errors.New("timeout Connecting")
 				return
 			case <-tick:
-				conn, err := testDial(testAddress)
+				conn, err := net.DialTimeout("tcp", testAddress, 1*time.Second)
 				//TODO: UDP support, when we need it
 				if err == nil {
 					conn.Close()
