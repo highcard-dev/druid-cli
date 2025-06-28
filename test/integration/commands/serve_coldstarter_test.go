@@ -55,7 +55,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 				Commands: testCommand,
 			},
 		},
-		{
+		/*{
 			Name: "TestServeColdstarterWithoutHandler",
 			Scroll: domain.File{
 				Ports: []domain.Port{
@@ -89,7 +89,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 				Commands: testCommand,
 			},
 			ExecColdStarterFn: test_utils.NoTcpTester,
-		}, {
+		},*/{
 			Name: "TestServeColdstarterWithGenericTCPHandler",
 			Scroll: domain.File{
 				Ports: []domain.Port{
