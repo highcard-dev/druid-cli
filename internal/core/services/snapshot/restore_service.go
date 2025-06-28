@@ -74,7 +74,7 @@ func (rc *SnapshotService) Snapshot(dir string, destination string, options port
 		return fmt.Errorf("source path does not exist: %s", dir)
 	}
 
-	return rc.uploadS3(dir, destination, options.S3Destination, progessTracker)
+	return rc.uploadS3(dir, destination, options.S3Destination, options.CompressionLevel, progessTracker)
 }
 
 func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options ports.RestoreSnapshotOptions) error {
@@ -129,7 +129,7 @@ func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options po
 	return nil
 }
 
-func (rc *SnapshotService) uploadS3(rootPath, objectKey string, s3Destination *ports.S3Destination, progessTracker *GeneralProgressTracker) error {
+func (rc *SnapshotService) uploadS3(rootPath, objectKey string, s3Destination *ports.S3Destination, compressionLevel int, progessTracker *GeneralProgressTracker) error {
 
 	pipeReader, pipeWriter := io.Pipe()
 
@@ -137,7 +137,10 @@ func (rc *SnapshotService) uploadS3(rootPath, objectKey string, s3Destination *p
 		defer pipeWriter.Close()
 
 		// Create a gzip writer
-		gzipWriter := gzip.NewWriter(pipeWriter)
+		gzipWriter, err := gzip.NewWriterLevel(pipeWriter, compressionLevel)
+		if err != nil {
+			return
+		}
 		defer gzipWriter.Close()
 
 		// Create a tar writer

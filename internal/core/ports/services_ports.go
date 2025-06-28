@@ -145,8 +145,8 @@ type S3Destination struct {
 	Region    string
 }
 type SnapshotOptions struct {
-	TempDir       string
-	S3Destination *S3Destination
+	CompressionLevel int
+	S3Destination    *S3Destination
 }
 
 type ProgressTracker interface {
