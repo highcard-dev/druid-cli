@@ -78,8 +78,8 @@ func (c *ColdStarter) Serve(ctx context.Context) {
 	for _, port := range augmentedPorts {
 		var sleepHandler string
 		if port.SleepHandler == nil {
-			logger.Log().Warn(fmt.Sprintf("No sleep handler found for port %d, using generic", port.Port.Port))
-			sleepHandler = "generic"
+			logger.Log().Warn(fmt.Sprintf("No sleep handler found for port %d, skipping", port.Port.Port))
+			continue
 		} else {
 			sleepHandler = *port.SleepHandler
 		}

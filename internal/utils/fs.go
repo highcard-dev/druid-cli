@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -52,4 +53,44 @@ func MoveContents(src, dest string) error {
 		}
 	}
 	return nil
+}
+
+func CopyFile(src, dest string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	// Get source file info for permissions
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	//ensure the destination directory exists
+	destDir := filepath.Dir(dest)
+	if err := os.MkdirAll(destDir, os.ModePerm); err != nil {
+		return err
+	}
+
+	// Create destination file with same permissions
+	destFile, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	// Copy file contents
+	if _, err := io.Copy(destFile, srcFile); err != nil {
+		return err
+	}
+
+	// Sync to ensure data is written
+	if err := destFile.Sync(); err != nil {
+		return err
+	}
+
+	// Set same permissions as source
+	return os.Chmod(dest, srcInfo.Mode())
 }

@@ -11,9 +11,10 @@
             "args": [
                 "backup",
                 "--cwd",
-                "${workspaceFolder}/examples/backup-test",
-                "https://gist.github.com/jlmaccal/ca6b08a307800f80986661075c82c432/raw/dbd5e7a38d0660b7047476de33da142bd79c22ef/test.tgz"
+                "${workspaceFolder}/examples/minecraft",
+                "testtest.tgz"
             ],
+            "envFile": "${workspaceFolder}/.env",
         },
         {
             "name": "Debug Daemon restore",
@@ -104,8 +105,8 @@
                 "--watch-ports",
                 "-p",
                 "9190",
-                "--max-health-check-startup-timeount",
-                "10",
+                "--pprof", 
+                ":6060"
             ],
         },
         {
@@ -157,6 +158,8 @@
                 "coldstarter",
                 "--cwd",
                 "${workspaceFolder}/examples/minecraft",
+                "--pprof", 
+                ":6060"
             ],
             "env": {
                 "DRUID_PORT_QUERY": "2556",

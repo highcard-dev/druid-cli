@@ -215,6 +215,42 @@ func (mr *MockScrollServiceInterfaceMockRecorder) GetScrollConfigRawYaml() *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetScrollConfigRawYaml", reflect.TypeOf((*MockScrollServiceInterface)(nil).GetScrollConfigRawYaml))
 }
 
+// InitFiles mocks base method.
+func (m *MockScrollServiceInterface) InitFiles(files ...string) error {
+	m.ctrl.T.Helper()
+	varargs := []any{}
+	for _, a := range files {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "InitFiles", varargs...)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// InitFiles indicates an expected call of InitFiles.
+func (mr *MockScrollServiceInterfaceMockRecorder) InitFiles(files ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InitFiles", reflect.TypeOf((*MockScrollServiceInterface)(nil).InitFiles), files...)
+}
+
+// InitTemplateFiles mocks base method.
+func (m *MockScrollServiceInterface) InitTemplateFiles(files ...string) error {
+	m.ctrl.T.Helper()
+	varargs := []any{}
+	for _, a := range files {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "InitTemplateFiles", varargs...)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// InitTemplateFiles indicates an expected call of InitTemplateFiles.
+func (mr *MockScrollServiceInterfaceMockRecorder) InitTemplateFiles(files ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InitTemplateFiles", reflect.TypeOf((*MockScrollServiceInterface)(nil).InitTemplateFiles), files...)
+}
+
 // WriteNewScrollLock mocks base method.
 func (m *MockScrollServiceInterface) WriteNewScrollLock() *domain.ScrollLock {
 	m.ctrl.T.Helper()
@@ -770,17 +806,17 @@ func (m *MockTemplateRendererInterface) EXPECT() *MockTemplateRendererInterfaceM
 }
 
 // RenderScrollTemplateFiles mocks base method.
-func (m *MockTemplateRendererInterface) RenderScrollTemplateFiles(templateFiles []string, data any, ouputPath string) error {
+func (m *MockTemplateRendererInterface) RenderScrollTemplateFiles(templateBase string, templateFiles []string, data any, ouputPath string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RenderScrollTemplateFiles", templateFiles, data, ouputPath)
+	ret := m.ctrl.Call(m, "RenderScrollTemplateFiles", templateBase, templateFiles, data, ouputPath)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // RenderScrollTemplateFiles indicates an expected call of RenderScrollTemplateFiles.
-func (mr *MockTemplateRendererInterfaceMockRecorder) RenderScrollTemplateFiles(templateFiles, data, ouputPath any) *gomock.Call {
+func (mr *MockTemplateRendererInterfaceMockRecorder) RenderScrollTemplateFiles(templateBase, templateFiles, data, ouputPath any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RenderScrollTemplateFiles", reflect.TypeOf((*MockTemplateRendererInterface)(nil).RenderScrollTemplateFiles), templateFiles, data, ouputPath)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RenderScrollTemplateFiles", reflect.TypeOf((*MockTemplateRendererInterface)(nil).RenderScrollTemplateFiles), templateBase, templateFiles, data, ouputPath)
 }
 
 // RenderTemplate mocks base method.
@@ -1158,6 +1194,20 @@ func (m *MockColdStarterHandlerInterface) EXPECT() *MockColdStarterHandlerInterf
 	return m.recorder
 }
 
+// Close mocks base method.
+func (m *MockColdStarterHandlerInterface) Close() error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Close")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Close indicates an expected call of Close.
+func (mr *MockColdStarterHandlerInterfaceMockRecorder) Close() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockColdStarterHandlerInterface)(nil).Close))
+}
+
 // GetHandler mocks base method.
 func (m *MockColdStarterHandlerInterface) GetHandler(funcs map[string]func(...string)) (ports.ColdStarterPacketHandlerInterface, error) {
 	m.ctrl.T.Helper()
@@ -1185,32 +1235,32 @@ func (mr *MockColdStarterHandlerInterfaceMockRecorder) SetFinishedAt(finishedAt 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetFinishedAt", reflect.TypeOf((*MockColdStarterHandlerInterface)(nil).SetFinishedAt), finishedAt)
 }
 
-// MockColdStarterServerInterface is a mock of ColdStarterServerInterface interface.
-type MockColdStarterServerInterface struct {
+// MockColdStarterPacketHandlerInterface is a mock of ColdStarterPacketHandlerInterface interface.
+type MockColdStarterPacketHandlerInterface struct {
 	ctrl     *gomock.Controller
-	recorder *MockColdStarterServerInterfaceMockRecorder
+	recorder *MockColdStarterPacketHandlerInterfaceMockRecorder
 	isgomock struct{}
 }
 
-// MockColdStarterServerInterfaceMockRecorder is the mock recorder for MockColdStarterServerInterface.
-type MockColdStarterServerInterfaceMockRecorder struct {
-	mock *MockColdStarterServerInterface
+// MockColdStarterPacketHandlerInterfaceMockRecorder is the mock recorder for MockColdStarterPacketHandlerInterface.
+type MockColdStarterPacketHandlerInterfaceMockRecorder struct {
+	mock *MockColdStarterPacketHandlerInterface
 }
 
-// NewMockColdStarterServerInterface creates a new mock instance.
-func NewMockColdStarterServerInterface(ctrl *gomock.Controller) *MockColdStarterServerInterface {
-	mock := &MockColdStarterServerInterface{ctrl: ctrl}
-	mock.recorder = &MockColdStarterServerInterfaceMockRecorder{mock}
+// NewMockColdStarterPacketHandlerInterface creates a new mock instance.
+func NewMockColdStarterPacketHandlerInterface(ctrl *gomock.Controller) *MockColdStarterPacketHandlerInterface {
+	mock := &MockColdStarterPacketHandlerInterface{ctrl: ctrl}
+	mock.recorder = &MockColdStarterPacketHandlerInterfaceMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockColdStarterServerInterface) EXPECT() *MockColdStarterServerInterfaceMockRecorder {
+func (m *MockColdStarterPacketHandlerInterface) EXPECT() *MockColdStarterPacketHandlerInterfaceMockRecorder {
 	return m.recorder
 }
 
 // Handle mocks base method.
-func (m *MockColdStarterServerInterface) Handle(data []byte, funcs map[string]func(...string)) error {
+func (m *MockColdStarterPacketHandlerInterface) Handle(data []byte, funcs map[string]func(...string)) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Handle", data, funcs)
 	ret0, _ := ret[0].(error)
@@ -1218,9 +1268,9 @@ func (m *MockColdStarterServerInterface) Handle(data []byte, funcs map[string]fu
 }
 
 // Handle indicates an expected call of Handle.
-func (mr *MockColdStarterServerInterfaceMockRecorder) Handle(data, funcs any) *gomock.Call {
+func (mr *MockColdStarterPacketHandlerInterfaceMockRecorder) Handle(data, funcs any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Handle", reflect.TypeOf((*MockColdStarterServerInterface)(nil).Handle), data, funcs)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Handle", reflect.TypeOf((*MockColdStarterPacketHandlerInterface)(nil).Handle), data, funcs)
 }
 
 // MockColdStarterInterface is a mock of ColdStarterInterface interface.
@@ -1260,15 +1310,27 @@ func (mr *MockColdStarterInterfaceMockRecorder) Finish(arg0 any) *gomock.Call {
 }
 
 // Stop mocks base method.
-func (m *MockColdStarterInterface) Stop(arg0 uint) {
+func (m *MockColdStarterInterface) Stop() {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Stop", arg0)
+	m.ctrl.Call(m, "Stop")
 }
 
 // Stop indicates an expected call of Stop.
-func (mr *MockColdStarterInterfaceMockRecorder) Stop(arg0 any) *gomock.Call {
+func (mr *MockColdStarterInterfaceMockRecorder) Stop() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Stop", reflect.TypeOf((*MockColdStarterInterface)(nil).Stop), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Stop", reflect.TypeOf((*MockColdStarterInterface)(nil).Stop))
+}
+
+// StopWithDeplay mocks base method.
+func (m *MockColdStarterInterface) StopWithDeplay(arg0 uint) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "StopWithDeplay", arg0)
+}
+
+// StopWithDeplay indicates an expected call of StopWithDeplay.
+func (mr *MockColdStarterInterfaceMockRecorder) StopWithDeplay(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopWithDeplay", reflect.TypeOf((*MockColdStarterInterface)(nil).StopWithDeplay), arg0)
 }
 
 // MockProgressTracker is a mock of ProgressTracker interface.
@@ -1347,6 +1409,20 @@ func (mr *MockSnapshotServiceMockRecorder) GetCurrentMode() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCurrentMode", reflect.TypeOf((*MockSnapshotService)(nil).GetCurrentMode))
 }
 
+// GetCurrentProgressTracker mocks base method.
+func (m *MockSnapshotService) GetCurrentProgressTracker() *ports.ProgressTracker {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetCurrentProgressTracker")
+	ret0, _ := ret[0].(*ports.ProgressTracker)
+	return ret0
+}
+
+// GetCurrentProgressTracker indicates an expected call of GetCurrentProgressTracker.
+func (mr *MockSnapshotServiceMockRecorder) GetCurrentProgressTracker() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCurrentProgressTracker", reflect.TypeOf((*MockSnapshotService)(nil).GetCurrentProgressTracker))
+}
+
 // GetProgressTracker mocks base method.
 func (m *MockSnapshotService) GetProgressTracker() *ports.ProgressTracker {
 	m.ctrl.T.Helper()
@@ -1387,4 +1463,56 @@ func (m *MockSnapshotService) Snapshot(dir, destination string, options ports.Sn
 func (mr *MockSnapshotServiceMockRecorder) Snapshot(dir, destination, options any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Snapshot", reflect.TypeOf((*MockSnapshotService)(nil).Snapshot), dir, destination, options)
+}
+
+// MockColdStarterServerInterface is a mock of ColdStarterServerInterface interface.
+type MockColdStarterServerInterface struct {
+	ctrl     *gomock.Controller
+	recorder *MockColdStarterServerInterfaceMockRecorder
+	isgomock struct{}
+}
+
+// MockColdStarterServerInterfaceMockRecorder is the mock recorder for MockColdStarterServerInterface.
+type MockColdStarterServerInterfaceMockRecorder struct {
+	mock *MockColdStarterServerInterface
+}
+
+// NewMockColdStarterServerInterface creates a new mock instance.
+func NewMockColdStarterServerInterface(ctrl *gomock.Controller) *MockColdStarterServerInterface {
+	mock := &MockColdStarterServerInterface{ctrl: ctrl}
+	mock.recorder = &MockColdStarterServerInterfaceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockColdStarterServerInterface) EXPECT() *MockColdStarterServerInterfaceMockRecorder {
+	return m.recorder
+}
+
+// Close mocks base method.
+func (m *MockColdStarterServerInterface) Close() error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Close")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Close indicates an expected call of Close.
+func (mr *MockColdStarterServerInterfaceMockRecorder) Close() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockColdStarterServerInterface)(nil).Close))
+}
+
+// Start mocks base method.
+func (m *MockColdStarterServerInterface) Start(port int, onFinish func()) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Start", port, onFinish)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Start indicates an expected call of Start.
+func (mr *MockColdStarterServerInterfaceMockRecorder) Start(port, onFinish any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Start", reflect.TypeOf((*MockColdStarterServerInterface)(nil).Start), port, onFinish)
 }

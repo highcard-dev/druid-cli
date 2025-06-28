@@ -3,6 +3,8 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"runtime"
 	"slices"
 	"time"
@@ -35,6 +37,7 @@ var maxStartupHealthCheckTimeout uint
 var initSnapshotUrl string
 var skipArtifactDownload bool
 var allowPluginErrors bool
+var pprofBind string
 
 var ServeCommand = &cobra.Command{
 	Use:   "serve",
@@ -174,7 +177,7 @@ to interact and monitor the Scroll Application`,
 					if currentScroll.CanColdStart() {
 
 						for {
-							healthHandler.Started = false
+							healthHandler.Started = nil
 							logger.Log().Info("Starting coldstarter")
 							finish := coldStarter.Start(ctx)
 							executedPort := <-finish
@@ -242,7 +245,9 @@ to interact and monitor the Scroll Application`,
 				go coldStarter.Start(ctx)
 			}
 		}
-
+		if pprofBind != "" {
+			go http.ListenAndServe(pprofBind, nil)
+		}
 		err = s.Serve(a, port)
 
 		logger.Log().Info("Shutting down")
@@ -252,6 +257,8 @@ to interact and monitor the Scroll Application`,
 }
 
 func init() {
+	ServeCommand.Flags().StringVarP(&pprofBind, "pprof", "", "", "Enable pprof on the given bind. This is useful for debugging purposes. E.g. --pprof=localhost:6060 or --pprof=:6060")
+
 	ServeCommand.Flags().IntVarP(&port, "port", "p", 8081, "Port")
 
 	ServeCommand.Flags().IntVarP(&shutdownWait, "shutdown-wait", "", 10, "Wait interval how long the process is allowed to shutdown. First normal shutdown, then forced shutdown")
@@ -279,7 +286,7 @@ func init() {
 
 	ServeCommand.Flags().UintVarP(&portInactivity, "port-inactivity", "", 120, "Port inactivity timeout")
 
-	ServeCommand.Flags().UintVarP(&maxStartupHealthCheckTimeout, "max-health-check-startup-timeount", "", 0, "Sets the max amount of time the health check is allowed to take on startup. If the value is 0, there will be no timeout. This is useful to prevent the health check from blocking the startup of the daemon fully.")
+	ServeCommand.Flags().UintVarP(&maxStartupHealthCheckTimeout, "max-health-check-startup-timeout", "", 60, "Sets the max amount of time the health check is allowed to take on startup. If the value is 0, there will be no timeout. This is useful to prevent the health check from blocking the startup of the daemon fully.")
 
 	ServeCommand.Flags().StringVarP(&initSnapshotUrl, "init-snapshot-url", "", "", "Snapshot to restore on startup")
 
@@ -289,8 +296,8 @@ func init() {
 }
 
 func startup(scrollService *services.ScrollService, snapshotService ports.SnapshotService, processLauncher *services.ProcedureLauncher, queueManager *services.QueueManager, portSerivce *services.PortMonitor, coldStarter *services.ColdStarter, healthHandler *handler.HealthHandler, cwd string, doneChan chan error) {
-
-	healthHandler.Started = true
+	now := time.Now()
+	healthHandler.Started = &now
 
 	logger.Log().Info("Initializing scroll")
 
@@ -370,7 +377,7 @@ func startup(scrollService *services.ScrollService, snapshotService ports.Snapsh
 
 func initScroll(scrollService *services.ScrollService, snapshotService ports.SnapshotService, processLauncher *services.ProcedureLauncher, queueManager *services.QueueManager) (bool, error) {
 
-	lock, err := scrollService.Bootstrap(ignoreVersionCheck)
+	lock, err := scrollService.ReloadLock(ignoreVersionCheck)
 	if err != nil {
 		return false, err
 	}
@@ -380,21 +387,22 @@ func initScroll(scrollService *services.ScrollService, snapshotService ports.Sna
 	if newScroll {
 
 		if initSnapshotUrl != "" {
-			logger.Log().Info("Starting restore process")
-			err := snapshotService.RestoreSnapshot(scrollService.GetCwd(), initSnapshotUrl, ports.RestoreSnapshotOptions{
-				Safe: false,
-			})
+			logger.Log().Info("Starting restore process from Init Snapshot")
+			err := snapshotService.RestoreSnapshot(scrollService.GetCwd(), initSnapshotUrl, ports.RestoreSnapshotOptions{})
 
 			if err != nil {
 				return false, err
 			}
+
+			logger.Log().Info("Restore process from Init Snapshot done")
 
 			currentScroll, err := scrollService.ReloadScroll()
 			if err != nil {
 				return false, err
 			}
+			logger.Log().Info("Reloaded scroll after restore", zap.String("Name", currentScroll.Name), zap.Any("Version", currentScroll.Version), zap.String("AppVersion", currentScroll.AppVersion), zap.Any("Ports", currentScroll.Ports))
 
-			lock, err = scrollService.Bootstrap(ignoreVersionCheck)
+			lock, err = scrollService.ReloadLock(ignoreVersionCheck)
 			if err != nil {
 				return false, err
 			}
@@ -405,18 +413,16 @@ func initScroll(scrollService *services.ScrollService, snapshotService ports.Sna
 			if !newScroll {
 				lock.SetStatus(currentScroll.Init, domain.ScrollLockStatusWaiting, nil)
 			}
+
 		}
 
-		if newScroll {
-			logger.Log().Info("No lock file found, but init command available. Bootstrapping...")
-
-			logger.Log().Info("Creating lock and bootstrapping files")
-			//There is an error here. We need to bootstrap the files before we render out the templates in the bootstrap func above
-			err := scrollService.CreateLockAndBootstrapFiles()
-			if err != nil {
-				return newScroll, err
-			}
+		logger.Log().Info("Creating lock and bootstrapping files")
+		//There is an error here. We need to bootstrap the files before we render out the templates in the bootstrap func above
+		err := scrollService.CopyingInitFiles()
+		if err != nil {
+			return newScroll, err
 		}
+
 	} else {
 		logger.Log().Info("Found lock file, bootstrapping done")
 	}

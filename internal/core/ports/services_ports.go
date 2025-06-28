@@ -34,6 +34,8 @@ type ScrollServiceInterface interface {
 	WriteNewScrollLock() *domain.ScrollLock
 	GetLock() (*domain.ScrollLock, error)
 	GetCommand(cmd string) (*domain.CommandInstructionSet, error)
+	InitFiles(files ...string) error
+	InitTemplateFiles(files ...string) error
 }
 
 type ProcedureLauchnerInterface interface {
@@ -84,7 +86,7 @@ type ProcessMonitorInterface interface {
 
 type TemplateRendererInterface interface {
 	RenderTemplate(templatePath string, data interface{}) (string, error)
-	RenderScrollTemplateFiles(templateFiles []string, data interface{}, ouputPath string) error
+	RenderScrollTemplateFiles(templateBase string, templateFiles []string, data interface{}, ouputPath string) error
 }
 
 type OciRegistryInterface interface {
@@ -133,8 +135,6 @@ type ColdStarterInterface interface {
 }
 
 type RestoreSnapshotOptions struct {
-	Safe    bool
-	TempDir string
 }
 
 type S3Destination struct {
@@ -145,8 +145,8 @@ type S3Destination struct {
 	Region    string
 }
 type SnapshotOptions struct {
-	TempDir       string
-	S3Destination *S3Destination
+	CompressionLevel int
+	S3Destination    *S3Destination
 }
 
 type ProgressTracker interface {
