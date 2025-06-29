@@ -143,6 +143,7 @@ type S3Destination struct {
 	Bucket    string
 	Endpoint  string
 	Region    string
+	Insecure  bool
 }
 type SnapshotOptions struct {
 	CompressionLevel int
