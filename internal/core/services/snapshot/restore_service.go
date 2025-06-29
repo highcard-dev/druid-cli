@@ -206,6 +206,8 @@ func (rc *SnapshotService) uploadS3(rootPath, objectKey string, s3Destination *p
 		return fmt.Errorf("failed to create S3 client: %v", err)
 	}
 
+	logger.Log().Info("Uploading snapshot to S3", zap.String("bucket", bucketName), zap.String("objectKey", objectKey), zap.String("endpoint", endpoint), zap.Bool("insecure", s3Destination.Insecure), zap.Int("compressionLevel", compressionLevel))
+
 	contentType := "application/octet-stream"
 	_, err = minioClient.PutObject(context.TODO(), bucketName, objectKey, pipeReader, -1, minio.PutObjectOptions{ContentType: contentType})
 	return err
