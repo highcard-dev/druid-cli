@@ -75,12 +75,14 @@ func (c *ColdStarter) Serve(ctx context.Context) {
 	// Initialize the handler map with a length of augmentedPorts
 	c.handler = make(map[string]ports.ColdStarterServerInterface, len(augmentedPorts))
 
+	var atLeastOneHandler bool
 	for _, port := range augmentedPorts {
 		var sleepHandler string
 		if port.SleepHandler == nil {
 			logger.Log().Warn(fmt.Sprintf("No sleep handler found for port %d, skipping", port.Port.Port))
 			continue
 		} else {
+			atLeastOneHandler = true
 			sleepHandler = *port.SleepHandler
 		}
 
@@ -130,6 +132,11 @@ func (c *ColdStarter) Serve(ctx context.Context) {
 				return
 			}
 		}(port)
+	}
+	if !atLeastOneHandler {
+		logger.Log().Error("No valid sleep handlers found, stopping ColdStarter")
+		c.finishChan <- nil
+		return
 	}
 
 }

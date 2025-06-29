@@ -200,7 +200,7 @@ func (rc *SnapshotService) uploadS3(rootPath, objectKey string, s3Destination *p
 	// Load AWS config with custom S3-compatible settings
 	minioClient, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: true,
+		Secure: !s3Destination.Insecure,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create S3 client: %v", err)
