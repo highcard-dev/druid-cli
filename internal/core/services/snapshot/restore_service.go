@@ -4,10 +4,8 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
-	"crypto/tls"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -65,7 +63,7 @@ func (rc *SnapshotService) Snapshot(dir string, destination string, options port
 
 	totalFiles := int64(0)
 	totalFiles, _ = rc.countFilesRec(dir)
-	progessTracker := NewGeneralProgressTracker(totalFiles)
+	progessTracker := NewBasicTracker(totalFiles)
 
 	rc.setActivity(ports.SnapshotModeSnapshot, progessTracker)
 	defer rc.setActivity(ports.SnapshotModeNoop, progessTracker)
@@ -79,7 +77,7 @@ func (rc *SnapshotService) Snapshot(dir string, destination string, options port
 
 func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options ports.RestoreSnapshotOptions) error {
 
-	progressReader := &ProgressTracker{}
+	progressReader := NewReaderTracker()
 
 	dest := path.Join(dir, ".snap_dl")
 
@@ -129,7 +127,7 @@ func (rc *SnapshotService) RestoreSnapshot(dir string, source string, options po
 	return nil
 }
 
-func (rc *SnapshotService) uploadS3(rootPath, objectKey string, s3Destination *ports.S3Destination, compressionLevel int, progessTracker *GeneralProgressTracker) error {
+func (rc *SnapshotService) uploadS3(rootPath, objectKey string, s3Destination *ports.S3Destination, compressionLevel int, progessTracker *BasicTracker) error {
 
 	pipeReader, pipeWriter := io.Pipe()
 
@@ -146,7 +144,7 @@ func (rc *SnapshotService) uploadS3(rootPath, objectKey string, s3Destination *p
 		// Create a tar writer
 		tarWriter := tar.NewWriter(gzipWriter)
 		defer tarWriter.Close()
-
+		var totalFiles int64
 		// Walk through the source directory
 		filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
@@ -180,7 +178,8 @@ func (rc *SnapshotService) uploadS3(rootPath, objectKey string, s3Destination *p
 				defer file.Close()
 
 				_, err = io.Copy(tarWriter, file)
-				progessTracker.TrackProgress()
+				totalFiles++
+				progessTracker.LogTrackProgress(totalFiles)
 				return err
 			}
 
@@ -211,63 +210,6 @@ func (rc *SnapshotService) uploadS3(rootPath, objectKey string, s3Destination *p
 	contentType := "application/octet-stream"
 	_, err = minioClient.PutObject(context.TODO(), bucketName, objectKey, pipeReader, -1, minio.PutObjectOptions{ContentType: contentType})
 	return err
-}
-
-// Todo: refactor this to do streaming upload
-func (rc *SnapshotService) uploadFileUsingPresignedURL(presignedURL, filePath string) error {
-	// Open the file
-	file, err := os.Open(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to open file: %w", err)
-	}
-	defer file.Close()
-
-	// Get the file size
-	fileInfo, err := file.Stat()
-	if err != nil {
-		return fmt.Errorf("failed to get file info: %w", err)
-	}
-	fileSize := fileInfo.Size()
-
-	// Wrap the file reader in the ProgressReader with an update frequency of 1 second
-	progressReader := &ProgressTracker{
-		reader:   file,
-		fileSize: fileSize,
-	}
-
-	// Create an HTTP request with the presigned URL
-	req, err := http.NewRequest("PUT", presignedURL, progressReader)
-	if err != nil {
-		return fmt.Errorf("failed to create HTTP request: %w", err)
-	}
-
-	// Set required headers
-	req.Header.Set("Content-Type", "application/octet-stream") // Adjust as needed
-	req.Header.Set("Content-Length", fmt.Sprintf("%d", fileSize))
-
-	transport := &http.Transport{
-		ForceAttemptHTTP2: false, // disable http2, to prevent REFUSED_STREAM errors
-		TLSNextProto:      map[string]func(string, *tls.Conn) http.RoundTripper{},
-	}
-	// Use a HTTP client with automatic retries configured, if possible
-	client := &http.Client{
-		Transport: transport,
-	}
-
-	// Execute the request
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to execute HTTP request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Check the response status
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("upload failed with status code %d", resp.StatusCode)
-	}
-
-	fmt.Println("File uploaded successfully")
-	return nil
 }
 
 func (rc *SnapshotService) GetProgressTracker() *ports.ProgressTracker {
