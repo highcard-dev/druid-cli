@@ -151,6 +151,7 @@ type SnapshotOptions struct {
 }
 
 type ProgressTracker interface {
+	LogTrackProgress(current int64)
 	GetPercent() float64
 }
 

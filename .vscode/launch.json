@@ -24,10 +24,10 @@
             "console": "integratedTerminal",
             "program": "${workspaceFolder}/main.go",
             "args": [
-                "retore",
+                "restore",
                 "--cwd",
                 "${workspaceFolder}/examples/restore-test",
-                "https://gist.github.com/jlmaccal/ca6b08a307800f80986661075c82c432/raw/dbd5e7a38d0660b7047476de33da142bd79c22ef/test.tgz"
+                "https://fsn1.your-objectstorage.com/druid-deployment-assets/lgsm/ark-snapshot-latest.tar.gz"
             ]
         },
         {
