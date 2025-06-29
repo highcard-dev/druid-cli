@@ -17,6 +17,7 @@ var s3AccessKey string
 var s3SecretKey string
 var s3Bucket string
 var s3Endpoint string
+var backupInsecure bool
 
 var BackupCmd = &cobra.Command{
 	Use:   "backup",
@@ -42,6 +43,7 @@ var BackupCmd = &cobra.Command{
 				SecretKey: s3SecretKey,
 				Bucket:    s3Bucket,
 				Endpoint:  s3Endpoint,
+				Insecure:  backupInsecure,
 			}
 		}
 
@@ -66,4 +68,6 @@ func init() {
 	BackupCmd.Flags().StringVarP(&s3SecretKey, "s3-secret-key", "", secretKeyEnv, "S3 secret key. You can also set the DRUID_S3_SECRET_KEY environment variable")
 	BackupCmd.Flags().StringVarP(&s3Bucket, "s3-bucket", "", bucketEnv, "S3 bucket. You can also set the DRUID_S3_BUCKET environment variable")
 	BackupCmd.Flags().StringVarP(&s3Endpoint, "s3-endpoint", "", endpointEnv, "S3 endpoint. You can also set the DRUID_S3_ENDPOINT environment variable")
+	BackupCmd.Flags().BoolVarP(&backupInsecure, "insecure", "", false, "Use http instead of https for the S3 endpoint. You can also set the DRUID_S3_DISABLE_SECURE environment variable to true to disable secure connections")
+
 }
