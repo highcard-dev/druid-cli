@@ -81,11 +81,11 @@ func extractTarFile(dir string, tarReader *tar.Reader, header *tar.Header) error
 	}
 
 	// Set file ownership (for all types except symlinks and directories)
-	if header.Typeflag != tar.TypeSymlink && header.Typeflag != tar.TypeDir {
-		if err := os.Chown(path, header.Uid, header.Gid); err != nil {
-			return fmt.Errorf("ExtractTarGz: Chown() failed: %w", err)
-		}
-	}
+	//if header.Typeflag != tar.TypeSymlink && header.Typeflag != tar.TypeDir {
+	//	if err := os.Chown(path, header.Uid, header.Gid); err != nil {
+	//		return fmt.Errorf("ExtractTarGz: Chown() failed: %w", err)
+	//	}
+	//}
 
 	// Set file permissions (for all types except symlinks and directories)
 	if header.Typeflag != tar.TypeSymlink && header.Typeflag != tar.TypeDir {
