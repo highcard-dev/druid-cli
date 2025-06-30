@@ -7,22 +7,33 @@ import (
 	"go.uber.org/zap"
 )
 
-type GeneralProgressTracker struct {
-	total int64
-	read  int64
+type BasicTracker struct {
+	total       int64
+	lastPercent float64
 }
 
-func NewGeneralProgressTracker(total int64) *GeneralProgressTracker {
-	return &GeneralProgressTracker{
-		total: total,
-		read:  0,
+func NewBasicTracker(total int64) *BasicTracker {
+	return &BasicTracker{
+		total:       total,
+		lastPercent: 0,
 	}
 }
 
-func (pt *GeneralProgressTracker) GetPercent() float64 {
-	return (float64(pt.read) / float64(pt.total)) * 100
+func (bt *BasicTracker) LogTrackProgress(current int64) {
+	if bt.total > 0 {
+		// percentage calculation
+		currentPercent := (float64(current) * 100) / float64(bt.total)
+		if currentPercent >= bt.lastPercent+0.1 {
+			bt.lastPercent = currentPercent
+			logger.Log().Info("Progress", zap.Int64("read", current), zap.Int64("total", bt.total), zap.String("percentage", fmt.Sprintf("%.1f%%", currentPercent)))
+		}
+	} else {
+		logger.Log().Info("Progress", zap.Int64("read", current))
+	}
 }
-func (pt *GeneralProgressTracker) TrackProgress() {
-	pt.read++
-	logger.Log().Info("Progress", zap.Int64("total", pt.total), zap.Int64("read", pt.read), zap.String("percentage", fmt.Sprintf("%.1f%%", pt.GetPercent())))
+func (bt *BasicTracker) GetPercent() float64 {
+	if bt.total > 0 {
+		return bt.lastPercent
+	}
+	return 0
 }
