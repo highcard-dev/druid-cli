@@ -2,38 +2,47 @@ package services
 
 import (
 	"io"
+
+	"github.com/highcard-dev/daemon/internal/utils/logger"
+	"go.uber.org/zap"
 )
 
-type ReaderTracker struct {
+type ProgressReader struct {
 	BasicTracker
-	reader io.ReadCloser
-	read   int64
+	stream  io.ReadCloser
+	current int64
 }
 
-func NewReaderTracker() *ReaderTracker {
-	return &ReaderTracker{
-		BasicTracker: BasicTracker{},
+func NewProgressReader(total int64, stream io.ReadCloser, basicTracker *BasicTracker) *ProgressReader {
+	return &ProgressReader{
+		BasicTracker: *basicTracker,
+		stream:       stream,
 	}
 }
 
-func (bt *ReaderTracker) Read(p []byte) (n int, err error) {
-	n, err = bt.reader.Read(p)
-	if err != nil {
+func (pr *ProgressReader) Read(p []byte) (n int, err error) {
+	n, err = pr.stream.Read(p)
+	if n > 0 {
+		pr.current += int64(n)
+		pr.LogTrackProgress(pr.current)
+	} else if err != nil {
+		if err == io.EOF {
+			pr.LogTrackProgress(pr.BasicTracker.total)
+			return n, err
+		}
+		logger.Log().Error("Error reading progress", zap.Error(err))
 		return n, err
 	}
-	bt.read += int64(n)
-	bt.LogTrackProgress(bt.read)
 	return n, err
 }
 
-func (bt *ReaderTracker) Close() error {
-
-	bt.LogTrackProgress(bt.total)
-	return bt.reader.Close()
-}
-
-func (p *ReaderTracker) TrackProgress(src string, currentSize, totalSize int64, stream io.ReadCloser) (body io.ReadCloser) {
-	p.reader = stream
-	p.total = totalSize
-	return p
+func (pr *ProgressReader) Close() error {
+	if pr.stream != nil {
+		err := pr.stream.Close()
+		if err != nil {
+			logger.Log().Error("Error closing stream", zap.Error(err))
+			return err
+		}
+	}
+	return nil
 }
