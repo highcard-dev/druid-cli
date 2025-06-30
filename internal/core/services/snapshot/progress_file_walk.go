@@ -6,14 +6,14 @@ import (
 )
 
 type ProgressFileWalk struct {
-	BasicTracker
+	*BasicTracker
 	dir     string
 	current int64
 }
 
 func NewProgressFileWalk(dir string, basicTracker *BasicTracker) *ProgressFileWalk {
 	return &ProgressFileWalk{
-		BasicTracker: *basicTracker,
+		BasicTracker: basicTracker,
 		dir:          dir,
 	}
 }

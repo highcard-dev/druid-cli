@@ -41,7 +41,7 @@ func (rc *SnapshotService) Snapshot(dir string, destination string, options port
 	progessTracker := NewBasicTracker(totalFiles)
 
 	rc.setActivity(ports.SnapshotModeSnapshot, progessTracker)
-	defer rc.setActivity(ports.SnapshotModeNoop, progessTracker)
+	defer rc.setActivity(ports.SnapshotModeNoop, nil)
 	//check if rootPath exists
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		return fmt.Errorf("source path does not exist: %s", dir)
