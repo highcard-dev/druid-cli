@@ -25,8 +25,8 @@ func CheckFileInfo(ctx context.Context, source string) (*FileInfo, error) {
 		return nil, fmt.Errorf("file info check only supported for HTTP/HTTPS URLs")
 	}
 
-	// Create HTTP HEAD request with context
-	req, err := http.NewRequestWithContext(ctx, "HEAD", source, nil)
+	// Create HTTP GET request with context
+	req, err := http.NewRequestWithContext(ctx, "GET", source, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HEAD request: %w", err)
 	}
