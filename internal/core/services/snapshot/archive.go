@@ -49,11 +49,11 @@ func extractTarFile(dir string, tarReader *tar.Reader, header *tar.Header) error
 	case tar.TypeDir:
 		//check if the directory already exists
 		if _, err := os.Stat(path); err == nil {
-			// Directory exists
+			// Directory exists, do nothing
 			return nil
 		}
 
-		if err := os.Mkdir(path, 0755); err != nil {
+		if err := os.Mkdir(path, os.FileMode(header.Mode)); err != nil {
 			return fmt.Errorf("ExtractTarGz: Mkdir() failed: %w", err)
 		}
 	case tar.TypeReg:
@@ -62,6 +62,7 @@ func extractTarFile(dir string, tarReader *tar.Reader, header *tar.Header) error
 			return fmt.Errorf("ExtractTarGz: Create() failed: %w", err)
 		}
 		if _, err := io.Copy(outFile, tarReader); err != nil {
+			outFile.Close()
 			return fmt.Errorf("ExtractTarGz: Copy() failed: %w", err)
 		}
 		outFile.Close()
@@ -77,6 +78,27 @@ func extractTarFile(dir string, tarReader *tar.Reader, header *tar.Header) error
 		}
 	default:
 		return fmt.Errorf("unsupported tar header type: %c", header.Typeflag)
+	}
+
+	// Set file ownership (for all types except symlinks and directories)
+	if header.Typeflag != tar.TypeSymlink && header.Typeflag != tar.TypeDir {
+		if err := os.Chown(path, header.Uid, header.Gid); err != nil {
+			return fmt.Errorf("ExtractTarGz: Chown() failed: %w", err)
+		}
+	}
+
+	// Set file permissions (for all types except symlinks and directories)
+	if header.Typeflag != tar.TypeSymlink && header.Typeflag != tar.TypeDir {
+		if err := os.Chmod(path, os.FileMode(header.Mode)); err != nil {
+			return fmt.Errorf("ExtractTarGz: Chmod() failed: %w", err)
+		}
+	}
+
+	// Set file timestamps (for all types except symlinks and directories)
+	if header.Typeflag != tar.TypeSymlink && header.Typeflag != tar.TypeDir {
+		if err := os.Chtimes(path, header.AccessTime, header.ModTime); err != nil {
+			return fmt.Errorf("ExtractTarGz: Chtimes() failed: %w", err)
+		}
 	}
 
 	return nil
