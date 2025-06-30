@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -76,18 +77,18 @@ func DownloadToDirectory(ctx context.Context, dir string, source string, basicTr
 }
 
 // downloadAndExtractFromURL downloads a file from URL and extracts it directly
-func downloadAndExtractFromURL(ctx context.Context, dir, url string, basicTracker *BasicTracker) error {
+func downloadAndExtractFromURL(ctx context.Context, dir, targetUrl string, basicTracker *BasicTracker) error {
 
-	info, err := CheckFileInfo(ctx, url)
+	info, err := CheckFileInfo(ctx, targetUrl)
 	if err != nil {
-		return fmt.Errorf("failed to check file info for %s: %w", url, err)
+		return fmt.Errorf("failed to check file info for %s: %w", targetUrl, err)
 	}
 	if !info.Exists {
-		return fmt.Errorf("file does not exist at %s", url)
+		return fmt.Errorf("file does not exist at %s", targetUrl)
 	}
 
 	// Create HTTP request with context
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", targetUrl, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -96,7 +97,7 @@ func downloadAndExtractFromURL(ctx context.Context, dir, url string, basicTracke
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to download from %s: %w", url, err)
+		return fmt.Errorf("failed to download from %s: %w", targetUrl, err)
 	}
 	defer resp.Body.Close()
 
@@ -106,8 +107,13 @@ func downloadAndExtractFromURL(ctx context.Context, dir, url string, basicTracke
 
 	tracker := NewProgressReader(info.Size, resp.Body, basicTracker)
 
+	parsedURL, err := url.Parse(targetUrl)
+	if err != nil {
+		return fmt.Errorf("failed to parse URL: %w", err)
+	}
+
 	// Extract directly from the response body stream
-	return extractFromReader(dir, tracker, url)
+	return extractFromReader(dir, tracker, parsedURL.Path)
 }
 
 // extractFromReader determines the file type and extracts from a reader

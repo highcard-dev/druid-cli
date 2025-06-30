@@ -4,6 +4,8 @@ set -e
 SD=".scroll"
 input=$@
 
+echo "Druid Version: $(druid version)"
+
 #Check if we should serve as default or when only artifact is specified
 if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]] &&  [[ $input != *" "* ]]; then    artifact="${input}"
     if [ -z "${artifact}" ];
