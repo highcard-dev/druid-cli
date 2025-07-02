@@ -157,17 +157,22 @@ func (p *PortMonitor) CheckOpen(port int) bool {
 
 func (p *PortMonitor) WaitForConnection(ifaces []string, ppm uint) error {
 
-	for {
-		var ports []int
-		for _, port := range p.ports {
-			if port.Port.CheckActivity {
-				ports = append(ports, port.Port.Port)
-			}
+	var ports []int
+	for _, port := range p.ports {
+		if port.Port.CheckActivity {
+			ports = append(ports, port.Port.Port)
 		}
+	}
 
-		if len(ports) == 0 {
-			return fmt.Errorf("no ports to monitor")
-		}
+	if len(ports) == 0 {
+		return fmt.Errorf("no ports to monitor")
+	}
+	logger.Log().Info("Starting port monitoring",
+		zap.Ints("ports", ports),
+		zap.Strings("ifaces", ifaces),
+		zap.Uint("ppm", ppm),
+	)
+	for {
 
 		firstOnlinePort := p.StartMonitorPorts(ports, ifaces, 5*time.Minute, ppm)
 
