@@ -45,9 +45,10 @@ func TestWatchPortsServeCommand(t *testing.T) {
 			Scroll: domain.File{
 				Ports: []domain.Port{
 					{
-						Port:     12349,
-						Name:     "testport",
-						Protocol: "tcp",
+						Port:          12349,
+						Name:          "testport",
+						Protocol:      "tcp",
+						CheckActivity: true,
 					},
 				},
 				Init:     "start",

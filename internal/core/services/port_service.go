@@ -155,7 +155,7 @@ func (p *PortMonitor) CheckOpen(port int) bool {
 	return false
 }
 
-func (p *PortMonitor) WaitForConnection(ifaces []string, ppm uint) {
+func (p *PortMonitor) WaitForConnection(ifaces []string, ppm uint) error {
 
 	for {
 		var ports []int
@@ -163,6 +163,10 @@ func (p *PortMonitor) WaitForConnection(ifaces []string, ppm uint) {
 			if port.Port.CheckActivity {
 				ports = append(ports, port.Port.Port)
 			}
+		}
+
+		if len(ports) == 0 {
+			return fmt.Errorf("no ports to monitor")
 		}
 
 		firstOnlinePort := p.StartMonitorPorts(ports, ifaces, 5*time.Minute, ppm)
@@ -187,7 +191,11 @@ func (p *PortMonitor) StartMonitoring(ctx context.Context, ifaces []string, ppm 
 		case <-ctx.Done():
 			return
 		default:
-			p.WaitForConnection(ifaces, ppm)
+			err := p.WaitForConnection(ifaces, ppm)
+			if err != nil {
+				logger.Log().Error("Error while waiting for connection", zap.Error(err))
+				return
+			}
 		}
 	}
 }
