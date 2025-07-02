@@ -41,6 +41,8 @@ type Port struct {
 	Vars               []ColdStarterVars `yaml:"vars" json:"vars"`
 	StartDelay         uint              `yaml:"start_delay" json:"start_delay"`
 	FinishAfterCommand string            `yaml:"finish_after_command" json:"finish_after_command"`
+	CheckActivity      bool              `yaml:"check_activity" json:"check_activity"`
+	Description        string            `yaml:"description" json:"description"`
 }
 
 type AugmentedPort struct {

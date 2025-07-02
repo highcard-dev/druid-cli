@@ -158,9 +158,11 @@ func (p *PortMonitor) CheckOpen(port int) bool {
 func (p *PortMonitor) WaitForConnection(ifaces []string, ppm uint) {
 
 	for {
-		ports := make([]int, len(p.ports))
-		for idx, port := range p.ports {
-			ports[idx] = port.Port.Port
+		var ports []int
+		for _, port := range p.ports {
+			if port.Port.CheckActivity {
+				ports = append(ports, port.Port.Port)
+			}
 		}
 
 		firstOnlinePort := p.StartMonitorPorts(ports, ifaces, 5*time.Minute, ppm)
