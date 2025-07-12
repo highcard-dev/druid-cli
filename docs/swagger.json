@@ -710,6 +710,12 @@
         "domain.AugmentedPort": {
             "type": "object",
             "properties": {
+                "check_activity": {
+                    "type": "boolean"
+                },
+                "description": {
+                    "type": "string"
+                },
                 "finish_after_command": {
                     "type": "string"
                 },
@@ -789,6 +795,12 @@
         "domain.Port": {
             "type": "object",
             "properties": {
+                "check_activity": {
+                    "type": "boolean"
+                },
+                "description": {
+                    "type": "string"
+                },
                 "finish_after_command": {
                     "type": "string"
                 },
@@ -871,6 +883,9 @@
                 },
                 "progress": {
                     "type": "number"
+                },
+                "start_date": {
+                    "type": "string"
                 }
             }
         },

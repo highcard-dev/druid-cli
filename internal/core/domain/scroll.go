@@ -42,7 +42,7 @@ type Port struct {
 	StartDelay         uint              `yaml:"start_delay" json:"start_delay"`
 	FinishAfterCommand string            `yaml:"finish_after_command" json:"finish_after_command"`
 	CheckActivity      bool              `yaml:"check_activity" json:"check_activity"`
-	Description        string            `yaml:"description" json:"description"`
+	Description        string            `yaml:"description,omitempty" json:"description,omitempty"`
 }
 
 type AugmentedPort struct {

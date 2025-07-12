@@ -8,14 +8,14 @@ import (
 )
 
 type ProgressReader struct {
-	*BasicTracker
+	BasicTracker
 	stream  io.ReadCloser
 	current int64
 }
 
 func NewProgressReader(total int64, stream io.ReadCloser, basicTracker *BasicTracker) *ProgressReader {
 	return &ProgressReader{
-		BasicTracker: basicTracker,
+		BasicTracker: *basicTracker,
 		stream:       stream,
 	}
 }

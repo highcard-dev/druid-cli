@@ -718,6 +718,12 @@ const docTemplate = `{
         "domain.AugmentedPort": {
             "type": "object",
             "properties": {
+                "check_activity": {
+                    "type": "boolean"
+                },
+                "description": {
+                    "type": "string"
+                },
                 "finish_after_command": {
                     "type": "string"
                 },
@@ -797,6 +803,12 @@ const docTemplate = `{
         "domain.Port": {
             "type": "object",
             "properties": {
+                "check_activity": {
+                    "type": "boolean"
+                },
+                "description": {
+                    "type": "string"
+                },
                 "finish_after_command": {
                     "type": "string"
                 },
@@ -879,6 +891,9 @@ const docTemplate = `{
                 },
                 "progress": {
                     "type": "number"
+                },
+                "start_date": {
+                    "type": "string"
                 }
             }
         },

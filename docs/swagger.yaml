@@ -166,6 +166,10 @@ definitions:
     type: object
   domain.AugmentedPort:
     properties:
+      check_activity:
+        type: boolean
+      description:
+        type: string
       finish_after_command:
         type: string
       inactive_since:
@@ -219,6 +223,10 @@ definitions:
     type: object
   domain.Port:
     properties:
+      check_activity:
+        type: boolean
+      description:
+        type: string
       finish_after_command:
         type: string
       mandatory:
@@ -278,6 +286,8 @@ definitions:
         type: string
       progress:
         type: number
+      start_date:
+        type: string
     type: object
   handler.ProcessesBody:
     properties:
