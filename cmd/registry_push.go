@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
@@ -69,17 +70,27 @@ var PushCommand = &cobra.Command{
 			ps[name] = port
 		}
 
-		_, err = ociClient.Push(fullPath, repo, tag, domain.AnnotationInfo{
-			MinRam:  minRam,
-			MinCpu:  minCpu,
-			MinDisk: minDisk,
-			Image:   image,
-			Ports:   ps,
-			Smart:   smart,
-		}, packMeta)
-
-		if err != nil {
-			return err
+		var tries int
+		for tries < 3 {
+			_, err = ociClient.Push(fullPath, repo, tag, domain.AnnotationInfo{
+				MinRam:  minRam,
+				MinCpu:  minCpu,
+				MinDisk: minDisk,
+				Image:   image,
+				Ports:   ps,
+				Smart:   smart,
+			}, packMeta)
+			if err != nil {
+				tries++
+				logger.Log().Error("Failed to push scroll to registry, retrying...", zap.Error(err), zap.Int("tries", tries))
+				if tries >= 3 {
+					logger.Log().Error("Failed to push scroll to registry after 3 attempts", zap.Error(err))
+					return err
+				}
+			} else {
+				break
+			}
+			time.Sleep(time.Duration(tries+1) * time.Second)
 		}
 
 		logger.Log().Info("Pushed "+scroll.Name+" to registry", zap.String("path", fullPath), zap.String("registry", host))
