@@ -148,6 +148,28 @@
             }
         },
         {
+            "name": "Debug Daemon serve --coldstarter (gmod example)",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/main.go",
+            "args": [
+                "serve",
+                "artifacts.druid.gg/druid-team/scroll-lgsm:pzserver",
+                "--cwd",
+                "${workspaceFolder}/examples/gmod",
+                "--coldstarter",
+                "-p",
+                "9190",
+            ],
+            "env": {
+                "DRUID_PORT_QUERY": "2556",
+                "DRUID_PORT_MAIN": "7771",
+                "LOG_LEVEL": "debug"
+            }
+        },
+        {
             "name": "Debug Daemon coldstart (minecraft example)",
             "type": "go",
             "request": "launch",

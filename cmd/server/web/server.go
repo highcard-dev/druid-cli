@@ -59,7 +59,8 @@ func NewServer(
 	server := &Server{
 		corsMiddleware: cors.New(cors.Config{
 			AllowOrigins: "*",
-			AllowHeaders: "Origin, Content-Type, Accept, Authorization, X-DRUID-USER",
+			AllowHeaders: "Origin, Content-Type, Accept, Authorization, X-DRUID-USER, Depth, Overwrite, Destination, If, Lock-Token, Timeout, DAV",
+			AllowMethods: "GET,POST,PUT,DELETE,OPTIONS,PATCH,PROPFIND,MKCOL,COPY,MOVE",
 		}),
 		injectUserMiddleware:          middlewares.NewUserInjector(),
 		headerMiddleware:              middlewares.NewHeaderMiddleware(),
