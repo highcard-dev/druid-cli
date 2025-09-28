@@ -54,3 +54,10 @@ type ColdstarterHandlerInterface interface {
 type SignalHandlerInterface interface {
 	Stop(ctx *fiber.Ctx) error
 }
+
+type UiHandlerInterface interface {
+	Public(ctx *fiber.Ctx) error
+	PublicIndex(ctx *fiber.Ctx) error
+	Private(ctx *fiber.Ctx) error
+	PrivateIndex(ctx *fiber.Ctx) error
+}

@@ -168,3 +168,8 @@ type ColdStarterServerInterface interface {
 	Start(port int, onFinish func()) error
 	Close() error
 }
+
+type UiServiceInterface interface {
+	GetIndex(filePath string) ([]string, error)
+	ServeFile(basePath string, fileName string) ([]byte, string, error)
+}
