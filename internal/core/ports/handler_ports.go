@@ -54,3 +54,15 @@ type ColdstarterHandlerInterface interface {
 type SignalHandlerInterface interface {
 	Stop(ctx *fiber.Ctx) error
 }
+
+type UiHandlerInterface interface {
+	PublicIndex(ctx *fiber.Ctx) error
+	PrivateIndex(ctx *fiber.Ctx) error
+}
+
+type UiDevHandlerInterface interface {
+	Enable(ctx *fiber.Ctx) error
+	Disable(ctx *fiber.Ctx) error
+	Status(ctx *fiber.Ctx) error
+	NotifyChange(c *websocket.Conn)
+}
