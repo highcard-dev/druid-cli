@@ -1,9 +1,6 @@
 package services
 
 import (
-	"io"
-	"mime"
-	"net/http"
 	"os"
 	"path/filepath"
 
@@ -46,39 +43,6 @@ func (us *UiService) GetIndex(filePath string) ([]string, error) {
 		return nil
 	})
 	return fileList, err
-}
-
-// ServeFile serves a file from the specified base path and file name
-// Returns file content, content type, and any error
-func (us *UiService) ServeFile(basePath string, fileName string) ([]byte, string, error) {
-	scrollDir := us.scrollService.GetDir()
-	fullPath := filepath.Join(scrollDir, basePath, fileName)
-
-	// Read the file
-	file, err := os.Open(fullPath)
-	if err != nil {
-		return nil, "", err
-	}
-	defer file.Close()
-
-	content, err := io.ReadAll(file)
-	if err != nil {
-		return nil, "", err
-	}
-
-	// Determine content type based on file extension and content
-	contentType := mime.TypeByExtension(filepath.Ext(fileName))
-
-	// If mime type couldn't be determined by extension, use content detection
-	if contentType == "" {
-		contentType = http.DetectContentType(content)
-	}
-
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-
-	return content, contentType, nil
 }
 
 // Ensure UiService implements UiServiceInterface at compile time

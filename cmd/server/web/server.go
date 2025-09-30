@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	jwtware "github.com/gofiber/jwt/v3"
 	"github.com/highcard-dev/daemon/cmd/server/web/middlewares"
+
 	constants "github.com/highcard-dev/daemon/internal"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
@@ -40,6 +41,7 @@ type Server struct {
 	uiHandler                     ports.UiHandlerInterface
 	uiDevHandler                  ports.UiDevHandlerInterface
 	webdavPath                    string
+	scrollPath                    string
 }
 
 func NewServer(
@@ -59,6 +61,7 @@ func NewServer(
 	uiHandler ports.UiHandlerInterface,
 	uiDevHandler ports.UiDevHandlerInterface,
 	webdavPath string,
+	scrollPath string,
 ) *Server {
 	server := &Server{
 		corsMiddleware: cors.New(cors.Config{
@@ -80,6 +83,7 @@ func NewServer(
 		healthHandler:                 healthHandler,
 		coldstarterHandler:            coldstarterHandler,
 		webdavPath:                    webdavPath,
+		scrollPath:                    scrollPath,
 		daemonHandler:                 daemonHandler,
 		uiHandler:                     uiHandler,
 		uiDevHandler:                  uiDevHandler,
@@ -189,10 +193,10 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 	apiRoutes.Get("/ports", s.portHandler.GetPorts).Name("ports.list")
 
 	publicUiRoutes.Get("/public/index", s.uiHandler.PublicIndex).Name("ui.public_index")
-	publicUiRoutes.Get("/public/*", s.uiHandler.Public).Name("ui.public")
+	publicUiRoutes.Static("/public", s.scrollPath+"/public").Name("ui.public")
 
 	privateUiRoutes.Get("/private/index", s.uiHandler.PrivateIndex).Name("ui.private_index")
-	privateUiRoutes.Get("/private/*", s.uiHandler.Private).Name("ui.private")
+	privateUiRoutes.Static("/private", s.scrollPath+"/private").Name("ui.private")
 
 	if s.annotationHandler != nil {
 		app.Get("/annotations", s.annotationHandler.Annotations).Name("annotations.list")

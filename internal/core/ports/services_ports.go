@@ -171,7 +171,6 @@ type ColdStarterServerInterface interface {
 
 type UiServiceInterface interface {
 	GetIndex(filePath string) ([]string, error)
-	ServeFile(basePath string, fileName string) ([]byte, string, error)
 }
 
 type UiDevServiceInterface interface {

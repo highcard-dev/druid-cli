@@ -152,7 +152,7 @@ to interact and monitor the Scroll Application`,
 		signalHandler := signals.NewSignalHandler(ctx, queueManager, processManager, nil, shutdownWait)
 		daemonHander := handler.NewDaemonHandler(signalHandler)
 
-		s := web.NewServer(jwksUrl, scrollHandler, scrollLogHandler, scrollMetricHandler, annotationHandler, processHandler, queueHandler, websocketHandler, portHandler, healthHandler, coldstarterHandler, daemonHander, authorizer, uiHandler, uiDevHandler, cwd)
+		s := web.NewServer(jwksUrl, scrollHandler, scrollLogHandler, scrollMetricHandler, annotationHandler, processHandler, queueHandler, websocketHandler, portHandler, healthHandler, coldstarterHandler, daemonHander, authorizer, uiHandler, uiDevHandler, cwd, scrollService.GetDir())
 
 		a := s.Initialize()
 
