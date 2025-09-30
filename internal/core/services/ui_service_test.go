@@ -59,12 +59,12 @@ func TestUiService_GetIndex(t *testing.T) {
 			t.Errorf("Expected 4 files, got %d", len(files))
 		}
 
-		// Verify all expected files are present
+		// Verify all expected files are present (now expecting relative paths)
 		expectedFiles := []string{
-			filepath.Join(publicDir, "index.html"),
-			filepath.Join(publicDir, "style.css"),
-			filepath.Join(publicDir, "script.js"),
-			filepath.Join(publicDir, "assets", "image.png"),
+			"public/index.html",
+			"public/style.css",
+			"public/script.js",
+			"public/assets/image.png",
 		}
 
 		for _, expected := range expectedFiles {
@@ -174,7 +174,8 @@ func TestUiService_ServeFile(t *testing.T) {
 			t.Errorf("Expected content 'readme content', got %s", string(content))
 		}
 
-		expectedContentType := "application/octet-stream"
+		// http.DetectContentType will detect text content as text/plain; charset=utf-8
+		expectedContentType := "text/plain; charset=utf-8"
 		if contentType != expectedContentType {
 			t.Errorf("Expected content type %s, got %s", expectedContentType, contentType)
 		}

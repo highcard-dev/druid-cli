@@ -2,6 +2,7 @@ package services
 
 import (
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -66,7 +67,12 @@ func (us *UiService) ServeFile(basePath string, fileName string) ([]byte, string
 	}
 
 	// Determine content type based on file extension and content
-	contentType := http.DetectContentType(content)
+	contentType := mime.TypeByExtension(filepath.Ext(fileName))
+
+	// If mime type couldn't be determined by extension, use content detection
+	if contentType == "" {
+		contentType = http.DetectContentType(content)
+	}
 
 	if contentType == "" {
 		contentType = "application/octet-stream"
