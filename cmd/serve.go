@@ -128,6 +128,7 @@ to interact and monitor the Scroll Application`,
 		coldStarter := services.NewColdStarter(portService, queueManager, snapshotService, scrollService.GetDir())
 
 		uiService := services.NewUiService(scrollService)
+		uiDevService := services.NewUiDevService()
 
 		scrollHandler := handler.NewScrollHandler(scrollService, pluginManager, processLauncher, queueManager, processManager)
 		processHandler := handler.NewProcessHandler(processManager)
@@ -138,6 +139,7 @@ to interact and monitor the Scroll Application`,
 		healthHandler := handler.NewHealthHandler(portService, maxStartupHealthCheckTimeout, snapshotService)
 		coldstarterHandler := handler.NewColdstarterHandler(coldStarter)
 		uiHandler := handler.NewUiHandler(uiService)
+		uiDevHandler := handler.NewUiDevHandler(uiDevService, scrollService)
 
 		var annotationHandler *handler.AnnotationHandler = nil
 
@@ -150,7 +152,7 @@ to interact and monitor the Scroll Application`,
 		signalHandler := signals.NewSignalHandler(ctx, queueManager, processManager, nil, shutdownWait)
 		daemonHander := handler.NewDaemonHandler(signalHandler)
 
-		s := web.NewServer(jwksUrl, scrollHandler, scrollLogHandler, scrollMetricHandler, annotationHandler, processHandler, queueHandler, websocketHandler, portHandler, healthHandler, coldstarterHandler, daemonHander, authorizer, uiHandler, cwd)
+		s := web.NewServer(jwksUrl, scrollHandler, scrollLogHandler, scrollMetricHandler, annotationHandler, processHandler, queueHandler, websocketHandler, portHandler, healthHandler, coldstarterHandler, daemonHander, authorizer, uiHandler, uiDevHandler, cwd)
 
 		a := s.Initialize()
 

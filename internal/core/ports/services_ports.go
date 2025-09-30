@@ -173,3 +173,12 @@ type UiServiceInterface interface {
 	GetIndex(filePath string) ([]string, error)
 	ServeFile(basePath string, fileName string) ([]byte, string, error)
 }
+
+type UiDevServiceInterface interface {
+	StartWatching(basePath string, paths ...string) error
+	StopWatching() error
+	Subscribe() chan *[]byte
+	Unsubscribe(client chan *[]byte)
+	GetWatchedPaths() []string
+	IsWatching() bool
+}

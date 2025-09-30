@@ -38,6 +38,7 @@ type Server struct {
 	coldstarterHandler            ports.ColdstarterHandlerInterface
 	daemonHandler                 ports.SignalHandlerInterface
 	uiHandler                     ports.UiHandlerInterface
+	uiDevHandler                  ports.UiDevHandlerInterface
 	webdavPath                    string
 }
 
@@ -56,6 +57,7 @@ func NewServer(
 	daemonHandler ports.SignalHandlerInterface,
 	authorizerService ports.AuthorizerServiceInterface,
 	uiHandler ports.UiHandlerInterface,
+	uiDevHandler ports.UiDevHandlerInterface,
 	webdavPath string,
 ) *Server {
 	server := &Server{
@@ -80,6 +82,7 @@ func NewServer(
 		webdavPath:                    webdavPath,
 		daemonHandler:                 daemonHandler,
 		uiHandler:                     uiHandler,
+		uiDevHandler:                  uiDevHandler,
 	}
 
 	if jwlsUrl != "" {
@@ -166,6 +169,11 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 
 	apiRoutes.Post("/daemon/stop", s.daemonHandler.Stop).Name("daemon.stop")
 
+	//UI Dev Group
+	apiRoutes.Post("/dev/enable", s.uiDevHandler.Enable).Name("dev.enable")
+	apiRoutes.Post("/dev/disable", s.uiDevHandler.Disable).Name("dev.disable")
+	apiRoutes.Get("/dev/status", s.uiDevHandler.Status).Name("dev.status")
+
 	// Create the WebDAV handler
 	webdavHandler := &webdav.Handler{
 		Prefix:     "/webdav",
@@ -176,6 +184,7 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 	webdavRoutes.Use("*", adaptor.HTTPHandler(webdavHandler))
 
 	wsRoutes.Get("/serve/:console", websocket.New(s.websocketHandler.HandleProcess)).Name("ws.serve")
+	wsRoutes.Get("/dev/notify", websocket.New(s.uiDevHandler.NotifyChange)).Name("ws.dev.notify")
 
 	apiRoutes.Get("/ports", s.portHandler.GetPorts).Name("ports.list")
 

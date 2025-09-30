@@ -61,3 +61,10 @@ type UiHandlerInterface interface {
 	Private(ctx *fiber.Ctx) error
 	PrivateIndex(ctx *fiber.Ctx) error
 }
+
+type UiDevHandlerInterface interface {
+	Enable(ctx *fiber.Ctx) error
+	Disable(ctx *fiber.Ctx) error
+	Status(ctx *fiber.Ctx) error
+	NotifyChange(c *websocket.Conn)
+}
