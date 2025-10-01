@@ -33,7 +33,7 @@ func (us *UiService) GetIndex(filePath string) ([]string, error) {
 		}
 		if !info.IsDir() {
 
-			if relPath, err := filepath.Rel(scrollDir, path); err == nil {
+			if relPath, err := filepath.Rel(uiDir, path); err == nil {
 				fileList = append(fileList, relPath)
 			} else {
 				// Fallback to original path if relative path calculation fails

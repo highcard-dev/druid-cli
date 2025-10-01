@@ -61,10 +61,10 @@ func TestUiService_GetIndex(t *testing.T) {
 
 		// Verify all expected files are present (now expecting relative paths)
 		expectedFiles := []string{
-			"public/index.html",
-			"public/style.css",
-			"public/script.js",
-			"public/assets/image.png",
+			"index.html",
+			"style.css",
+			"script.js",
+			"assets/image.png",
 		}
 
 		for _, expected := range expectedFiles {
