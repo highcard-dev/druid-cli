@@ -71,7 +71,7 @@ func (sc *ProcedureLauncher) LaunchPlugins() error {
 				if !ok {
 					console, _ = sc.consoleManager.AddConsoleWithChannel(item.Stream, domain.ConsoleTypePlugin, item.Stream, make(chan string))
 				}
-				console.Channel.Broadcast <- []byte(item.Data)
+				console.Channel.Broadcast([]byte(item.Data))
 			}
 		}
 	}()

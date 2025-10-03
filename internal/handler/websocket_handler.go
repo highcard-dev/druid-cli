@@ -83,40 +83,37 @@ func (ah WebsocketHandler) Consoles(c *fiber.Ctx) error {
 
 func (wh WebsocketHandler) HandleProcess(c *websocket.Conn) {
 	param := c.Params("console")
+	defer c.Close()
 
-	// Create a done channel to signal when the connection should be closed
-	done := make(chan struct{})
-
-	ticker := time.NewTicker(pingPeriod)
-	defer func() {
-		close(done)
-		ticker.Stop()
-		c.Close()
-	}()
-
+	// Get console channel
 	channel := wh.consoleService.GetConsole(param)
 	if channel == nil {
+		logger.Log().Warn("Console not found", zap.String("console", param))
 		return
 	}
 
+	// Subscribe to console output
 	subscriptionChannel := channel.Channel.Subscribe()
 	defer channel.Channel.Unsubscribe(subscriptionChannel)
 
+	// Set up ping/pong
 	c.SetReadLimit(maxMessageSize)
 	c.SetReadDeadline(time.Now().Add(pongWait))
-	c.SetPongHandler(func(string) error { c.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+	c.SetPongHandler(func(string) error {
+		c.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
 
-	// Start a goroutine to read messages (to handle pong responses and detect broken connections)
+	logger.Log().Info("WebSocket client connected to console", zap.String("console", param))
+
+	// Create ping ticker
+	pingTicker := time.NewTicker(pingPeriod)
+	defer pingTicker.Stop()
+
+	// Start reader goroutine to detect disconnects
+	done := make(chan struct{})
 	go func() {
-		defer func() {
-			select {
-			case <-done:
-				// Connection is already being closed
-			default:
-				close(done)
-			}
-		}()
-
+		defer close(done)
 		for {
 			_, _, err := c.ReadMessage()
 			if err != nil {
@@ -126,29 +123,27 @@ func (wh WebsocketHandler) HandleProcess(c *websocket.Conn) {
 		}
 	}()
 
-	//fetch channel and send to websocket
+	// Main event loop
 	for {
 		select {
 		case <-done:
-			logger.Log().Debug("WebSocket connection done signal received")
 			return
 
-		//send 1024 bytes at a time
 		case buffer, ok := <-subscriptionChannel:
-			c.SetWriteDeadline(time.Now().Add(writeWait))
-			//if nil is send, assume the channel is closed
 			if buffer == nil || !ok {
 				return
 			}
-			err := c.WriteMessage(websocket.TextMessage, *buffer)
-			if err != nil {
-				logger.Log().Debug("WebSocket client disconnected while sending message", zap.Error(err))
+
+			c.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.WriteMessage(websocket.TextMessage, *buffer); err != nil {
+				logger.Log().Debug("Failed to send console output, client disconnected", zap.Error(err))
 				return
 			}
-		case <-ticker.C:
+
+		case <-pingTicker.C:
 			c.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.WriteMessage(websocket.PingMessage, nil); err != nil {
-				logger.Log().Debug("WebSocket client disconnected during ping", zap.Error(err))
+				logger.Log().Debug("Failed to send ping, client disconnected", zap.Error(err))
 				return
 			}
 		}

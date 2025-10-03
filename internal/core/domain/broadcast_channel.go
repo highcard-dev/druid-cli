@@ -2,25 +2,20 @@ package domain
 
 import (
 	"sync"
-
-	"github.com/highcard-dev/daemon/internal/utils/logger"
+	"time"
 )
 
 type BroadcastChannel struct {
-	// Registered clients.
-	Clients map[chan *[]byte]bool
-
-	// Inbound messages from the clients.
-	Broadcast chan []byte
-
-	// Mutex to protect concurrent access to Clients map
-	mu sync.RWMutex
+	clients   map[chan *[]byte]bool
+	broadcast chan []byte
+	mu        sync.RWMutex
+	closed    bool
 }
 
 func NewHub() *BroadcastChannel {
 	return &BroadcastChannel{
-		Broadcast: make(chan []byte, 100), // Buffered channel to handle bursts of file changes
-		Clients:   make(map[chan *[]byte]bool),
+		broadcast: make(chan []byte, 100), // Buffered to prevent blocking
+		clients:   make(map[chan *[]byte]bool),
 	}
 }
 
@@ -28,72 +23,73 @@ func (h *BroadcastChannel) Subscribe() chan *[]byte {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	client := make(chan *[]byte, 50) // Increased buffer size to handle message bursts
-	h.Clients[client] = true
+	if h.closed {
+		return nil
+	}
+
+	client := make(chan *[]byte, 25) // Reasonable buffer
+	h.clients[client] = true
 	return client
 }
 
 func (h *BroadcastChannel) Unsubscribe(client chan *[]byte) {
+	if client == nil {
+		return
+	}
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if _, exists := h.Clients[client]; exists {
-		delete(h.Clients, client)
+	if _, exists := h.clients[client]; exists {
+		delete(h.clients, client)
 		close(client)
 	}
 }
 
-func (h *BroadcastChannel) CloseChannel() {
+// Broadcast sends data to all clients, returns false if dropped
+func (h *BroadcastChannel) Broadcast(data []byte) bool {
+	if h.closed {
+		return false
+	}
+
+	select {
+	case h.broadcast <- data:
+		return true
+	case <-time.After(50 * time.Millisecond): // Quick timeout
+		return false
+	}
+}
+
+func (h *BroadcastChannel) Close() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	close(h.Broadcast)
-	for client := range h.Clients {
+	if h.closed {
+		return
+	}
+
+	h.closed = true
+	close(h.broadcast)
+
+	for client := range h.clients {
 		close(client)
 	}
-	h.Clients = make(map[chan *[]byte]bool)
+	h.clients = make(map[chan *[]byte]bool)
 }
 
 func (h *BroadcastChannel) Run() {
-	for {
-		message, more := <-h.Broadcast
-		if !more {
-			logger.Log().Debug("Broadcast channel closed")
-			return
-		}
+	defer h.Close()
 
+	for data := range h.broadcast {
 		h.mu.RLock()
-		clients := make([]chan *[]byte, 0, len(h.Clients))
-		for client := range h.Clients {
-			clients = append(clients, client)
+		for client := range h.clients {
+			select {
+			case client <- &data:
+				// Sent successfully
+			default:
+				// Client blocked, skip (will be cleaned up later if persistent)
+			}
 		}
 		h.mu.RUnlock()
-
-		// Track clients to remove (dead connections)
-		var deadClients []chan *[]byte
-
-		for _, client := range clients {
-			select {
-			case client <- &message:
-				// Successfully sent the message
-			default:
-				// Client channel is blocked or closed, mark for removal
-				logger.Log().Debug("Client channel blocked or closed, marking for removal")
-				deadClients = append(deadClients, client)
-			}
-		}
-
-		// Remove dead clients
-		if len(deadClients) > 0 {
-			h.mu.Lock()
-			for _, deadClient := range deadClients {
-				if _, exists := h.Clients[deadClient]; exists {
-					delete(h.Clients, deadClient)
-					// Don't close the channel here as it might be closed elsewhere
-					logger.Log().Debug("Removed dead client from broadcast channel")
-				}
-			}
-			h.mu.Unlock()
-		}
 	}
 }

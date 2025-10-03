@@ -2,10 +2,7 @@ package handler
 
 import (
 	"encoding/json"
-	"net"
 	"path/filepath"
-	"strings"
-	"syscall"
 	"time"
 
 	"github.com/gofiber/contrib/websocket"
@@ -43,39 +40,7 @@ func NewUiDevHandler(uiDevService ports.UiDevServiceInterface, scrollService por
 		uiDevService:  uiDevService,
 		scrollService: scrollService,
 	}
-}
-
-// isConnectionError checks if the error is related to a broken connection
-func isConnectionError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	// Check for common connection error patterns
-	errStr := strings.ToLower(err.Error())
-	if strings.Contains(errStr, "broken pipe") ||
-		strings.Contains(errStr, "connection reset") ||
-		strings.Contains(errStr, "connection refused") ||
-		strings.Contains(errStr, "use of closed network connection") {
-		return true
-	}
-
-	// Check for specific error types
-	if netErr, ok := err.(*net.OpError); ok {
-		if netErr.Op == "write" {
-			return true
-		}
-	}
-
-	// Check for syscall errors
-	if errno, ok := err.(syscall.Errno); ok {
-		return errno == syscall.EPIPE || errno == syscall.ECONNRESET
-	}
-
-	return false
-}
-
-// @Summary Enable development mode
+} // @Summary Enable development mode
 // @ID enableDev
 // @Tags ui, dev, druid, daemon
 // @Accept json
@@ -181,37 +146,15 @@ func (udh *UiDevHandler) Status(ctx *fiber.Ctx) error {
 
 // NotifyChange handles WebSocket connections for real-time file change notifications
 func (udh *UiDevHandler) NotifyChange(c *websocket.Conn) {
-	// Set connection timeouts
-	const (
-		writeWait  = 10 * time.Second
-		pongWait   = 60 * time.Second
-		pingPeriod = (pongWait * 9) / 10
-	)
-
-	// Create a done channel to signal when the connection should be closed
-	done := make(chan struct{})
-
-	defer func() {
-		close(done)
-		if err := c.Close(); err != nil {
-			logger.Log().Debug("Error closing WebSocket connection", zap.Error(err))
-		}
-	}()
-
-	c.SetReadDeadline(time.Now().Add(pongWait))
-	c.SetPongHandler(func(string) error {
-		c.SetReadDeadline(time.Now().Add(pongWait))
-		return nil
-	})
+	defer c.Close()
 
 	// Check if development mode is enabled
 	if !udh.uiDevService.IsWatching() {
 		logger.Log().Warn("WebSocket connection attempted but development mode is not enabled")
-		errorMsg := map[string]interface{}{
+		c.WriteJSON(map[string]interface{}{
 			"type":    "error",
 			"message": "Development mode is not enabled",
-		}
-		c.WriteJSON(errorMsg)
+		})
 		return
 	}
 
@@ -219,109 +162,84 @@ func (udh *UiDevHandler) NotifyChange(c *websocket.Conn) {
 	changesChan := udh.uiDevService.Subscribe()
 	if changesChan == nil {
 		logger.Log().Error("Failed to subscribe to file changes")
-		errorMsg := map[string]interface{}{
+		c.WriteJSON(map[string]interface{}{
 			"type":    "error",
 			"message": "Failed to subscribe to file changes",
-		}
-		c.WriteJSON(errorMsg)
+		})
 		return
 	}
-
 	defer udh.uiDevService.Unsubscribe(changesChan)
 
+	// Set up ping/pong
+	c.SetReadDeadline(time.Now().Add(60 * time.Second))
+	c.SetPongHandler(func(string) error {
+		c.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+
 	// Send initial connection message
-	connectMsg := map[string]interface{}{
+	c.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	if err := c.WriteJSON(map[string]interface{}{
 		"type":         "connected",
 		"message":      "Connected to file watcher",
 		"watchedPaths": udh.uiDevService.GetWatchedPaths(),
 		"timestamp":    time.Now(),
-	}
-
-	c.SetWriteDeadline(time.Now().Add(writeWait))
-	if err := c.WriteJSON(connectMsg); err != nil {
-		logger.Log().Error("Failed to send initial connection message", zap.Error(err))
+	}); err != nil {
+		logger.Log().Debug("Failed to send initial message, client disconnected", zap.Error(err))
 		return
 	}
 
 	logger.Log().Info("WebSocket client connected for file change notifications")
 
-	// Start ping ticker
-	ticker := time.NewTicker(pingPeriod)
-	defer ticker.Stop()
+	// Create ping ticker
+	pingTicker := time.NewTicker(54 * time.Second)
+	defer pingTicker.Stop()
 
-	// Start a goroutine to read messages (to handle pong responses and detect broken connections)
+	// Start reader goroutine to detect disconnects
+	done := make(chan struct{})
 	go func() {
-		defer func() {
-			select {
-			case <-done:
-				// Connection is already being closed
-			default:
-				close(done)
-			}
-		}()
-
+		defer close(done)
 		for {
 			_, _, err := c.ReadMessage()
 			if err != nil {
-				if isConnectionError(err) {
-					logger.Log().Debug("WebSocket client disconnected", zap.Error(err))
-				} else {
-					logger.Log().Warn("WebSocket read error", zap.Error(err))
-				}
+				logger.Log().Debug("WebSocket client disconnected", zap.Error(err))
 				return
 			}
 		}
 	}()
 
-	// Handle messages and file changes
+	// Main event loop
 	for {
 		select {
 		case <-done:
-			logger.Log().Debug("WebSocket connection done signal received")
 			return
 
 		case data := <-changesChan:
 			if data == nil {
-				logger.Log().Info("File change channel closed")
 				return
 			}
 
-			// Parse the file change event
+			// Parse and send file change event
 			var fileEvent map[string]interface{}
 			if err := json.Unmarshal(*data, &fileEvent); err != nil {
 				logger.Log().Error("Failed to parse file change event", zap.Error(err))
 				continue
 			}
 
-			// Add message type and send to client
-			changeMessage := map[string]interface{}{
+			c.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := c.WriteJSON(map[string]interface{}{
 				"type":      "file_change",
 				"data":      fileEvent,
 				"timestamp": time.Now(),
-			}
-
-			c.SetWriteDeadline(time.Now().Add(writeWait))
-			if err := c.WriteJSON(changeMessage); err != nil {
-				if isConnectionError(err) {
-					logger.Log().Debug("WebSocket client disconnected while sending file change", zap.Error(err))
-				} else {
-					logger.Log().Error("Failed to write file change to WebSocket", zap.Error(err))
-				}
+			}); err != nil {
+				logger.Log().Debug("Failed to send file change, client disconnected", zap.Error(err))
 				return
 			}
 
-			logger.Log().Debug("File change event sent to WebSocket client",
-				zap.String("path", fileEvent["path"].(string)),
-				zap.String("operation", fileEvent["operation"].(string)))
-
-		case <-ticker.C:
-			c.SetWriteDeadline(time.Now().Add(writeWait))
+		case <-pingTicker.C:
+			c.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := c.WriteMessage(websocket.PingMessage, nil); err != nil {
-				if isConnectionError(err) {
-					logger.Log().Debug("WebSocket client disconnected during ping", zap.Error(err))
-				} else {
-					logger.Log().Error("Failed to send ping", zap.Error(err))
-				}
+				logger.Log().Debug("Failed to send ping, client disconnected", zap.Error(err))
 				return
 			}
 		}

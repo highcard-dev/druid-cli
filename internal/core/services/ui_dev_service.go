@@ -122,7 +122,7 @@ func (uds *UiDevService) StopWatching() error {
 
 	// Close the broadcast channel to clean up subscribers
 	if uds.broadcastChannel != nil {
-		uds.broadcastChannel.CloseChannel()
+		uds.broadcastChannel.Close()
 		uds.broadcastChannel = nil
 	}
 
@@ -252,12 +252,10 @@ func (uds *UiDevService) handleFileEvent(event fsnotify.Event) {
 		return
 	}
 
-	// Broadcast the event to all subscribers with a timeout to prevent blocking
-	select {
-	case uds.broadcastChannel.Broadcast <- eventData:
-		logger.Log().Debug("File change event broadcasted", zap.String("path", event.Name), zap.String("op", event.Op.String()))
-	case <-time.After(100 * time.Millisecond): // Timeout after 100ms
-		logger.Log().Warn("Failed to broadcast file change event - channel full (timed out)")
+	// Broadcast the event to all subscribers
+	if !uds.broadcastChannel.Broadcast(eventData) {
+		// Silently drop if channel is full - this is normal during high activity
+		logger.Log().Debug("Dropped file change event (channel busy)", zap.String("path", event.Name))
 	}
 
 	// Handle directory creation - add new directories to watcher
