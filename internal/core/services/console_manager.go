@@ -42,7 +42,7 @@ func (cm *ConsoleManager) AddConsoleWithChannel(id string, consoleType domain.Co
 	go func() {
 		for data := range channel {
 			b := []byte(data)
-			newChannel.Broadcast <- b
+			newChannel.Broadcast(b)
 			cm.logManager.AddLine(id, b)
 		}
 		close(done)
