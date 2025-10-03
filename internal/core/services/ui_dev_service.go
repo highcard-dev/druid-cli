@@ -252,12 +252,12 @@ func (uds *UiDevService) handleFileEvent(event fsnotify.Event) {
 		return
 	}
 
-	// Broadcast the event to all subscribers
+	// Broadcast the event to all subscribers with a timeout to prevent blocking
 	select {
 	case uds.broadcastChannel.Broadcast <- eventData:
 		logger.Log().Debug("File change event broadcasted", zap.String("path", event.Name), zap.String("op", event.Op.String()))
-	default:
-		logger.Log().Warn("Failed to broadcast file change event - channel full")
+	case <-time.After(100 * time.Millisecond): // Timeout after 100ms
+		logger.Log().Warn("Failed to broadcast file change event - channel full (timed out)")
 	}
 
 	// Handle directory creation - add new directories to watcher
