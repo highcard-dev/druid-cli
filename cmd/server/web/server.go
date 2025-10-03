@@ -125,24 +125,32 @@ func (s *Server) Initialize() *fiber.App {
 }
 
 func (s *Server) SetAPI(app *fiber.App) *fiber.App {
+	// Apply global middleware
 	app.Use(s.headerMiddleware)
+	app.Use(s.corsMiddleware)
+
+	// Create completely isolated websocket routes FIRST to avoid any middleware pollution
 	wsRoutes := app.Group("/ws/v1")
-	v1 := app.Use(s.corsMiddleware).Group("/api/v1")
+	wsRoutes.Use(s.tokenAuthenticationMiddleware)
+
+	// Define websocket routes immediately after creating the group
+	wsRoutes.Get("/serve/:console", websocket.New(s.websocketHandler.HandleProcess)).Name("ws.serve")
+	wsRoutes.Get("/dev/notify", websocket.New(s.uiDevHandler.NotifyChange)).Name("ws.dev.notify")
+
+	// Now create other route groups
+	v1 := app.Group("/api/v1")
 	apiRoutes := v1.Group("/")
 	webdavRoutes := app.Group("/webdav")
 
-	privateUiRoutes := app.Use(s.corsMiddleware)
-	publicUiRoutes := app.Use(s.corsMiddleware)
+	// Create properly isolated UI route groups
+	privateUiRoutes := app.Group("")
+	publicUiRoutes := app.Group("")
 
 	if s.jwtMiddleware != nil {
 		apiRoutes.Use(s.jwtMiddleware, s.injectUserMiddleware)
 		webdavRoutes.Use(s.jwtMiddleware, s.injectUserMiddleware)
 		privateUiRoutes.Use(s.jwtMiddleware, s.injectUserMiddleware)
-	}
-
-	wsRoutes.Use(s.tokenAuthenticationMiddleware)
-
-	//Scroll Group
+	} //Scroll Group
 	apiRoutes.Get("/scroll", s.scrollHandler.GetScroll).Name("scrolls.current")
 	apiRoutes.Post("/command", s.scrollHandler.RunCommand).Name("command.start")
 	apiRoutes.Post("/procedure", s.scrollHandler.RunProcedure).Name("procedure.start")
@@ -186,9 +194,6 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 	}
 
 	webdavRoutes.Use("*", adaptor.HTTPHandler(webdavHandler))
-
-	wsRoutes.Get("/serve/:console", websocket.New(s.websocketHandler.HandleProcess)).Name("ws.serve")
-	wsRoutes.Get("/dev/notify", websocket.New(s.uiDevHandler.NotifyChange)).Name("ws.dev.notify")
 
 	apiRoutes.Get("/ports", s.portHandler.GetPorts).Name("ports.list")
 

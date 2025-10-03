@@ -120,6 +120,96 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/dev/disable": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ui",
+                    "dev",
+                    "druid",
+                    "daemon"
+                ],
+                "summary": "Disable development mode",
+                "operationId": "disableDev",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/DevModeResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dev/enable": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ui",
+                    "dev",
+                    "druid",
+                    "daemon"
+                ],
+                "summary": "Enable development mode",
+                "operationId": "enableDev",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/DevModeResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dev/status": {
+            "get": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ui",
+                    "dev",
+                    "druid",
+                    "daemon"
+                ],
+                "summary": "Get development mode status",
+                "operationId": "getDevStatus",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/DevStatusResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/health": {
             "get": {
                 "consumes": [
@@ -462,6 +552,50 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/private/index": {
+            "get": {
+                "consumes": [
+                    "*/*"
+                ],
+                "produces": [
+                    "text/html"
+                ],
+                "tags": [
+                    "ui",
+                    "druid",
+                    "daemon"
+                ],
+                "summary": "Serve private UI index",
+                "operationId": "getPrivateUIIndex",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/public/index": {
+            "get": {
+                "consumes": [
+                    "*/*"
+                ],
+                "produces": [
+                    "text/html"
+                ],
+                "tags": [
+                    "ui",
+                    "druid",
+                    "daemon"
+                ],
+                "summary": "Serve public UI index",
+                "operationId": "getPublicUIIndex",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -514,6 +648,42 @@ const docTemplate = `{
                     "additionalProperties": {
                         "$ref": "#/definitions/Console"
                     }
+                }
+            }
+        },
+        "DevModeResponse": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "DevStatusResponse": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "watchedPaths": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
                 }
             }
         },

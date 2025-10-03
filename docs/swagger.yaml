@@ -33,6 +33,29 @@ definitions:
     required:
     - consoles
     type: object
+  DevModeResponse:
+    properties:
+      enabled:
+        type: boolean
+      status:
+        type: string
+    type: object
+  DevStatusResponse:
+    properties:
+      enabled:
+        type: boolean
+      watchedPaths:
+        items:
+          type: string
+        type: array
+    type: object
+  ErrorResponse:
+    properties:
+      error:
+        type: string
+      status:
+        type: string
+    type: object
   Procedure:
     properties:
       data: {}
@@ -392,6 +415,68 @@ paths:
       tags:
       - druid
       - daemon
+  /api/v1/dev/disable:
+    post:
+      consumes:
+      - application/json
+      operationId: disableDev
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/DevModeResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Disable development mode
+      tags:
+      - ui
+      - dev
+      - druid
+      - daemon
+  /api/v1/dev/enable:
+    post:
+      consumes:
+      - application/json
+      operationId: enableDev
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/DevModeResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Enable development mode
+      tags:
+      - ui
+      - dev
+      - druid
+      - daemon
+  /api/v1/dev/status:
+    get:
+      consumes:
+      - application/json
+      operationId: getDevStatus
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/DevStatusResponse'
+      summary: Get development mode status
+      tags:
+      - ui
+      - dev
+      - druid
+      - daemon
   /api/v1/health:
     get:
       consumes:
@@ -623,6 +708,36 @@ paths:
       summary: Get current scroll
       tags:
       - websocket
+      - druid
+      - daemon
+  /private/index:
+    get:
+      consumes:
+      - '*/*'
+      operationId: getPrivateUIIndex
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: OK
+      summary: Serve private UI index
+      tags:
+      - ui
+      - druid
+      - daemon
+  /public/index:
+    get:
+      consumes:
+      - '*/*'
+      operationId: getPublicUIIndex
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: OK
+      summary: Serve public UI index
+      tags:
+      - ui
       - druid
       - daemon
 swagger: "2.0"

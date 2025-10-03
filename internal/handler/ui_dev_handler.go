@@ -49,7 +49,7 @@ func NewUiDevHandler(uiDevService ports.UiDevServiceInterface, scrollService por
 // @Produce json
 // @Success 200 {object} DevModeResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /dev/enable [post]
+// @Router /api/v1/dev/enable [post]
 func (udh *UiDevHandler) Enable(ctx *fiber.Ctx) error {
 	if udh.uiDevService.IsWatching() {
 		response := DevModeResponse{
@@ -100,7 +100,7 @@ func (udh *UiDevHandler) Enable(ctx *fiber.Ctx) error {
 // @Produce json
 // @Success 200 {object} DevModeResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /dev/disable [post]
+// @Router /api/v1/dev/disable [post]
 func (udh *UiDevHandler) Disable(ctx *fiber.Ctx) error {
 	if !udh.uiDevService.IsWatching() {
 		response := DevModeResponse{
@@ -136,7 +136,7 @@ func (udh *UiDevHandler) Disable(ctx *fiber.Ctx) error {
 // @Accept json
 // @Produce json
 // @Success 200 {object} DevStatusResponse
-// @Router /dev/status [get]
+// @Router /api/v1/dev/status [get]
 func (udh *UiDevHandler) Status(ctx *fiber.Ctx) error {
 	isWatching := udh.uiDevService.IsWatching()
 	response := DevStatusResponse{
