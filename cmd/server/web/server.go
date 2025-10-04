@@ -3,11 +3,13 @@ package web
 import (
 	"errors"
 	"fmt"
+	"net/http"
 
-	"github.com/gofiber/adaptor/v2"
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/adaptor"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/filesystem"
 	jwtware "github.com/gofiber/jwt/v3"
 	"github.com/highcard-dev/daemon/cmd/server/web/middlewares"
 
@@ -198,10 +200,16 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 	apiRoutes.Get("/ports", s.portHandler.GetPorts).Name("ports.list")
 
 	publicUiRoutes.Get("/public/index", s.uiHandler.PublicIndex).Name("ui.public_index")
-	publicUiRoutes.Static("/public", s.scrollPath+"/public").Name("ui.public")
+	publicUiRoutes.Use("/public", filesystem.New(filesystem.Config{
+		Root:   http.Dir(s.scrollPath + "/public"),
+		Browse: false,
+	}))
 
 	privateUiRoutes.Get("/private/index", s.uiHandler.PrivateIndex).Name("ui.private_index")
-	privateUiRoutes.Static("/private", s.scrollPath+"/private").Name("ui.private")
+	privateUiRoutes.Use("/private", filesystem.New(filesystem.Config{
+		Root:   http.Dir(s.scrollPath + "/private"),
+		Browse: false,
+	}))
 
 	if s.annotationHandler != nil {
 		app.Get("/annotations", s.annotationHandler.Annotations).Name("annotations.list")

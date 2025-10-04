@@ -7,9 +7,8 @@ toolchain go1.24.7
 require (
 	github.com/Masterminds/semver/v3 v3.2.1
 	github.com/Masterminds/sprig v2.22.0+incompatible
-	github.com/gofiber/adaptor/v2 v2.2.1
-	github.com/gofiber/contrib/websocket v1.3.2
-	github.com/gofiber/fiber/v2 v2.52.5
+	github.com/gofiber/contrib/websocket v1.3.4
+	github.com/gofiber/fiber/v2 v2.52.9
 	github.com/hashicorp/go-plugin v1.6.1
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/prometheus/client_golang v1.19.1
@@ -102,7 +101,6 @@ require (
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
-	github.com/stretchr/testify v1.10.0 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	golang.org/x/exp v0.0.0-20241210194714-1829a127f884 // indirect
 )

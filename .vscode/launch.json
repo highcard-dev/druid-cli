@@ -123,9 +123,7 @@
                 "--watch-ports",
                 "-p",
                 "9190",
-                "--idle",
-                "--jwks-server",
-                "https://auth.druid.gg/.well_known/jwks.json"
+                "--idle"
             ],
         },
         {
