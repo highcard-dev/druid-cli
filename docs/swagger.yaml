@@ -453,7 +453,6 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/ErrorResponse'
-      summary: Enable development mode
       tags:
       - ui
       - dev
@@ -716,10 +715,26 @@ paths:
       - '*/*'
       operationId: getPrivateUIIndex
       produces:
-      - text/html
+      - application/json
       responses:
         "200":
-          description: OK
+          description: List of files in private UI directory
+          schema:
+            items:
+              type: string
+            type: array
+        "404":
+          description: Private UI directory not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error with details
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       summary: Serve private UI index
       tags:
       - ui
@@ -731,10 +746,26 @@ paths:
       - '*/*'
       operationId: getPublicUIIndex
       produces:
-      - text/html
+      - application/json
       responses:
         "200":
-          description: OK
+          description: List of files in public UI directory
+          schema:
+            items:
+              type: string
+            type: array
+        "404":
+          description: Public UI directory not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error with details
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       summary: Serve public UI index
       tags:
       - ui

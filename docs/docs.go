@@ -166,7 +166,6 @@ const docTemplate = `{
                     "druid",
                     "daemon"
                 ],
-                "summary": "Enable development mode",
                 "operationId": "enableDev",
                 "responses": {
                     "200": {
@@ -559,7 +558,7 @@ const docTemplate = `{
                     "*/*"
                 ],
                 "produces": [
-                    "text/html"
+                    "application/json"
                 ],
                 "tags": [
                     "ui",
@@ -570,7 +569,31 @@ const docTemplate = `{
                 "operationId": "getPrivateUIIndex",
                 "responses": {
                     "200": {
-                        "description": "OK"
+                        "description": "List of files in private UI directory",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Private UI directory not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error with details",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 }
             }
@@ -581,7 +604,7 @@ const docTemplate = `{
                     "*/*"
                 ],
                 "produces": [
-                    "text/html"
+                    "application/json"
                 ],
                 "tags": [
                     "ui",
@@ -592,7 +615,31 @@ const docTemplate = `{
                 "operationId": "getPublicUIIndex",
                 "responses": {
                     "200": {
-                        "description": "OK"
+                        "description": "List of files in public UI directory",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Public UI directory not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error with details",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 }
             }

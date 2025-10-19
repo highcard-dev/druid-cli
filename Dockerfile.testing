@@ -1,5 +1,5 @@
 #Dockerhub does not allow for setting of build args :/
-FROM nginx
+FROM nginx:bookworm
 WORKDIR /app
 
 RUN apt update && apt install -y ca-certificates wget jq moreutils htop procps nano net-tools gcc make openjdk-17-jdk ant netcat-traditional
