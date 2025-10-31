@@ -36,6 +36,7 @@ type ScrollServiceInterface interface {
 	GetCommand(cmd string) (*domain.CommandInstructionSet, error)
 	InitFiles(files ...string) error
 	InitTemplateFiles(files ...string) error
+	AddTemporaryCommand(cmd string, instructions *domain.CommandInstructionSet)
 }
 
 type ProcedureLauchnerInterface interface {
@@ -107,6 +108,7 @@ type QueueManagerInterface interface {
 	AddAndRememberItem(cmd string) error
 	AddTempItem(cmd string) error
 	AddShutdownItem(cmd string) error
+	AddTempItemWithWait(cmd string) error
 	GetQueue() map[string]domain.ScrollLockStatus
 }
 
@@ -180,4 +182,5 @@ type UiDevServiceInterface interface {
 	Unsubscribe(client chan *[]byte)
 	GetWatchedPaths() []string
 	IsWatching() bool
+	SetCommands(procs map[string]*domain.CommandInstructionSet)
 }

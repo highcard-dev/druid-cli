@@ -128,7 +128,9 @@ to interact and monitor the Scroll Application`,
 		coldStarter := services.NewColdStarter(portService, queueManager, snapshotService, scrollService.GetDir())
 
 		uiService := services.NewUiService(scrollService)
-		uiDevService := services.NewUiDevService()
+		uiDevService := services.NewUiDevService(
+			queueManager, scrollService,
+		)
 
 		scrollHandler := handler.NewScrollHandler(scrollService, pluginManager, processLauncher, queueManager, processManager)
 		processHandler := handler.NewProcessHandler(processManager)
@@ -162,6 +164,9 @@ to interact and monitor the Scroll Application`,
 			logger.Log().Info("Starting port watcher", zap.Strings("interfaces", watchPortsInterfaces))
 			go portService.StartMonitoring(ctx, watchPortsInterfaces, currentScroll.KeepAlivePPM)
 		}
+
+		logger.Log().Info("Starting queue manager")
+		go queueManager.Work()
 
 		if !idleScroll {
 
@@ -306,7 +311,7 @@ func startup(scrollService *services.ScrollService, snapshotService ports.Snapsh
 
 	logger.Log().Info("Initializing scroll")
 
-	newScroll, err := initScroll(scrollService, snapshotService, processLauncher, queueManager)
+	newScroll, err := initScroll(scrollService, snapshotService, processLauncher)
 
 	if err != nil {
 		doneChan <- err
@@ -380,7 +385,7 @@ func startup(scrollService *services.ScrollService, snapshotService ports.Snapsh
 
 }
 
-func initScroll(scrollService *services.ScrollService, snapshotService ports.SnapshotService, processLauncher *services.ProcedureLauncher, queueManager *services.QueueManager) (bool, error) {
+func initScroll(scrollService *services.ScrollService, snapshotService ports.SnapshotService, processLauncher *services.ProcedureLauncher) (bool, error) {
 
 	lock, err := scrollService.ReloadLock(ignoreVersionCheck)
 	if err != nil {
@@ -449,9 +454,6 @@ func initScroll(scrollService *services.ScrollService, snapshotService ports.Sna
 			return newScroll, err
 		}
 	}
-
-	logger.Log().Info("Starting queue manager")
-	go queueManager.Work()
 
 	return newScroll, nil
 }

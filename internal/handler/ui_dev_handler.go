@@ -7,6 +7,7 @@ import (
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
+	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"go.uber.org/zap"
@@ -35,6 +36,10 @@ type UiDevHandler struct {
 	scrollService ports.ScrollServiceInterface
 }
 
+type DevModeBody struct {
+	Commands map[string]*domain.CommandInstructionSet `json:"commands,omitempty"`
+}
+
 func NewUiDevHandler(uiDevService ports.UiDevServiceInterface, scrollService ports.ScrollServiceInterface) *UiDevHandler {
 	return &UiDevHandler{
 		uiDevService:  uiDevService,
@@ -51,7 +56,7 @@ func NewUiDevHandler(uiDevService ports.UiDevServiceInterface, scrollService por
 func (udh *UiDevHandler) Enable(ctx *fiber.Ctx) error {
 	if udh.uiDevService.IsWatching() {
 		response := DevModeResponse{
-			Status:  "success",
+			Status:  "already-active",
 			Enabled: true,
 		}
 		return ctx.JSON(response)
@@ -69,10 +74,17 @@ func (udh *UiDevHandler) Enable(ctx *fiber.Ctx) error {
 		return ctx.Status(400).JSON(errorResponse)
 	}
 
+	var requestBody DevModeBody
+
+	err := ctx.BodyParser(&requestBody)
+	if err == nil {
+		udh.uiDevService.SetCommands(requestBody.Commands)
+	}
+
 	watchPaths = append(watchPaths, filepath.Join(scrollDir, "public"), filepath.Join(scrollDir, "private"))
 
 	// Start file watching with scroll directory as base path
-	err := udh.uiDevService.StartWatching(scrollDir, watchPaths...)
+	err = udh.uiDevService.StartWatching(scrollDir, watchPaths...)
 	if err != nil {
 		logger.Log().Error("Failed to start file watcher", zap.Error(err))
 		errorResponse := ErrorResponse{

@@ -45,7 +45,8 @@ var RunCmd = &cobra.Command{
 		queueManager := services.NewQueueManager(scrollService, processLauncher)
 		snapshotService := snapshotService.NewSnapshotService()
 
-		_, err = initScroll(scrollService, snapshotService, processLauncher, queueManager)
+		go queueManager.Work()
+		_, err = initScroll(scrollService, snapshotService, processLauncher)
 		if err != nil {
 			return fmt.Errorf("error initializing scroll: %w", err)
 		}
