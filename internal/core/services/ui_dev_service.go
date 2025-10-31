@@ -33,13 +33,30 @@ type UiDevService struct {
 	ctx              context.Context
 	cancel           context.CancelFunc
 	isWatching       bool
+	commands         map[string]*domain.CommandInstructionSet
+	queueManager     ports.QueueManagerInterface
+	scrollService    ports.ScrollServiceInterface
+	events           uint32
 }
 
 // NewUiDevService creates a new instance of UiDevService
-func NewUiDevService() ports.UiDevServiceInterface {
+func NewUiDevService(
+	queueManager ports.QueueManagerInterface, scrollService ports.ScrollServiceInterface,
+) ports.UiDevServiceInterface {
 	return &UiDevService{
-		watchPaths: make([]string, 0),
-		isWatching: false,
+		watchPaths:    make([]string, 0),
+		isWatching:    false,
+		queueManager:  queueManager,
+		scrollService: scrollService,
+	}
+}
+
+func (uds *UiDevService) SetCommands(commands map[string]*domain.CommandInstructionSet) {
+	uds.mu.Lock()
+	defer uds.mu.Unlock()
+	uds.commands = commands
+	for key, cmd := range commands {
+		uds.scrollService.AddTemporaryCommand(key, cmd)
 	}
 }
 
@@ -215,7 +232,10 @@ func (uds *UiDevService) processEvents() {
 				logger.Log().Info("File watcher events channel closed")
 				return
 			}
-
+			if event.Op&fsnotify.Chmod == fsnotify.Chmod {
+				// Ignore chmod events
+				continue
+			}
 			uds.handleFileEvent(event)
 
 		case err, ok := <-uds.watcher.Errors:
@@ -237,6 +257,18 @@ func (uds *UiDevService) handleFileEvent(event fsnotify.Event) {
 		if relPath, err := filepath.Rel(uds.basePath, event.Name); err == nil {
 			relativePath = relPath
 		}
+	}
+	uds.events++
+	if uds.commands != nil && len(uds.commands) > 0 {
+		go func() {
+			e := uds.events - 1
+			for uds.events != e {
+				e = uds.events
+				for key, _ := range uds.commands {
+					uds.queueManager.AddTempItemWithWait(key)
+				}
+			}
+		}()
 	}
 
 	changeEvent := FileChangeEvent{

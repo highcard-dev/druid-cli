@@ -23,6 +23,9 @@ jobs:
       #  uses: mxschmitt/action-tmate@v3
       - run: make test-integration-docker
         name: Run integration tests inside Docker
+
+      #- name: Setup tmate session
+      #  uses: mxschmitt/action-tmate@v3
       - run: make test
         name: Unit tests
       - run: make build

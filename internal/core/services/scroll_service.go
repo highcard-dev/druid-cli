@@ -266,3 +266,11 @@ func (sc *ScrollService) GetCommand(cmd string) (*domain.CommandInstructionSet, 
 		return nil, errors.New("command " + cmd + " not found")
 	}
 }
+
+func (sc *ScrollService) AddTemporaryCommand(cmd string, instructions *domain.CommandInstructionSet) {
+	scroll := sc.GetFile()
+	if scroll.Commands == nil {
+		scroll.Commands = make(map[string]*domain.CommandInstructionSet)
+	}
+	scroll.Commands[cmd] = instructions
+}

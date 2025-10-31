@@ -15,9 +15,9 @@ import (
 type RunMode string
 
 const (
-	RunModeAlways     RunMode = "always" //default
-	RunModeOnce       RunMode = "once"
-	RunModeRestart    RunMode = "restart"
+	RunModeAlways     RunMode = "always"     //default
+	RunModeOnce       RunMode = "once"       //runs only once
+	RunModeRestart    RunMode = "restart"    //restarts on failure
 	RunModePersistent RunMode = "persistent" //restarts on failure and on program restart
 )
 

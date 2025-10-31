@@ -242,7 +242,6 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 	// Wait for goroutine to print everything (watchdog closes stdin)
 	exitCode := process.Cmd.ProcessState.ExitCode()
 
-	println("Exit code", exitCode)
 	console.MarkExited(exitCode)
 
 	close(combinedChannel)

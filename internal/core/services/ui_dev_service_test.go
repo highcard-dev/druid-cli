@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	mock_ports "github.com/highcard-dev/daemon/test/mock"
 	"go.uber.org/mock/gomock"
 )
 
@@ -12,8 +13,11 @@ func TestUiDevService_BasicFunctionality(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
+	queueManager := mock_ports.NewMockQueueManagerInterface(ctrl)
+	scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
+
 	// Create the UI dev service
-	uiDevService := NewUiDevService()
+	uiDevService := NewUiDevService(queueManager, scrollService)
 
 	// Check initial state
 	if uiDevService.IsWatching() {
@@ -67,7 +71,11 @@ func TestUiDevService_MultipleSubscribers(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	uiDevService := NewUiDevService()
+	queueManager := mock_ports.NewMockQueueManagerInterface(ctrl)
+	scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
+
+	// Create the UI dev service
+	uiDevService := NewUiDevService(queueManager, scrollService)
 
 	// Start watching first
 	err := uiDevService.StartWatching("/tmp/test", "/tmp/test/ui")
@@ -97,7 +105,11 @@ func TestUiDevService_ContinuousStartStop(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	uiDevService := NewUiDevService()
+	queueManager := mock_ports.NewMockQueueManagerInterface(ctrl)
+	scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
+
+	// Create the UI dev service
+	uiDevService := NewUiDevService(queueManager, scrollService)
 
 	// Test multiple start/stop cycles
 	for i := 0; i < 5; i++ {
@@ -165,7 +177,11 @@ func TestUiDevService_SubscribeBeforeStart(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	uiDevService := NewUiDevService()
+	queueManager := mock_ports.NewMockQueueManagerInterface(ctrl)
+	scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
+
+	// Create the UI dev service
+	uiDevService := NewUiDevService(queueManager, scrollService)
 
 	// Try to subscribe before starting
 	sub := uiDevService.Subscribe()

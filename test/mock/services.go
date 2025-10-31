@@ -115,6 +115,18 @@ func (m *MockScrollServiceInterface) EXPECT() *MockScrollServiceInterfaceMockRec
 	return m.recorder
 }
 
+// AddTemporaryCommand mocks base method.
+func (m *MockScrollServiceInterface) AddTemporaryCommand(cmd string, instructions *domain.CommandInstructionSet) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "AddTemporaryCommand", cmd, instructions)
+}
+
+// AddTemporaryCommand indicates an expected call of AddTemporaryCommand.
+func (mr *MockScrollServiceInterfaceMockRecorder) AddTemporaryCommand(cmd, instructions any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddTemporaryCommand", reflect.TypeOf((*MockScrollServiceInterface)(nil).AddTemporaryCommand), cmd, instructions)
+}
+
 // GetCommand mocks base method.
 func (m *MockScrollServiceInterface) GetCommand(cmd string) (*domain.CommandInstructionSet, error) {
 	m.ctrl.T.Helper()
@@ -1064,6 +1076,20 @@ func (mr *MockQueueManagerInterfaceMockRecorder) AddTempItem(cmd any) *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddTempItem", reflect.TypeOf((*MockQueueManagerInterface)(nil).AddTempItem), cmd)
 }
 
+// AddTempItemWithWait mocks base method.
+func (m *MockQueueManagerInterface) AddTempItemWithWait(cmd string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddTempItemWithWait", cmd)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddTempItemWithWait indicates an expected call of AddTempItemWithWait.
+func (mr *MockQueueManagerInterfaceMockRecorder) AddTempItemWithWait(cmd any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddTempItemWithWait", reflect.TypeOf((*MockQueueManagerInterface)(nil).AddTempItemWithWait), cmd)
+}
+
 // GetQueue mocks base method.
 func (m *MockQueueManagerInterface) GetQueue() map[string]domain.ScrollLockStatus {
 	m.ctrl.T.Helper()
@@ -1618,6 +1644,18 @@ func (m *MockUiDevServiceInterface) IsWatching() bool {
 func (mr *MockUiDevServiceInterfaceMockRecorder) IsWatching() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsWatching", reflect.TypeOf((*MockUiDevServiceInterface)(nil).IsWatching))
+}
+
+// SetCommands mocks base method.
+func (m *MockUiDevServiceInterface) SetCommands(procs map[string]*domain.CommandInstructionSet) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetCommands", procs)
+}
+
+// SetCommands indicates an expected call of SetCommands.
+func (mr *MockUiDevServiceInterfaceMockRecorder) SetCommands(procs any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetCommands", reflect.TypeOf((*MockUiDevServiceInterface)(nil).SetCommands), procs)
 }
 
 // StartWatching mocks base method.
