@@ -285,7 +285,9 @@ definitions:
     type: string
     x-enum-comments:
       RunModeAlways: default
+      RunModeOnce: runs only once
       RunModePersistent: restarts on failure and on program restart
+      RunModeRestart: restarts on failure
     x-enum-varnames:
     - RunModeAlways
     - RunModeOnce
@@ -303,6 +305,13 @@ definitions:
     - ScrollLockStatusDone
     - ScrollLockStatusError
     - ScrollLockStatusWaiting
+  handler.DevModeBody:
+    properties:
+      commands:
+        additionalProperties:
+          $ref: '#/definitions/CommandInstructionSet'
+        type: object
+    type: object
   handler.HealhResponse:
     properties:
       mode:
@@ -442,6 +451,12 @@ paths:
       consumes:
       - application/json
       operationId: enableDev
+      parameters:
+      - description: Optional commands to run on file changes
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/handler.DevModeBody'
       produces:
       - application/json
       responses:

@@ -50,6 +50,7 @@ func NewUiDevHandler(uiDevService ports.UiDevServiceInterface, scrollService por
 // @Tags ui, dev, druid, daemon
 // @Accept json
 // @Produce json
+// @Param body body DevModeBody false "Optional commands to run on file changes"
 // @Success 200 {object} DevModeResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/dev/enable [post]

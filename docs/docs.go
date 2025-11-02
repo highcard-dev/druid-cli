@@ -167,6 +167,16 @@ const docTemplate = `{
                     "daemon"
                 ],
                 "operationId": "enableDev",
+                "parameters": [
+                    {
+                        "description": "Optional commands to run on file changes",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.DevModeBody"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1076,7 +1086,9 @@ const docTemplate = `{
             ],
             "x-enum-comments": {
                 "RunModeAlways": "default",
-                "RunModePersistent": "restarts on failure and on program restart"
+                "RunModeOnce": "runs only once",
+                "RunModePersistent": "restarts on failure and on program restart",
+                "RunModeRestart": "restarts on failure"
             },
             "x-enum-varnames": [
                 "RunModeAlways",
@@ -1099,6 +1111,17 @@ const docTemplate = `{
                 "ScrollLockStatusError",
                 "ScrollLockStatusWaiting"
             ]
+        },
+        "handler.DevModeBody": {
+            "type": "object",
+            "properties": {
+                "commands": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/CommandInstructionSet"
+                    }
+                }
+            }
         },
         "handler.HealhResponse": {
             "type": "object",
