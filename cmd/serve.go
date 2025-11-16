@@ -38,6 +38,7 @@ var initSnapshotUrl string
 var skipArtifactDownload bool
 var allowPluginErrors bool
 var pprofBind string
+var dependencyResolution string
 
 var ServeCommand = &cobra.Command{
 	Use:   "serve",
@@ -118,7 +119,10 @@ to interact and monitor the Scroll Application`,
 
 		logger.Log().Info("Scroll loaded", zap.String("Name", currentScroll.Name), zap.Any("Version", currentScroll.Version), zap.String("AppVersion", currentScroll.AppVersion), zap.Any("Ports", currentScroll.Ports))
 
-		processLauncher := services.NewProcedureLauncher(client, processManager, pluginManager, consoleService, logManager, scrollService)
+		processLauncher, err := services.NewProcedureLauncher(client, processManager, pluginManager, consoleService, logManager, scrollService, dependencyResolution)
+		if err != nil {
+			return err
+		}
 
 		queueManager := services.NewQueueManager(scrollService, processLauncher)
 
@@ -303,6 +307,9 @@ func init() {
 	ServeCommand.Flags().BoolVarP(&skipArtifactDownload, "skip-artifact-download", "", false, "Skip downloading the artifact on startup")
 
 	ServeCommand.Flags().BoolVarP(&allowPluginErrors, "allow-plugin-errors", "", false, "Ignore plugin errors on startup")
+
+	ServeCommand.Flags().StringVarP(&dependencyResolution, "dependency-resolution", "", "auto", "Dependency resolution strategy. Valid values: auto, nix, external")
+
 }
 
 func startup(scrollService *services.ScrollService, snapshotService ports.SnapshotService, processLauncher *services.ProcedureLauncher, queueManager *services.QueueManager, portSerivce *services.PortMonitor, coldStarter *services.ColdStarter, healthHandler *handler.HealthHandler, cwd string, doneChan chan error) {

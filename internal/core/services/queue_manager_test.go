@@ -61,7 +61,10 @@ func TestQueueManager(t *testing.T) {
 
 			consoleManager := services.NewConsoleManager(logManager)
 			processManager := services.NewProcessManager(logManager, consoleManager, processMonitor)
-			procedureLauncher := services.NewProcedureLauncher(ociRegistryMock, processManager, pluginManager, consoleManager, logManager, scrollService)
+			procedureLauncher, err := services.NewProcedureLauncher(ociRegistryMock, processManager, pluginManager, consoleManager, logManager, scrollService, "external")
+			if err != nil {
+				t.Error(err)
+			}
 			queueManager := services.NewQueueManager(scrollService, procedureLauncher)
 
 			processMonitor.EXPECT().AddProcess(gomock.Any(), "test.0").AnyTimes()
@@ -178,7 +181,10 @@ func TestQueueManager(t *testing.T) {
 
 			consoleManager := services.NewConsoleManager(logManager)
 			processManager := services.NewProcessManager(logManager, consoleManager, processMonitor)
-			procedureLauncher := services.NewProcedureLauncher(ociRegistryMock, processManager, pluginManager, consoleManager, logManager, scrollService)
+			procedureLauncher, err := services.NewProcedureLauncher(ociRegistryMock, processManager, pluginManager, consoleManager, logManager, scrollService, "external")
+			if err != nil {
+				t.Error(err)
+			}
 			queueManager := services.NewQueueManager(scrollService, procedureLauncher)
 
 			processMonitor.EXPECT().AddProcess(gomock.Any(), "test.0").AnyTimes()
@@ -243,7 +249,10 @@ func TestQueueManager(t *testing.T) {
 
 		consoleManager := services.NewConsoleManager(logManager)
 		processManager := services.NewProcessManager(logManager, consoleManager, processMonitor)
-		procedureLauncher := services.NewProcedureLauncher(ociRegistryMock, processManager, pluginManager, consoleManager, logManager, scrollService)
+		procedureLauncher, err := services.NewProcedureLauncher(ociRegistryMock, processManager, pluginManager, consoleManager, logManager, scrollService, "external")
+		if err != nil {
+			t.Error(err)
+		}
 		queueManager := services.NewQueueManager(scrollService, procedureLauncher)
 
 		lock := &domain.ScrollLock{
@@ -314,7 +323,7 @@ func TestQueueManager(t *testing.T) {
 		scrollService.EXPECT().GetCwd().Return("/tmp").AnyTimes()
 
 		go queueManager.Work()
-		err := queueManager.AddTempItem("test")
+		err = queueManager.AddTempItem("test")
 		if err != nil {
 			t.Error(err)
 		}

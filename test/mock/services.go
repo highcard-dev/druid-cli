@@ -344,9 +344,9 @@ func (mr *MockProcedureLauchnerInterfaceMockRecorder) Run(cmd, runCommandCb any)
 }
 
 // RunProcedure mocks base method.
-func (m *MockProcedureLauchnerInterface) RunProcedure(arg0 *domain.Procedure, arg1 string) (string, *int, error) {
+func (m *MockProcedureLauchnerInterface) RunProcedure(arg0 *domain.Procedure, arg1 string, arg2 []string) (string, *int, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RunProcedure", arg0, arg1)
+	ret := m.ctrl.Call(m, "RunProcedure", arg0, arg1, arg2)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(*int)
 	ret2, _ := ret[2].(error)
@@ -354,9 +354,9 @@ func (m *MockProcedureLauchnerInterface) RunProcedure(arg0 *domain.Procedure, ar
 }
 
 // RunProcedure indicates an expected call of RunProcedure.
-func (mr *MockProcedureLauchnerInterfaceMockRecorder) RunProcedure(arg0, arg1 any) *gomock.Call {
+func (mr *MockProcedureLauchnerInterfaceMockRecorder) RunProcedure(arg0, arg1, arg2 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunProcedure", reflect.TypeOf((*MockProcedureLauchnerInterface)(nil).RunProcedure), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunProcedure", reflect.TypeOf((*MockProcedureLauchnerInterface)(nil).RunProcedure), arg0, arg1, arg2)
 }
 
 // MockPluginManagerInterface is a mock of PluginManagerInterface interface.
@@ -1715,4 +1715,56 @@ func (m *MockUiDevServiceInterface) Unsubscribe(client chan *[]byte) {
 func (mr *MockUiDevServiceInterfaceMockRecorder) Unsubscribe(client any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Unsubscribe", reflect.TypeOf((*MockUiDevServiceInterface)(nil).Unsubscribe), client)
+}
+
+// MockNixDependencyServiceInterface is a mock of NixDependencyServiceInterface interface.
+type MockNixDependencyServiceInterface struct {
+	ctrl     *gomock.Controller
+	recorder *MockNixDependencyServiceInterfaceMockRecorder
+	isgomock struct{}
+}
+
+// MockNixDependencyServiceInterfaceMockRecorder is the mock recorder for MockNixDependencyServiceInterface.
+type MockNixDependencyServiceInterfaceMockRecorder struct {
+	mock *MockNixDependencyServiceInterface
+}
+
+// NewMockNixDependencyServiceInterface creates a new mock instance.
+func NewMockNixDependencyServiceInterface(ctrl *gomock.Controller) *MockNixDependencyServiceInterface {
+	mock := &MockNixDependencyServiceInterface{ctrl: ctrl}
+	mock.recorder = &MockNixDependencyServiceInterfaceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockNixDependencyServiceInterface) EXPECT() *MockNixDependencyServiceInterfaceMockRecorder {
+	return m.recorder
+}
+
+// EnsureNixInstalled mocks base method.
+func (m *MockNixDependencyServiceInterface) EnsureNixInstalled() error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EnsureNixInstalled")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// EnsureNixInstalled indicates an expected call of EnsureNixInstalled.
+func (mr *MockNixDependencyServiceInterfaceMockRecorder) EnsureNixInstalled() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnsureNixInstalled", reflect.TypeOf((*MockNixDependencyServiceInterface)(nil).EnsureNixInstalled))
+}
+
+// GetCommand mocks base method.
+func (m *MockNixDependencyServiceInterface) GetCommand(cmd, deps []string) []string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetCommand", cmd, deps)
+	ret0, _ := ret[0].([]string)
+	return ret0
+}
+
+// GetCommand indicates an expected call of GetCommand.
+func (mr *MockNixDependencyServiceInterfaceMockRecorder) GetCommand(cmd, deps any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCommand", reflect.TypeOf((*MockNixDependencyServiceInterface)(nil).GetCommand), cmd, deps)
 }

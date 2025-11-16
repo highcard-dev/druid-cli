@@ -40,7 +40,10 @@ var RunCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("error creating scroll service: %w", err)
 		}
-		processLauncher := services.NewProcedureLauncher(client, processManager, services.NewPluginManager(), consoleService, logManager, scrollService)
+		processLauncher, err := services.NewProcedureLauncher(client, processManager, services.NewPluginManager(), consoleService, logManager, scrollService, dependencyResolution)
+		if err != nil {
+			return err
+		}
 
 		queueManager := services.NewQueueManager(scrollService, processLauncher)
 		snapshotService := snapshotService.NewSnapshotService()
@@ -65,4 +68,5 @@ var RunCmd = &cobra.Command{
 
 func init() {
 	RunCmd.Flags().BoolVarP(&ignoreVersionCheck, "ignore-version-check", "", false, "Ignore version check")
+	RunCmd.Flags().StringVarP(&dependencyResolution, "dependency-resolution", "", "auto", "Dependency resolution strategy. Valid values: auto, nix, external")
 }

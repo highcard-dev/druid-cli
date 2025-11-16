@@ -78,9 +78,10 @@ type Procedure struct {
 } // @name Procedure
 
 type CommandInstructionSet struct {
-	Procedures []*Procedure `yaml:"procedures" json:"procedures"`
-	Needs      []string     `yaml:"needs,omitempty" json:"needs,omitempty"`
-	Run        RunMode      `yaml:"run,omitempty" json:"run,omitempty"`
+	Dependencies []string     `yaml:"dependencies,omitempty" json:"dependencies,omitempty"`
+	Procedures   []*Procedure `yaml:"procedures" json:"procedures"`
+	Needs        []string     `yaml:"needs,omitempty" json:"needs,omitempty"`
+	Run          RunMode      `yaml:"run,omitempty" json:"run,omitempty"`
 } // @name CommandInstructionSet
 
 var ErrScrollDoesNotExist = fmt.Errorf("scroll does not exist")

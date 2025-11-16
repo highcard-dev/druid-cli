@@ -389,11 +389,6 @@ func (sc *QueueManager) WaitUntilEmpty() {
 	sc.mu.Unlock()
 
 	for {
-		sc.mu.Lock()
-		for cmd, item := range sc.commandQueue {
-			println(cmd + ": " + string(item.Status))
-		}
-		sc.mu.Unlock()
 
 		cmds := <-notifier
 		if len(cmds) == 0 {

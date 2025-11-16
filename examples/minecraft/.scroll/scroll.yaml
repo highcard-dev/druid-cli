@@ -33,8 +33,14 @@ commands:
   start:
     needs: [install]
     run: restart
+    dependencies: [jdk17]
     procedures:
       - mode: exec
+        data:
+          - java
+          - -version
+      - mode: exec
+        id: start-process
         data:
           - java
           - -Xmx1024M
@@ -46,7 +52,7 @@ commands:
     procedures:
       - mode: stdin
         data:
-          - start.0
+          - start-process
           - stop
   install:
     run: once
