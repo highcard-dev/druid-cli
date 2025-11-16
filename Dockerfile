@@ -17,6 +17,9 @@ RUN make build-plugins
 # Second stage: minimal runtime image
 FROM ubuntu:24.04
 
+## Remove ubuntu user added in 24.04 by default
+RUN touch /var/mail/ubuntu && chown ubuntu /var/mail/ubuntu && userdel -r ubuntu
+
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
