@@ -118,7 +118,11 @@ func TestExamples(t *testing.T) {
 			consoleManager := services.NewConsoleManager(logManager)
 			processMonitor := test_utils.GetMockedProcessMonitor(ctrl)
 			processManager := services.NewProcessManager(logManager, consoleManager, processMonitor)
-			procedureLauncher := services.NewProcedureLauncher(ociRegistryMock, processManager, pluginManager, consoleManager, logManager, scrollService)
+			procedureLauncher, err := services.NewProcedureLauncher(ociRegistryMock, processManager, pluginManager, consoleManager, logManager, scrollService, "external")
+			if err != nil {
+				t.Error(err)
+				return
+			}
 			queueManager := services.NewQueueManager(scrollService, procedureLauncher)
 
 			go queueManager.Work()
