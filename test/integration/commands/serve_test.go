@@ -122,7 +122,7 @@ func TestServeCommand(t *testing.T) {
 					t.Fatalf("Failed to start console: %v", err)
 				}
 
-				wsClient, err := test_utils.WaitForWebsocketConnection("localhost:8081", "/ws/v1/serve/start.0", 60*time.Second)
+				wsClient, err := test_utils.WaitForWebsocketConnection("localhost:8081", "/ws/v1/serve/start-process", 60*time.Second)
 				if err != nil {
 					t.Fatalf("Failed to connect to ws server: %v", err)
 				}
