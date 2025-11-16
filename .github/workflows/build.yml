@@ -78,12 +78,12 @@ jobs:
       tag_suffix: ""
       version: ${{ needs.release.outputs.version }}
       version_tag: ${{ needs.release.outputs.version_tag }}
+      platforms: "linux/amd64,linux/arm64"
     secrets:
       DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
       DRUID_ARTIFACTS_REGISTRY_USERNAME: ${{ vars.DRUID_ARTIFACTS_REGISTRY_USERNAME }}
       DRUID_ARTIFACTS_REGISTRY_TOKEN: ${{ secrets.DRUID_ARTIFACTS_REGISTRY_TOKEN }}
-
   docker-steamcmd:
     needs: [release, docker-base]
     if: ${{ needs.release.outputs.version != '' }}
@@ -98,7 +98,6 @@ jobs:
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
       DRUID_ARTIFACTS_REGISTRY_USERNAME: ${{ vars.DRUID_ARTIFACTS_REGISTRY_USERNAME }}
       DRUID_ARTIFACTS_REGISTRY_TOKEN: ${{ secrets.DRUID_ARTIFACTS_REGISTRY_TOKEN }}
-
   docker-nix:
     needs: [release, docker-base]
     if: ${{ needs.release.outputs.version != '' }}
@@ -110,12 +109,12 @@ jobs:
       version_tag: ${{ needs.release.outputs.version_tag }}
       base_tag_suffix: ""
       is_nix: true
+      platforms: "linux/amd64,linux/arm64"
     secrets:
       DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
       DRUID_ARTIFACTS_REGISTRY_USERNAME: ${{ vars.DRUID_ARTIFACTS_REGISTRY_USERNAME }}
       DRUID_ARTIFACTS_REGISTRY_TOKEN: ${{ secrets.DRUID_ARTIFACTS_REGISTRY_TOKEN }}
-
   docker-nix-steamcmd:
     needs: [release, docker-steamcmd]
     if: ${{ needs.release.outputs.version != '' }}
