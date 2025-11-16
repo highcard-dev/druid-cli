@@ -43,95 +43,66 @@ jobs:
             bin/druid_rcon_web_rust
             .docker/entrypoint.sh
             .docker/druid-install-command.sh
+
   docker-base:
-    runs-on: ubuntu-latest
     needs: build
-    strategy:
-      matrix:
-        include:
-          - dockerfile: Dockerfile
-            tag_suffix: ""
-          - dockerfile: Dockerfile.steamcmd
-            tag_suffix: "-steamcmd"
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Login to Artifacts Registry
-        uses: docker/login-action@v3
-        with:
-          registry: artifacts.druid.gg
-          username: ${{ vars.DRUID_ARTIFACTS_REGISTRY_USERNAME }}
-          password: ${{ secrets.DRUID_ARTIFACTS_REGISTRY_TOKEN }}
-      #stable is still pretty bleeding edge at this point
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          tags: |
-            highcard/druid:latest${{ matrix.tag_suffix }}
-            highcard/druid:stable${{ matrix.tag_suffix }}
-            highcard/druid:${{ needs.build.outputs.version }}${{ matrix.tag_suffix }}
-            highcard/druid:${{ needs.build.outputs.version_tag }}${{ matrix.tag_suffix }}
-            artifacts.druid.gg/druid-team/druid:latest${{ matrix.tag_suffix }}
-            artifacts.druid.gg/druid-team/druid:stable${{ matrix.tag_suffix }}
-            artifacts.druid.gg/druid-team/druid:${{ needs.build.outputs.version }}${{ matrix.tag_suffix }}
-            artifacts.druid.gg/druid-team/druid:${{ needs.build.outputs.version_tag }}${{ matrix.tag_suffix }}
-          push: true
-          build-args: |
-            VERSION=${{ needs.build.outputs.version }}
-            GIT_COMMIT=${{ github.sha }}
-            GIT_BRANCH=${{ github.ref_name }}
+    uses: ./.github/workflows/docker-build-reusable.yml
+    with:
+      dockerfile: Dockerfile
+      tag_suffix: ""
+      version: ${{ needs.build.outputs.version }}
+      version_tag: ${{ needs.build.outputs.version_tag }}
+    secrets:
+      DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      DRUID_ARTIFACTS_REGISTRY_USERNAME: ${{ vars.DRUID_ARTIFACTS_REGISTRY_USERNAME }}
+      DRUID_ARTIFACTS_REGISTRY_TOKEN: ${{ secrets.DRUID_ARTIFACTS_REGISTRY_TOKEN }}
+
+  docker-steamcmd:
+    needs: [build, docker-base]
+    if: ${{ needs.build.outputs.version != '' }}
+    uses: ./.github/workflows/docker-build-reusable.yml
+    with:
+      dockerfile: Dockerfile.steamcmd
+      tag_suffix: "-steamcmd"
+      version: ${{ needs.build.outputs.version }}
+      version_tag: ${{ needs.build.outputs.version_tag }}
+    secrets:
+      DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      DRUID_ARTIFACTS_REGISTRY_USERNAME: ${{ vars.DRUID_ARTIFACTS_REGISTRY_USERNAME }}
+      DRUID_ARTIFACTS_REGISTRY_TOKEN: ${{ secrets.DRUID_ARTIFACTS_REGISTRY_TOKEN }}
 
   docker-nix:
-    runs-on: ubuntu-latest
     needs: [build, docker-base]
-    strategy:
-      matrix:
-        include:
-          - base_tag_suffix: ""
-            tag_suffix: "-nix"
-          - base_tag_suffix: "-steamcmd"
-            tag_suffix: "-nix-steamcmd"
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Login to Artifacts Registry
-        uses: docker/login-action@v3
-        with:
-          registry: artifacts.druid.gg
-          username: ${{ vars.DRUID_ARTIFACTS_REGISTRY_USERNAME }}
-          password: ${{ secrets.DRUID_ARTIFACTS_REGISTRY_TOKEN }}
-      - name: Build and push Nix Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.nix
-          tags: |
-            highcard/druid:latest${{ matrix.tag_suffix }}
-            highcard/druid:stable${{ matrix.tag_suffix }}
-            highcard/druid:${{ needs.build.outputs.version }}${{ matrix.tag_suffix }}
-            highcard/druid:${{ needs.build.outputs.version_tag }}${{ matrix.tag_suffix }}
-            artifacts.druid.gg/druid-team/druid:latest${{ matrix.tag_suffix }}
-            artifacts.druid.gg/druid-team/druid:stable${{ matrix.tag_suffix }}
-            artifacts.druid.gg/druid-team/druid:${{ needs.build.outputs.version }}${{ matrix.tag_suffix }}
-            artifacts.druid.gg/druid-team/druid:${{ needs.build.outputs.version_tag }}${{ matrix.tag_suffix }}
-          push: true
-          build-args: |
-            VERSION=${{ needs.build.outputs.version }}${{ matrix.base_tag_suffix }}
+    if: ${{ needs.build.outputs.version != '' }}
+    uses: ./.github/workflows/docker-build-reusable.yml
+    with:
+      dockerfile: Dockerfile.nix
+      tag_suffix: "-nix"
+      version: ${{ needs.build.outputs.version }}
+      version_tag: ${{ needs.build.outputs.version_tag }}
+      base_tag_suffix: ""
+      is_nix: true
+    secrets:
+      DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      DRUID_ARTIFACTS_REGISTRY_USERNAME: ${{ vars.DRUID_ARTIFACTS_REGISTRY_USERNAME }}
+      DRUID_ARTIFACTS_REGISTRY_TOKEN: ${{ secrets.DRUID_ARTIFACTS_REGISTRY_TOKEN }}
+
+  docker-nix-steamcmd:
+    needs: [build, docker-steamcmd]
+    if: ${{ needs.build.outputs.version != '' }}
+    uses: ./.github/workflows/docker-build-reusable.yml
+    with:
+      dockerfile: Dockerfile.nix
+      tag_suffix: "-nix-steamcmd"
+      version: ${{ needs.build.outputs.version }}
+      version_tag: ${{ needs.build.outputs.version_tag }}
+      base_tag_suffix: "-steamcmd"
+      is_nix: true
+    secrets:
+      DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      DRUID_ARTIFACTS_REGISTRY_USERNAME: ${{ vars.DRUID_ARTIFACTS_REGISTRY_USERNAME }}
+      DRUID_ARTIFACTS_REGISTRY_TOKEN: ${{ secrets.DRUID_ARTIFACTS_REGISTRY_TOKEN }}
