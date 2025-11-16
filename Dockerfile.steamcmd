@@ -1,0 +1,16 @@
+ARG VERSION=latest
+FROM highcard/druid:${VERSION} AS base
+FROM gameservermanagers/steamcmd:ubuntu-24.04
+
+COPY --from=base /usr/bin/druid* /usr/bin/
+COPY --from=base /entrypoint.sh /entrypoint.sh
+
+# Set up user with the same UID/GID
+ARG UID=1000
+ARG GID=1000
+RUN groupadd -g $GID -o druid
+RUN useradd -m -u $UID -g $GID -o -s /bin/bash druid
+
+USER druid
+
+ENTRYPOINT [ "/entrypoint.sh" ]
