@@ -14,14 +14,15 @@ import (
 )
 
 type ProcedureLauncher struct {
-	pluginManager   ports.PluginManagerInterface
-	processManager  ports.ProcessManagerInterface
-	ociRegistry     ports.OciRegistryInterface
-	consoleManager  ports.ConsoleManagerInterface
-	logManager      ports.LogManagerInterface
-	scrollService   ports.ScrollServiceInterface
-	procedures      map[string]domain.ScrollLockStatus
-	proceduresMutex *sync.Mutex
+	pluginManager        ports.PluginManagerInterface
+	processManager       ports.ProcessManagerInterface
+	ociRegistry          ports.OciRegistryInterface
+	consoleManager       ports.ConsoleManagerInterface
+	logManager           ports.LogManagerInterface
+	scrollService        ports.ScrollServiceInterface
+	nixDependencyService ports.NixDependencyServiceInterface
+	procedures           map[string]domain.ScrollLockStatus
+	proceduresMutex      *sync.Mutex
 }
 
 func NewProcedureLauncher(
@@ -31,19 +32,48 @@ func NewProcedureLauncher(
 	consoleManager ports.ConsoleManagerInterface,
 	logManager ports.LogManagerInterface,
 	scrollService ports.ScrollServiceInterface,
-) *ProcedureLauncher {
-	s := &ProcedureLauncher{
-		processManager:  processManager,
-		ociRegistry:     ociRegistry,
-		pluginManager:   pluginManager,
-		consoleManager:  consoleManager,
-		logManager:      logManager,
-		scrollService:   scrollService,
-		procedures:      make(map[string]domain.ScrollLockStatus),
-		proceduresMutex: &sync.Mutex{},
+	dependecyResolution string,
+) (*ProcedureLauncher, error) {
+	var nixDependencyService ports.NixDependencyServiceInterface = nil
+
+	switch dependecyResolution {
+	case "nix":
+		logger.Log().Info("Using Nix for dependency resolution")
+		nixDependencyService = NewNixDependencyService()
+		err := nixDependencyService.EnsureNixInstalled()
+		if err != nil {
+			return nil, err
+		}
+	case "external":
+		logger.Log().Info("Using external system for dependency resolution")
+	default:
+		logger.Log().Warn("Unknown dependency resolution strategy, falling back to 'auto'", zap.String("dependecyResolution", dependecyResolution))
+		fallthrough
+	case "auto":
+		logger.Log().Info("Using automatic dependency resolution")
+		nixDependencyService = NewNixDependencyService()
+		err := nixDependencyService.EnsureNixInstalled()
+		if err != nil {
+			logger.Log().Info("Nix not found, falling back to external system for dependency resolution")
+			nixDependencyService = nil
+		} else {
+			logger.Log().Info("Nix found, using Nix for dependency resolution")
+		}
 	}
 
-	return s
+	s := &ProcedureLauncher{
+		processManager:       processManager,
+		ociRegistry:          ociRegistry,
+		pluginManager:        pluginManager,
+		consoleManager:       consoleManager,
+		logManager:           logManager,
+		scrollService:        scrollService,
+		procedures:           make(map[string]domain.ScrollLockStatus),
+		proceduresMutex:      &sync.Mutex{},
+		nixDependencyService: nixDependencyService,
+	}
+
+	return s, nil
 }
 
 func (sc *ProcedureLauncher) setProcedureStatus(procedure string, status domain.ScrollLockStatus) {
@@ -91,6 +121,7 @@ func (sc *ProcedureLauncher) Run(cmd string, runCommandCb func(cmd string) error
 		return err
 	}
 
+	deps := command.Dependencies
 	for idx, proc := range command.Procedures {
 
 		commandIdx := fmt.Sprintf("%s.%d", cmd, idx)
@@ -125,20 +156,20 @@ func (sc *ProcedureLauncher) Run(cmd string, runCommandCb func(cmd string) error
 		case int: //run in go routine and wait for x seconds
 			go func(procedure domain.Procedure) {
 				time.Sleep(time.Duration(wait) * time.Second)
-				sc.RunProcedure(&procedure, commandIdx)
+				sc.RunProcedure(&procedure, commandIdx, deps)
 			}(*proc)
 		case bool: //run in go routine maybe wait
 			if wait {
-				_, exitCode, err = sc.RunProcedure(proc, commandIdx)
+				_, exitCode, err = sc.RunProcedure(proc, commandIdx, deps)
 				if err != nil {
 					sc.setProcedureStatus(commandIdx, domain.ScrollLockStatusError)
 					return err
 				}
 			} else {
-				go sc.RunProcedure(proc, commandIdx)
+				go sc.RunProcedure(proc, commandIdx, deps)
 			}
 		default: //run and wait
-			_, exitCode, err = sc.RunProcedure(proc, commandIdx)
+			_, exitCode, err = sc.RunProcedure(proc, commandIdx, deps)
 			if err != nil {
 				sc.setProcedureStatus(commandIdx, domain.ScrollLockStatusError)
 				return err
@@ -180,7 +211,7 @@ func (sc *ProcedureLauncher) Run(cmd string, runCommandCb func(cmd string) error
 	return nil
 }
 
-func (sc *ProcedureLauncher) RunProcedure(proc *domain.Procedure, cmd string) (string, *int, error) {
+func (sc *ProcedureLauncher) RunProcedure(proc *domain.Procedure, cmd string, dependencies []string) (string, *int, error) {
 
 	logger.Log().Info("Running procedure",
 		zap.String("cmd", cmd),
@@ -215,12 +246,17 @@ func (sc *ProcedureLauncher) RunProcedure(proc *domain.Procedure, cmd string) (s
 			return "", nil, err
 		}
 
+		var err error
+		var exitCode *int
+
+		if sc.nixDependencyService != nil {
+			instructions = sc.nixDependencyService.GetCommand(instructions, dependencies)
+		}
+
 		logger.Log().Debug("Running exec process",
 			zap.String("cwd", processCwd),
 			zap.Strings("instructions", instructions),
 		)
-		var err error
-		var exitCode *int
 
 		if proc.Mode == "exec-tty" {
 			exitCode, err = sc.processManager.RunTty(cmd, instructions, processCwd)

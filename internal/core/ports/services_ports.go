@@ -41,7 +41,7 @@ type ScrollServiceInterface interface {
 
 type ProcedureLauchnerInterface interface {
 	LaunchPlugins() error
-	RunProcedure(*domain.Procedure, string) (string, *int, error)
+	RunProcedure(*domain.Procedure, string, []string) (string, *int, error)
 	Run(cmd string, runCommandCb func(cmd string) error) error
 	GetProcedureStatuses() map[string]domain.ScrollLockStatus
 }
@@ -183,4 +183,9 @@ type UiDevServiceInterface interface {
 	GetWatchedPaths() []string
 	IsWatching() bool
 	SetCommands(procs map[string]*domain.CommandInstructionSet)
+}
+
+type NixDependencyServiceInterface interface {
+	GetCommand(cmd []string, deps []string) []string
+	EnsureNixInstalled() error
 }

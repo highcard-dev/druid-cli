@@ -33,7 +33,12 @@ commands:
   start:
     needs: [install]
     run: restart
+    dependencies: [jdk17]
     procedures:
+      - mode: exec
+        data:
+          - java
+          - -version
       - mode: exec
         data:
           - java

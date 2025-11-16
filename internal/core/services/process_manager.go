@@ -137,8 +137,6 @@ func (po *ProcessManager) Run(commandName string, command []string, dir string) 
 		zap.String("dir", dir),
 	)
 
-	println("Starting process", commandName, name, args, dir)
-
 	process.Cmd = exec.Command(name, args...)
 	process.Cmd.Dir = dir
 

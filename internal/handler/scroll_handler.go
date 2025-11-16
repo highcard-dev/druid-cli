@@ -22,10 +22,11 @@ type StartScrollRequestBody struct {
 }
 
 type StartProcedureRequestBody struct {
-	Mode    string `json:"mode"`
-	Data    string `json:"data"`
-	Process string `json:"process"`
-	Sync    bool   `json:"sync"`
+	Mode         string   `json:"mode"`
+	Data         string   `json:"data"`
+	Process      string   `json:"process"`
+	Dependencies []string `json:"dependencies"`
+	Sync         bool     `json:"sync"`
 }
 
 func NewScrollHandler(
@@ -132,6 +133,7 @@ func (sl ScrollHandler) RunProcedure(c *fiber.Ctx) error {
 	}
 
 	command := requestBody.Process
+	deps := requestBody.Dependencies
 	process := sl.ProcessManager.GetRunningProcess(command)
 	if process == nil {
 		c.SendString("Running process not found")
@@ -140,10 +142,10 @@ func (sl ScrollHandler) RunProcedure(c *fiber.Ctx) error {
 
 	if !requestBody.Sync {
 
-		go sl.ProcessLauncher.RunProcedure(&procedure, command)
+		go sl.ProcessLauncher.RunProcedure(&procedure, command, deps)
 		return c.SendStatus(201)
 	} else {
-		res, _, err := sl.ProcessLauncher.RunProcedure(&procedure, command)
+		res, _, err := sl.ProcessLauncher.RunProcedure(&procedure, command, deps)
 		if err != nil {
 			c.SendString(err.Error())
 			return c.SendStatus(400)
