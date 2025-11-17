@@ -5,6 +5,13 @@ FROM gameservermanagers/steamcmd:ubuntu-24.04
 COPY --from=base /usr/bin/druid* /usr/bin/
 COPY --from=base /entrypoint.sh /entrypoint.sh
 
+RUN apt-get update && apt-get install -y \
+    ca-certificates wget\
+    && rm -rf /var/lib/apt/lists/*
+
+RUN wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq
+RUN chmod +x /usr/bin/yq
+
 # Set up user with the same UID/GID
 ARG UID=1000
 ARG GID=1000
