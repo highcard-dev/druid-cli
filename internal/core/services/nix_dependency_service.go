@@ -3,8 +3,8 @@ package services
 import (
 	"fmt"
 	"os/exec"
-	"strings"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 )
 
@@ -20,12 +20,12 @@ func (s *NixDependencyService) EnsureNixInstalled() error {
 }
 
 func (s *NixDependencyService) GetCommand(cmd []string, deps []string) []string {
+
 	var cmds = []string{"nix-shell", "--pure"}
 	for _, dep := range deps {
 		cmds = append(cmds, "-p", dep)
 	}
-
-	cmds = append(cmds, "--command", strings.Join(cmd, " "))
+	cmds = append(cmds, "--command", shellescape.QuoteCommand(cmd))
 
 	return cmds
 

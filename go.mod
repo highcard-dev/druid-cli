@@ -106,6 +106,7 @@ require (
 )
 
 require (
+	al.essio.dev/pkg/shellescape v1.6.0
 	github.com/MicahParks/keyfunc v1.9.0
 	github.com/creack/pty v1.1.21
 	github.com/go-co-op/gocron v1.37.0
