@@ -82,7 +82,7 @@ func (udh *UiDevHandler) Enable(ctx *fiber.Ctx) error {
 		udh.uiDevService.SetCommands(requestBody.Commands)
 	}
 
-	watchPaths = append(watchPaths, filepath.Join(scrollDir, "public"), filepath.Join(scrollDir, "private"))
+	watchPaths = append(watchPaths, filepath.Join(scrollDir, "public/src"), filepath.Join(scrollDir, "private/src"))
 
 	// Start file watching with scroll directory as base path
 	err = udh.uiDevService.StartWatching(scrollDir, watchPaths...)

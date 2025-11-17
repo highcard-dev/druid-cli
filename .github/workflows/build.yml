@@ -52,10 +52,13 @@ jobs:
         id: version
         with:
           bump_each_commit: true
-      - uses: actions/download-artifact@v4
-        name: Download build artifacts
-        with:
-          name: build-artifacts
+
+      - run: make build
+        name: Build
+        env:
+          VERSION: ${{ steps.version.outputs.version_tag }}
+      - run: make build-plugins
+        name: Build plugins
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
