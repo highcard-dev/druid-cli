@@ -5,27 +5,21 @@ on:
             dockerfile:
                 required: true
                 type: string
-            tag_suffix:
+            tags:
                 required: true
+                description: |-
+                    Newline or comma separated list of tags to apply to this single-arch image build.
+                    Example:
+                        "highcard/druid:v0.1.170-amd64\nartifacts.druid.gg/druid-team/druid:v0.1.170-amd64"
                 type: string
-            version:
-                required: true
-                type: string
-            version_tag:
-                required: true
-                type: string
-            base_tag_suffix:
+            build_args:
                 required: false
+                description: Optional newline separated build args (KEY=VALUE) passed to docker build.
                 type: string
-                default: ""
-            is_nix:
-                required: false
-                type: boolean
-                default: false
             runs_on:
                 required: false
                 type: string
-                default: "ubuntu-latest"
+                default: ubuntu-latest
         secrets:
             DOCKERHUB_USERNAME:
                 required: true
@@ -56,23 +50,14 @@ jobs:
                   registry: artifacts.druid.gg
                   username: ${{ secrets.DRUID_ARTIFACTS_REGISTRY_USERNAME }}
                   password: ${{ secrets.DRUID_ARTIFACTS_REGISTRY_TOKEN }}
-            #stable is still pretty bleeding edge at this point
-            - name: Build and push Docker image
+            - name: Build and push (single-arch) image
               uses: docker/build-push-action@v6
               with:
                   context: .
                   file: ${{ inputs.dockerfile }}
-                  tags: |
-                      highcard/druid:latest${{ inputs.tag_suffix }}
-                      highcard/druid:stable${{ inputs.tag_suffix }}
-                      highcard/druid:${{ inputs.version }}${{ inputs.tag_suffix }}
-                      highcard/druid:${{ inputs.version_tag }}${{ inputs.tag_suffix }}
-                      artifacts.druid.gg/druid-team/druid:latest${{ inputs.tag_suffix }}
-                      artifacts.druid.gg/druid-team/druid:stable${{ inputs.tag_suffix }}
-                      artifacts.druid.gg/druid-team/druid:${{ inputs.version }}${{ inputs.tag_suffix }}
-                      artifacts.druid.gg/druid-team/druid:${{ inputs.version_tag }}${{ inputs.tag_suffix }}
+                  tags: ${{ inputs.tags }}
                   push: true
                   build-args: |
-                      VERSION=${{ inputs.is_nix && format('{0}{1}', inputs.version, inputs.base_tag_suffix) || inputs.version }}
                       GIT_COMMIT=${{ github.sha }}
                       GIT_BRANCH=${{ github.ref_name }}
+                      ${{ inputs.build_args }}
