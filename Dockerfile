@@ -21,8 +21,15 @@ FROM ubuntu:24.04
 RUN touch /var/mail/ubuntu && chown ubuntu /var/mail/ubuntu && userdel -r ubuntu
 
 RUN apt-get update && apt-get install -y \
-    ca-certificates \
+    ca-certificates wget\
     && rm -rf /var/lib/apt/lists/*
+
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then YQ_ARCH="amd64"; \
+    elif [ "$ARCH" = "aarch64" ]; then YQ_ARCH="arm64"; \
+    else YQ_ARCH="$ARCH"; fi && \
+    wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${YQ_ARCH} -O /usr/bin/yq && \
+    chmod +x /usr/bin/yq
 
 # Copy only the built binaries and entrypoint from builder
 COPY --from=builder /go/bin/druid* /usr/bin/

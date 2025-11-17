@@ -10,8 +10,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "^1.21"
-      #- run: make test-integration-docker
-      #  name: Run integration tests inside Docker
+      - run: make test-integration-docker
+        name: Run integration tests inside Docker
       - run: make test
         name: Unit tests
 
