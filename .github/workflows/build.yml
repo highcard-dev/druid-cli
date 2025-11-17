@@ -90,7 +90,7 @@ jobs:
     uses: ./.github/workflows/docker-build-reusable.yml
     with:
       dockerfile: Dockerfile
-      runs_on: ubuntu-24.04-arm64
+      runs_on: ubuntu-24.04-arm
       tags: |
         highcard/druid:${{ needs.release.outputs.version_tag }}-arm64
         artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version_tag }}-arm64
@@ -116,10 +116,10 @@ jobs:
         uses: Noelware/docker-manifest-action@v1
         with:
           inputs: highcard/druid:${{ needs.release.outputs.version_tag }}-amd64,highcard/druid:${{ needs.release.outputs.version_tag }}-arm64
-          tags: |
-            highcard/druid:latest
-            highcard/druid:stable
-            highcard/druid:${{ needs.release.outputs.version }}
+          tags: >-
+            highcard/druid:latest,
+            highcard/druid:stable,
+            highcard/druid:${{ needs.release.outputs.version }},
             highcard/druid:${{ needs.release.outputs.version_tag }}
           push: true
 
@@ -139,10 +139,10 @@ jobs:
         uses: Noelware/docker-manifest-action@v1
         with:
           inputs: artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version_tag }}-amd64,artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version_tag }}-arm64
-          tags: |
-            artifacts.druid.gg/druid-team/druid:latest
-            artifacts.druid.gg/druid-team/druid:stable
-            artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version }}
+          tags: >-
+            artifacts.druid.gg/druid-team/druid:latest,
+            artifacts.druid.gg/druid-team/druid:stable,
+            artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version }},
             artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version_tag }}
           push: true
 
@@ -189,7 +189,7 @@ jobs:
     uses: ./.github/workflows/docker-build-reusable.yml
     with:
       dockerfile: Dockerfile.nix
-      runs_on: ubuntu-24.04-arm64
+      runs_on: ubuntu-24.04-arm
       tags: |
         highcard/druid:${{ needs.release.outputs.version_tag }}-nix-arm64
         artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version_tag }}-nix-arm64
@@ -237,10 +237,10 @@ jobs:
         uses: Noelware/docker-manifest-action@v1
         with:
           inputs: highcard/druid:${{ needs.release.outputs.version_tag }}-nix-amd64,highcard/druid:${{ needs.release.outputs.version_tag }}-nix-arm64
-          tags: |
-            highcard/druid:latest-nix
-            highcard/druid:stable-nix
-            highcard/druid:${{ needs.release.outputs.version }}-nix
+          tags: >-
+            highcard/druid:latest-nix,
+            highcard/druid:stable-nix,
+            highcard/druid:${{ needs.release.outputs.version }}-nix,
             highcard/druid:${{ needs.release.outputs.version_tag }}-nix
           push: true
 
@@ -260,9 +260,9 @@ jobs:
         uses: Noelware/docker-manifest-action@v1
         with:
           inputs: artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version_tag }}-nix-amd64,artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version_tag }}-nix-arm64
-          tags: |
-            artifacts.druid.gg/druid-team/druid:latest-nix
-            artifacts.druid.gg/druid-team/druid:stable-nix
-            artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version }}-nix
+          tags: >-
+            artifacts.druid.gg/druid-team/druid:latest-nix,
+            artifacts.druid.gg/druid-team/druid:stable-nix,
+            artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version }}-nix,
             artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version_tag }}-nix
           push: true
