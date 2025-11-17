@@ -90,7 +90,7 @@ jobs:
     uses: ./.github/workflows/docker-build-reusable.yml
     with:
       dockerfile: Dockerfile
-      runs_on: ubuntu-24.04-arm64
+      runs_on: ubuntu-24.04-arm
       tags: |
         highcard/druid:${{ needs.release.outputs.version_tag }}-arm64
         artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version_tag }}-arm64
@@ -189,7 +189,7 @@ jobs:
     uses: ./.github/workflows/docker-build-reusable.yml
     with:
       dockerfile: Dockerfile.nix
-      runs_on: ubuntu-24.04-arm64
+      runs_on: ubuntu-24.04-arm
       tags: |
         highcard/druid:${{ needs.release.outputs.version_tag }}-nix-arm64
         artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version_tag }}-nix-arm64
