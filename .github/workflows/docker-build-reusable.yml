@@ -26,6 +26,10 @@ on:
                 required: false
                 type: string
                 default: "ubuntu-latest"
+            arch_suffix:
+                required: false
+                type: string
+                default: ""
         secrets:
             DOCKERHUB_USERNAME:
                 required: true
@@ -63,14 +67,14 @@ jobs:
                   context: .
                   file: ${{ inputs.dockerfile }}
                   tags: |
-                      highcard/druid:latest${{ inputs.tag_suffix }}
-                      highcard/druid:stable${{ inputs.tag_suffix }}
-                      highcard/druid:${{ inputs.version }}${{ inputs.tag_suffix }}
-                      highcard/druid:${{ inputs.version_tag }}${{ inputs.tag_suffix }}
-                      artifacts.druid.gg/druid-team/druid:latest${{ inputs.tag_suffix }}
-                      artifacts.druid.gg/druid-team/druid:stable${{ inputs.tag_suffix }}
-                      artifacts.druid.gg/druid-team/druid:${{ inputs.version }}${{ inputs.tag_suffix }}
-                      artifacts.druid.gg/druid-team/druid:${{ inputs.version_tag }}${{ inputs.tag_suffix }}
+                      highcard/druid:latest${{ inputs.tag_suffix }}${{ inputs.arch_suffix }}
+                      highcard/druid:stable${{ inputs.tag_suffix }}${{ inputs.arch_suffix }}
+                      highcard/druid:${{ inputs.version }}${{ inputs.tag_suffix }}${{ inputs.arch_suffix }}
+                      highcard/druid:${{ inputs.version_tag }}${{ inputs.tag_suffix }}${{ inputs.arch_suffix }}
+                      artifacts.druid.gg/druid-team/druid:latest${{ inputs.tag_suffix }}${{ inputs.arch_suffix }}
+                      artifacts.druid.gg/druid-team/druid:stable${{ inputs.tag_suffix }}${{ inputs.arch_suffix }}
+                      artifacts.druid.gg/druid-team/druid:${{ inputs.version }}${{ inputs.tag_suffix }}${{ inputs.arch_suffix }}
+                      artifacts.druid.gg/druid-team/druid:${{ inputs.version_tag }}${{ inputs.tag_suffix }}${{ inputs.arch_suffix }}
                   push: true
                   build-args: |
                       VERSION=${{ inputs.is_nix && format('{0}{1}', inputs.version, inputs.base_tag_suffix) || inputs.version }}

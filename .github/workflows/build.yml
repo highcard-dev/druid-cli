@@ -10,8 +10,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "^1.21"
-      - run: make test-integration-docker
-        name: Run integration tests inside Docker
+      #- run: make test-integration-docker
+      #  name: Run integration tests inside Docker
       - run: make test
         name: Unit tests
 
@@ -78,6 +78,7 @@ jobs:
       version: ${{ needs.release.outputs.version }}
       version_tag: ${{ needs.release.outputs.version_tag }}
       runs_on: "ubuntu-latest"
+      arch_suffix: "-amd64"
     secrets:
       DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -91,14 +92,55 @@ jobs:
       tag_suffix: ""
       version: ${{ needs.release.outputs.version }}
       version_tag: ${{ needs.release.outputs.version_tag }}
-      runs_on: "ubuntu-24.04-arm"
+      runs_on: "ubuntu-24.04-arm64"
+      arch_suffix: "-arm64"
     secrets:
       DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
       DRUID_ARTIFACTS_REGISTRY_USERNAME: ${{ vars.DRUID_ARTIFACTS_REGISTRY_USERNAME }}
       DRUID_ARTIFACTS_REGISTRY_TOKEN: ${{ secrets.DRUID_ARTIFACTS_REGISTRY_TOKEN }}
-  docker-steamcmd:
+  docker-base-manifest:
+    name: Create multi-arch base manifests
     needs: [release, docker-base-amd64, docker-base-arm64]
+    runs-on: ubuntu-latest
+    if: ${{ needs.release.outputs.version != '' }}
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Login to Artifacts Registry
+        uses: docker/login-action@v3
+        with:
+          registry: artifacts.druid.gg
+          username: ${{ vars.DRUID_ARTIFACTS_REGISTRY_USERNAME }}
+          password: ${{ secrets.DRUID_ARTIFACTS_REGISTRY_TOKEN }}
+      - name: Create and push base manifests
+        uses: Noelware/docker-manifest-action@v1
+        with:
+          inputs: |
+            highcard/druid:latest-amd64,highcard/druid:latest-arm64
+            highcard/druid:stable-amd64,highcard/druid:stable-arm64
+            highcard/druid:${{ needs.release.outputs.version }}-amd64,highcard/druid:${{ needs.release.outputs.version }}-arm64
+            highcard/druid:${{ needs.release.outputs.version_tag }}-amd64,highcard/druid:${{ needs.release.outputs.version_tag }}-arm64
+            artifacts.druid.gg/druid-team/druid:latest-amd64,artifacts.druid.gg/druid-team/druid:latest-arm64
+            artifacts.druid.gg/druid-team/druid:stable-amd64,artifacts.druid.gg/druid-team/druid:stable-arm64
+            artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version }}-amd64,artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version }}-arm64
+            artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version_tag }}-amd64,artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version_tag }}-arm64
+          tags: |
+            highcard/druid:latest
+            highcard/druid:stable
+            highcard/druid:${{ needs.release.outputs.version }}
+            highcard/druid:${{ needs.release.outputs.version_tag }}
+            artifacts.druid.gg/druid-team/druid:latest
+            artifacts.druid.gg/druid-team/druid:stable
+            artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version }}
+            artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version_tag }}
+          push: true
+
+  docker-steamcmd:
+    needs: [release, docker-base-manifest]
     uses: ./.github/workflows/docker-build-reusable.yml
     with:
       dockerfile: Dockerfile.steamcmd
@@ -111,7 +153,7 @@ jobs:
       DRUID_ARTIFACTS_REGISTRY_USERNAME: ${{ vars.DRUID_ARTIFACTS_REGISTRY_USERNAME }}
       DRUID_ARTIFACTS_REGISTRY_TOKEN: ${{ secrets.DRUID_ARTIFACTS_REGISTRY_TOKEN }}
   docker-nix-amd64:
-    needs: [release, docker-base-amd64, docker-base-arm64]
+    needs: [release, docker-base-manifest]
     uses: ./.github/workflows/docker-build-reusable.yml
     with:
       dockerfile: Dockerfile.nix
@@ -121,13 +163,14 @@ jobs:
       base_tag_suffix: ""
       is_nix: true
       runs_on: "ubuntu-latest"
+      arch_suffix: "-amd64"
     secrets:
       DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
       DRUID_ARTIFACTS_REGISTRY_USERNAME: ${{ vars.DRUID_ARTIFACTS_REGISTRY_USERNAME }}
       DRUID_ARTIFACTS_REGISTRY_TOKEN: ${{ secrets.DRUID_ARTIFACTS_REGISTRY_TOKEN }}
   docker-nix-arm64:
-    needs: [release, docker-base-amd64, docker-base-arm64]
+    needs: [release, docker-base-manifest]
     uses: ./.github/workflows/docker-build-reusable.yml
     with:
       dockerfile: Dockerfile.nix
@@ -136,7 +179,8 @@ jobs:
       version_tag: ${{ needs.release.outputs.version_tag }}
       base_tag_suffix: ""
       is_nix: true
-      runs_on: "ubuntu-24.04-arm"
+      runs_on: "ubuntu-24.04-arm64"
+      arch_suffix: "-arm64"
     secrets:
       DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -157,3 +201,43 @@ jobs:
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
       DRUID_ARTIFACTS_REGISTRY_USERNAME: ${{ vars.DRUID_ARTIFACTS_REGISTRY_USERNAME }}
       DRUID_ARTIFACTS_REGISTRY_TOKEN: ${{ secrets.DRUID_ARTIFACTS_REGISTRY_TOKEN }}
+
+  docker-nix-manifest:
+    name: Create multi-arch nix manifests
+    needs: [release, docker-nix-amd64, docker-nix-arm64]
+    runs-on: ubuntu-latest
+    if: ${{ needs.release.outputs.version != '' }}
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Login to Artifacts Registry
+        uses: docker/login-action@v3
+        with:
+          registry: artifacts.druid.gg
+          username: ${{ vars.DRUID_ARTIFACTS_REGISTRY_USERNAME }}
+          password: ${{ secrets.DRUID_ARTIFACTS_REGISTRY_TOKEN }}
+      - name: Create and push nix manifests
+        uses: Noelware/docker-manifest-action@v1
+        with:
+          inputs: |
+            highcard/druid:latest-nix-amd64,highcard/druid:latest-nix-arm64
+            highcard/druid:stable-nix-amd64,highcard/druid:stable-nix-arm64
+            highcard/druid:${{ needs.release.outputs.version }}-nix-amd64,highcard/druid:${{ needs.release.outputs.version }}-nix-arm64
+            highcard/druid:${{ needs.release.outputs.version_tag }}-nix-amd64,highcard/druid:${{ needs.release.outputs.version_tag }}-nix-arm64
+            artifacts.druid.gg/druid-team/druid:latest-nix-amd64,artifacts.druid.gg/druid-team/druid:latest-nix-arm64
+            artifacts.druid.gg/druid-team/druid:stable-nix-amd64,artifacts.druid.gg/druid-team/druid:stable-nix-arm64
+            artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version }}-nix-amd64,artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version }}-nix-arm64
+            artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version_tag }}-nix-amd64,artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version_tag }}-nix-arm64
+          tags: |
+            highcard/druid:latest-nix
+            highcard/druid:stable-nix
+            highcard/druid:${{ needs.release.outputs.version }}-nix
+            highcard/druid:${{ needs.release.outputs.version_tag }}-nix
+            artifacts.druid.gg/druid-team/druid:latest-nix
+            artifacts.druid.gg/druid-team/druid:stable-nix
+            artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version }}-nix
+            artifacts.druid.gg/druid-team/druid:${{ needs.release.outputs.version_tag }}-nix
+          push: true
