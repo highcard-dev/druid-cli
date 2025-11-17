@@ -342,12 +342,12 @@ func (uds *UiDevService) handleBuildCommands() {
 	broadcastChannel := uds.broadcastChannel
 	uds.mu.Unlock()
 
-	broadcastEvent := func() {
+	broadcastEvent := func(name string) {
 		if broadcastChannel == nil {
 			return
 		}
 		var cmdDoneEvent = CommandDoneEvent{
-			CommandKey: "file-change-event",
+			CommandKey: name,
 			Timestamp:  time.Now(),
 		}
 		eventCmdData, err := json.Marshal(cmdDoneEvent)
@@ -359,17 +359,18 @@ func (uds *UiDevService) handleBuildCommands() {
 	}
 
 	for key := range commands {
+		broadcastEvent("build-started")
 		uds.queueManager.AddTempItemWithWait(key)
-		broadcastEvent()
+		broadcastEvent("build-ended")
 
 		// Check if changes occurred during build
 		uds.mu.Lock()
 		for uds.changeAfterBuild {
 			uds.changeAfterBuild = false
 			uds.mu.Unlock()
-
+			broadcastEvent("build-started")
 			uds.queueManager.AddTempItemWithWait(key)
-			broadcastEvent()
+			broadcastEvent("build-ended")
 
 			uds.mu.Lock()
 		}
