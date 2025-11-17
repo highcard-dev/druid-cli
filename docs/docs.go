@@ -659,6 +659,12 @@ const docTemplate = `{
         "CommandInstructionSet": {
             "type": "object",
             "properties": {
+                "dependencies": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "needs": {
                     "type": "array",
                     "items": {
@@ -1153,6 +1159,12 @@ const docTemplate = `{
             "properties": {
                 "data": {
                     "type": "string"
+                },
+                "dependencies": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "mode": {
                     "type": "string"

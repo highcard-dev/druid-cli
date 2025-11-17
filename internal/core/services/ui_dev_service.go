@@ -23,6 +23,11 @@ type FileChangeEvent struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
+type CommandDoneEvent struct {
+	CommandKey string    `json:"command_key"`
+	Timestamp  time.Time `json:"timestamp"`
+}
+
 // UiDevService handles file watching and change notifications for UI development
 type UiDevService struct {
 	watcher          *fsnotify.Watcher
@@ -36,7 +41,8 @@ type UiDevService struct {
 	commands         map[string]*domain.CommandInstructionSet
 	queueManager     ports.QueueManagerInterface
 	scrollService    ports.ScrollServiceInterface
-	events           uint32
+	buildActive      bool
+	changeAfterBuild bool
 }
 
 // NewUiDevService creates a new instance of UiDevService
@@ -207,6 +213,10 @@ func (uds *UiDevService) addWatchPath(path string) error {
 		}
 
 		if info.IsDir() {
+			// Skip node_modules directories
+			if info.Name() == "node_modules" {
+				return filepath.SkipDir
+			}
 			return uds.watcher.Add(walkPath)
 		}
 		return nil
@@ -252,23 +262,16 @@ func (uds *UiDevService) processEvents() {
 // handleFileEvent processes a single file system event and broadcasts it
 func (uds *UiDevService) handleFileEvent(event fsnotify.Event) {
 	// Convert absolute path to relative path
+	uds.mu.RLock()
+	basePath := uds.basePath
+	broadcastChannel := uds.broadcastChannel
+	uds.mu.RUnlock()
+
 	relativePath := event.Name
-	if uds.basePath != "" {
-		if relPath, err := filepath.Rel(uds.basePath, event.Name); err == nil {
+	if basePath != "" {
+		if relPath, err := filepath.Rel(basePath, event.Name); err == nil {
 			relativePath = relPath
 		}
-	}
-	uds.events++
-	if uds.commands != nil && len(uds.commands) > 0 {
-		go func() {
-			e := uds.events - 1
-			for uds.events != e {
-				e = uds.events
-				for key, _ := range uds.commands {
-					uds.queueManager.AddTempItemWithWait(key)
-				}
-			}
-		}()
 	}
 
 	changeEvent := FileChangeEvent{
@@ -285,19 +288,95 @@ func (uds *UiDevService) handleFileEvent(event fsnotify.Event) {
 	}
 
 	// Broadcast the event to all subscribers
-	if !uds.broadcastChannel.Broadcast(eventData) {
-		// Silently drop if channel is full - this is normal during high activity
-		logger.Log().Debug("Dropped file change event (channel busy)", zap.String("path", event.Name))
+	if broadcastChannel != nil {
+		if !broadcastChannel.Broadcast(eventData) {
+			// Silently drop if channel is full - this is normal during high activity
+			logger.Log().Debug("Dropped file change event (channel busy)", zap.String("path", event.Name))
+		}
 	}
 
 	// Handle directory creation - add new directories to watcher
 	if event.Op&fsnotify.Create == fsnotify.Create {
 		if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
-			if err := uds.watcher.Add(event.Name); err != nil {
-				logger.Log().Warn("Failed to add new directory to watcher", zap.String("path", event.Name), zap.Error(err))
-			} else {
-				logger.Log().Info("Added new directory to watcher", zap.String("path", event.Name))
+			uds.mu.RLock()
+			watcher := uds.watcher
+			uds.mu.RUnlock()
+
+			if watcher != nil {
+				if err := watcher.Add(event.Name); err != nil {
+					logger.Log().Warn("Failed to add new directory to watcher", zap.String("path", event.Name), zap.Error(err))
+				} else {
+					logger.Log().Info("Added new directory to watcher", zap.String("path", event.Name))
+				}
 			}
 		}
 	}
+
+	// Handle build commands in a separate goroutine to avoid blocking the event loop
+	go uds.handleBuildCommands()
+}
+
+// handleBuildCommands processes build commands with proper synchronization
+func (uds *UiDevService) handleBuildCommands() {
+	uds.mu.Lock()
+
+	// Prevent overlapping builds - if build is active, mark that a change occurred
+	if uds.buildActive {
+		uds.changeAfterBuild = true
+		uds.mu.Unlock()
+		return
+	}
+
+	// Check if there are commands to execute
+	if uds.commands == nil || len(uds.commands) == 0 {
+		uds.mu.Unlock()
+		return
+	}
+
+	// Mark build as active and get snapshot of commands
+	uds.buildActive = true
+	commands := make(map[string]*domain.CommandInstructionSet, len(uds.commands))
+	for key, cmd := range uds.commands {
+		commands[key] = cmd
+	}
+	broadcastChannel := uds.broadcastChannel
+	uds.mu.Unlock()
+
+	broadcastEvent := func() {
+		if broadcastChannel == nil {
+			return
+		}
+		var cmdDoneEvent = CommandDoneEvent{
+			CommandKey: "file-change-event",
+			Timestamp:  time.Now(),
+		}
+		eventCmdData, err := json.Marshal(cmdDoneEvent)
+		if err != nil {
+			logger.Log().Error("Failed to marshal command done event", zap.Error(err))
+			return
+		}
+		broadcastChannel.Broadcast(eventCmdData)
+	}
+
+	for key := range commands {
+		uds.queueManager.AddTempItemWithWait(key)
+		broadcastEvent()
+
+		// Check if changes occurred during build
+		uds.mu.Lock()
+		for uds.changeAfterBuild {
+			uds.changeAfterBuild = false
+			uds.mu.Unlock()
+
+			uds.queueManager.AddTempItemWithWait(key)
+			broadcastEvent()
+
+			uds.mu.Lock()
+		}
+		uds.mu.Unlock()
+	}
+
+	uds.mu.Lock()
+	uds.buildActive = false
+	uds.mu.Unlock()
 }
