@@ -30,19 +30,20 @@ type CommandDoneEvent struct {
 
 // UiDevService handles file watching and change notifications for UI development
 type UiDevService struct {
-	watcher          *fsnotify.Watcher
-	broadcastChannel *domain.BroadcastChannel
-	watchPaths       []string
-	basePath         string // Base path for making relative paths
-	mu               sync.RWMutex
-	ctx              context.Context
-	cancel           context.CancelFunc
-	isWatching       bool
-	commands         map[string]*domain.CommandInstructionSet
-	queueManager     ports.QueueManagerInterface
-	scrollService    ports.ScrollServiceInterface
-	buildActive      bool
-	changeAfterBuild bool
+	watcher           *fsnotify.Watcher
+	broadcastChannel  *domain.BroadcastChannel
+	watchPaths        []string
+	basePath          string // Base path for making relative paths
+	mu                sync.RWMutex
+	ctx               context.Context
+	cancel            context.CancelFunc
+	isWatching        bool
+	hotReloadCommands map[string]*domain.CommandInstructionSet
+	buildCommands     map[string]*domain.CommandInstructionSet
+	queueManager      ports.QueueManagerInterface
+	scrollService     ports.ScrollServiceInterface
+	buildActive       bool
+	changeAfterBuild  bool
 }
 
 // NewUiDevService creates a new instance of UiDevService
@@ -57,13 +58,34 @@ func NewUiDevService(
 	}
 }
 
-func (uds *UiDevService) SetCommands(commands map[string]*domain.CommandInstructionSet) {
+func (uds *UiDevService) SetHotReloadCommands(commands map[string]*domain.CommandInstructionSet) {
 	uds.mu.Lock()
 	defer uds.mu.Unlock()
-	uds.commands = commands
+	uds.hotReloadCommands = commands
 	for key, cmd := range commands {
 		uds.scrollService.AddTemporaryCommand(key, cmd)
 	}
+}
+func (uds *UiDevService) SetBuildCommands(commands map[string]*domain.CommandInstructionSet) {
+	uds.mu.Lock()
+	defer uds.mu.Unlock()
+	uds.buildCommands = commands
+	for key, cmd := range commands {
+		uds.scrollService.AddTemporaryCommand(key, cmd)
+	}
+}
+
+func (uds *UiDevService) Build() error {
+	uds.mu.RLock()
+	isWatching := uds.isWatching
+	uds.mu.RUnlock()
+
+	if !isWatching {
+		return errors.New("cannot build: dev mode is not enabled")
+	}
+
+	uds.handleBuildCommands()
+	return nil
 }
 
 // StartWatching initializes the file watcher and starts monitoring specified paths
@@ -312,12 +334,22 @@ func (uds *UiDevService) handleFileEvent(event fsnotify.Event) {
 		}
 	}
 
-	// Handle build commands in a separate goroutine to avoid blocking the event loop
-	go uds.handleBuildCommands()
+	// Handle hot reload commands in a separate goroutine to avoid blocking the event loop
+	go uds.handleHotReloadCommands()
+}
+
+// handleHotReloadCommands processes hot reload commands triggered by file changes
+func (uds *UiDevService) handleHotReloadCommands() {
+	uds.executeCommands(uds.hotReloadCommands, "hot-reload")
 }
 
 // handleBuildCommands processes build commands with proper synchronization
 func (uds *UiDevService) handleBuildCommands() {
+	uds.executeCommands(uds.buildCommands, "build")
+}
+
+// executeCommands is a unified method for executing both build and hot reload commands
+func (uds *UiDevService) executeCommands(commandsMap map[string]*domain.CommandInstructionSet, commandType string) {
 	uds.mu.Lock()
 
 	// Prevent overlapping builds - if build is active, mark that a change occurred
@@ -328,15 +360,15 @@ func (uds *UiDevService) handleBuildCommands() {
 	}
 
 	// Check if there are commands to execute
-	if uds.commands == nil || len(uds.commands) == 0 {
+	if commandsMap == nil || len(commandsMap) == 0 {
 		uds.mu.Unlock()
 		return
 	}
 
 	// Mark build as active and get snapshot of commands
 	uds.buildActive = true
-	commands := make(map[string]*domain.CommandInstructionSet, len(uds.commands))
-	for key, cmd := range uds.commands {
+	commands := make(map[string]*domain.CommandInstructionSet, len(commandsMap))
+	for key, cmd := range commandsMap {
 		commands[key] = cmd
 	}
 	broadcastChannel := uds.broadcastChannel

@@ -186,6 +186,7 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 
 	//UI Dev Group
 	apiRoutes.Post("/dev/enable", s.uiDevHandler.Enable).Name("dev.enable")
+	apiRoutes.Post("/dev/build", s.uiDevHandler.Build).Name("dev.build")
 	apiRoutes.Post("/dev/disable", s.uiDevHandler.Disable).Name("dev.disable")
 	apiRoutes.Get("/dev/status", s.uiDevHandler.Status).Name("dev.status")
 

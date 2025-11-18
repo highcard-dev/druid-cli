@@ -182,7 +182,9 @@ type UiDevServiceInterface interface {
 	Unsubscribe(client chan *[]byte)
 	GetWatchedPaths() []string
 	IsWatching() bool
-	SetCommands(procs map[string]*domain.CommandInstructionSet)
+	SetHotReloadCommands(procs map[string]*domain.CommandInstructionSet)
+	SetBuildCommands(procs map[string]*domain.CommandInstructionSet)
+	Build() error
 }
 
 type NixDependencyServiceInterface interface {

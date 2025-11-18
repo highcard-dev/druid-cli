@@ -62,6 +62,7 @@ type UiHandlerInterface interface {
 
 type UiDevHandlerInterface interface {
 	Enable(ctx *fiber.Ctx) error
+	Build(ctx *fiber.Ctx) error
 	Disable(ctx *fiber.Ctx) error
 	Status(ctx *fiber.Ctx) error
 	NotifyChange(c *websocket.Conn)

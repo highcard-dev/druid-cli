@@ -311,7 +311,11 @@ definitions:
     - ScrollLockStatusWaiting
   handler.DevModeBody:
     properties:
-      commands:
+      buildCommands:
+        additionalProperties:
+          $ref: '#/definitions/CommandInstructionSet'
+        type: object
+      hotReloadCommands:
         additionalProperties:
           $ref: '#/definitions/CommandInstructionSet'
         type: object
@@ -432,6 +436,26 @@ paths:
       tags:
       - druid
       - daemon
+  /api/v1/dev/build:
+    post:
+      consumes:
+      - application/json
+      operationId: buildDev
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "412":
+          description: Precondition Failed
+        "500":
+          description: Internal Server Error
+      summary: Build the UI in development mode
+      tags:
+      - ui
+      - dev
+      - druid
+      - daemon
   /api/v1/dev/disable:
     post:
       consumes:
@@ -476,6 +500,7 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/ErrorResponse'
+      summary: Enable development mode
       tags:
       - ui
       - dev

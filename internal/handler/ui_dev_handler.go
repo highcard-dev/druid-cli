@@ -37,7 +37,8 @@ type UiDevHandler struct {
 }
 
 type DevModeBody struct {
-	Commands map[string]*domain.CommandInstructionSet `json:"commands,omitempty"`
+	HotReloadCommands map[string]*domain.CommandInstructionSet `json:"hotReloadCommands,omitempty"`
+	BuildCommands     map[string]*domain.CommandInstructionSet `json:"buildCommands,omitempty"`
 }
 
 func NewUiDevHandler(uiDevService ports.UiDevServiceInterface, scrollService ports.ScrollServiceInterface) *UiDevHandler {
@@ -45,7 +46,37 @@ func NewUiDevHandler(uiDevService ports.UiDevServiceInterface, scrollService por
 		uiDevService:  uiDevService,
 		scrollService: scrollService,
 	}
-} // @Summary Enable development mode
+}
+
+// @Summary Build the UI in development mode
+// @ID buildDev
+// @Tags ui, dev, druid, daemon
+// @Accept json
+// @Produce json
+// @Success 200
+// @Success 412
+// @Failure 500
+// @Router /api/v1/dev/build [post]
+func (udh *UiDevHandler) Build(ctx *fiber.Ctx) error {
+	if !udh.uiDevService.IsWatching() {
+		ctx.Status(fiber.StatusPreconditionFailed)
+		return nil
+	}
+
+	err := udh.uiDevService.Build()
+	if err != nil {
+		logger.Log().Error("Failed to run build commands", zap.Error(err))
+		errorResponse := ErrorResponse{
+			Status: "error",
+			Error:  err.Error(),
+		}
+		return ctx.Status(500).JSON(errorResponse)
+	}
+
+	return nil
+}
+
+// @Summary Enable development mode
 // @ID enableDev
 // @Tags ui, dev, druid, daemon
 // @Accept json
@@ -60,6 +91,7 @@ func (udh *UiDevHandler) Enable(ctx *fiber.Ctx) error {
 			Status:  "already-active",
 			Enabled: true,
 		}
+		ctx.Status(fiber.StatusPreconditionFailed)
 		return ctx.JSON(response)
 	}
 
@@ -79,7 +111,8 @@ func (udh *UiDevHandler) Enable(ctx *fiber.Ctx) error {
 
 	err := ctx.BodyParser(&requestBody)
 	if err == nil {
-		udh.uiDevService.SetCommands(requestBody.Commands)
+		udh.uiDevService.SetHotReloadCommands(requestBody.HotReloadCommands)
+		udh.uiDevService.SetBuildCommands(requestBody.BuildCommands)
 	}
 
 	watchPaths = append(watchPaths, filepath.Join(scrollDir, "public/src"), filepath.Join(scrollDir, "private/src"))

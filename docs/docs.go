@@ -120,6 +120,35 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/dev/build": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ui",
+                    "dev",
+                    "druid",
+                    "daemon"
+                ],
+                "summary": "Build the UI in development mode",
+                "operationId": "buildDev",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "412": {
+                        "description": "Precondition Failed"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
         "/api/v1/dev/disable": {
             "post": {
                 "consumes": [
@@ -166,6 +195,7 @@ const docTemplate = `{
                     "druid",
                     "daemon"
                 ],
+                "summary": "Enable development mode",
                 "operationId": "enableDev",
                 "parameters": [
                     {
@@ -1121,7 +1151,13 @@ const docTemplate = `{
         "handler.DevModeBody": {
             "type": "object",
             "properties": {
-                "commands": {
+                "buildCommands": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/CommandInstructionSet"
+                    }
+                },
+                "hotReloadCommands": {
                     "type": "object",
                     "additionalProperties": {
                         "$ref": "#/definitions/CommandInstructionSet"
