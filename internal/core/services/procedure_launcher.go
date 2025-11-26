@@ -249,7 +249,7 @@ func (sc *ProcedureLauncher) RunProcedure(proc *domain.Procedure, cmd string, de
 		var err error
 		var exitCode *int
 
-		if sc.nixDependencyService != nil {
+		if sc.nixDependencyService != nil && len(dependencies) > 0 {
 			instructions = sc.nixDependencyService.GetCommand(instructions, dependencies)
 		}
 
