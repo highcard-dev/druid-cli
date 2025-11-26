@@ -2,6 +2,8 @@ ARG VERSION=latest
 FROM highcard/druid:${VERSION} AS base
 FROM gameservermanagers/steamcmd:ubuntu-24.04
 
+RUN if id -u steam >/dev/null 2>&1; then echo "Removing steam user from base image"; userdel -r steam || true; else echo "steam user not present"; fi
+
 COPY --from=base /usr/bin/druid* /usr/bin/
 COPY --from=base /entrypoint.sh /entrypoint.sh
 
