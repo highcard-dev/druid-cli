@@ -18,7 +18,7 @@ func TestGetCommandPassthrough(t *testing.T) {
 	in := []string{"echo", "hello"}
 	deps := []string{"nodejs", "python3"}
 	out := svc.GetCommand(in, deps)
-	expected := []string{"nix-shell", "--pure", "-p", "nodejs", "-p", "python3", "--command", "echo hello"}
+	expected := []string{"nix-shell", "-p", "nodejs", "-p", "python3", "--command", "echo hello"}
 	for i, v := range expected {
 		if out[i] != v {
 			t.Errorf("expected out[%d] = %s got %s", i, v, out[i])

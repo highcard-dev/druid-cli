@@ -21,7 +21,7 @@ func (s *NixDependencyService) EnsureNixInstalled() error {
 
 func (s *NixDependencyService) GetCommand(cmd []string, deps []string) []string {
 
-	var cmds = []string{"nix-shell", "--pure"}
+	var cmds = []string{"nix-shell"}
 	for _, dep := range deps {
 		cmds = append(cmds, "-p", dep)
 	}
