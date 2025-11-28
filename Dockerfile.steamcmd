@@ -23,9 +23,10 @@ RUN useradd -m -u $UID -g $GID -o -s /bin/bash druid
 USER druid
 
 # backward compatibility for lgsm scrolls, please clean this up, but otherwise configs are not found for lgsm!
-ENV LGSM_SERVERFILES=/app/resources/deployment/serverfiles
-ENV LGSM_CONFIG=/app/resources/deployment/config-lgsm
-ENV LGSM_LOGDIR=/app/resources/deployment/log
-ENV LGSM_DATADIR=/app/resources/deployment/data
+# removed now, as this image should be universal, but kept for reference
+#ENV LGSM_SERVERFILES=/app/resources/deployment/serverfiles
+#ENV LGSM_CONFIG=/app/resources/deployment/config-lgsm
+#ENV LGSM_LOGDIR=/app/resources/deployment/log
+#ENV LGSM_DATADIR=/app/resources/deployment/data
 
 ENTRYPOINT [ "/entrypoint.sh" ]
