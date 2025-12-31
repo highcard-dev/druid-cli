@@ -6,6 +6,16 @@ input=$@
 
 echo "Druid Version: $(druid version)"
 
+if [ ! -z "$ENSURE_NIX" ];
+then
+    if [ ! -e "$HOME/.nix-profile" ];
+    then
+        echo "Installing Nix package manager"
+        sh <(curl --proto '=https' --tlsv1.2 -L https://nixos.org/nix/install) --no-daemon
+        echo "Nix installed"
+    fi
+fi
+
 #Check if we should serve as default or when only artifact is specified
 if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]] &&  [[ $input != *" "* ]]; then    artifact="${input}"
     if [ -z "${artifact}" ];
