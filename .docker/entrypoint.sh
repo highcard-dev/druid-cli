@@ -6,7 +6,7 @@ input=$@
 
 echo "Druid Version: $(druid version)"
 
-if [ ! -z "$ENSURE_NIX" ];
+if [ "${ENSURE_NIX}" = "true" ];
 then
     if [ ! -e "$HOME/.nix-profile" ];
     then
@@ -14,6 +14,7 @@ then
         sh <(curl --proto '=https' --tlsv1.2 -L https://nixos.org/nix/install) --no-daemon
         echo "Nix installed"
     fi
+    nix-channel --update
 fi
 
 #Check if we should serve as default or when only artifact is specified

@@ -12,3 +12,4 @@ USER druid
 RUN bash -c "sh <(curl --proto '=https' --tlsv1.2 -L https://nixos.org/nix/install) --no-daemon"
 # Make nix available in PATH for all RUN commands
 ENV PATH=/home/druid/.nix-profile/bin:/home/druid/.nix-profile/sbin:$PATH
+ENV NIX_PATH="nixpkgs=~/.nix-defexpr/channels/nixpkgs"
