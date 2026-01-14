@@ -356,12 +356,16 @@ func startup(scrollService *services.ScrollService, snapshotService ports.Snapsh
 
 	queueManager.RegisterCallbacks(callbacks)
 
-	logger.Log().Info("Queuing lock file")
+	if !ignoreLockfileQueue {
+		logger.Log().Info("Queuing lock file")
 
-	err = queueManager.QueueLockFile()
-	if err != nil {
-		doneChan <- err
-		return
+		err = queueManager.QueueLockFile()
+		if err != nil {
+			doneChan <- err
+			return
+		}
+	} else {
+		logger.Log().Info("Skipping lock file queue (--ignore-lockfile-queue set)")
 	}
 
 	//schedule crons

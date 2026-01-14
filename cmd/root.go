@@ -9,6 +9,7 @@ import (
 
 var envPath string
 var cwd string
+var ignoreLockfileQueue bool
 
 var RootCmd = &cobra.Command{
 	Use:   "druid",
@@ -43,6 +44,7 @@ func init() {
 
 	RootCmd.PersistentFlags().StringVarP(&envPath, "env-file", "e", "./.env", "Path to environment file (.env)")
 	RootCmd.PersistentFlags().BoolVar(&ignoreVersionCheck, "ignore-version-check", false, "Ignore version check between scroll.yaml and scroll-lock.json")
+	RootCmd.PersistentFlags().BoolVar(&ignoreLockfileQueue, "ignore-lockfile-queue", false, "Skip queuing the lock file")
 
 }
 

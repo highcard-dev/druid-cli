@@ -54,6 +54,17 @@ var RunCmd = &cobra.Command{
 			return fmt.Errorf("error initializing scroll: %w", err)
 		}
 
+		if !ignoreLockfileQueue {
+			logger.Log().Info("Queuing lock file")
+
+			err = queueManager.QueueLockFile()
+			if err != nil {
+				return fmt.Errorf("error queuing lock file: %w", err)
+			}
+		} else {
+			logger.Log().Info("Skipping lock file queue (--ignore-lockfile-queue set)")
+		}
+
 		logger.Log().Info("Adding command to queue", zap.String("command", command))
 		err = queueManager.AddTempItem(command)
 		if err != nil {
