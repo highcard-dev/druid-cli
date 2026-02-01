@@ -545,6 +545,21 @@ components:
         value:
           type: string
 
+    ScrollLockStatus:
+      type: string
+      enum:
+        - running
+        - done
+        - error
+        - waiting
+      description: Status of a command in the queue
+
+    QueueResponse:
+      type: object
+      description: Map of command IDs to their execution status
+      additionalProperties:
+        $ref: '#/components/schemas/ScrollLockStatus'
+
 paths:
   # Scroll Endpoints
   /scroll:
@@ -767,9 +782,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties:
-                  type: object
+                $ref: '#/components/schemas/QueueResponse'
 
   # WebSocket Endpoints
   /token:
