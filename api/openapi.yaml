@@ -552,7 +552,7 @@ paths:
       operationId: getScroll
       summary: Get current scroll
       description: Returns the currently loaded scroll configuration
-      tags: [scroll]
+      tags: [scroll, daemon]
       security:
         - bearerAuth: []
       responses:
@@ -567,7 +567,7 @@ paths:
       operationId: addCommand
       summary: Add command to current scroll
       description: Adds a tempoary command to current scroll, useful to add temporary functionality (e.g. used for developer mode at druid.gg)
-      tags: [scroll]
+      tags: [scroll, daemon]
       security:
         - bearerAuth: []
       parameters:
@@ -591,7 +591,7 @@ paths:
       operationId: runCommand
       summary: Run a command
       description: Execute a command from the scroll configuration
-      tags: [scroll]
+      tags: [scroll, daemon]
       security:
         - bearerAuth: []
       requestBody:
@@ -615,7 +615,7 @@ paths:
       operationId: runProcedure
       summary: Run a procedure
       description: Execute a standalone procedure
-      tags: [scroll]
+      tags: [scroll, daemon]
       security:
         - bearerAuth: []
       requestBody:
@@ -641,7 +641,7 @@ paths:
       operationId: getProcedures
       summary: Get procedure statuses
       description: Get the status of all running procedures
-      tags: [scroll, process]
+      tags: [scroll, process, daemon]
       security:
         - bearerAuth: []
       responses:
@@ -660,7 +660,7 @@ paths:
       operationId: listAllLogs
       summary: List all log streams
       description: Get all available log streams with their content
-      tags: [logs]
+      tags: [logs, daemon]
       security:
         - bearerAuth: []
       responses:
@@ -678,7 +678,7 @@ paths:
       operationId: listStreamLogs
       summary: List logs for a specific stream
       description: Get logs for a specific stream identifier
-      tags: [logs]
+      tags: [logs, daemon]
       security:
         - bearerAuth: []
       parameters:
@@ -704,7 +704,7 @@ paths:
       operationId: getMetrics
       summary: Get process metrics
       description: Get metrics for all monitored processes
-      tags: [metrics]
+      tags: [metrics, daemon]
       security:
         - bearerAuth: []
       responses:
@@ -722,7 +722,7 @@ paths:
       operationId: getPsTree
       summary: Get process tree
       description: Get the process tree for all running processes
-      tags: [metrics]
+      tags: [metrics, daemon]
       security:
         - bearerAuth: []
       responses:
@@ -741,7 +741,7 @@ paths:
       operationId: getProcesses
       summary: List running processes
       description: Get all currently running processes
-      tags: [process]
+      tags: [process, daemon]
       security:
         - bearerAuth: []
       responses:
@@ -758,7 +758,7 @@ paths:
       operationId: getQueue
       summary: Get command queue
       description: Get the current command execution queue
-      tags: [queue]
+      tags: [queue, daemon]
       security:
         - bearerAuth: []
       responses:
@@ -777,7 +777,7 @@ paths:
       operationId: createToken
       summary: Create WebSocket token
       description: Generate a short-lived token for WebSocket authentication
-      tags: [websocket]
+      tags: [websocket, daemon]
       security:
         - bearerAuth: []
       responses:
@@ -793,7 +793,7 @@ paths:
       operationId: getConsoles
       summary: List all consoles
       description: Get all available console connections
-      tags: [websocket]
+      tags: [websocket, daemon]
       security:
         - bearerAuth: []
       responses:
@@ -810,7 +810,7 @@ paths:
       operationId: getPorts
       summary: Get port information
       description: Get information about all configured ports
-      tags: [port]
+      tags: [port, daemon]
       security:
         - bearerAuth: []
       responses:
@@ -829,7 +829,7 @@ paths:
       operationId: getHealthAuth
       summary: Get health status
       description: Get daemon health status
-      tags: [health]
+      tags: [health, daemon]
       security:
         - bearerAuth: []
       responses:
@@ -852,7 +852,7 @@ paths:
       operationId: finishColdstarter
       summary: Finish cold start
       description: Signal that cold start process is complete
-      tags: [coldstarter]
+      tags: [coldstarter, daemon]
       security:
         - bearerAuth: []
       responses:
@@ -865,7 +865,7 @@ paths:
       operationId: stopDaemon
       summary: Stop daemon
       description: Gracefully stop the daemon
-      tags: [daemon]
+      tags: [daemon, daemon]
       security:
         - bearerAuth: []
       responses:
@@ -878,7 +878,7 @@ paths:
       operationId: enableWatch
       summary: Enable development mode
       description: Start file watching for development
-      tags: [watch]
+      tags: [watch, daemon]
       security:
         - bearerAuth: []
       requestBody:
@@ -918,7 +918,7 @@ paths:
       operationId: disableWatch
       summary: Disable development mode
       description: Stop file watching
-      tags: [watch]
+      tags: [watch, daemon]
       security:
         - bearerAuth: []
       responses:
@@ -940,7 +940,7 @@ paths:
       operationId: getWatchStatus
       summary: Get watch mode status
       description: Check if watch mode is enabled and what paths are being watched
-      tags: [watch]
+      tags: [watch, daemon]
       security:
         - bearerAuth: []
       responses:
