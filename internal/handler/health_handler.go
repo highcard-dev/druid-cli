@@ -60,10 +60,10 @@ func (p *HealthHandler) GetHealthAuth(c *fiber.Ctx) error {
 		if pt != nil {
 			perc = (*pt).GetPercent()
 		}
-
+		percFloat32 := float32(perc)
 		return c.JSON(api.HealthResponse{
 			Mode:     string(p.snapshotService.GetCurrentMode()),
-			Progress: float32(perc),
+			Progress: &percFloat32,
 		})
 	}
 

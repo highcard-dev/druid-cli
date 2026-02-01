@@ -132,8 +132,8 @@ func TestHealthHandler_Health_Snapshot(t *testing.T) {
 	if result.Mode != "snapshot" {
 		t.Errorf("Expected mode 'snapshot', got '%s'", result.Mode)
 	}
-	if result.Progress != 50.0 {
-		t.Errorf("Expected progress 50.0, got %f", result.Progress)
+	if *result.Progress != 50.0 {
+		t.Errorf("Expected progress 50.0, got %f", *result.Progress)
 	}
 }
 
@@ -262,8 +262,8 @@ func TestHealthHandler_Health_SnapshotNilProgressTracker(t *testing.T) {
 	var result api.HealthResponse
 	json.Unmarshal(body, &result)
 
-	if result.Progress != 0 {
-		t.Errorf("Expected progress 0, got %f", result.Progress)
+	if *result.Progress != 0 {
+		t.Errorf("Expected progress 0, got %f", *result.Progress)
 	}
 }
 

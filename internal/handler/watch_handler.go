@@ -51,7 +51,15 @@ func (udh *WatchHandler) EnableWatch(c *fiber.Ctx) error {
 
 	err := c.BodyParser(&requestBody)
 	if err == nil && requestBody.HotReloadCommands != nil {
-		udh.uiWatchService.SetHotReloadCommands(*requestBody.HotReloadCommands)
+		err = udh.uiWatchService.SetHotReloadCommands(*requestBody.HotReloadCommands)
+		if err != nil {
+			logger.Log().Error("Invalid hot reload commands", zap.Error(err))
+			errorResponse := api.ErrorResponse{
+				Status: "error",
+				Error:  err.Error(),
+			}
+			return c.Status(400).JSON(errorResponse)
+		}
 	}
 
 	watchPaths = append(watchPaths, filepath.Join(scrollDir, "public/src"), filepath.Join(scrollDir, "private/src"))

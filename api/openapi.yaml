@@ -8,8 +8,8 @@ info:
   contact: {}
 
 servers:
-  - url: /api/v1
-    description: API v1
+  - url: /
+    description: Druid CLI API
 
 tags:
   - name: scroll
@@ -132,7 +132,6 @@ components:
       type: object
       required:
         - mode
-        - progress
       properties:
         mode:
           type: string
@@ -562,7 +561,7 @@ components:
 
 paths:
   # Scroll Endpoints
-  /scroll:
+  /api/v1/scroll:
     get:
       operationId: getScroll
       summary: Get current scroll
@@ -577,7 +576,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ScrollFile'
-  /scroll/commands/{command}:
+  /api/v1/scroll/commands/{command}:
     put:
       operationId: addCommand
       summary: Add command to current scroll
@@ -601,7 +600,7 @@ paths:
       responses:
         '201':
           description: Command created
-  /command:
+  /api/v1/command:
     post:
       operationId: runCommand
       summary: Run a command
@@ -625,7 +624,7 @@ paths:
         '500':
           description: Internal server error
 
-  /procedure:
+  /api/v1/procedure:
     post:
       operationId: runProcedure
       summary: Run a procedure
@@ -651,7 +650,7 @@ paths:
         '400':
           description: Bad request
 
-  /procedures:
+  /api/v1/procedures:
     get:
       operationId: getProcedures
       summary: Get procedure statuses
@@ -670,7 +669,7 @@ paths:
                   type: object
 
   # Log Endpoints
-  /logs:
+  /api/v1/logs:
     get:
       operationId: listAllLogs
       summary: List all log streams
@@ -688,7 +687,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/ScrollLogStream'
 
-  /logs/{stream}:
+  /api/v1/logs/{stream}:
     get:
       operationId: listStreamLogs
       summary: List logs for a specific stream
@@ -714,7 +713,7 @@ paths:
           description: Stream not found
 
   # Metrics Endpoints
-  /metrics:
+  /api/v1/metrics:
     get:
       operationId: getMetrics
       summary: Get process metrics
@@ -732,7 +731,7 @@ paths:
                 additionalProperties:
                   $ref: '#/components/schemas/ProcessMonitorMetrics'
 
-  /pstree:
+  /api/v1/pstree:
     get:
       operationId: getPsTree
       summary: Get process tree
@@ -751,7 +750,7 @@ paths:
                   $ref: '#/components/schemas/ProcessTreeRoot'
 
   # Process Endpoints
-  /processes:
+  /api/v1/processes:
     get:
       operationId: getProcesses
       summary: List running processes
@@ -768,7 +767,7 @@ paths:
                 $ref: '#/components/schemas/ProcessesResponse'
 
   # Queue Endpoint
-  /queue:
+  /api/v1/queue:
     get:
       operationId: getQueue
       summary: Get command queue
@@ -785,7 +784,7 @@ paths:
                 $ref: '#/components/schemas/QueueResponse'
 
   # WebSocket Endpoints
-  /token:
+  /api/v1/token:
     get:
       operationId: createToken
       summary: Create WebSocket token
@@ -801,7 +800,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/TokenResponse'
 
-  /consoles:
+  /api/v1/consoles:
     get:
       operationId: getConsoles
       summary: List all consoles
@@ -818,7 +817,7 @@ paths:
                 $ref: '#/components/schemas/ConsolesResponse'
 
   # Port Endpoint
-  /ports:
+  /api/v1/ports:
     get:
       operationId: getPorts
       summary: Get port information
@@ -837,7 +836,7 @@ paths:
                   $ref: '#/components/schemas/AugmentedPort'
 
   # Health Endpoint (authenticated)
-  /health:
+  /api/v1/health:
     get:
       operationId: getHealthAuth
       summary: Get health status
@@ -860,7 +859,7 @@ paths:
                 $ref: '#/components/schemas/HealthResponse'
 
   # Coldstarter Endpoint
-  /coldstarter/finish:
+  /api/v1/coldstarter/finish:
     post:
       operationId: finishColdstarter
       summary: Finish cold start
@@ -873,7 +872,7 @@ paths:
           description: Accepted
 
   # Daemon Control
-  /daemon/stop:
+  /api/v1/daemon/stop:
     post:
       operationId: stopDaemon
       summary: Stop daemon
@@ -886,7 +885,7 @@ paths:
           description: Stop initiated
 
   # Watch/Dev Mode Endpoints
-  /watch/enable:
+  /api/v1/watch/enable:
     post:
       operationId: enableWatch
       summary: Enable development mode
@@ -926,7 +925,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /watch/disable:
+  /api/v1/watch/disable:
     post:
       operationId: disableWatch
       summary: Disable development mode
@@ -948,7 +947,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /watch/status:
+  /api/v1/watch/status:
     get:
       operationId: getWatchStatus
       summary: Get watch mode status

@@ -137,8 +137,7 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 	wsRoutes.Get("/watch/notify", websocket.New(s.watchHandler.NotifyChange)).Name("ws.watch.notify")
 
 	// Now create other route groups
-	v1 := app.Group("/api/v1")
-	apiRoutes := v1.Group("/")
+	apiRoutes := app.Group("/")
 	webdavRoutes := app.Group("/webdav")
 
 	apiRoutes.Use(middlewares.MustNewOpenAPIValidator().Middleware())

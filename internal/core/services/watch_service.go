@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -57,10 +58,21 @@ func NewUiDevService(
 	}
 }
 
-func (uds *WatchService) SetHotReloadCommands(commands []string) {
+func (uds *WatchService) SetHotReloadCommands(commands []string) error {
+
+	// Validate commands
+	for _, cmd := range commands {
+		_, err := uds.scrollService.GetCommand(cmd)
+		if err != nil {
+			return fmt.Errorf("invalid command '%s': %w", cmd, err)
+		}
+	}
+
 	uds.mu.Lock()
 	defer uds.mu.Unlock()
 	uds.hotReloadCommands = commands
+
+	return nil
 }
 
 // StartWatching initializes the file watcher and starts monitoring specified paths
@@ -111,6 +123,9 @@ func (uds *WatchService) StartWatching(basePath string, paths ...string) error {
 
 	// Start the broadcast hub
 	go uds.broadcastChannel.Run()
+
+	// run hot reload commands initially
+	go uds.runHotReloadCommand()
 
 	logger.Log().Info("UI dev file watcher started")
 	return nil
@@ -310,11 +325,13 @@ func (uds *WatchService) handleFileEvent(event fsnotify.Event) {
 	}
 
 	// Handle hot reload commands in a separate goroutine to avoid blocking the event loop
-	go uds.executeCommands(uds.hotReloadCommands)
+	go uds.runHotReloadCommand()
 }
 
-// executeCommands is a unified method for executing both build and hot reload commands
-func (uds *WatchService) executeCommands(commands []string) {
+// runHotReloadCommand is a unified method for executing both build and hot reload commands
+func (uds *WatchService) runHotReloadCommand() {
+	commands := uds.hotReloadCommands
+
 	uds.mu.Lock()
 
 	// Prevent overlapping builds - if build is active, mark that a change occurred

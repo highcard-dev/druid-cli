@@ -182,7 +182,7 @@ type WatchServiceInterface interface {
 	Unsubscribe(client chan *[]byte)
 	GetWatchedPaths() []string
 	IsWatching() bool
-	SetHotReloadCommands(procs []string)
+	SetHotReloadCommands(procs []string) error
 }
 
 type NixDependencyServiceInterface interface {

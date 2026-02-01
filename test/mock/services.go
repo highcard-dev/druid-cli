@@ -1647,9 +1647,11 @@ func (mr *MockWatchServiceInterfaceMockRecorder) IsWatching() *gomock.Call {
 }
 
 // SetHotReloadCommands mocks base method.
-func (m *MockWatchServiceInterface) SetHotReloadCommands(procs []string) {
+func (m *MockWatchServiceInterface) SetHotReloadCommands(procs []string) error {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "SetHotReloadCommands", procs)
+	ret := m.ctrl.Call(m, "SetHotReloadCommands", procs)
+	ret0, _ := ret[0].(error)
+	return ret0
 }
 
 // SetHotReloadCommands indicates an expected call of SetHotReloadCommands.
