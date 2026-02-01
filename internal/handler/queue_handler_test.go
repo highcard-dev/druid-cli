@@ -29,7 +29,7 @@ func setupQueueTestApp(t *testing.T) *QueueTestContext {
 	handler := NewQueueHandler(queueManager)
 
 	app := fiber.New()
-	app.Get("/api/v1/queue", handler.Queue)
+	app.Get("/api/v1/queue", handler.GetQueue)
 
 	return &QueueTestContext{
 		App:          app,

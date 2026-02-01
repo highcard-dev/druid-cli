@@ -55,7 +55,7 @@ func setupTestApp(t *testing.T) *TestContext {
 	app.Get("/api/v1/scroll", handler.GetScroll)
 	app.Post("/api/v1/command", handler.RunCommand)
 	app.Post("/api/v1/procedure", handler.RunProcedure)
-	app.Get("/api/v1/procedures", handler.Procedures)
+	app.Get("/api/v1/procedures", handler.GetProcedures)
 
 	return &TestContext{
 		App:               app,
@@ -156,8 +156,8 @@ func TestScrollHandler_RunCommand_SyncSuccess(t *testing.T) {
 
 	// Create request body
 	requestBody := api.StartCommandRequest{
-		Command:"test-command",
-		Sync: boolPtr(true),
+		Command: "test-command",
+		Sync:    boolPtr(true),
 	}
 	bodyBytes, _ := json.Marshal(requestBody)
 
@@ -187,8 +187,8 @@ func TestScrollHandler_RunCommand_AsyncSuccess(t *testing.T) {
 
 	// Create request body
 	requestBody := api.StartCommandRequest{
-		Command:"test-command",
-		Sync: boolPtr(false),
+		Command: "test-command",
+		Sync:    boolPtr(false),
 	}
 	bodyBytes, _ := json.Marshal(requestBody)
 
@@ -242,8 +242,8 @@ func TestScrollHandler_RunCommand_SyncError(t *testing.T) {
 
 	// Create request body
 	requestBody := api.StartCommandRequest{
-		Command:"test-command",
-		Sync: boolPtr(true),
+		Command: "test-command",
+		Sync:    boolPtr(true),
 	}
 	bodyBytes, _ := json.Marshal(requestBody)
 

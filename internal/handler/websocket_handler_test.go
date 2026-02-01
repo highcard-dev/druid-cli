@@ -35,7 +35,7 @@ func setupWebsocketTestApp(t *testing.T) *WebsocketTestContext {
 
 	app := fiber.New()
 	app.Get("/api/v1/token", handler.CreateToken)
-	app.Get("/api/v1/consoles", handler.Consoles)
+	app.Get("/api/v1/consoles", handler.GetConsoles)
 
 	return &WebsocketTestContext{
 		App:               app,

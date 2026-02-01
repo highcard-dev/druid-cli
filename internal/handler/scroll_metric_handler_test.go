@@ -30,8 +30,8 @@ func setupScrollMetricTestApp(t *testing.T) *ScrollMetricTestContext {
 	handler := NewScrollMetricHandler(scrollService, processMonitor)
 
 	app := fiber.New()
-	app.Get("/api/v1/metrics", handler.Metrics)
-	app.Get("/api/v1/pstree", handler.PsTree)
+	app.Get("/api/v1/metrics", handler.GetMetrics)
+	app.Get("/api/v1/pstree", handler.GetPsTree)
 
 	return &ScrollMetricTestContext{
 		App:            app,

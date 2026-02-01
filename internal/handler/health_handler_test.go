@@ -33,7 +33,7 @@ func setupHealthTestApp(t *testing.T, timeoutSec uint) *HealthTestContext {
 	handler := NewHealthHandler(portService, timeoutSec, snapshotService)
 
 	app := fiber.New()
-	app.Get("/api/v1/health", handler.Health)
+	app.Get("/api/v1/health", handler.GetHealthAuth)
 
 	return &HealthTestContext{
 		App:             app,

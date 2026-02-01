@@ -29,7 +29,7 @@ func setupProcessTestApp(t *testing.T) *ProcessTestContext {
 	handler := NewProcessHandler(processManager)
 
 	app := fiber.New()
-	app.Get("/api/v1/processes", handler.Processes)
+	app.Get("/api/v1/processes", handler.GetProcesses)
 
 	return &ProcessTestContext{
 		App:            app,

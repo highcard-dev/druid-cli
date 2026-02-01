@@ -25,7 +25,7 @@ func setupColdstarterTestApp(t *testing.T) *ColdstarterTestContext {
 	handler := NewColdstarterHandler(coldstarter)
 
 	app := fiber.New()
-	app.Post("/api/v1/coldstarter/finish", handler.Finish)
+	app.Post("/api/v1/coldstarter/finish", handler.FinishColdstarter)
 
 	return &ColdstarterTestContext{
 		App:         app,

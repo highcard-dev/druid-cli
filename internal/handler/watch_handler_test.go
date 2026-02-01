@@ -15,11 +15,11 @@ import (
 
 // WatchTestContext holds all mocked services for watch handler testing
 type WatchTestContext struct {
-	App          *fiber.App
-	Ctrl         *gomock.Controller
-	WatchService *mock_ports.MockWatchServiceInterface
+	App           *fiber.App
+	Ctrl          *gomock.Controller
+	WatchService  *mock_ports.MockWatchServiceInterface
 	ScrollService *mock_ports.MockScrollServiceInterface
-	Handler      *WatchHandler
+	Handler       *WatchHandler
 }
 
 // setupWatchTestApp creates a Fiber app with mocked dependencies for testing
@@ -32,16 +32,16 @@ func setupWatchTestApp(t *testing.T) *WatchTestContext {
 	handler := NewWatchHandler(watchService, scrollService)
 
 	app := fiber.New()
-	app.Post("/api/v1/watch/enable", handler.Enable)
-	app.Post("/api/v1/watch/disable", handler.Disable)
-	app.Get("/api/v1/watch/status", handler.Status)
+	app.Post("/api/v1/watch/enable", handler.EnableWatch)
+	app.Post("/api/v1/watch/disable", handler.DisableWatch)
+	app.Get("/api/v1/watch/status", handler.GetWatchStatus)
 
 	return &WatchTestContext{
-		App:          app,
-		Ctrl:         ctrl,
-		WatchService: watchService,
+		App:           app,
+		Ctrl:          ctrl,
+		WatchService:  watchService,
 		ScrollService: scrollService,
-		Handler:      handler,
+		Handler:       handler,
 	}
 }
 
