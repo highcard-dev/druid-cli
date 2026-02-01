@@ -15,7 +15,7 @@ func NewDaemonHandler(shutdown *signals.SignalHandler) *DaemonHandler {
 	}
 }
 
-func (ah DaemonHandler) Stop(c *fiber.Ctx) error {
+func (ah DaemonHandler) StopDaemon(c *fiber.Ctx) error {
 	ah.shutdown.Stop()
 	c.Status(201)
 	return nil

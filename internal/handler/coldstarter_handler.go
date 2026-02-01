@@ -15,7 +15,7 @@ func NewColdstarterHandler(coldstarter ports.ColdStarterInterface) *ColdstarterH
 	}
 }
 
-func (ah ColdstarterHandler) Finish(c *fiber.Ctx) error {
+func (ah ColdstarterHandler) FinishColdstarter(c *fiber.Ctx) error {
 	ah.coldstarter.Finish(nil)
 	c.Status(202)
 	return nil

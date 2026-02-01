@@ -59,7 +59,7 @@ func (ah WebsocketHandler) CreateToken(c *fiber.Ctx) error {
 	return nil
 }
 
-func (ah WebsocketHandler) Consoles(c *fiber.Ctx) error {
+func (ah WebsocketHandler) GetConsoles(c *fiber.Ctx) error {
 	consoles := ah.consoleService.GetConsoles()
 
 	// Convert domain consoles to API consoles

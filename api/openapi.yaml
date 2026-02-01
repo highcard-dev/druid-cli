@@ -562,7 +562,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ScrollFile'
-
+  /scroll/commands/{command}:
+    put:
+      operationId: addCommand
+      summary: Add command to current scroll
+      description: Adds a tempoary command to current scroll, useful to add temporary functionality (e.g. used for developer mode at druid.gg)
+      tags: [scroll]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: command
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Command Name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommandInstructionSet'
+      responses:
+        '201':
+          description: Command created
   /command:
     post:
       operationId: runCommand

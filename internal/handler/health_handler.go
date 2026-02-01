@@ -37,7 +37,7 @@ func NewHealthHandler(
 	return h
 }
 
-func (p *HealthHandler) Health(c *fiber.Ctx) error {
+func (p *HealthHandler) GetHealthAuth(c *fiber.Ctx) error {
 
 	portsOpen := p.portService.MandatoryPortsOpen()
 

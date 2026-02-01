@@ -22,7 +22,7 @@ func NewProcessHandler(processManager ports.ProcessManagerInterface) *ProcessHan
 	return &ProcessHandler{ProcessManager: processManager}
 }
 
-func (ph ProcessHandler) Processes(c *fiber.Ctx) error {
+func (ph ProcessHandler) GetProcesses(c *fiber.Ctx) error {
 	processes := ph.ProcessManager.GetRunningProcesses()
 
 	// Convert domain processes to API processes

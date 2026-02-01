@@ -9,17 +9,18 @@ type ScrollHandlerInterface interface {
 	GetScroll(c *fiber.Ctx) error
 	RunCommand(c *fiber.Ctx) error
 	RunProcedure(c *fiber.Ctx) error
-	Procedures(c *fiber.Ctx) error
+	GetProcedures(c *fiber.Ctx) error
+	AddCommand(c *fiber.Ctx, command string) error
 }
 
 type ScrollLogHandlerInterface interface {
 	ListAllLogs(c *fiber.Ctx) error
-	ListStreamLogs(c *fiber.Ctx) error
+	ListStreamLogs(c *fiber.Ctx, stream string) error
 }
 
 type ScrollMetricHandlerInterface interface {
-	Metrics(c *fiber.Ctx) error
-	PsTree(c *fiber.Ctx) error
+	GetMetrics(c *fiber.Ctx) error
+	GetPsTree(c *fiber.Ctx) error
 }
 
 type AnnotationHandlerInterface interface {
@@ -29,35 +30,35 @@ type AnnotationHandlerInterface interface {
 type WebsocketHandlerInterface interface {
 	CreateToken(c *fiber.Ctx) error
 	HandleProcess(c *websocket.Conn)
-	Consoles(c *fiber.Ctx) error
+	GetConsoles(c *fiber.Ctx) error
 }
 
 type ProcessHandlerInterface interface {
-	Processes(c *fiber.Ctx) error
+	GetProcesses(c *fiber.Ctx) error
 }
 
 type QueueHandlerInterface interface {
-	Queue(c *fiber.Ctx) error
+	GetQueue(c *fiber.Ctx) error
 }
 
 type PortHandlerInterface interface {
 	GetPorts(c *fiber.Ctx) error
 }
 type HealthHandlerInterface interface {
-	Health(ctx *fiber.Ctx) error
+	GetHealthAuth(c *fiber.Ctx) error
 }
 
 type ColdstarterHandlerInterface interface {
-	Finish(ctx *fiber.Ctx) error
+	FinishColdstarter(c *fiber.Ctx) error
 }
 
 type SignalHandlerInterface interface {
-	Stop(ctx *fiber.Ctx) error
+	StopDaemon(c *fiber.Ctx) error
 }
 
 type WatchHandlerInterface interface {
-	Enable(ctx *fiber.Ctx) error
-	Disable(ctx *fiber.Ctx) error
-	Status(ctx *fiber.Ctx) error
+	EnableWatch(c *fiber.Ctx) error
+	DisableWatch(c *fiber.Ctx) error
+	GetWatchStatus(c *fiber.Ctx) error
 	NotifyChange(c *websocket.Conn)
 }

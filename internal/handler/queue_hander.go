@@ -13,6 +13,6 @@ func NewQueueHandler(queueManager ports.QueueManagerInterface) *ScrollHandler {
 	return &ScrollHandler{QueueManager: queueManager}
 }
 
-func (sl ScrollHandler) Queue(c *fiber.Ctx) error {
+func (sl ScrollHandler) GetQueue(c *fiber.Ctx) error {
 	return c.JSON(sl.QueueManager.GetQueue())
 }

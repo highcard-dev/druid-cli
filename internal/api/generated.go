@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/gofiber/fiber/v2"
 	"github.com/oapi-codegen/runtime"
 )
 
@@ -359,6 +360,9 @@ type RunCommandJSONRequestBody = StartCommandRequest
 // RunProcedureJSONRequestBody defines body for RunProcedure for application/json ContentType.
 type RunProcedureJSONRequestBody = StartProcedureRequest
 
+// AddCommandJSONRequestBody defines body for AddCommand for application/json ContentType.
+type AddCommandJSONRequestBody = CommandInstructionSet
+
 // EnableWatchJSONRequestBody defines body for EnableWatch for application/json ContentType.
 type EnableWatchJSONRequestBody = WatchModeRequest
 
@@ -450,83 +454,387 @@ func (t *Procedure_Wait) UnmarshalJSON(b []byte) error {
 	return err
 }
 
+// ServerInterface represents all server handlers.
+type ServerInterface interface {
+	// Finish cold start
+	// (POST /coldstarter/finish)
+	FinishColdstarter(c *fiber.Ctx) error
+	// Run a command
+	// (POST /command)
+	RunCommand(c *fiber.Ctx) error
+	// List all consoles
+	// (GET /consoles)
+	GetConsoles(c *fiber.Ctx) error
+	// Stop daemon
+	// (POST /daemon/stop)
+	StopDaemon(c *fiber.Ctx) error
+	// Get health status
+	// (GET /health)
+	GetHealthAuth(c *fiber.Ctx) error
+	// List all log streams
+	// (GET /logs)
+	ListAllLogs(c *fiber.Ctx) error
+	// List logs for a specific stream
+	// (GET /logs/{stream})
+	ListStreamLogs(c *fiber.Ctx, stream string) error
+	// Get process metrics
+	// (GET /metrics)
+	GetMetrics(c *fiber.Ctx) error
+	// Get port information
+	// (GET /ports)
+	GetPorts(c *fiber.Ctx) error
+	// Run a procedure
+	// (POST /procedure)
+	RunProcedure(c *fiber.Ctx) error
+	// Get procedure statuses
+	// (GET /procedures)
+	GetProcedures(c *fiber.Ctx) error
+	// List running processes
+	// (GET /processes)
+	GetProcesses(c *fiber.Ctx) error
+	// Get process tree
+	// (GET /pstree)
+	GetPsTree(c *fiber.Ctx) error
+	// Get command queue
+	// (GET /queue)
+	GetQueue(c *fiber.Ctx) error
+	// Get current scroll
+	// (GET /scroll)
+	GetScroll(c *fiber.Ctx) error
+	// Add command to current scroll
+	// (PUT /scroll/commands/{command})
+	AddCommand(c *fiber.Ctx, command string) error
+	// Create WebSocket token
+	// (GET /token)
+	CreateToken(c *fiber.Ctx) error
+	// Disable development mode
+	// (POST /watch/disable)
+	DisableWatch(c *fiber.Ctx) error
+	// Enable development mode
+	// (POST /watch/enable)
+	EnableWatch(c *fiber.Ctx) error
+	// Get watch mode status
+	// (GET /watch/status)
+	GetWatchStatus(c *fiber.Ctx) error
+}
+
+// ServerInterfaceWrapper converts contexts to parameters.
+type ServerInterfaceWrapper struct {
+	Handler ServerInterface
+}
+
+type MiddlewareFunc fiber.Handler
+
+// FinishColdstarter operation middleware
+func (siw *ServerInterfaceWrapper) FinishColdstarter(c *fiber.Ctx) error {
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.FinishColdstarter(c)
+}
+
+// RunCommand operation middleware
+func (siw *ServerInterfaceWrapper) RunCommand(c *fiber.Ctx) error {
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.RunCommand(c)
+}
+
+// GetConsoles operation middleware
+func (siw *ServerInterfaceWrapper) GetConsoles(c *fiber.Ctx) error {
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.GetConsoles(c)
+}
+
+// StopDaemon operation middleware
+func (siw *ServerInterfaceWrapper) StopDaemon(c *fiber.Ctx) error {
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.StopDaemon(c)
+}
+
+// GetHealthAuth operation middleware
+func (siw *ServerInterfaceWrapper) GetHealthAuth(c *fiber.Ctx) error {
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.GetHealthAuth(c)
+}
+
+// ListAllLogs operation middleware
+func (siw *ServerInterfaceWrapper) ListAllLogs(c *fiber.Ctx) error {
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.ListAllLogs(c)
+}
+
+// ListStreamLogs operation middleware
+func (siw *ServerInterfaceWrapper) ListStreamLogs(c *fiber.Ctx) error {
+
+	var err error
+
+	// ------------- Path parameter "stream" -------------
+	var stream string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "stream", c.Params("stream"), &stream, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter stream: %w", err).Error())
+	}
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.ListStreamLogs(c, stream)
+}
+
+// GetMetrics operation middleware
+func (siw *ServerInterfaceWrapper) GetMetrics(c *fiber.Ctx) error {
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.GetMetrics(c)
+}
+
+// GetPorts operation middleware
+func (siw *ServerInterfaceWrapper) GetPorts(c *fiber.Ctx) error {
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.GetPorts(c)
+}
+
+// RunProcedure operation middleware
+func (siw *ServerInterfaceWrapper) RunProcedure(c *fiber.Ctx) error {
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.RunProcedure(c)
+}
+
+// GetProcedures operation middleware
+func (siw *ServerInterfaceWrapper) GetProcedures(c *fiber.Ctx) error {
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.GetProcedures(c)
+}
+
+// GetProcesses operation middleware
+func (siw *ServerInterfaceWrapper) GetProcesses(c *fiber.Ctx) error {
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.GetProcesses(c)
+}
+
+// GetPsTree operation middleware
+func (siw *ServerInterfaceWrapper) GetPsTree(c *fiber.Ctx) error {
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.GetPsTree(c)
+}
+
+// GetQueue operation middleware
+func (siw *ServerInterfaceWrapper) GetQueue(c *fiber.Ctx) error {
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.GetQueue(c)
+}
+
+// GetScroll operation middleware
+func (siw *ServerInterfaceWrapper) GetScroll(c *fiber.Ctx) error {
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.GetScroll(c)
+}
+
+// AddCommand operation middleware
+func (siw *ServerInterfaceWrapper) AddCommand(c *fiber.Ctx) error {
+
+	var err error
+
+	// ------------- Path parameter "command" -------------
+	var command string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "command", c.Params("command"), &command, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter command: %w", err).Error())
+	}
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.AddCommand(c, command)
+}
+
+// CreateToken operation middleware
+func (siw *ServerInterfaceWrapper) CreateToken(c *fiber.Ctx) error {
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.CreateToken(c)
+}
+
+// DisableWatch operation middleware
+func (siw *ServerInterfaceWrapper) DisableWatch(c *fiber.Ctx) error {
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.DisableWatch(c)
+}
+
+// EnableWatch operation middleware
+func (siw *ServerInterfaceWrapper) EnableWatch(c *fiber.Ctx) error {
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.EnableWatch(c)
+}
+
+// GetWatchStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetWatchStatus(c *fiber.Ctx) error {
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.GetWatchStatus(c)
+}
+
+// FiberServerOptions provides options for the Fiber server.
+type FiberServerOptions struct {
+	BaseURL     string
+	Middlewares []MiddlewareFunc
+}
+
+// RegisterHandlers creates http.Handler with routing matching OpenAPI spec.
+func RegisterHandlers(router fiber.Router, si ServerInterface) {
+	RegisterHandlersWithOptions(router, si, FiberServerOptions{})
+}
+
+// RegisterHandlersWithOptions creates http.Handler with additional options
+func RegisterHandlersWithOptions(router fiber.Router, si ServerInterface, options FiberServerOptions) {
+	wrapper := ServerInterfaceWrapper{
+		Handler: si,
+	}
+
+	for _, m := range options.Middlewares {
+		router.Use(fiber.Handler(m))
+	}
+
+	router.Post(options.BaseURL+"/coldstarter/finish", wrapper.FinishColdstarter)
+
+	router.Post(options.BaseURL+"/command", wrapper.RunCommand)
+
+	router.Get(options.BaseURL+"/consoles", wrapper.GetConsoles)
+
+	router.Post(options.BaseURL+"/daemon/stop", wrapper.StopDaemon)
+
+	router.Get(options.BaseURL+"/health", wrapper.GetHealthAuth)
+
+	router.Get(options.BaseURL+"/logs", wrapper.ListAllLogs)
+
+	router.Get(options.BaseURL+"/logs/:stream", wrapper.ListStreamLogs)
+
+	router.Get(options.BaseURL+"/metrics", wrapper.GetMetrics)
+
+	router.Get(options.BaseURL+"/ports", wrapper.GetPorts)
+
+	router.Post(options.BaseURL+"/procedure", wrapper.RunProcedure)
+
+	router.Get(options.BaseURL+"/procedures", wrapper.GetProcedures)
+
+	router.Get(options.BaseURL+"/processes", wrapper.GetProcesses)
+
+	router.Get(options.BaseURL+"/pstree", wrapper.GetPsTree)
+
+	router.Get(options.BaseURL+"/queue", wrapper.GetQueue)
+
+	router.Get(options.BaseURL+"/scroll", wrapper.GetScroll)
+
+	router.Put(options.BaseURL+"/scroll/commands/:command", wrapper.AddCommand)
+
+	router.Get(options.BaseURL+"/token", wrapper.CreateToken)
+
+	router.Post(options.BaseURL+"/watch/disable", wrapper.DisableWatch)
+
+	router.Post(options.BaseURL+"/watch/enable", wrapper.EnableWatch)
+
+	router.Get(options.BaseURL+"/watch/status", wrapper.GetWatchStatus)
+
+}
+
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
-	"GrL+vwAAAP///qmwG3BUAAA=",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

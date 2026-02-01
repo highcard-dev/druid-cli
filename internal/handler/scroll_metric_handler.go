@@ -19,10 +19,10 @@ func NewScrollMetricHandler(scrollService ports.ScrollServiceInterface, processM
 type PsTress = map[string]*domain.ProcessTreeRoot
 type Metrics = map[string]*domain.ProcessMonitorMetrics
 
-func (sl ScrollMetricHandler) Metrics(c *fiber.Ctx) error {
+func (sl ScrollMetricHandler) GetMetrics(c *fiber.Ctx) error {
 	return c.JSON(sl.ProcessMonitor.GetAllProcessesMetrics())
 }
 
-func (sl ScrollMetricHandler) PsTree(c *fiber.Ctx) error {
+func (sl ScrollMetricHandler) GetPsTree(c *fiber.Ctx) error {
 	return c.JSON(sl.ProcessMonitor.GetPsTrees())
 }

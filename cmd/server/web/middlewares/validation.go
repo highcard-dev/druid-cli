@@ -62,6 +62,9 @@ func (v *OpenAPIValidator) Middleware() fiber.Handler {
 			Request:    req,
 			PathParams: pathParams,
 			Route:      route,
+			Options: &openapi3filter.Options{
+				AuthenticationFunc: openapi3filter.NoopAuthenticationFunc,
+			},
 		}
 
 		ctx := context.Background()

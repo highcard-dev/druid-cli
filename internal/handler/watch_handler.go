@@ -25,14 +25,14 @@ func NewWatchHandler(uiWatchService ports.WatchServiceInterface, scrollService p
 	}
 }
 
-func (udh *WatchHandler) Enable(ctx *fiber.Ctx) error {
+func (udh *WatchHandler) EnableWatch(c *fiber.Ctx) error {
 	if udh.uiWatchService.IsWatching() {
 		response := api.WatchModeResponse{
 			Status:  "already-active",
 			Enabled: true,
 		}
-		ctx.Status(fiber.StatusPreconditionFailed)
-		return ctx.JSON(response)
+		c.Status(fiber.StatusPreconditionFailed)
+		return c.JSON(response)
 	}
 
 	var watchPaths []string
@@ -44,12 +44,12 @@ func (udh *WatchHandler) Enable(ctx *fiber.Ctx) error {
 			Status: "error",
 			Error:  "No scroll loaded. Please load a scroll before enabling development mode.",
 		}
-		return ctx.Status(400).JSON(errorResponse)
+		return c.Status(400).JSON(errorResponse)
 	}
 
 	var requestBody api.WatchModeRequest
 
-	err := ctx.BodyParser(&requestBody)
+	err := c.BodyParser(&requestBody)
 	if err == nil && requestBody.HotReloadCommands != nil {
 		udh.uiWatchService.SetHotReloadCommands(*requestBody.HotReloadCommands)
 	}
@@ -64,7 +64,7 @@ func (udh *WatchHandler) Enable(ctx *fiber.Ctx) error {
 			Status: "error",
 			Error:  err.Error(),
 		}
-		return ctx.Status(500).JSON(errorResponse)
+		return c.Status(500).JSON(errorResponse)
 	}
 
 	logger.Log().Info("UI development mode enabled")
@@ -73,16 +73,16 @@ func (udh *WatchHandler) Enable(ctx *fiber.Ctx) error {
 		Status:  "success",
 		Enabled: udh.uiWatchService.IsWatching(),
 	}
-	return ctx.JSON(response)
+	return c.JSON(response)
 }
 
-func (udh *WatchHandler) Disable(ctx *fiber.Ctx) error {
+func (udh *WatchHandler) DisableWatch(c *fiber.Ctx) error {
 	if !udh.uiWatchService.IsWatching() {
 		response := api.WatchModeResponse{
 			Status:  "success",
 			Enabled: false,
 		}
-		return ctx.JSON(response)
+		return c.JSON(response)
 	}
 
 	// Stop file watching
@@ -93,7 +93,7 @@ func (udh *WatchHandler) Disable(ctx *fiber.Ctx) error {
 			Status: "error",
 			Error:  err.Error(),
 		}
-		return ctx.Status(500).JSON(errorResponse)
+		return c.Status(500).JSON(errorResponse)
 	}
 
 	logger.Log().Info("UI development mode disabled")
@@ -102,16 +102,16 @@ func (udh *WatchHandler) Disable(ctx *fiber.Ctx) error {
 		Status:  "success",
 		Enabled: udh.uiWatchService.IsWatching(),
 	}
-	return ctx.JSON(response)
+	return c.JSON(response)
 }
 
-func (udh *WatchHandler) Status(ctx *fiber.Ctx) error {
+func (udh *WatchHandler) GetWatchStatus(c *fiber.Ctx) error {
 	isWatching := udh.uiWatchService.IsWatching()
 	response := api.WatchStatusResponse{
 		Enabled:      isWatching,
 		WatchedPaths: udh.uiWatchService.GetWatchedPaths(),
 	}
-	return ctx.JSON(response)
+	return c.JSON(response)
 }
 
 // NotifyChange handles WebSocket connections for real-time file change notifications

@@ -130,14 +130,19 @@ func (sl ScrollHandler) RunProcedure(c *fiber.Ctx) error {
 	}
 }
 
-// @Summary Get process procedure statuses
-// @ID getProcedures
-// @Tags process, procedures, druid, daemon
-// @Accept */*
-// @Produce json
-// @Success 200 {object} map[string]domain.ScrollLockStatus
-// @Router /api/v1/procedures [get]
-func (sh ScrollHandler) Procedures(c *fiber.Ctx) error {
+func (sh ScrollHandler) GetProcedures(c *fiber.Ctx) error {
 	process := sh.ProcessLauncher.GetProcedureStatuses()
 	return c.JSON(process)
+}
+
+func (sh ScrollHandler) AddCommand(c *fiber.Ctx, command string) error {
+
+	var commands *domain.CommandInstructionSet
+	err := c.BodyParser(&commands)
+	if err != nil {
+		return c.SendStatus(400)
+	}
+	sh.ScrollService.AddTemporaryCommand(command, commands)
+
+	return c.SendStatus(201)
 }

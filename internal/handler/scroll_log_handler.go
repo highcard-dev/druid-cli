@@ -55,7 +55,7 @@ func (sl ScrollLogHandler) ListAllLogs(c *fiber.Ctx) error {
 	return c.JSON(responseData)
 }
 
-func (sl ScrollLogHandler) ListStreamLogs(c *fiber.Ctx) error {
+func (sl ScrollLogHandler) ListStreamLogs(c *fiber.Ctx, stream string) error {
 
 	steam, ok := sl.logManager.GetStreams()[c.Params("stream")]
 	if !ok {

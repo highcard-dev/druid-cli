@@ -14,11 +14,12 @@ import (
 	"github.com/highcard-dev/daemon/cmd/server/web/middlewares"
 
 	constants "github.com/highcard-dev/daemon/internal"
+	"github.com/highcard-dev/daemon/internal/api"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"golang.org/x/net/webdav"
 	"go.uber.org/zap"
+	"golang.org/x/net/webdav"
 )
 
 type Server struct {
@@ -140,6 +141,8 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 	apiRoutes := v1.Group("/")
 	webdavRoutes := app.Group("/webdav")
 
+	apiRoutes.Use(middlewares.MustNewOpenAPIValidator().Middleware())
+
 	// Create properly isolated UI route groups
 	privateUiRoutes := app.Group("")
 	publicUiRoutes := app.Group("")
@@ -148,41 +151,22 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 		apiRoutes.Use(s.jwtMiddleware, s.injectUserMiddleware)
 		webdavRoutes.Use(s.jwtMiddleware, s.injectUserMiddleware)
 		privateUiRoutes.Use(s.jwtMiddleware, s.injectUserMiddleware)
-	} //Scroll Group
-	apiRoutes.Get("/scroll", s.scrollHandler.GetScroll).Name("scrolls.current")
-	apiRoutes.Post("/command", s.scrollHandler.RunCommand).Name("command.start")
-	apiRoutes.Post("/procedure", s.scrollHandler.RunProcedure).Name("procedure.start")
-	apiRoutes.Get("/procedures", s.scrollHandler.Procedures).Name("procedures.list")
+	}
 
-	//Scroll Logs Group
-	apiRoutes.Get("/logs", s.scrollLogHandler.ListAllLogs).Name("scrolls.logs")
-	apiRoutes.Get("/logs/:stream", s.scrollLogHandler.ListStreamLogs).Name("scrolls.log")
-
-	//Authentication Group
-	apiRoutes.Get("/token", s.websocketHandler.CreateToken).Name("token.create")
-
-	//Metrics Group
-	apiRoutes.Get("/metrics", s.scrollMetricHandler.Metrics).Name("scrolls.metrics")
-	apiRoutes.Get("/pstree", s.scrollMetricHandler.PsTree).Name("scrolls.pstree")
-
-	//Processes Group
-	apiRoutes.Get("/processes", s.processHandler.Processes).Name("processes.list")
-
-	apiRoutes.Get("/queue", s.queueHandler.Queue).Name("queue.list")
-
-	//Websocket Group
-	apiRoutes.Get("/consoles", s.websocketHandler.Consoles).Name("consoles.list")
-
-	apiRoutes.Post("/coldstarter/finish", s.coldstarterHandler.Finish).Name("coldstarter.finish")
-
-	apiRoutes.Get("/health", s.healthHandler.Health).Name("health-authenticated")
-
-	apiRoutes.Post("/daemon/stop", s.daemonHandler.Stop).Name("daemon.stop")
-
-	//UI Dev Group
-	apiRoutes.Post("/watch/enable", s.watchHandler.Enable).Name("watch.enable")
-	apiRoutes.Post("/watch/disable", s.watchHandler.Disable).Name("watch.disable")
-	apiRoutes.Get("/watch/status", s.watchHandler.Status).Name("watch.status")
+	// Use the generated RegisterHandlersWithOptions to set up all API routes
+	api.RegisterHandlersWithOptions(apiRoutes, &apiServer{
+		ScrollHandlerInterface:       s.scrollHandler,
+		ScrollLogHandlerInterface:    s.scrollLogHandler,
+		ScrollMetricHandlerInterface: s.scrollMetricHandler,
+		ProcessHandlerInterface:      s.processHandler,
+		QueueHandlerInterface:        s.queueHandler,
+		WebsocketHandlerInterface:    s.websocketHandler,
+		PortHandlerInterface:         s.portHandler,
+		HealthHandlerInterface:       s.healthHandler,
+		ColdstarterHandlerInterface:  s.coldstarterHandler,
+		SignalHandlerInterface:       s.daemonHandler,
+		WatchHandlerInterface:        s.watchHandler,
+	}, api.FiberServerOptions{})
 
 	// Create the WebDAV handler
 	webdavHandler := &webdav.Handler{
@@ -210,7 +194,7 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 	}
 	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler())).Name("metrics")
 
-	app.Get("/health", s.healthHandler.Health).Name("health")
+	app.Get("/health", s.healthHandler.GetHealthAuth).Name("health")
 
 	app.Get("/info", func(ctx *fiber.Ctx) error {
 		return ctx.JSON(fiber.Map{
@@ -229,7 +213,7 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 }
 
 func (s *Server) SetDaemonRoute(app *fiber.App, signalHandler ports.SignalHandlerInterface) {
-	app.Post("/stop", signalHandler.Stop).Name("daemon.stop")
+	app.Post("/stop", signalHandler.StopDaemon).Name("daemon.stop")
 }
 
 func (s *Server) Serve(app *fiber.App, port int) error {
@@ -239,4 +223,19 @@ func (s *Server) Serve(app *fiber.App, port int) error {
 		return err
 	}
 	return nil
+}
+
+// apiServer embeds all handler interfaces to implement api.ServerInterface directly
+type apiServer struct {
+	ports.ScrollHandlerInterface
+	ports.ScrollLogHandlerInterface
+	ports.ScrollMetricHandlerInterface
+	ports.ProcessHandlerInterface
+	ports.QueueHandlerInterface
+	ports.WebsocketHandlerInterface
+	ports.PortHandlerInterface
+	ports.HealthHandlerInterface
+	ports.ColdstarterHandlerInterface
+	ports.SignalHandlerInterface
+	ports.WatchHandlerInterface
 }
