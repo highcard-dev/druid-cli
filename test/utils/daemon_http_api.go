@@ -6,8 +6,8 @@ import (
 	"log"
 	"time"
 
+	"github.com/highcard-dev/daemon/internal/api"
 	"github.com/highcard-dev/daemon/internal/core/domain"
-	"github.com/highcard-dev/daemon/internal/handler"
 )
 
 func WaitForConsoleRunning(console string, duration time.Duration) error {
@@ -25,7 +25,7 @@ func WaitForConsoleRunning(console string, duration time.Duration) error {
 				continue
 			}
 
-			var resp handler.ConsolesHttpResponse
+			var resp api.ConsolesResponse
 
 			json.Unmarshal(body, &resp)
 

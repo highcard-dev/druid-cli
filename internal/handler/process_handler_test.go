@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/highcard-dev/daemon/internal/api"
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	mock_ports "github.com/highcard-dev/daemon/test/mock"
 	"go.uber.org/mock/gomock"
@@ -66,7 +67,7 @@ func TestProcessHandler_Processes_Success(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var result ProcessesBody
+	var result api.ProcessesResponse
 	if err := json.Unmarshal(body, &result); err != nil {
 		t.Fatalf("Failed to unmarshal response: %v", err)
 	}
@@ -100,7 +101,7 @@ func TestProcessHandler_Processes_Empty(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var result ProcessesBody
+	var result api.ProcessesResponse
 	json.Unmarshal(body, &result)
 
 	if len(result.Processes) != 0 {
@@ -150,7 +151,7 @@ func TestProcessHandler_Processes_SingleProcess(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var result ProcessesBody
+	var result api.ProcessesResponse
 	json.Unmarshal(body, &result)
 
 	if len(result.Processes) != 1 {

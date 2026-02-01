@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/highcard-dev/daemon/internal/api"
 	mock_ports "github.com/highcard-dev/daemon/test/mock"
 	"go.uber.org/mock/gomock"
 )
@@ -72,7 +73,7 @@ func TestWatchHandler_Enable_Success(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var result WatchModeResponse
+	var result api.WatchModeResponse
 	json.Unmarshal(body, &result)
 
 	if result.Status != "success" {
@@ -101,7 +102,7 @@ func TestWatchHandler_Enable_AlreadyActive(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var result WatchModeResponse
+	var result api.WatchModeResponse
 	json.Unmarshal(body, &result)
 
 	if result.Status != "already-active" {
@@ -128,7 +129,7 @@ func TestWatchHandler_Enable_NoScrollLoaded(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var result ErrorResponse
+	var result api.ErrorResponse
 	json.Unmarshal(body, &result)
 
 	if result.Status != "error" {
@@ -163,12 +164,13 @@ func TestWatchHandler_Enable_WithCommands(t *testing.T) {
 
 	tc.WatchService.EXPECT().IsWatching().Return(false)
 	tc.ScrollService.EXPECT().GetDir().Return("/path/to/scroll")
-	tc.WatchService.EXPECT().SetHotReloadCommands(gomock.Any())
+	tc.WatchService.EXPECT().SetHotReloadCommands([]string{"npm run dev"})
 	tc.WatchService.EXPECT().StartWatching("/path/to/scroll", gomock.Any(), gomock.Any()).Return(nil)
 	tc.WatchService.EXPECT().IsWatching().Return(true)
 
-	requestBody := WatchModeBody{
-		HotReloadCommands: nil,
+	hotReloadCmds := []string{"npm run dev"}
+	requestBody := api.WatchModeRequest{
+		HotReloadCommands: &hotReloadCmds,
 	}
 	bodyBytes, _ := json.Marshal(requestBody)
 
@@ -209,7 +211,7 @@ func TestWatchHandler_Disable_Success(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var result WatchModeResponse
+	var result api.WatchModeResponse
 	json.Unmarshal(body, &result)
 
 	if result.Status != "success" {
@@ -238,7 +240,7 @@ func TestWatchHandler_Disable_NotWatching(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var result WatchModeResponse
+	var result api.WatchModeResponse
 	json.Unmarshal(body, &result)
 
 	if result.Status != "success" {
@@ -289,7 +291,7 @@ func TestWatchHandler_Status_Enabled(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var result WatchStatusResponse
+	var result api.WatchStatusResponse
 	json.Unmarshal(body, &result)
 
 	if !result.Enabled {
@@ -319,7 +321,7 @@ func TestWatchHandler_Status_Disabled(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var result WatchStatusResponse
+	var result api.WatchStatusResponse
 	json.Unmarshal(body, &result)
 
 	if result.Enabled {

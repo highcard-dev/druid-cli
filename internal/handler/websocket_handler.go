@@ -5,6 +5,7 @@ import (
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
+	"github.com/highcard-dev/daemon/internal/api"
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
@@ -17,13 +18,13 @@ type WebsocketHandler struct {
 	consoleService    ports.ConsoleManagerInterface
 }
 
-type TokenHttpResponse struct {
-	Token string `json:"token" validate:"required"`
-} // @name WebsocketToken
-
-type ConsolesHttpResponse struct {
-	Consoles map[string]*domain.Console `json:"consoles" validate:"required"`
-} // @name ConsolesResponse
+func domainConsoleToAPI(dc *domain.Console) api.Console {
+	return api.Console{
+		Type:      api.ConsoleType(dc.Type),
+		InputMode: dc.InputMode,
+		Exit:      dc.Exit,
+	}
+}
 
 const (
 	// Time allowed to write a message to the peer.
@@ -51,33 +52,23 @@ func NewWebsocketHandler(
 	}
 }
 
-// @Summary Get current scroll
-// @Description Get the metrics for all processes.
-// @ID createToken
-// @Tags websocket, druid, daemon
-// @Accept json
-// @Produce json
-// @Success 200 {object} TokenHttpResponse
-// @Router /api/v1/token [get]
 func (ah WebsocketHandler) CreateToken(c *fiber.Ctx) error {
 	token := ah.authorizerService.GenerateQueryToken()
 
-	c.JSON(TokenHttpResponse{Token: token})
+	c.JSON(api.TokenResponse{Token: token})
 	return nil
 }
 
-// @Summary Get All Consoles
-// @Description Get List of all consoles
-// @ID getConsoles
-// @Tags druid, daemon, console
-// @Accept json
-// @Produce json
-// @Success 200 {object} ConsolesHttpResponse
-// @Router /api/v1/consoles [get]
 func (ah WebsocketHandler) Consoles(c *fiber.Ctx) error {
 	consoles := ah.consoleService.GetConsoles()
 
-	c.JSON(ConsolesHttpResponse{Consoles: consoles})
+	// Convert domain consoles to API consoles
+	apiConsoles := make(map[string]api.Console, len(consoles))
+	for k, v := range consoles {
+		apiConsoles[k] = domainConsoleToAPI(v)
+	}
+
+	c.JSON(api.ConsolesResponse{Consoles: apiConsoles})
 	return nil
 }
 

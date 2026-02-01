@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/highcard-dev/daemon/internal/api"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	mock_ports "github.com/highcard-dev/daemon/test/mock"
 	"go.uber.org/mock/gomock"
@@ -62,7 +63,7 @@ func TestHealthHandler_Health_MandatoryPortsNotOpen(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var result HealhResponse
+	var result api.HealthResponse
 	json.Unmarshal(body, &result)
 
 	if result.Mode != "manditory_ports" {
@@ -89,7 +90,7 @@ func TestHealthHandler_Health_Idle(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var result HealhResponse
+	var result api.HealthResponse
 	json.Unmarshal(body, &result)
 
 	if result.Mode != "idle" {
@@ -125,7 +126,7 @@ func TestHealthHandler_Health_Snapshot(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var result HealhResponse
+	var result api.HealthResponse
 	json.Unmarshal(body, &result)
 
 	if result.Mode != "snapshot" {
@@ -162,7 +163,7 @@ func TestHealthHandler_Health_Restore(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var result HealhResponse
+	var result api.HealthResponse
 	json.Unmarshal(body, &result)
 
 	if result.Mode != "restore" {
@@ -192,7 +193,7 @@ func TestHealthHandler_Health_Ok(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var result HealhResponse
+	var result api.HealthResponse
 	json.Unmarshal(body, &result)
 
 	if result.Mode != "ok" {
@@ -226,7 +227,7 @@ func TestHealthHandler_Health_TimeoutDone_PortsClosed(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var result HealhResponse
+	var result api.HealthResponse
 	json.Unmarshal(body, &result)
 
 	if result.Mode != "idle" {
@@ -258,7 +259,7 @@ func TestHealthHandler_Health_SnapshotNilProgressTracker(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var result HealhResponse
+	var result api.HealthResponse
 	json.Unmarshal(body, &result)
 
 	if result.Progress != 0 {

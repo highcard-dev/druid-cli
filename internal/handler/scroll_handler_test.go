@@ -9,10 +9,20 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/highcard-dev/daemon/internal/api"
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	mock_ports "github.com/highcard-dev/daemon/test/mock"
 	"go.uber.org/mock/gomock"
 )
+
+// Helper functions for creating pointer values in test structs
+func boolPtr(b bool) *bool {
+	return &b
+}
+
+func stringSlicePtr(s []string) *[]string {
+	return &s
+}
 
 // TestContext holds all mocked services for testing
 type TestContext struct {
@@ -145,9 +155,9 @@ func TestScrollHandler_RunCommand_SyncSuccess(t *testing.T) {
 	tc.QueueManager.EXPECT().AddTempItem("test-command").Return(nil)
 
 	// Create request body
-	requestBody := StartScrollRequestBody{
-		CommandId: "test-command",
-		Sync:      true,
+	requestBody := api.StartCommandRequest{
+		Command:"test-command",
+		Sync: boolPtr(true),
 	}
 	bodyBytes, _ := json.Marshal(requestBody)
 
@@ -176,9 +186,9 @@ func TestScrollHandler_RunCommand_AsyncSuccess(t *testing.T) {
 	tc.QueueManager.EXPECT().AddTempItem("test-command").Return(nil)
 
 	// Create request body
-	requestBody := StartScrollRequestBody{
-		CommandId: "test-command",
-		Sync:      false,
+	requestBody := api.StartCommandRequest{
+		Command:"test-command",
+		Sync: boolPtr(false),
 	}
 	bodyBytes, _ := json.Marshal(requestBody)
 
@@ -231,9 +241,9 @@ func TestScrollHandler_RunCommand_SyncError(t *testing.T) {
 	tc.QueueManager.EXPECT().AddTempItem("test-command").Return(fiber.NewError(500, "internal error"))
 
 	// Create request body
-	requestBody := StartScrollRequestBody{
-		CommandId: "test-command",
-		Sync:      true,
+	requestBody := api.StartCommandRequest{
+		Command:"test-command",
+		Sync: boolPtr(true),
 	}
 	bodyBytes, _ := json.Marshal(requestBody)
 
@@ -289,12 +299,12 @@ func TestScrollHandler_RunProcedure_SyncSuccess(t *testing.T) {
 	tc.ProcedureLauncher.EXPECT().RunProcedure(gomock.Any(), "test-process", []string{"dep1"}).Return("result", nil, nil)
 
 	// Create request body
-	requestBody := StartProcedureRequestBody{
+	requestBody := api.StartProcedureRequest{
 		Mode:         "rcon",
 		Data:         "test-data",
 		Process:      "test-process",
-		Dependencies: []string{"dep1"},
-		Sync:         true,
+		Dependencies: stringSlicePtr([]string{"dep1"}),
+		Sync:         boolPtr(true),
 	}
 	bodyBytes, _ := json.Marshal(requestBody)
 
@@ -326,12 +336,12 @@ func TestScrollHandler_RunProcedure_AsyncSuccess(t *testing.T) {
 	tc.ProcedureLauncher.EXPECT().RunProcedure(gomock.Any(), "test-process", []string{}).Return("", nil, nil)
 
 	// Create request body
-	requestBody := StartProcedureRequestBody{
+	requestBody := api.StartProcedureRequest{
 		Mode:         "rcon",
 		Data:         "test-data",
 		Process:      "test-process",
-		Dependencies: []string{},
-		Sync:         false,
+		Dependencies: stringSlicePtr([]string{}),
+		Sync:         boolPtr(false),
 	}
 	bodyBytes, _ := json.Marshal(requestBody)
 
@@ -366,12 +376,12 @@ func TestScrollHandler_RunProcedure_StdinMode(t *testing.T) {
 	tc.ProcedureLauncher.EXPECT().RunProcedure(gomock.Any(), "test-process", []string{}).Return("result", nil, nil)
 
 	// Create request body with stdin mode
-	requestBody := StartProcedureRequestBody{
+	requestBody := api.StartProcedureRequest{
 		Mode:         "stdin",
 		Data:         "test-data",
 		Process:      "test-process",
-		Dependencies: []string{},
-		Sync:         true,
+		Dependencies: stringSlicePtr([]string{}),
+		Sync:         boolPtr(true),
 	}
 	bodyBytes, _ := json.Marshal(requestBody)
 
@@ -401,12 +411,12 @@ func TestScrollHandler_RunProcedure_InvalidMode(t *testing.T) {
 	tc.PluginManager.EXPECT().CanRunStandaloneProcedure("invalid-mode").Return(false)
 
 	// Create request body
-	requestBody := StartProcedureRequestBody{
+	requestBody := api.StartProcedureRequest{
 		Mode:         "invalid-mode",
 		Data:         "test-data",
 		Process:      "test-process",
-		Dependencies: []string{},
-		Sync:         true,
+		Dependencies: stringSlicePtr([]string{}),
+		Sync:         boolPtr(true),
 	}
 	bodyBytes, _ := json.Marshal(requestBody)
 
@@ -435,12 +445,12 @@ func TestScrollHandler_RunProcedure_EmptyData(t *testing.T) {
 	tc.PluginManager.EXPECT().CanRunStandaloneProcedure("rcon").Return(true)
 
 	// Create request body with empty data
-	requestBody := StartProcedureRequestBody{
+	requestBody := api.StartProcedureRequest{
 		Mode:         "rcon",
 		Data:         "",
 		Process:      "test-process",
-		Dependencies: []string{},
-		Sync:         true,
+		Dependencies: stringSlicePtr([]string{}),
+		Sync:         boolPtr(true),
 	}
 	bodyBytes, _ := json.Marshal(requestBody)
 
@@ -470,12 +480,12 @@ func TestScrollHandler_RunProcedure_ProcessNotFound(t *testing.T) {
 	tc.ProcessManager.EXPECT().GetRunningProcess("non-existent").Return(nil)
 
 	// Create request body
-	requestBody := StartProcedureRequestBody{
+	requestBody := api.StartProcedureRequest{
 		Mode:         "rcon",
 		Data:         "test-data",
 		Process:      "non-existent",
-		Dependencies: []string{},
-		Sync:         true,
+		Dependencies: stringSlicePtr([]string{}),
+		Sync:         boolPtr(true),
 	}
 	bodyBytes, _ := json.Marshal(requestBody)
 
@@ -527,12 +537,12 @@ func TestScrollHandler_RunProcedure_SyncError(t *testing.T) {
 	tc.ProcedureLauncher.EXPECT().RunProcedure(gomock.Any(), "test-process", []string{}).Return("", nil, fiber.NewError(500, "procedure failed"))
 
 	// Create request body
-	requestBody := StartProcedureRequestBody{
+	requestBody := api.StartProcedureRequest{
 		Mode:         "rcon",
 		Data:         "test-data",
 		Process:      "test-process",
-		Dependencies: []string{},
-		Sync:         true,
+		Dependencies: stringSlicePtr([]string{}),
+		Sync:         boolPtr(true),
 	}
 	bodyBytes, _ := json.Marshal(requestBody)
 

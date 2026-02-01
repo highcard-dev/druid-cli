@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/highcard-dev/daemon/internal/api"
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 )
@@ -15,27 +16,15 @@ type ScrollLogHandler struct {
 	processManager ports.ProcessManagerInterface
 }
 
-type ScrollLogStream struct {
-	Key string   `json:"key" validate:"required"`
-	Log []string `json:"log" validate:"required"`
-} // @name ScrollLogStream
-
 func NewScrollLogHandler(scrollService ports.ScrollServiceInterface, logManager ports.LogManagerInterface, processManager ports.ProcessManagerInterface) *ScrollLogHandler {
 	return &ScrollLogHandler{scrollService: scrollService, logManager: logManager, processManager: processManager}
 }
 
-// @Summary List all logs
-// @ID listLogs
-// @Tags logs, druid, daemon
-// @Accept */*
-// @Produce json
-// @Success 200 {object} []ScrollLogStream
-// @Router /api/v1/logs [get]
 func (sl ScrollLogHandler) ListAllLogs(c *fiber.Ctx) error {
 
 	streams := sl.logManager.GetStreams()
 
-	responseData := make([]ScrollLogStream, 0, len(streams))
+	responseData := make([]api.ScrollLogStream, 0, len(streams))
 	mutex := sync.Mutex{}
 	wg := sync.WaitGroup{}
 
@@ -46,7 +35,7 @@ func (sl ScrollLogHandler) ListAllLogs(c *fiber.Ctx) error {
 		go func(streamName string, res <-chan []byte, log *domain.Log) {
 			defer wg.Done()
 
-			logResponse := ScrollLogStream{
+			logResponse := api.ScrollLogStream{
 				Key: streamName,
 				Log: make([]string, 0, log.Capacity),
 			}
@@ -66,15 +55,6 @@ func (sl ScrollLogHandler) ListAllLogs(c *fiber.Ctx) error {
 	return c.JSON(responseData)
 }
 
-// @Summary List stream logs
-// @ID listLog
-// @Tags logs, druid, daemon
-// @Accept */*
-// @Produce json
-// @Param stream path string true "Stream name"
-// @Success 200 {object} ScrollLogStream
-// @Router /api/v1/logs/{stream} [get]
-// ListStreamLogs lists logs for a specific stream.
 func (sl ScrollLogHandler) ListStreamLogs(c *fiber.Ctx) error {
 
 	steam, ok := sl.logManager.GetStreams()[c.Params("stream")]
@@ -83,7 +63,7 @@ func (sl ScrollLogHandler) ListStreamLogs(c *fiber.Ctx) error {
 		return nil
 	}
 
-	responseData := ScrollLogStream{
+	responseData := api.ScrollLogStream{
 		Key: c.Params("stream"),
 		Log: make([]string, 0, steam.Capacity),
 	}

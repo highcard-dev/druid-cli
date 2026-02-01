@@ -15,12 +15,6 @@ func NewDaemonHandler(shutdown *signals.SignalHandler) *DaemonHandler {
 	}
 }
 
-// @Summary Finish Coldstarter
-// @ID stopDaemon
-// @Tags druid, daemon
-// @Accept */*
-// @Success 202
-// @Router /api/v1/daemon/stop [POST]
 func (ah DaemonHandler) Stop(c *fiber.Ctx) error {
 	ah.shutdown.Stop()
 	c.Status(201)

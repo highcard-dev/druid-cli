@@ -18,8 +18,6 @@ import (
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/webdav"
-
-	_ "github.com/highcard-dev/daemon/docs"
 	"go.uber.org/zap"
 )
 

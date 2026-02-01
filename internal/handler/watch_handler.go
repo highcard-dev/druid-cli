@@ -7,37 +7,15 @@ import (
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
+	"github.com/highcard-dev/daemon/internal/api"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"go.uber.org/zap"
 )
 
-// WatchModeResponse represents the response for enable/disable dev mode operations
-type WatchModeResponse struct {
-	Status  string `json:"status"`
-	Enabled bool   `json:"enabled"`
-} // @name WatchModeResponse
-
-// WatchStatusResponse represents the response for dev mode status
-type WatchStatusResponse struct {
-	Enabled      bool     `json:"enabled"`
-	WatchedPaths []string `json:"watchedPaths"`
-} // @name WatchStatusResponse
-
-// ErrorResponse represents an error response
-type ErrorResponse struct {
-	Status string `json:"status"`
-	Error  string `json:"error"`
-} // @name ErrorResponse
-
 type WatchHandler struct {
 	uiWatchService ports.WatchServiceInterface
 	scrollService  ports.ScrollServiceInterface
-}
-
-type WatchModeBody struct {
-	HotReloadCommands []string `json:"hotReloadCommands,omitempty"`
-	BuildCommands     []string `json:"buildCommands,omitempty"`
 }
 
 func NewWatchHandler(uiWatchService ports.WatchServiceInterface, scrollService ports.ScrollServiceInterface) *WatchHandler {
@@ -47,18 +25,9 @@ func NewWatchHandler(uiWatchService ports.WatchServiceInterface, scrollService p
 	}
 }
 
-// @Summary Enable development mode
-// @ID enableWatch
-// @Tags ui, dev, druid, daemon
-// @Accept json
-// @Produce json
-// @Param body body WatchModeBody false "Optional commands to run on file changes"
-// @Success 200 {object} WatchModeResponse
-// @Failure 500 {object} ErrorResponse
-// @Router /api/v1/watch/enable [post]
 func (udh *WatchHandler) Enable(ctx *fiber.Ctx) error {
 	if udh.uiWatchService.IsWatching() {
-		response := WatchModeResponse{
+		response := api.WatchModeResponse{
 			Status:  "already-active",
 			Enabled: true,
 		}
@@ -71,18 +40,18 @@ func (udh *WatchHandler) Enable(ctx *fiber.Ctx) error {
 	scrollDir := udh.scrollService.GetDir()
 	if scrollDir == "" {
 		logger.Log().Error("Cannot enable development mode: No scroll loaded")
-		errorResponse := ErrorResponse{
+		errorResponse := api.ErrorResponse{
 			Status: "error",
 			Error:  "No scroll loaded. Please load a scroll before enabling development mode.",
 		}
 		return ctx.Status(400).JSON(errorResponse)
 	}
 
-	var requestBody WatchModeBody
+	var requestBody api.WatchModeRequest
 
 	err := ctx.BodyParser(&requestBody)
-	if err == nil {
-		udh.uiWatchService.SetHotReloadCommands(requestBody.HotReloadCommands)
+	if err == nil && requestBody.HotReloadCommands != nil {
+		udh.uiWatchService.SetHotReloadCommands(*requestBody.HotReloadCommands)
 	}
 
 	watchPaths = append(watchPaths, filepath.Join(scrollDir, "public/src"), filepath.Join(scrollDir, "private/src"))
@@ -91,7 +60,7 @@ func (udh *WatchHandler) Enable(ctx *fiber.Ctx) error {
 	err = udh.uiWatchService.StartWatching(scrollDir, watchPaths...)
 	if err != nil {
 		logger.Log().Error("Failed to start file watcher", zap.Error(err))
-		errorResponse := ErrorResponse{
+		errorResponse := api.ErrorResponse{
 			Status: "error",
 			Error:  err.Error(),
 		}
@@ -100,24 +69,16 @@ func (udh *WatchHandler) Enable(ctx *fiber.Ctx) error {
 
 	logger.Log().Info("UI development mode enabled")
 
-	response := WatchModeResponse{
+	response := api.WatchModeResponse{
 		Status:  "success",
 		Enabled: udh.uiWatchService.IsWatching(),
 	}
 	return ctx.JSON(response)
 }
 
-// @Summary Disable development mode
-// @ID disableWatch
-// @Tags ui, dev, druid, daemon
-// @Accept json
-// @Produce json
-// @Success 200 {object} WatchModeResponse
-// @Failure 500 {object} ErrorResponse
-// @Router /api/v1/watch/disable [post]
 func (udh *WatchHandler) Disable(ctx *fiber.Ctx) error {
 	if !udh.uiWatchService.IsWatching() {
-		response := WatchModeResponse{
+		response := api.WatchModeResponse{
 			Status:  "success",
 			Enabled: false,
 		}
@@ -128,7 +89,7 @@ func (udh *WatchHandler) Disable(ctx *fiber.Ctx) error {
 	err := udh.uiWatchService.StopWatching()
 	if err != nil {
 		logger.Log().Error("Failed to stop file watcher", zap.Error(err))
-		errorResponse := ErrorResponse{
+		errorResponse := api.ErrorResponse{
 			Status: "error",
 			Error:  err.Error(),
 		}
@@ -137,23 +98,16 @@ func (udh *WatchHandler) Disable(ctx *fiber.Ctx) error {
 
 	logger.Log().Info("UI development mode disabled")
 
-	response := WatchModeResponse{
+	response := api.WatchModeResponse{
 		Status:  "success",
 		Enabled: udh.uiWatchService.IsWatching(),
 	}
 	return ctx.JSON(response)
 }
 
-// @Summary Get development mode status
-// @ID getWatchStatus
-// @Tags ui, dev, druid, daemon
-// @Accept json
-// @Produce json
-// @Success 200 {object} WatchStatusResponse
-// @Router /api/v1/watch/status [get]
 func (udh *WatchHandler) Status(ctx *fiber.Ctx) error {
 	isWatching := udh.uiWatchService.IsWatching()
-	response := WatchStatusResponse{
+	response := api.WatchStatusResponse{
 		Enabled:      isWatching,
 		WatchedPaths: udh.uiWatchService.GetWatchedPaths(),
 	}

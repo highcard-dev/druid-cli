@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/highcard-dev/daemon/internal/api"
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	mock_ports "github.com/highcard-dev/daemon/test/mock"
 	"go.uber.org/mock/gomock"
@@ -65,7 +66,7 @@ func TestWebsocketHandler_CreateToken_Success(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var result TokenHttpResponse
+	var result api.TokenResponse
 	if err := json.Unmarshal(body, &result); err != nil {
 		t.Fatalf("Failed to unmarshal response: %v", err)
 	}
@@ -93,7 +94,7 @@ func TestWebsocketHandler_CreateToken_EmptyToken(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var result TokenHttpResponse
+	var result api.TokenResponse
 	json.Unmarshal(body, &result)
 
 	if result.Token != "" {
@@ -127,7 +128,7 @@ func TestWebsocketHandler_Consoles_Success(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var result ConsolesHttpResponse
+	var result api.ConsolesResponse
 	if err := json.Unmarshal(body, &result); err != nil {
 		t.Fatalf("Failed to unmarshal response: %v", err)
 	}
@@ -158,7 +159,7 @@ func TestWebsocketHandler_Consoles_Empty(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var result ConsolesHttpResponse
+	var result api.ConsolesResponse
 	json.Unmarshal(body, &result)
 
 	if len(result.Consoles) != 0 {
@@ -207,7 +208,7 @@ func TestWebsocketHandler_Consoles_SingleConsole(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var result ConsolesHttpResponse
+	var result api.ConsolesResponse
 	json.Unmarshal(body, &result)
 
 	if len(result.Consoles) != 1 {
