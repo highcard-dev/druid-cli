@@ -15,32 +15,14 @@ func NewScrollMetricHandler(scrollService ports.ScrollServiceInterface, processM
 	return &ScrollMetricHandler{ScrollService: scrollService, ProcessMonitor: processMonitor}
 }
 
-type PsTress = map[string]*domain.ProcessTreeRoot // @name PsTreeMap
+// Keep original type aliases (use pointers to match service return types)
+type PsTress = map[string]*domain.ProcessTreeRoot
+type Metrics = map[string]*domain.ProcessMonitorMetrics
 
-type Metrics = map[string]*domain.ProcessMonitorMetrics // @name ProcessMonitorMetricsMap
-
-// Metrics returns the metrics for all processes.
-//
-// @Summary Get all process metrics
-// @Description Get the metrics for all processes.
-// @Tags metrics, druid, daemon
-// @Accept json
-// @Produce json
-// @Success 200 {object} Metrics
-// @Router /api/v1/metrics [get]
-func (sl ScrollMetricHandler) Metrics(c *fiber.Ctx) error {
+func (sl ScrollMetricHandler) GetMetrics(c *fiber.Ctx) error {
 	return c.JSON(sl.ProcessMonitor.GetAllProcessesMetrics())
 }
 
-// Returns whole PSTree of process
-//
-// @Summary Get all process metrics
-// @Description Get pstree of running process
-// @Tags metrics, druid, daemon
-// @Accept json
-// @Produce json
-// @Success 200 {object} PsTress
-// @Router /api/v1/pstree [get]
-func (sl ScrollMetricHandler) PsTree(c *fiber.Ctx) error {
+func (sl ScrollMetricHandler) GetPsTree(c *fiber.Ctx) error {
 	return c.JSON(sl.ProcessMonitor.GetPsTrees())
 }

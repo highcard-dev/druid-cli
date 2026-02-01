@@ -232,6 +232,20 @@
             ],
         },
         {
+            "name": "Debug Daemon run install ark",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/main.go",
+            "args": [
+                "run",
+                "install",
+                "--cwd",
+                "${workspaceFolder}/examples/ark"
+            ],
+        },
+        {
             "name": "Debug Daemon serve (emtpy dir)",
             "type": "go",
             "request": "launch",

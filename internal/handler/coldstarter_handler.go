@@ -15,13 +15,7 @@ func NewColdstarterHandler(coldstarter ports.ColdStarterInterface) *ColdstarterH
 	}
 }
 
-// @Summary Finish Coldstarter
-// @ID finishColdStarter
-// @Tags coldstarter, druid, daemon
-// @Accept */*
-// @Success 202
-// @Router /api/v1/coldstarter/finish [POST]
-func (ah ColdstarterHandler) Finish(c *fiber.Ctx) error {
+func (ah ColdstarterHandler) FinishColdstarter(c *fiber.Ctx) error {
 	ah.coldstarter.Finish(nil)
 	c.Status(202)
 	return nil

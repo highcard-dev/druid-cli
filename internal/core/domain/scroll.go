@@ -63,11 +63,11 @@ type File struct {
 	Commands     map[string]*CommandInstructionSet `yaml:"commands" json:"commands"`
 	Plugins      map[string]map[string]string      `yaml:"plugins" json:"plugins"`
 	Cronjobs     []*Cronjob                        `yaml:"cronjobs" json:"cronjobs"`
-} // @name ScrollFile
+}
 
 type Scroll struct {
 	File
-} // @name Scroll
+}
 
 type Procedure struct {
 	Mode          string      `yaml:"mode" json:"mode"`
@@ -75,14 +75,14 @@ type Procedure struct {
 	Wait          interface{} `yaml:"wait" json:"wait"`
 	Data          interface{} `yaml:"data" json:"data"`
 	IgnoreFailure bool        `yaml:"ignore_failure" json:"ignore_failure"`
-} // @name Procedure
+}
 
 type CommandInstructionSet struct {
 	Dependencies []string     `yaml:"dependencies,omitempty" json:"dependencies,omitempty"`
 	Procedures   []*Procedure `yaml:"procedures" json:"procedures"`
 	Needs        []string     `yaml:"needs,omitempty" json:"needs,omitempty"`
 	Run          RunMode      `yaml:"run,omitempty" json:"run,omitempty"`
-} // @name CommandInstructionSet
+}
 
 var ErrScrollDoesNotExist = fmt.Errorf("scroll does not exist")
 

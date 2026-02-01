@@ -9,7 +9,7 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-func TestUiDevService_BasicFunctionality(t *testing.T) {
+func TestWatchService_BasicFunctionality(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -67,7 +67,7 @@ func TestUiDevService_BasicFunctionality(t *testing.T) {
 	}
 }
 
-func TestUiDevService_MultipleSubscribers(t *testing.T) {
+func TestWatchService_MultipleSubscribers(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -101,7 +101,7 @@ func TestUiDevService_MultipleSubscribers(t *testing.T) {
 	uiDevService.StopWatching()
 }
 
-func TestUiDevService_ContinuousStartStop(t *testing.T) {
+func TestWatchService_ContinuousStartStop(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -173,7 +173,7 @@ func TestUiDevService_ContinuousStartStop(t *testing.T) {
 	}
 }
 
-func TestUiDevService_SubscribeBeforeStart(t *testing.T) {
+func TestWatchService_SubscribeBeforeStart(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 

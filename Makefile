@@ -2,7 +2,18 @@
 
 VERSION ?= "dev"
 
-build: ## Build Daemon
+generate-api: ## Generate API types from OpenAPI spec
+	@echo "Generating API types from OpenAPI spec..."
+	@which oapi-codegen > /dev/null || (echo "Installing oapi-codegen..." && go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest)
+	@PATH="$(shell go env GOPATH)/bin:$$PATH" oapi-codegen -config api/oapi-codegen.yaml api/openapi.yaml
+
+validate-api: ## Validate OpenAPI spec
+	@echo "Validating OpenAPI spec..."
+	@which oapi-codegen > /dev/null || (echo "Installing oapi-codegen..." && go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest)
+	@PATH="$(shell go env GOPATH)/bin:$$PATH" oapi-codegen -config api/oapi-codegen.yaml api/openapi.yaml > /dev/null
+	@echo "✓ OpenAPI spec is valid"
+
+build: generate-api ## Build Daemon
 	CGO_ENABLED=0 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/druid
 
 build-x86-docker:
@@ -18,11 +29,6 @@ build-plugins: ## Build Plugins
 proto:
 	protoc --go_out=paths=source_relative:./ --go-grpc_out=paths=source_relative:./ --go-grpc_opt=paths=source_relative plugin/proto/*.proto
 
-generate-swagger:
-	swag init -g ./main.go --overridesFile override.swag
-
-serve-swagger: generate-swagger
-	npx serve ./docs
 
 generate-md-docs:
 	go run ./docs_md/main.go

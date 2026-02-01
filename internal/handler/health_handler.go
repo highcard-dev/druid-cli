@@ -4,14 +4,9 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/highcard-dev/daemon/internal/api"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 )
-
-type HealhResponse struct {
-	Mode      string     `json:"mode"`
-	Progress  float64    `json:"progress"`
-	StartDate *time.Time `json:"start_date,omitempty"`
-}
 
 type HealthHandler struct {
 	portService     ports.PortServiceInterface
@@ -42,27 +37,19 @@ func NewHealthHandler(
 	return h
 }
 
-// @Summary Get ports from scroll with additional information
-// @ID getHealth
-// @Tags health, druid, daemon
-// @Accept */*
-// @Produce json
-// @Success 200 {object} HealhResponse
-// @Success 503 {object} HealhResponse
-// @Router /api/v1/health [get]
-func (p *HealthHandler) Health(c *fiber.Ctx) error {
+func (p *HealthHandler) GetHealthAuth(c *fiber.Ctx) error {
 
 	portsOpen := p.portService.MandatoryPortsOpen()
 
 	if !p.timeoutDone && !portsOpen {
 		c.SendStatus(503)
-		return c.JSON(HealhResponse{
+		return c.JSON(api.HealthResponse{
 			Mode: "manditory_ports",
 		})
 
 	}
 	if p.Started == nil {
-		return c.JSON(HealhResponse{
+		return c.JSON(api.HealthResponse{
 			Mode: "idle",
 		})
 	}
@@ -73,14 +60,14 @@ func (p *HealthHandler) Health(c *fiber.Ctx) error {
 		if pt != nil {
 			perc = (*pt).GetPercent()
 		}
-
-		return c.JSON(HealhResponse{
+		percFloat32 := float32(perc)
+		return c.JSON(api.HealthResponse{
 			Mode:     string(p.snapshotService.GetCurrentMode()),
-			Progress: perc,
+			Progress: &percFloat32,
 		})
 	}
 
-	return c.JSON(HealhResponse{
+	return c.JSON(api.HealthResponse{
 		Mode:      "ok",
 		StartDate: p.Started,
 	})

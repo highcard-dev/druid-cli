@@ -1594,32 +1594,32 @@ func (mr *MockUiServiceInterfaceMockRecorder) GetIndex(filePath any) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetIndex", reflect.TypeOf((*MockUiServiceInterface)(nil).GetIndex), filePath)
 }
 
-// MockUiDevServiceInterface is a mock of UiDevServiceInterface interface.
-type MockUiDevServiceInterface struct {
+// MockWatchServiceInterface is a mock of WatchServiceInterface interface.
+type MockWatchServiceInterface struct {
 	ctrl     *gomock.Controller
-	recorder *MockUiDevServiceInterfaceMockRecorder
+	recorder *MockWatchServiceInterfaceMockRecorder
 	isgomock struct{}
 }
 
-// MockUiDevServiceInterfaceMockRecorder is the mock recorder for MockUiDevServiceInterface.
-type MockUiDevServiceInterfaceMockRecorder struct {
-	mock *MockUiDevServiceInterface
+// MockWatchServiceInterfaceMockRecorder is the mock recorder for MockWatchServiceInterface.
+type MockWatchServiceInterfaceMockRecorder struct {
+	mock *MockWatchServiceInterface
 }
 
-// NewMockUiDevServiceInterface creates a new mock instance.
-func NewMockUiDevServiceInterface(ctrl *gomock.Controller) *MockUiDevServiceInterface {
-	mock := &MockUiDevServiceInterface{ctrl: ctrl}
-	mock.recorder = &MockUiDevServiceInterfaceMockRecorder{mock}
+// NewMockWatchServiceInterface creates a new mock instance.
+func NewMockWatchServiceInterface(ctrl *gomock.Controller) *MockWatchServiceInterface {
+	mock := &MockWatchServiceInterface{ctrl: ctrl}
+	mock.recorder = &MockWatchServiceInterfaceMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockUiDevServiceInterface) EXPECT() *MockUiDevServiceInterfaceMockRecorder {
+func (m *MockWatchServiceInterface) EXPECT() *MockWatchServiceInterfaceMockRecorder {
 	return m.recorder
 }
 
 // GetWatchedPaths mocks base method.
-func (m *MockUiDevServiceInterface) GetWatchedPaths() []string {
+func (m *MockWatchServiceInterface) GetWatchedPaths() []string {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetWatchedPaths")
 	ret0, _ := ret[0].([]string)
@@ -1627,13 +1627,13 @@ func (m *MockUiDevServiceInterface) GetWatchedPaths() []string {
 }
 
 // GetWatchedPaths indicates an expected call of GetWatchedPaths.
-func (mr *MockUiDevServiceInterfaceMockRecorder) GetWatchedPaths() *gomock.Call {
+func (mr *MockWatchServiceInterfaceMockRecorder) GetWatchedPaths() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWatchedPaths", reflect.TypeOf((*MockUiDevServiceInterface)(nil).GetWatchedPaths))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWatchedPaths", reflect.TypeOf((*MockWatchServiceInterface)(nil).GetWatchedPaths))
 }
 
 // IsWatching mocks base method.
-func (m *MockUiDevServiceInterface) IsWatching() bool {
+func (m *MockWatchServiceInterface) IsWatching() bool {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "IsWatching")
 	ret0, _ := ret[0].(bool)
@@ -1641,25 +1641,27 @@ func (m *MockUiDevServiceInterface) IsWatching() bool {
 }
 
 // IsWatching indicates an expected call of IsWatching.
-func (mr *MockUiDevServiceInterfaceMockRecorder) IsWatching() *gomock.Call {
+func (mr *MockWatchServiceInterfaceMockRecorder) IsWatching() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsWatching", reflect.TypeOf((*MockUiDevServiceInterface)(nil).IsWatching))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsWatching", reflect.TypeOf((*MockWatchServiceInterface)(nil).IsWatching))
 }
 
-// SetCommands mocks base method.
-func (m *MockUiDevServiceInterface) SetCommands(procs map[string]*domain.CommandInstructionSet) {
+// SetHotReloadCommands mocks base method.
+func (m *MockWatchServiceInterface) SetHotReloadCommands(procs []string) error {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "SetCommands", procs)
+	ret := m.ctrl.Call(m, "SetHotReloadCommands", procs)
+	ret0, _ := ret[0].(error)
+	return ret0
 }
 
-// SetCommands indicates an expected call of SetCommands.
-func (mr *MockUiDevServiceInterfaceMockRecorder) SetCommands(procs any) *gomock.Call {
+// SetHotReloadCommands indicates an expected call of SetHotReloadCommands.
+func (mr *MockWatchServiceInterfaceMockRecorder) SetHotReloadCommands(procs any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetCommands", reflect.TypeOf((*MockUiDevServiceInterface)(nil).SetCommands), procs)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetHotReloadCommands", reflect.TypeOf((*MockWatchServiceInterface)(nil).SetHotReloadCommands), procs)
 }
 
 // StartWatching mocks base method.
-func (m *MockUiDevServiceInterface) StartWatching(basePath string, paths ...string) error {
+func (m *MockWatchServiceInterface) StartWatching(basePath string, paths ...string) error {
 	m.ctrl.T.Helper()
 	varargs := []any{basePath}
 	for _, a := range paths {
@@ -1671,14 +1673,14 @@ func (m *MockUiDevServiceInterface) StartWatching(basePath string, paths ...stri
 }
 
 // StartWatching indicates an expected call of StartWatching.
-func (mr *MockUiDevServiceInterfaceMockRecorder) StartWatching(basePath any, paths ...any) *gomock.Call {
+func (mr *MockWatchServiceInterfaceMockRecorder) StartWatching(basePath any, paths ...any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]any{basePath}, paths...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartWatching", reflect.TypeOf((*MockUiDevServiceInterface)(nil).StartWatching), varargs...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartWatching", reflect.TypeOf((*MockWatchServiceInterface)(nil).StartWatching), varargs...)
 }
 
 // StopWatching mocks base method.
-func (m *MockUiDevServiceInterface) StopWatching() error {
+func (m *MockWatchServiceInterface) StopWatching() error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "StopWatching")
 	ret0, _ := ret[0].(error)
@@ -1686,13 +1688,13 @@ func (m *MockUiDevServiceInterface) StopWatching() error {
 }
 
 // StopWatching indicates an expected call of StopWatching.
-func (mr *MockUiDevServiceInterfaceMockRecorder) StopWatching() *gomock.Call {
+func (mr *MockWatchServiceInterfaceMockRecorder) StopWatching() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopWatching", reflect.TypeOf((*MockUiDevServiceInterface)(nil).StopWatching))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopWatching", reflect.TypeOf((*MockWatchServiceInterface)(nil).StopWatching))
 }
 
 // Subscribe mocks base method.
-func (m *MockUiDevServiceInterface) Subscribe() chan *[]byte {
+func (m *MockWatchServiceInterface) Subscribe() chan *[]byte {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Subscribe")
 	ret0, _ := ret[0].(chan *[]byte)
@@ -1700,21 +1702,21 @@ func (m *MockUiDevServiceInterface) Subscribe() chan *[]byte {
 }
 
 // Subscribe indicates an expected call of Subscribe.
-func (mr *MockUiDevServiceInterfaceMockRecorder) Subscribe() *gomock.Call {
+func (mr *MockWatchServiceInterfaceMockRecorder) Subscribe() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Subscribe", reflect.TypeOf((*MockUiDevServiceInterface)(nil).Subscribe))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Subscribe", reflect.TypeOf((*MockWatchServiceInterface)(nil).Subscribe))
 }
 
 // Unsubscribe mocks base method.
-func (m *MockUiDevServiceInterface) Unsubscribe(client chan *[]byte) {
+func (m *MockWatchServiceInterface) Unsubscribe(client chan *[]byte) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "Unsubscribe", client)
 }
 
 // Unsubscribe indicates an expected call of Unsubscribe.
-func (mr *MockUiDevServiceInterfaceMockRecorder) Unsubscribe(client any) *gomock.Call {
+func (mr *MockWatchServiceInterfaceMockRecorder) Unsubscribe(client any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Unsubscribe", reflect.TypeOf((*MockUiDevServiceInterface)(nil).Unsubscribe), client)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Unsubscribe", reflect.TypeOf((*MockWatchServiceInterface)(nil).Unsubscribe), client)
 }
 
 // MockNixDependencyServiceInterface is a mock of NixDependencyServiceInterface interface.

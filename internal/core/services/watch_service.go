@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -28,8 +29,8 @@ type CommandDoneEvent struct {
 	Timestamp  time.Time `json:"timestamp"`
 }
 
-// UiDevService handles file watching and change notifications for UI development
-type UiDevService struct {
+// WatchService handles file watching and change notifications for UI development
+type WatchService struct {
 	watcher           *fsnotify.Watcher
 	broadcastChannel  *domain.BroadcastChannel
 	watchPaths        []string
@@ -38,8 +39,7 @@ type UiDevService struct {
 	ctx               context.Context
 	cancel            context.CancelFunc
 	isWatching        bool
-	hotReloadCommands map[string]*domain.CommandInstructionSet
-	buildCommands     map[string]*domain.CommandInstructionSet
+	hotReloadCommands []string
 	queueManager      ports.QueueManagerInterface
 	scrollService     ports.ScrollServiceInterface
 	buildActive       bool
@@ -49,8 +49,8 @@ type UiDevService struct {
 // NewUiDevService creates a new instance of UiDevService
 func NewUiDevService(
 	queueManager ports.QueueManagerInterface, scrollService ports.ScrollServiceInterface,
-) ports.UiDevServiceInterface {
-	return &UiDevService{
+) ports.WatchServiceInterface {
+	return &WatchService{
 		watchPaths:    make([]string, 0),
 		isWatching:    false,
 		queueManager:  queueManager,
@@ -58,38 +58,25 @@ func NewUiDevService(
 	}
 }
 
-func (uds *UiDevService) SetHotReloadCommands(commands map[string]*domain.CommandInstructionSet) {
+func (uds *WatchService) SetHotReloadCommands(commands []string) error {
+
+	// Validate commands
+	for _, cmd := range commands {
+		_, err := uds.scrollService.GetCommand(cmd)
+		if err != nil {
+			return fmt.Errorf("invalid command '%s': %w", cmd, err)
+		}
+	}
+
 	uds.mu.Lock()
 	defer uds.mu.Unlock()
 	uds.hotReloadCommands = commands
-	for key, cmd := range commands {
-		uds.scrollService.AddTemporaryCommand(key, cmd)
-	}
-}
-func (uds *UiDevService) SetBuildCommands(commands map[string]*domain.CommandInstructionSet) {
-	uds.mu.Lock()
-	defer uds.mu.Unlock()
-	uds.buildCommands = commands
-	for key, cmd := range commands {
-		uds.scrollService.AddTemporaryCommand(key, cmd)
-	}
-}
 
-func (uds *UiDevService) Build() error {
-	uds.mu.RLock()
-	isWatching := uds.isWatching
-	uds.mu.RUnlock()
-
-	if !isWatching {
-		return errors.New("cannot build: dev mode is not enabled")
-	}
-
-	uds.handleBuildCommands()
 	return nil
 }
 
 // StartWatching initializes the file watcher and starts monitoring specified paths
-func (uds *UiDevService) StartWatching(basePath string, paths ...string) error {
+func (uds *WatchService) StartWatching(basePath string, paths ...string) error {
 	uds.mu.Lock()
 	defer uds.mu.Unlock()
 
@@ -137,12 +124,15 @@ func (uds *UiDevService) StartWatching(basePath string, paths ...string) error {
 	// Start the broadcast hub
 	go uds.broadcastChannel.Run()
 
+	// run hot reload commands initially
+	go uds.runHotReloadCommand()
+
 	logger.Log().Info("UI dev file watcher started")
 	return nil
 }
 
 // StopWatching stops the file watcher and cleans up resources
-func (uds *UiDevService) StopWatching() error {
+func (uds *WatchService) StopWatching() error {
 	uds.mu.Lock()
 	defer uds.mu.Unlock()
 
@@ -181,7 +171,7 @@ func (uds *UiDevService) StopWatching() error {
 }
 
 // Subscribe returns a channel for receiving file change notifications
-func (uds *UiDevService) Subscribe() chan *[]byte {
+func (uds *WatchService) Subscribe() chan *[]byte {
 	uds.mu.RLock()
 	defer uds.mu.RUnlock()
 
@@ -194,7 +184,7 @@ func (uds *UiDevService) Subscribe() chan *[]byte {
 }
 
 // Unsubscribe removes a client from receiving file change notifications
-func (uds *UiDevService) Unsubscribe(client chan *[]byte) {
+func (uds *WatchService) Unsubscribe(client chan *[]byte) {
 	uds.mu.RLock()
 	defer uds.mu.RUnlock()
 
@@ -204,7 +194,7 @@ func (uds *UiDevService) Unsubscribe(client chan *[]byte) {
 }
 
 // GetWatchedPaths returns the list of currently watched paths (relative to base path)
-func (uds *UiDevService) GetWatchedPaths() []string {
+func (uds *WatchService) GetWatchedPaths() []string {
 	uds.mu.RLock()
 	defer uds.mu.RUnlock()
 
@@ -221,14 +211,14 @@ func (uds *UiDevService) GetWatchedPaths() []string {
 }
 
 // IsWatching returns whether the file watcher is currently active
-func (uds *UiDevService) IsWatching() bool {
+func (uds *WatchService) IsWatching() bool {
 	uds.mu.RLock()
 	defer uds.mu.RUnlock()
 	return uds.isWatching
 }
 
 // addWatchPath adds a path to the file watcher, including subdirectories
-func (uds *UiDevService) addWatchPath(path string) error {
+func (uds *WatchService) addWatchPath(path string) error {
 	return filepath.Walk(path, func(walkPath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil // Skip paths that can't be accessed
@@ -246,7 +236,7 @@ func (uds *UiDevService) addWatchPath(path string) error {
 }
 
 // processEvents handles file system events and broadcasts them to subscribers
-func (uds *UiDevService) processEvents() {
+func (uds *WatchService) processEvents() {
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Log().Error("File watcher panic recovered", zap.Any("error", r))
@@ -282,7 +272,7 @@ func (uds *UiDevService) processEvents() {
 }
 
 // handleFileEvent processes a single file system event and broadcasts it
-func (uds *UiDevService) handleFileEvent(event fsnotify.Event) {
+func (uds *WatchService) handleFileEvent(event fsnotify.Event) {
 	// Convert absolute path to relative path
 	uds.mu.RLock()
 	basePath := uds.basePath
@@ -335,21 +325,13 @@ func (uds *UiDevService) handleFileEvent(event fsnotify.Event) {
 	}
 
 	// Handle hot reload commands in a separate goroutine to avoid blocking the event loop
-	go uds.handleHotReloadCommands()
+	go uds.runHotReloadCommand()
 }
 
-// handleHotReloadCommands processes hot reload commands triggered by file changes
-func (uds *UiDevService) handleHotReloadCommands() {
-	uds.executeCommands(uds.hotReloadCommands, "hot-reload")
-}
+// runHotReloadCommand is a unified method for executing both build and hot reload commands
+func (uds *WatchService) runHotReloadCommand() {
+	commands := uds.hotReloadCommands
 
-// handleBuildCommands processes build commands with proper synchronization
-func (uds *UiDevService) handleBuildCommands() {
-	uds.executeCommands(uds.buildCommands, "build")
-}
-
-// executeCommands is a unified method for executing both build and hot reload commands
-func (uds *UiDevService) executeCommands(commandsMap map[string]*domain.CommandInstructionSet, commandType string) {
 	uds.mu.Lock()
 
 	// Prevent overlapping builds - if build is active, mark that a change occurred
@@ -360,17 +342,14 @@ func (uds *UiDevService) executeCommands(commandsMap map[string]*domain.CommandI
 	}
 
 	// Check if there are commands to execute
-	if commandsMap == nil || len(commandsMap) == 0 {
+	if len(commands) == 0 {
 		uds.mu.Unlock()
 		return
 	}
 
 	// Mark build as active and get snapshot of commands
 	uds.buildActive = true
-	commands := make(map[string]*domain.CommandInstructionSet, len(commandsMap))
-	for key, cmd := range commandsMap {
-		commands[key] = cmd
-	}
+
 	broadcastChannel := uds.broadcastChannel
 	uds.mu.Unlock()
 
@@ -390,7 +369,7 @@ func (uds *UiDevService) executeCommands(commandsMap map[string]*domain.CommandI
 		broadcastChannel.Broadcast(eventCmdData)
 	}
 
-	for key := range commands {
+	for _, key := range commands {
 		broadcastEvent("build-started")
 		uds.queueManager.AddTempItemWithWait(key)
 		broadcastEvent("build-ended")

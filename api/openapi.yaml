@@ -1,0 +1,964 @@
+openapi: 3.1.0
+info:
+  title: Druid CLI
+  version: 0.1.0
+  description: |
+    Druid CLI is a process runner that launches and manages various sorts of
+    applications, like gameservers, databases or webservers.
+  contact: {}
+
+servers:
+  - url: /
+    description: Druid CLI API
+
+tags:
+  - name: scroll
+    description: Scroll management and command execution
+  - name: logs
+    description: Log streaming and retrieval
+  - name: metrics
+    description: Process metrics and monitoring
+  - name: process
+    description: Process management
+  - name: queue
+    description: Command queue management
+  - name: websocket
+    description: WebSocket connections and tokens
+  - name: port
+    description: Port information and status
+  - name: health
+    description: Health checks and status
+  - name: coldstarter
+    description: Cold start operations
+  - name: daemon
+    description: Daemon lifecycle management
+  - name: watch
+    description: File watching and development mode
+  - name: annotations
+    description: Annotation file access
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token from identity provider
+
+    tokenAuth:
+      type: apiKey
+      in: query
+      name: token
+      description: Short-lived query token for WebSocket connections
+
+  schemas:
+    # Request Types
+    StartCommandRequest:
+      type: object
+      required:
+        - command
+      properties:
+        command:
+          type: string
+          description: The command ID to execute
+          example: "start"
+        sync:
+          type: boolean
+          default: false
+          description: Whether to run synchronously (wait for completion)
+
+    StartProcedureRequest:
+      type: object
+      required:
+        - mode
+        - data
+        - process
+      properties:
+        mode:
+          type: string
+          description: The procedure mode (e.g., "stdin", or plugin mode)
+          example: "stdin"
+        data:
+          type: string
+          description: The data payload for the procedure
+        process:
+          type: string
+          description: The process name to run the procedure against
+        dependencies:
+          type: array
+          items:
+            type: string
+          description: List of dependency IDs this procedure depends on
+        sync:
+          type: boolean
+          default: false
+          description: Whether to run synchronously
+
+    WatchModeRequest:
+      type: object
+      properties:
+        hotReloadCommands:
+          type: array
+          items:
+            type: string
+          description: Commands to run when files change
+        buildCommands:
+          type: array
+          items:
+            type: string
+          description: Build commands to run before hot reload
+
+    # Response Types
+    TokenResponse:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          description: The generated authentication token
+
+    ConsolesResponse:
+      type: object
+      required:
+        - consoles
+      properties:
+        consoles:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/Console'
+
+    HealthResponse:
+      type: object
+      required:
+        - mode
+      properties:
+        mode:
+          type: string
+          description: Current health status mode
+          example: "ok"
+        progress:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+          description: Progress percentage for loading operations
+        start_date:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the daemon started
+
+    WatchStatusResponse:
+      type: object
+      required:
+        - enabled
+        - watchedPaths
+      properties:
+        enabled:
+          type: boolean
+          description: Whether watch mode is currently enabled
+        watchedPaths:
+          type: array
+          items:
+            type: string
+          description: List of currently watched file paths
+
+    WatchModeResponse:
+      type: object
+      required:
+        - status
+        - enabled
+      properties:
+        status:
+          type: string
+          description: Result status of the operation
+          example: "success"
+        enabled:
+          type: boolean
+          description: Current watch mode state
+
+    ErrorResponse:
+      type: object
+      required:
+        - status
+        - error
+      properties:
+        status:
+          type: string
+          example: "error"
+        error:
+          type: string
+          description: Error message
+
+    ScrollLogStream:
+      type: object
+      required:
+        - key
+        - log
+      properties:
+        key:
+          type: string
+          description: The log stream identifier
+        log:
+          type: array
+          items:
+            type: string
+          description: Array of log lines
+
+    ProcessesResponse:
+      type: object
+      required:
+        - processes
+      properties:
+        processes:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/Process'
+
+    # Domain Types
+    ScrollFile:
+      type: object
+      description: Scroll configuration file structure
+      properties:
+        name:
+          type: string
+          description: Scroll name
+        desc:
+          type: string
+          description: Scroll description
+        version:
+          type: string
+          description: Scroll version (semver)
+          example: "1.0.0"
+        app_version:
+          type: string
+          description: Application version (not necessarily semver)
+        init:
+          type: string
+          description: Initialization command
+        ports:
+          type: array
+          items:
+            $ref: '#/components/schemas/Port'
+        keepAlivePPM:
+          type: integer
+          description: Keep alive packets per minute
+        commands:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/CommandInstructionSet'
+        plugins:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: string
+        cronjobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Cronjob'
+
+    Port:
+      type: object
+      required:
+        - port
+        - protocol
+        - name
+      properties:
+        port:
+          type: integer
+          description: Port number
+          example: 8080
+        protocol:
+          type: string
+          description: Network protocol
+          example: "tcp"
+        name:
+          type: string
+          description: Port name/identifier
+        sleep_handler:
+          type: string
+          nullable: true
+          description: Handler to call when port becomes inactive
+        mandatory:
+          type: boolean
+          description: Whether this port must be open for health check
+        vars:
+          type: array
+          items:
+            $ref: '#/components/schemas/ColdStarterVars'
+        start_delay:
+          type: integer
+          description: Delay in seconds before starting port check
+        finish_after_command:
+          type: string
+          description: Command to run after port is available
+        check_activity:
+          type: boolean
+          description: Whether to monitor port activity
+        description:
+          type: string
+          description: Port description
+
+    AugmentedPort:
+      type: object
+      required:
+        - port
+        - protocol
+        - name
+        - inactive_since
+        - inactive_since_sec
+        - open
+      properties:
+        port:
+          type: integer
+          description: Port number
+        protocol:
+          type: string
+          description: Network protocol
+        name:
+          type: string
+          description: Port name/identifier
+        sleep_handler:
+          type: string
+          nullable: true
+        mandatory:
+          type: boolean
+        vars:
+          type: array
+          items:
+            $ref: '#/components/schemas/ColdStarterVars'
+        start_delay:
+          type: integer
+        finish_after_command:
+          type: string
+        check_activity:
+          type: boolean
+        description:
+          type: string
+        inactive_since:
+          type: string
+          format: date-time
+          description: When the port became inactive
+        inactive_since_sec:
+          type: integer
+          description: Seconds since port became inactive
+        open:
+          type: boolean
+          description: Whether the port is currently open
+
+    Console:
+      type: object
+      required:
+        - type
+        - inputMode
+      properties:
+        type:
+          type: string
+          enum: [tty, process, plugin]
+          description: Console type
+        inputMode:
+          type: string
+          description: Input mode for the console
+        exit:
+          type: integer
+          nullable: true
+          description: Exit code if console has exited
+
+    Process:
+      type: object
+      required:
+        - name
+        - type
+      properties:
+        name:
+          type: string
+          description: Process name/identifier
+        type:
+          type: string
+          description: Process type
+
+    ProcessTreeRoot:
+      type: object
+      required:
+        - root
+        - total_memory_rss
+        - total_memory_vms
+        - total_memory_swap
+        - total_io_counters_read
+        - total_io_counters_write
+        - total_cpu_percent
+        - total_process_count
+      properties:
+        root:
+          $ref: '#/components/schemas/ProcessTreeNode'
+        total_memory_rss:
+          type: integer
+          format: int64
+        total_memory_vms:
+          type: integer
+          format: int64
+        total_memory_swap:
+          type: integer
+          format: int64
+        total_io_counters_read:
+          type: integer
+          format: int64
+        total_io_counters_write:
+          type: integer
+          format: int64
+        total_cpu_percent:
+          type: number
+          format: double
+        total_process_count:
+          type: integer
+
+    ProcessTreeNode:
+      type: object
+      properties:
+        process:
+          type: string
+          description: Process information (simplified from gopsutil)
+        memory:
+          type: string
+          description: Memory statistics
+        memory_ex:
+          type: string
+          description: Extended memory statistics
+        io_counters:
+          type: string
+          description: I/O counters
+        cpu_percent:
+          type: number
+          format: double
+        name:
+          type: string
+        gids:
+          type: array
+          items:
+            type: integer
+        username:
+          type: string
+        cmdline:
+          type: string
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProcessTreeNode'
+
+    ProcessMonitorMetrics:
+      type: object
+      required:
+        - cpu
+        - memory
+        - connections
+        - pid
+      properties:
+        cpu:
+          type: number
+          format: double
+          description: CPU usage percentage
+        memory:
+          type: integer
+          description: Memory usage in bytes
+        connections:
+          type: array
+          items:
+            type: string
+          description: Active network connections
+        pid:
+          type: integer
+          description: Process ID
+
+    CommandInstructionSet:
+      type: object
+      required:
+        - procedures
+      properties:
+        dependencies:
+          type: array
+          items:
+            type: string
+        procedures:
+          type: array
+          items:
+            $ref: '#/components/schemas/Procedure'
+        needs:
+          type: array
+          items:
+            type: string
+        run:
+          type: string
+          enum: [always, once, restart, persistent]
+          description: Run mode for the command
+
+    Procedure:
+      type: object
+      required:
+        - mode
+      properties:
+        mode:
+          type: string
+          description: Procedure execution mode
+        id:
+          type: string
+          nullable: true
+          description: Unique procedure identifier
+        wait:
+          oneOf:
+            - type: string
+            - type: integer
+            - type: boolean
+          description: Wait condition
+        data:
+          description: Procedure data payload
+        ignore_failure:
+          type: boolean
+          description: Whether to continue on failure
+
+    Cronjob:
+      type: object
+      required:
+        - name
+        - schedule
+        - command
+      properties:
+        name:
+          type: string
+        schedule:
+          type: string
+          description: Cron schedule expression
+          example: "0 * * * *"
+        command:
+          type: string
+
+    ColdStarterVars:
+      type: object
+      required:
+        - name
+        - value
+      properties:
+        name:
+          type: string
+        value:
+          type: string
+
+    ScrollLockStatus:
+      type: string
+      enum:
+        - running
+        - done
+        - error
+        - waiting
+      description: Status of a command in the queue
+
+    QueueResponse:
+      type: object
+      description: Map of command IDs to their execution status
+      additionalProperties:
+        $ref: '#/components/schemas/ScrollLockStatus'
+
+paths:
+  # Scroll Endpoints
+  /api/v1/scroll:
+    get:
+      operationId: getScroll
+      summary: Get current scroll
+      description: Returns the currently loaded scroll configuration
+      tags: [scroll, daemon]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current scroll file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrollFile'
+  /api/v1/scroll/commands/{command}:
+    put:
+      operationId: addCommand
+      summary: Add command to current scroll
+      description: Adds a tempoary command to current scroll, useful to add temporary functionality (e.g. used for developer mode at druid.gg)
+      tags: [scroll, daemon]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: command
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Command Name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommandInstructionSet'
+      responses:
+        '201':
+          description: Command created
+  /api/v1/command:
+    post:
+      operationId: runCommand
+      summary: Run a command
+      description: Execute a command from the scroll configuration
+      tags: [scroll, daemon]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartCommandRequest'
+      responses:
+        '200':
+          description: Command completed synchronously
+        '201':
+          description: Command started asynchronously
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+
+  /api/v1/procedure:
+    post:
+      operationId: runProcedure
+      summary: Run a procedure
+      description: Execute a standalone procedure
+      tags: [scroll, daemon]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartProcedureRequest'
+      responses:
+        '200':
+          description: Procedure completed synchronously
+          content:
+            application/json:
+              schema:
+                type: object
+        '201':
+          description: Procedure started asynchronously
+        '400':
+          description: Bad request
+
+  /api/v1/procedures:
+    get:
+      operationId: getProcedures
+      summary: Get procedure statuses
+      description: Get the status of all running procedures
+      tags: [scroll, process, daemon]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Map of procedure statuses
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: object
+
+  # Log Endpoints
+  /api/v1/logs:
+    get:
+      operationId: listAllLogs
+      summary: List all log streams
+      description: Get all available log streams with their content
+      tags: [logs, daemon]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Array of log streams
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ScrollLogStream'
+
+  /api/v1/logs/{stream}:
+    get:
+      operationId: listStreamLogs
+      summary: List logs for a specific stream
+      description: Get logs for a specific stream identifier
+      tags: [logs, daemon]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: stream
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Stream identifier
+      responses:
+        '200':
+          description: Log stream content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrollLogStream'
+        '404':
+          description: Stream not found
+
+  # Metrics Endpoints
+  /api/v1/metrics:
+    get:
+      operationId: getMetrics
+      summary: Get process metrics
+      description: Get metrics for all monitored processes
+      tags: [metrics, daemon]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Process metrics map
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  $ref: '#/components/schemas/ProcessMonitorMetrics'
+
+  /api/v1/pstree:
+    get:
+      operationId: getPsTree
+      summary: Get process tree
+      description: Get the process tree for all running processes
+      tags: [metrics, daemon]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Process tree map
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  $ref: '#/components/schemas/ProcessTreeRoot'
+
+  # Process Endpoints
+  /api/v1/processes:
+    get:
+      operationId: getProcesses
+      summary: List running processes
+      description: Get all currently running processes
+      tags: [process, daemon]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Map of running processes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessesResponse'
+
+  # Queue Endpoint
+  /api/v1/queue:
+    get:
+      operationId: getQueue
+      summary: Get command queue
+      description: Get the current command execution queue
+      tags: [queue, daemon]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Queue status map
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueResponse'
+
+  # WebSocket Endpoints
+  /api/v1/token:
+    get:
+      operationId: createToken
+      summary: Create WebSocket token
+      description: Generate a short-lived token for WebSocket authentication
+      tags: [websocket, daemon]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Generated token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+
+  /api/v1/consoles:
+    get:
+      operationId: getConsoles
+      summary: List all consoles
+      description: Get all available console connections
+      tags: [websocket, daemon]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Map of available consoles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsolesResponse'
+
+  # Port Endpoint
+  /api/v1/ports:
+    get:
+      operationId: getPorts
+      summary: Get port information
+      description: Get information about all configured ports
+      tags: [port, daemon]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Array of port information
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AugmentedPort'
+
+  # Health Endpoint (authenticated)
+  /api/v1/health:
+    get:
+      operationId: getHealthAuth
+      summary: Get health status
+      description: Get daemon health status
+      tags: [health, daemon]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  # Coldstarter Endpoint
+  /api/v1/coldstarter/finish:
+    post:
+      operationId: finishColdstarter
+      summary: Finish cold start
+      description: Signal that cold start process is complete
+      tags: [coldstarter, daemon]
+      security:
+        - bearerAuth: []
+      responses:
+        '202':
+          description: Accepted
+
+  # Daemon Control
+  /api/v1/daemon/stop:
+    post:
+      operationId: stopDaemon
+      summary: Stop daemon
+      description: Gracefully stop the daemon
+      tags: [daemon, daemon]
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Stop initiated
+
+  # Watch/Dev Mode Endpoints
+  /api/v1/watch/enable:
+    post:
+      operationId: enableWatch
+      summary: Enable development mode
+      description: Start file watching for development
+      tags: [watch, daemon]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WatchModeRequest'
+      responses:
+        '200':
+          description: Watch mode enabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatchModeResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '412':
+          description: Already active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatchModeResponse'
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/watch/disable:
+    post:
+      operationId: disableWatch
+      summary: Disable development mode
+      description: Stop file watching
+      tags: [watch, daemon]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Watch mode disabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatchModeResponse'
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/watch/status:
+    get:
+      operationId: getWatchStatus
+      summary: Get watch mode status
+      description: Check if watch mode is enabled and what paths are being watched
+      tags: [watch, daemon]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Watch status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatchStatusResponse'
