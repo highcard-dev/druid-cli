@@ -40,8 +40,7 @@ type Server struct {
 	healthHandler                 ports.HealthHandlerInterface
 	coldstarterHandler            ports.ColdstarterHandlerInterface
 	daemonHandler                 ports.SignalHandlerInterface
-	uiHandler                     ports.UiHandlerInterface
-	uiDevHandler                  ports.UiDevHandlerInterface
+	watchHandler                  ports.WatchHandlerInterface
 	webdavPath                    string
 	scrollPath                    string
 }
@@ -60,8 +59,7 @@ func NewServer(
 	coldstarterHandler ports.ColdstarterHandlerInterface,
 	daemonHandler ports.SignalHandlerInterface,
 	authorizerService ports.AuthorizerServiceInterface,
-	uiHandler ports.UiHandlerInterface,
-	uiDevHandler ports.UiDevHandlerInterface,
+	watchHandler ports.WatchHandlerInterface,
 	webdavPath string,
 	scrollPath string,
 ) *Server {
@@ -88,8 +86,7 @@ func NewServer(
 		webdavPath:                    webdavPath,
 		scrollPath:                    scrollPath,
 		daemonHandler:                 daemonHandler,
-		uiHandler:                     uiHandler,
-		uiDevHandler:                  uiDevHandler,
+		watchHandler:                  watchHandler,
 	}
 
 	if jwlsUrl != "" {
@@ -138,7 +135,7 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 
 	// Define websocket routes immediately after creating the group
 	wsRoutes.Get("/serve/:console", websocket.New(s.websocketHandler.HandleProcess)).Name("ws.serve")
-	wsRoutes.Get("/dev/notify", websocket.New(s.uiDevHandler.NotifyChange)).Name("ws.dev.notify")
+	wsRoutes.Get("/watch/notify", websocket.New(s.watchHandler.NotifyChange)).Name("ws.watch.notify")
 
 	// Now create other route groups
 	v1 := app.Group("/api/v1")
@@ -185,10 +182,9 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 	apiRoutes.Post("/daemon/stop", s.daemonHandler.Stop).Name("daemon.stop")
 
 	//UI Dev Group
-	apiRoutes.Post("/dev/enable", s.uiDevHandler.Enable).Name("dev.enable")
-	apiRoutes.Post("/dev/build", s.uiDevHandler.Build).Name("dev.build")
-	apiRoutes.Post("/dev/disable", s.uiDevHandler.Disable).Name("dev.disable")
-	apiRoutes.Get("/dev/status", s.uiDevHandler.Status).Name("dev.status")
+	apiRoutes.Post("/watch/enable", s.watchHandler.Enable).Name("watch.enable")
+	apiRoutes.Post("/watch/disable", s.watchHandler.Disable).Name("watch.disable")
+	apiRoutes.Get("/watch/status", s.watchHandler.Status).Name("watch.status")
 
 	// Create the WebDAV handler
 	webdavHandler := &webdav.Handler{
@@ -201,13 +197,11 @@ func (s *Server) SetAPI(app *fiber.App) *fiber.App {
 
 	apiRoutes.Get("/ports", s.portHandler.GetPorts).Name("ports.list")
 
-	publicUiRoutes.Get("/public/index", s.uiHandler.PublicIndex).Name("ui.public_index")
 	publicUiRoutes.Use("/public", filesystem.New(filesystem.Config{
 		Root:   http.Dir(s.scrollPath + "/public"),
 		Browse: false,
 	}))
 
-	privateUiRoutes.Get("/private/index", s.uiHandler.PrivateIndex).Name("ui.private_index")
 	privateUiRoutes.Use("/private", filesystem.New(filesystem.Config{
 		Root:   http.Dir(s.scrollPath + "/private"),
 		Browse: false,

@@ -7,23 +7,22 @@ import (
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
-	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"go.uber.org/zap"
 )
 
-// DevModeResponse represents the response for enable/disable dev mode operations
-type DevModeResponse struct {
+// WatchModeResponse represents the response for enable/disable dev mode operations
+type WatchModeResponse struct {
 	Status  string `json:"status"`
 	Enabled bool   `json:"enabled"`
-} // @name DevModeResponse
+} // @name WatchModeResponse
 
-// DevStatusResponse represents the response for dev mode status
-type DevStatusResponse struct {
+// WatchStatusResponse represents the response for dev mode status
+type WatchStatusResponse struct {
 	Enabled      bool     `json:"enabled"`
 	WatchedPaths []string `json:"watchedPaths"`
-} // @name DevStatusResponse
+} // @name WatchStatusResponse
 
 // ErrorResponse represents an error response
 type ErrorResponse struct {
@@ -31,63 +30,35 @@ type ErrorResponse struct {
 	Error  string `json:"error"`
 } // @name ErrorResponse
 
-type UiDevHandler struct {
-	uiDevService  ports.UiDevServiceInterface
-	scrollService ports.ScrollServiceInterface
+type WatchHandler struct {
+	uiWatchService ports.WatchServiceInterface
+	scrollService  ports.ScrollServiceInterface
 }
 
-type DevModeBody struct {
-	HotReloadCommands map[string]*domain.CommandInstructionSet `json:"hotReloadCommands,omitempty"`
-	BuildCommands     map[string]*domain.CommandInstructionSet `json:"buildCommands,omitempty"`
+type WatchModeBody struct {
+	HotReloadCommands []string `json:"hotReloadCommands,omitempty"`
+	BuildCommands     []string `json:"buildCommands,omitempty"`
 }
 
-func NewUiDevHandler(uiDevService ports.UiDevServiceInterface, scrollService ports.ScrollServiceInterface) *UiDevHandler {
-	return &UiDevHandler{
-		uiDevService:  uiDevService,
-		scrollService: scrollService,
+func NewWatchHandler(uiWatchService ports.WatchServiceInterface, scrollService ports.ScrollServiceInterface) *WatchHandler {
+	return &WatchHandler{
+		uiWatchService: uiWatchService,
+		scrollService:  scrollService,
 	}
-}
-
-// @Summary Build the UI in development mode
-// @ID buildDev
-// @Tags ui, dev, druid, daemon
-// @Accept json
-// @Produce json
-// @Success 200
-// @Success 412
-// @Failure 500
-// @Router /api/v1/dev/build [post]
-func (udh *UiDevHandler) Build(ctx *fiber.Ctx) error {
-	if !udh.uiDevService.IsWatching() {
-		ctx.Status(fiber.StatusPreconditionFailed)
-		return nil
-	}
-
-	err := udh.uiDevService.Build()
-	if err != nil {
-		logger.Log().Error("Failed to run build commands", zap.Error(err))
-		errorResponse := ErrorResponse{
-			Status: "error",
-			Error:  err.Error(),
-		}
-		return ctx.Status(500).JSON(errorResponse)
-	}
-
-	return nil
 }
 
 // @Summary Enable development mode
-// @ID enableDev
+// @ID enableWatch
 // @Tags ui, dev, druid, daemon
 // @Accept json
 // @Produce json
-// @Param body body DevModeBody false "Optional commands to run on file changes"
-// @Success 200 {object} DevModeResponse
+// @Param body body WatchModeBody false "Optional commands to run on file changes"
+// @Success 200 {object} WatchModeResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /api/v1/dev/enable [post]
-func (udh *UiDevHandler) Enable(ctx *fiber.Ctx) error {
-	if udh.uiDevService.IsWatching() {
-		response := DevModeResponse{
+// @Router /api/v1/watch/enable [post]
+func (udh *WatchHandler) Enable(ctx *fiber.Ctx) error {
+	if udh.uiWatchService.IsWatching() {
+		response := WatchModeResponse{
 			Status:  "already-active",
 			Enabled: true,
 		}
@@ -107,18 +78,17 @@ func (udh *UiDevHandler) Enable(ctx *fiber.Ctx) error {
 		return ctx.Status(400).JSON(errorResponse)
 	}
 
-	var requestBody DevModeBody
+	var requestBody WatchModeBody
 
 	err := ctx.BodyParser(&requestBody)
 	if err == nil {
-		udh.uiDevService.SetHotReloadCommands(requestBody.HotReloadCommands)
-		udh.uiDevService.SetBuildCommands(requestBody.BuildCommands)
+		udh.uiWatchService.SetHotReloadCommands(requestBody.HotReloadCommands)
 	}
 
 	watchPaths = append(watchPaths, filepath.Join(scrollDir, "public/src"), filepath.Join(scrollDir, "private/src"))
 
 	// Start file watching with scroll directory as base path
-	err = udh.uiDevService.StartWatching(scrollDir, watchPaths...)
+	err = udh.uiWatchService.StartWatching(scrollDir, watchPaths...)
 	if err != nil {
 		logger.Log().Error("Failed to start file watcher", zap.Error(err))
 		errorResponse := ErrorResponse{
@@ -130,24 +100,24 @@ func (udh *UiDevHandler) Enable(ctx *fiber.Ctx) error {
 
 	logger.Log().Info("UI development mode enabled")
 
-	response := DevModeResponse{
+	response := WatchModeResponse{
 		Status:  "success",
-		Enabled: udh.uiDevService.IsWatching(),
+		Enabled: udh.uiWatchService.IsWatching(),
 	}
 	return ctx.JSON(response)
 }
 
 // @Summary Disable development mode
-// @ID disableDev
+// @ID disableWatch
 // @Tags ui, dev, druid, daemon
 // @Accept json
 // @Produce json
-// @Success 200 {object} DevModeResponse
+// @Success 200 {object} WatchModeResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /api/v1/dev/disable [post]
-func (udh *UiDevHandler) Disable(ctx *fiber.Ctx) error {
-	if !udh.uiDevService.IsWatching() {
-		response := DevModeResponse{
+// @Router /api/v1/watch/disable [post]
+func (udh *WatchHandler) Disable(ctx *fiber.Ctx) error {
+	if !udh.uiWatchService.IsWatching() {
+		response := WatchModeResponse{
 			Status:  "success",
 			Enabled: false,
 		}
@@ -155,7 +125,7 @@ func (udh *UiDevHandler) Disable(ctx *fiber.Ctx) error {
 	}
 
 	// Stop file watching
-	err := udh.uiDevService.StopWatching()
+	err := udh.uiWatchService.StopWatching()
 	if err != nil {
 		logger.Log().Error("Failed to stop file watcher", zap.Error(err))
 		errorResponse := ErrorResponse{
@@ -167,45 +137,45 @@ func (udh *UiDevHandler) Disable(ctx *fiber.Ctx) error {
 
 	logger.Log().Info("UI development mode disabled")
 
-	response := DevModeResponse{
+	response := WatchModeResponse{
 		Status:  "success",
-		Enabled: udh.uiDevService.IsWatching(),
+		Enabled: udh.uiWatchService.IsWatching(),
 	}
 	return ctx.JSON(response)
 }
 
 // @Summary Get development mode status
-// @ID getDevStatus
+// @ID getWatchStatus
 // @Tags ui, dev, druid, daemon
 // @Accept json
 // @Produce json
-// @Success 200 {object} DevStatusResponse
-// @Router /api/v1/dev/status [get]
-func (udh *UiDevHandler) Status(ctx *fiber.Ctx) error {
-	isWatching := udh.uiDevService.IsWatching()
-	response := DevStatusResponse{
+// @Success 200 {object} WatchStatusResponse
+// @Router /api/v1/watch/status [get]
+func (udh *WatchHandler) Status(ctx *fiber.Ctx) error {
+	isWatching := udh.uiWatchService.IsWatching()
+	response := WatchStatusResponse{
 		Enabled:      isWatching,
-		WatchedPaths: udh.uiDevService.GetWatchedPaths(),
+		WatchedPaths: udh.uiWatchService.GetWatchedPaths(),
 	}
 	return ctx.JSON(response)
 }
 
 // NotifyChange handles WebSocket connections for real-time file change notifications
-func (udh *UiDevHandler) NotifyChange(c *websocket.Conn) {
+func (udh *WatchHandler) NotifyChange(c *websocket.Conn) {
 	defer c.Close()
 
 	// Check if development mode is enabled
-	if !udh.uiDevService.IsWatching() {
+	if !udh.uiWatchService.IsWatching() {
 		logger.Log().Warn("WebSocket connection attempted but development mode is not enabled")
 		c.WriteJSON(map[string]interface{}{
 			"type":    "error",
-			"message": "Development mode is not enabled",
+			"message": "Watchelopment mode is not enabled",
 		})
 		return
 	}
 
 	// Subscribe to file change notifications
-	changesChan := udh.uiDevService.Subscribe()
+	changesChan := udh.uiWatchService.Subscribe()
 	if changesChan == nil {
 		logger.Log().Error("Failed to subscribe to file changes")
 		c.WriteJSON(map[string]interface{}{
@@ -214,7 +184,7 @@ func (udh *UiDevHandler) NotifyChange(c *websocket.Conn) {
 		})
 		return
 	}
-	defer udh.uiDevService.Unsubscribe(changesChan)
+	defer udh.uiWatchService.Unsubscribe(changesChan)
 
 	// Set up ping/pong
 	c.SetReadDeadline(time.Now().Add(60 * time.Second))
@@ -228,7 +198,7 @@ func (udh *UiDevHandler) NotifyChange(c *websocket.Conn) {
 	if err := c.WriteJSON(map[string]interface{}{
 		"type":         "connected",
 		"message":      "Connected to file watcher",
-		"watchedPaths": udh.uiDevService.GetWatchedPaths(),
+		"watchedPaths": udh.uiWatchService.GetWatchedPaths(),
 		"timestamp":    time.Now(),
 	}); err != nil {
 		logger.Log().Debug("Failed to send initial message, client disconnected", zap.Error(err))
@@ -292,5 +262,5 @@ func (udh *UiDevHandler) NotifyChange(c *websocket.Conn) {
 	}
 }
 
-// Ensure UiDevHandler implements UiDevHandlerInterface at compile time
-var _ ports.UiDevHandlerInterface = (*UiDevHandler)(nil)
+// Ensure WatchHandler implements WatchHandlerInterface at compile time
+var _ ports.WatchHandlerInterface = (*WatchHandler)(nil)

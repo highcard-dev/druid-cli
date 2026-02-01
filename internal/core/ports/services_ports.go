@@ -175,16 +175,14 @@ type UiServiceInterface interface {
 	GetIndex(filePath string) ([]string, error)
 }
 
-type UiDevServiceInterface interface {
+type WatchServiceInterface interface {
 	StartWatching(basePath string, paths ...string) error
 	StopWatching() error
 	Subscribe() chan *[]byte
 	Unsubscribe(client chan *[]byte)
 	GetWatchedPaths() []string
 	IsWatching() bool
-	SetHotReloadCommands(procs map[string]*domain.CommandInstructionSet)
-	SetBuildCommands(procs map[string]*domain.CommandInstructionSet)
-	Build() error
+	SetHotReloadCommands(procs []string)
 }
 
 type NixDependencyServiceInterface interface {
