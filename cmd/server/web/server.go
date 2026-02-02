@@ -101,6 +101,10 @@ func (s *Server) Initialize() *fiber.App {
 	webdavRequestMethods := []string{"PROPFIND", "MKCOL", "COPY", "MOVE"}
 
 	app := fiber.New(fiber.Config{
+		// Immutable ensures that all values returned from context methods are immutable
+		// and safe to store beyond the request lifetime. Without this, Fiber reuses buffers
+		// which causes data corruption when storing URL parameters as map keys.
+		Immutable: true,
 		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
 			code := fiber.StatusInternalServerError
 			var e *fiber.Error
