@@ -2,7 +2,6 @@ package handler
 
 import (
 	"encoding/json"
-	"path/filepath"
 	"time"
 
 	"github.com/gofiber/contrib/websocket"
@@ -35,7 +34,6 @@ func (udh *WatchHandler) EnableWatch(c *fiber.Ctx) error {
 		return c.JSON(response)
 	}
 
-	var watchPaths []string
 	// Get current scroll to determine watch paths
 	scrollDir := udh.scrollService.GetDir()
 	if scrollDir == "" {
@@ -62,7 +60,14 @@ func (udh *WatchHandler) EnableWatch(c *fiber.Ctx) error {
 		}
 	}
 
-	watchPaths = append(watchPaths, filepath.Join(scrollDir, "public/src"), filepath.Join(scrollDir, "private/src"))
+	watchPaths := requestBody.WatchPaths
+
+	if len(watchPaths) == 0 {
+		return c.Status(400).JSON(api.ErrorResponse{
+			Status: "error",
+			Error:  "At least one watch path must be specified",
+		})
+	}
 
 	// Start file watching with scroll directory as base path
 	err = udh.uiWatchService.StartWatching(scrollDir, watchPaths...)

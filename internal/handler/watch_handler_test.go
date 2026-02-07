@@ -55,11 +55,15 @@ func TestWatchHandler_Enable_Success(t *testing.T) {
 
 	tc.WatchService.EXPECT().IsWatching().Return(false)
 	tc.ScrollService.EXPECT().GetDir().Return("/path/to/scroll")
-	// When request has no body or empty body, BodyParser fails, so SetHotReloadCommands is NOT called
-	tc.WatchService.EXPECT().StartWatching("/path/to/scroll", gomock.Any(), gomock.Any()).Return(nil)
+	tc.WatchService.EXPECT().StartWatching("/path/to/scroll", "src", "config").Return(nil)
 	tc.WatchService.EXPECT().IsWatching().Return(true)
 
-	req := httptest.NewRequest("POST", "/api/v1/watch/enable", nil)
+	requestBody := api.WatchModeRequest{
+		WatchPaths: []string{"src", "config"},
+	}
+	bodyBytes, _ := json.Marshal(requestBody)
+
+	req := httptest.NewRequest("POST", "/api/v1/watch/enable", bytes.NewReader(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := tc.App.Test(req)
 	if err != nil {
@@ -143,10 +147,15 @@ func TestWatchHandler_Enable_StartWatchingError(t *testing.T) {
 
 	tc.WatchService.EXPECT().IsWatching().Return(false)
 	tc.ScrollService.EXPECT().GetDir().Return("/path/to/scroll")
-	// When request has no body, BodyParser fails, so SetHotReloadCommands is NOT called
-	tc.WatchService.EXPECT().StartWatching("/path/to/scroll", gomock.Any(), gomock.Any()).Return(fiber.NewError(500, "watcher error"))
+	tc.WatchService.EXPECT().StartWatching("/path/to/scroll", "src").Return(fiber.NewError(500, "watcher error"))
 
-	req := httptest.NewRequest("POST", "/api/v1/watch/enable", nil)
+	requestBody := api.WatchModeRequest{
+		WatchPaths: []string{"src"},
+	}
+	bodyBytes, _ := json.Marshal(requestBody)
+
+	req := httptest.NewRequest("POST", "/api/v1/watch/enable", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := tc.App.Test(req)
 	if err != nil {
 		t.Fatalf("Failed to execute request: %v", err)
@@ -165,12 +174,13 @@ func TestWatchHandler_Enable_WithCommands(t *testing.T) {
 	tc.WatchService.EXPECT().IsWatching().Return(false)
 	tc.ScrollService.EXPECT().GetDir().Return("/path/to/scroll")
 	tc.WatchService.EXPECT().SetHotReloadCommands([]string{"npm run dev"})
-	tc.WatchService.EXPECT().StartWatching("/path/to/scroll", gomock.Any(), gomock.Any()).Return(nil)
+	tc.WatchService.EXPECT().StartWatching("/path/to/scroll", "src", "lib").Return(nil)
 	tc.WatchService.EXPECT().IsWatching().Return(true)
 
 	hotReloadCmds := []string{"npm run dev"}
 	requestBody := api.WatchModeRequest{
 		HotReloadCommands: &hotReloadCmds,
+		WatchPaths:        []string{"src", "lib"},
 	}
 	bodyBytes, _ := json.Marshal(requestBody)
 

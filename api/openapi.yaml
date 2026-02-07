@@ -96,17 +96,18 @@ components:
 
     WatchModeRequest:
       type: object
+      required: [watchPaths]
       properties:
+        watchPaths:
+          type: array
+          items:
+            type: string
+          description: Directories to watch
         hotReloadCommands:
           type: array
           items:
             type: string
           description: Commands to run when files change
-        buildCommands:
-          type: array
-          items:
-            type: string
-          description: Build commands to run before hot reload
 
     # Response Types
     TokenResponse:
