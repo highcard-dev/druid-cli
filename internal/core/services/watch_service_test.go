@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -192,4 +193,87 @@ func TestWatchService_SubscribeBeforeStart(t *testing.T) {
 	// Try to unsubscribe with nil channel (should not panic)
 	uiDevService.Unsubscribe(nil)
 	uiDevService.Unsubscribe(sub) // sub is nil, should handle gracefully
+}
+
+func TestWatchService_RelativePathsJoinedWithBasePath(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	queueManager := mock_ports.NewMockQueueManagerInterface(ctrl)
+	scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
+
+	// Create a temp directory structure for testing
+	tempDir := t.TempDir()
+	srcDir := tempDir + "/src"
+	configDir := tempDir + "/config"
+
+	// Create the subdirectories
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatalf("Failed to create src directory: %v", err)
+	}
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatalf("Failed to create config directory: %v", err)
+	}
+
+	// Create the UI dev service
+	uiDevService := NewUiDevService(queueManager, scrollService)
+
+	// Start watching with relative paths (simulating what the handler does)
+	err := uiDevService.StartWatching(tempDir, "src", "config")
+	if err != nil {
+		t.Fatalf("Failed to start watching: %v", err)
+	}
+	defer uiDevService.StopWatching()
+
+	// Verify the watched paths are absolute and properly joined
+	watchedPaths := uiDevService.GetWatchedPaths()
+
+	if len(watchedPaths) != 2 {
+		t.Fatalf("Expected 2 watched paths, got %d: %v", len(watchedPaths), watchedPaths)
+	}
+
+	// GetWatchedPaths returns paths relative to basePath, so they should be "src" and "config"
+	expectedPaths := map[string]bool{"src": false, "config": false}
+	for _, path := range watchedPaths {
+		if _, ok := expectedPaths[path]; ok {
+			expectedPaths[path] = true
+		} else {
+			t.Errorf("Unexpected watched path: %s", path)
+		}
+	}
+
+	for path, found := range expectedPaths {
+		if !found {
+			t.Errorf("Expected path '%s' not found in watched paths", path)
+		}
+	}
+
+	// Verify that files created in the watched directories trigger events
+	sub := uiDevService.Subscribe()
+	if sub == nil {
+		t.Fatal("Subscribe should return a valid channel")
+	}
+	defer uiDevService.Unsubscribe(sub)
+
+	// Create a test file in the src directory
+	testFile := srcDir + "/test.txt"
+	if err := os.WriteFile(testFile, []byte("test content"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Wait for the file change event
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	select {
+	case event := <-sub:
+		if event == nil {
+			t.Error("Received nil event")
+		}
+		// Successfully received a file change event, which proves the watcher
+		// is correctly watching the joined path (basePath + relative path)
+		t.Logf("Received file change event: %s", string(*event))
+	case <-ctx.Done():
+		t.Error("Timeout waiting for file change event - relative path was likely not joined with base path")
+	}
 }

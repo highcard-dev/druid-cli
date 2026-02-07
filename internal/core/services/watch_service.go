@@ -110,11 +110,16 @@ func (uds *WatchService) StartWatching(basePath string, paths ...string) error {
 
 	// Add paths to watcher
 	for _, path := range paths {
-		if err := uds.addWatchPath(path); err != nil {
-			logger.Log().Warn("Failed to watch path", zap.String("path", path), zap.Error(err))
+		// Join relative paths with base path
+		fullPath := path
+		if !filepath.IsAbs(path) {
+			fullPath = filepath.Join(basePath, path)
+		}
+		if err := uds.addWatchPath(fullPath); err != nil {
+			logger.Log().Warn("Failed to watch path", zap.String("path", fullPath), zap.Error(err))
 		} else {
-			uds.watchPaths = append(uds.watchPaths, path)
-			logger.Log().Info("Watching path", zap.String("path", path))
+			uds.watchPaths = append(uds.watchPaths, fullPath)
+			logger.Log().Info("Watching path", zap.String("path", fullPath))
 		}
 	}
 
