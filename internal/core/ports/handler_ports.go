@@ -43,6 +43,8 @@ type QueueHandlerInterface interface {
 
 type PortHandlerInterface interface {
 	GetPorts(c *fiber.Ctx) error
+	AddPort(c *fiber.Ctx) error
+	DeletePort(c *fiber.Ctx, port int) error
 }
 type HealthHandlerInterface interface {
 	GetHealthAuth(c *fiber.Ctx) error

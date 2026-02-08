@@ -152,7 +152,7 @@ func TestScrollHandler_RunCommand_SyncSuccess(t *testing.T) {
 	defer tc.Ctrl.Finish()
 
 	// Setup mock expectations for sync command
-	tc.QueueManager.EXPECT().AddTempItem("test-command").Return(nil)
+	tc.QueueManager.EXPECT().AddTempItemWithWait("test-command").Return(nil)
 
 	// Create request body
 	requestBody := api.StartCommandRequest{
@@ -238,7 +238,7 @@ func TestScrollHandler_RunCommand_SyncError(t *testing.T) {
 	defer tc.Ctrl.Finish()
 
 	// Setup mock to return error
-	tc.QueueManager.EXPECT().AddTempItem("test-command").Return(fiber.NewError(500, "internal error"))
+	tc.QueueManager.EXPECT().AddTempItemWithWait("test-command").Return(fiber.NewError(500, "internal error"))
 
 	// Create request body
 	requestBody := api.StartCommandRequest{

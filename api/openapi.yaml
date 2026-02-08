@@ -67,6 +67,40 @@ components:
           default: false
           description: Whether to run synchronously (wait for completion)
 
+    AddPortRequest:
+      type: object
+      required:
+        - port
+        - protocol
+        - name
+      properties:
+        port:
+          type: integer
+          description: Port number (1-65535)
+          minimum: 1
+          maximum: 65535
+          example: 8080
+        protocol:
+          type: string
+          description: Network protocol (tcp or udp)
+          enum: [tcp, udp]
+          example: "tcp"
+        name:
+          type: string
+          description: Port name/identifier
+          example: "my-service"
+        mandatory:
+          type: boolean
+          default: false
+          description: Whether this port must be open for health check
+        check_activity:
+          type: boolean
+          default: false
+          description: Whether to monitor port activity
+        description:
+          type: string
+          description: Optional port description
+
     StartProcedureRequest:
       type: object
       required:
@@ -835,6 +869,59 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/AugmentedPort'
+    post:
+      operationId: addPort
+      summary: Add a port to watch
+      description: Add a new port to be monitored by the port service (in-memory only)
+      tags: [port, daemon]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddPortRequest'
+      responses:
+        '201':
+          description: Port added successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AugmentedPort'
+        '400':
+          description: Invalid port configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/ports/{port}:
+    delete:
+      operationId: deletePort
+      summary: Remove a watched port
+      description: Stop watching a port (in-memory only)
+      tags: [port, daemon]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: port
+          in: path
+          required: true
+          description: The port number to remove
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 65535
+      responses:
+        '204':
+          description: Port removed successfully
+        '404':
+          description: Port not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   # Health Endpoint (authenticated)
   /api/v1/health:

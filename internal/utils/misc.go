@@ -42,6 +42,22 @@ func InterfaceToStringSlice(data interface{}) ([]string, error) {
 	return instructions, nil
 }
 
+// BoolValue returns the value of a bool pointer, or false if nil.
+func BoolValue(b *bool) bool {
+	if b == nil {
+		return false
+	}
+	return *b
+}
+
+// StringValue returns the value of a string pointer, or empty string if nil.
+func StringValue(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
 func HumanizeBytes(bytes int64) string {
 	const (
 		KB = 1024

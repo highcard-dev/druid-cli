@@ -127,6 +127,45 @@ func (p *PortMonitor) GetPort(port int) *domain.AugmentedPort {
 	return nil
 }
 
+func (p *PortMonitor) AddPort(port domain.Port) (*domain.AugmentedPort, error) {
+	// Validate port range
+	if port.Port < 1 || port.Port > 65535 {
+		return nil, fmt.Errorf("port number must be between 1 and 65535, got %d", port.Port)
+	}
+
+	// Validate protocol
+	protocol := strings.ToLower(port.Protocol)
+	if protocol != "tcp" && protocol != "udp" {
+		return nil, fmt.Errorf("protocol must be 'tcp' or 'udp', got '%s'", port.Protocol)
+	}
+	port.Protocol = protocol
+
+	// Check for duplicate port number
+	for _, existingPort := range p.ports {
+		if existingPort.Port.Port == port.Port {
+			return nil, fmt.Errorf("port %d is already being watched", port.Port)
+		}
+	}
+
+	augmentedPort := &domain.AugmentedPort{
+		Port:          port,
+		InactiveSince: time.Now(),
+	}
+
+	p.ports = append(p.ports, augmentedPort)
+	return augmentedPort, nil
+}
+
+func (p *PortMonitor) RemovePort(port int) error {
+	for i, existingPort := range p.ports {
+		if existingPort.Port.Port == port {
+			p.ports = append(p.ports[:i], p.ports[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("port %d not found", port)
+}
+
 func (p *PortMonitor) MandatoryPortsOpen() bool {
 	augmentedPorts := p.GetPorts()
 

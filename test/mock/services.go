@@ -1128,6 +1128,21 @@ func (m *MockPortServiceInterface) EXPECT() *MockPortServiceInterfaceMockRecorde
 	return m.recorder
 }
 
+// AddPort mocks base method.
+func (m *MockPortServiceInterface) AddPort(port domain.Port) (*domain.AugmentedPort, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddPort", port)
+	ret0, _ := ret[0].(*domain.AugmentedPort)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AddPort indicates an expected call of AddPort.
+func (mr *MockPortServiceInterfaceMockRecorder) AddPort(port any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddPort", reflect.TypeOf((*MockPortServiceInterface)(nil).AddPort), port)
+}
+
 // CheckOpen mocks base method.
 func (m *MockPortServiceInterface) CheckOpen(prot int) bool {
 	m.ctrl.T.Helper()
@@ -1182,6 +1197,20 @@ func (m *MockPortServiceInterface) MandatoryPortsOpen() bool {
 func (mr *MockPortServiceInterfaceMockRecorder) MandatoryPortsOpen() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MandatoryPortsOpen", reflect.TypeOf((*MockPortServiceInterface)(nil).MandatoryPortsOpen))
+}
+
+// RemovePort mocks base method.
+func (m *MockPortServiceInterface) RemovePort(port int) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RemovePort", port)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RemovePort indicates an expected call of RemovePort.
+func (mr *MockPortServiceInterfaceMockRecorder) RemovePort(port any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemovePort", reflect.TypeOf((*MockPortServiceInterface)(nil).RemovePort), port)
 }
 
 // StartMonitoring mocks base method.

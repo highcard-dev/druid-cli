@@ -118,6 +118,8 @@ type PortServiceInterface interface {
 	CheckOpen(prot int) bool
 	GetPorts() []*domain.AugmentedPort
 	MandatoryPortsOpen() bool
+	AddPort(port domain.Port) (*domain.AugmentedPort, error)
+	RemovePort(port int) error
 }
 
 type ColdStarterHandlerInterface interface {

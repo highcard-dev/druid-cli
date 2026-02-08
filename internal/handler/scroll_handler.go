@@ -46,7 +46,7 @@ func (sl ScrollHandler) RunCommand(c *fiber.Ctx) error {
 	}
 
 	if sync {
-		err = sl.QueueManager.AddTempItem(requestBody.Command)
+		err = sl.QueueManager.AddTempItemWithWait(requestBody.Command)
 		if err != nil {
 			logger.Log().Error("Error running command (sync)", zap.Error(err))
 			return c.SendStatus(500)
