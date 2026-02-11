@@ -64,7 +64,7 @@ jobs:
       - name: Extract branch name
         id: extract_branch
         run: echo "BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/} | sed 's/\//-/g')" >> $GITHUB_ENV
-      - uses: paulhatch/semantic-version@v5.3.0
+      - uses: paulhatch/semantic-version@v5.4.0
         id: version
         with:
           version_format: "${major}.${minor}.${patch}-${{ env.BRANCH_NAME }}${increment}"
