@@ -120,6 +120,11 @@ func (pm *PluginManager) LoadGoPlugin(name string) (commons.DruidPluginInterface
 		path = "./druid_" + name
 	}
 
+	// Check if the plugin file exists before attempting to load it
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil, fmt.Errorf("plugin file not found: %s (looked in %s and ./druid_%s)", path, exPath+"/druid_"+name, name)
+	}
+
 	var cmd *exec.Cmd
 
 	if os.Getenv("DRUID_DEBUG_PATH") != "" {
