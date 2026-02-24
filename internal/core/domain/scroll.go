@@ -26,6 +26,10 @@ type Cronjob struct {
 	Schedule string `yaml:"schedule"`
 	Command  string `yaml:"command"`
 }
+type Chunks struct {
+	Name string `yaml:"name"`
+	Path string `yaml:"path"`
+}
 
 type ColdStarterVars struct {
 	Name  string `yaml:"name"`
@@ -63,6 +67,7 @@ type File struct {
 	Commands     map[string]*CommandInstructionSet `yaml:"commands" json:"commands"`
 	Plugins      map[string]map[string]string      `yaml:"plugins" json:"plugins"`
 	Cronjobs     []*Cronjob                        `yaml:"cronjobs" json:"cronjobs"`
+	Chunks       []*Chunks                         `yaml:"chunks" json:"chunks"`
 }
 
 type Scroll struct {

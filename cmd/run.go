@@ -5,7 +5,6 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/services"
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
-	snapshotService "github.com/highcard-dev/daemon/internal/core/services/snapshot"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -46,10 +45,8 @@ var RunCmd = &cobra.Command{
 		}
 
 		queueManager := services.NewQueueManager(scrollService, processLauncher)
-		snapshotService := snapshotService.NewSnapshotService()
-
 		go queueManager.Work()
-		_, err = initScroll(scrollService, snapshotService, processLauncher)
+		_, err = initScroll(scrollService, processLauncher)
 		if err != nil {
 			return fmt.Errorf("error initializing scroll: %w", err)
 		}
@@ -80,4 +77,5 @@ var RunCmd = &cobra.Command{
 func init() {
 	RunCmd.Flags().BoolVarP(&ignoreVersionCheck, "ignore-version-check", "", false, "Ignore version check")
 	RunCmd.Flags().StringVarP(&dependencyResolution, "dependency-resolution", "", "auto", "Dependency resolution strategy. Valid values: auto, nix, external")
+	RunCmd.Flags().BoolVarP(&allowPluginErrors, "allow-plugin-errors", "", false, "Ignore plugin errors on startup")
 }

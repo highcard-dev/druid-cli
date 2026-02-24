@@ -2,237 +2,22 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug Daemon backup",
+            "name": "Serve (scroll-cwd)",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "console": "integratedTerminal",
             "program": "${workspaceFolder}/main.go",
             "args": [
-                "backup",
-                "--cwd",
-                "${workspaceFolder}/examples/minecraft",
-                "testtest.tgz"
-            ],
-            "envFile": "${workspaceFolder}/.env",
-        },
-        {
-            "name": "Debug Daemon restore",
-            "type": "go",
-            "request": "launch",
-            "mode": "debug",
-            "console": "integratedTerminal",
-            "program": "${workspaceFolder}/main.go",
-            "args": [
-                "restore",
-                "--cwd",
-                "${workspaceFolder}/examples/restore-test",
-                "https://fsn1.your-objectstorage.com/druid-deployment-assets/lgsm/ark-snapshot-latest.tar.gz"
+                "serve",
+                "--cwd", "${workspaceFolder}/examples/scroll-cwd",
+                "--additional-endpoints", "annotations",
+                "--allow-plugin-errors",
+                "-p", "9190"
             ]
         },
         {
-            "name": "Debug Daemon serve (restore example)",
-            "type": "go",
-            "request": "launch",
-            "mode": "debug",
-            "console": "integratedTerminal",
-            "program": "${workspaceFolder}/main.go",
-            "args": [
-                "serve",
-                "--cwd",
-                "${workspaceFolder}/examples/ark-restore",
-                "--init-snapshot-url", "https://fsn1.your-objectstorage.com/druid-deployment-assets/lgsm/ark-snapshot-latest.tar.gz",
-                "-p",
-                "9190",
-                "artifacts.druid.gg/druid-team/scroll-lgsm:arkserver",
-                "--coldstarter=true",
-                "--watch-ports=false",
-                "--allow-plugin-errors"
-            ],
-            "env": {
-                "DRUID_PORT_QUERY": "2556",
-                "DRUID_PORT_MAIN": "7771"
-            }
-        },
-        {
-            "name": "Debug Daemon serve (restore example no snap)",
-            "type": "go",
-            "request": "launch",
-            "mode": "debug",
-            "console": "integratedTerminal",
-            "program": "${workspaceFolder}/main.go",
-            "args": [
-                "serve",
-                "--cwd",
-                "${workspaceFolder}/examples/ark-restore-t",
-                "-p",
-                "9190",
-                "artifacts.druid.gg/druid-team/scroll-minecraft-spigot:1.21.1",
-                "--coldstarter",
-                "--init-snapshot-url", "nil"
-            ],
-            "env": {
-                "DRUID_PORT_QUERY": "2556",
-                "DRUID_PORT_MAIN": "7771"
-            }
-        },
-        {
-            "name": "Debug Daemon serve (htop example)",
-            "type": "go",
-            "request": "launch",
-            "mode": "debug",
-            "console": "integratedTerminal",
-            "program": "${workspaceFolder}/main.go",
-            "args": [
-                "serve",
-                "--cwd",
-                "${workspaceFolder}/examples/htop",
-                "-p",
-                "9190"
-            ],
-        },
-        {
-            "name": "Debug Daemon serve (minecraft example)",
-            "type": "go",
-            "request": "launch",
-            "mode": "debug",
-            "console": "integratedTerminal",
-            "program": "${workspaceFolder}/main.go",
-            "args": [
-                "serve",
-                "--cwd",
-                "${workspaceFolder}/examples/minecraft",
-                "--watch-ports",
-                "-p",
-                "9190",
-                "--pprof", 
-                ":6060"
-            ],
-        },
-        {
-            "name": "Debug Daemon serve --idle (minecraft example)",
-            "type": "go",
-            "request": "launch",
-            "mode": "debug",
-            "console": "integratedTerminal",
-            "program": "${workspaceFolder}/main.go",
-            "args": [
-                "serve",
-                "--cwd",
-                "${workspaceFolder}/examples/minecraft",
-                "--watch-ports",
-                "-p",
-                "9190",
-                "--idle"
-            ],
-        },
-        {
-            "name": "Debug Daemon serve --coldstarter (minecraft example)",
-            "type": "go",
-            "request": "launch",
-            "mode": "debug",
-            "console": "integratedTerminal",
-            "program": "${workspaceFolder}/main.go",
-            "args": [
-                "serve",
-                "--cwd",
-                "${workspaceFolder}/examples/minecraft",
-                "--coldstarter",
-                "-p",
-                "9190",
-            ],
-            "env": {
-                "DRUID_PORT_QUERY": "2556",
-                "DRUID_PORT_MAIN": "7771",
-                "LOG_LEVEL": "debug"
-            }
-        },
-        {
-            "name": "Debug Daemon serve --coldstarter (gmod example)",
-            "type": "go",
-            "request": "launch",
-            "mode": "debug",
-            "console": "integratedTerminal",
-            "program": "${workspaceFolder}/main.go",
-            "args": [
-                "serve",
-                "artifacts.druid.gg/druid-team/scroll-lgsm:pzserver",
-                "--cwd",
-                "${workspaceFolder}/examples/gmod",
-                "--coldstarter",
-                "-p",
-                "9190",
-            ],
-            "env": {
-                "DRUID_PORT_QUERY": "2556",
-                "DRUID_PORT_MAIN": "7771",
-                "LOG_LEVEL": "debug"
-            }
-        },
-        {
-            "name": "Debug Daemon coldstart (minecraft example)",
-            "type": "go",
-            "request": "launch",
-            "mode": "debug",
-            "console": "integratedTerminal",
-            "program": "${workspaceFolder}/main.go",
-            "args": [
-                "coldstarter",
-                "--cwd",
-                "${workspaceFolder}/examples/minecraft",
-                "--pprof", 
-                ":6060"
-            ],
-            "env": {
-                "DRUID_PORT_QUERY": "2556",
-                "DRUID_PORT_MAIN": "7771"
-            }
-        },
-        {
-            "name": "Debug Daemon coldstart (minecraft2 example)",
-            "type": "go",
-            "request": "launch",
-            "mode": "debug",
-            "console": "integratedTerminal",
-            "program": "${workspaceFolder}/main.go",
-            "args": [
-                "coldstarter",
-                "--cwd",
-                "${workspaceFolder}/examples/minecraft2",
-            ],
-        },
-        {
-            "name": "Debug Daemon serve (nginx example)",
-            "type": "go",
-            "request": "launch",
-            "mode": "debug",
-            "console": "integratedTerminal",
-            "program": "${workspaceFolder}/main.go",
-            "args": [
-                "serve",
-                "--cwd",
-                "${workspaceFolder}/examples/nginx",
-                "-p",
-                "9190"
-            ],
-        },
-        {
-            "name": "Debug Daemon serve (sleep install example)",
-            "type": "go",
-            "request": "launch",
-            "mode": "debug",
-            "console": "integratedTerminal",
-            "program": "${workspaceFolder}/main.go",
-            "args": [
-                "serve",
-                "--cwd",
-                "${workspaceFolder}/examples/long-install",
-                "-p",
-                "9190"
-            ],
-        },
-        {
-            "name": "Debug Daemon run install ark",
+            "name": "Run (scroll-cwd)",
             "type": "go",
             "request": "launch",
             "mode": "debug",
@@ -240,119 +25,49 @@
             "program": "${workspaceFolder}/main.go",
             "args": [
                 "run",
-                "install",
-                "--cwd",
-                "${workspaceFolder}/examples/ark"
-            ],
-        },
-        {
-            "name": "Debug Daemon serve (emtpy dir)",
-            "type": "go",
-            "request": "launch",
-            "mode": "debug",
-            "console": "integratedTerminal",
-            "program": "${workspaceFolder}/main.go",
-            "args": [
-                "serve",
-                "--additional-endpoints",
-                "annotations",
-                "--cwd",
-                "${workspaceFolder}/examples/scroll-cwd",
-                "--coldstarter",
-                "-p",
-                "9190",
-                "artifacts.druid.gg/druid-team/scroll-minecraft-spigot:1.19.1"
-            ],
-        },
-        {
-            "name": "Debug Daemon run (minecraft example)",
-            "type": "go",
-            "request": "launch",
-            "mode": "debug",
-            "console": "integratedTerminal",
-            "program": "${workspaceFolder}/main.go",
-            "args": [
-                "run",
-                "--cwd",
-                "${workspaceFolder}/examples/minecraft",
+                "--cwd", "${workspaceFolder}/examples/scroll-cwd",
                 "start"
-            ],
+            ]
         },
         {
-            "name": "Debug Daemon run (touch example)",
-            "type": "go",
-            "request": "launch",
-            "mode": "debug",
-            "console": "integratedTerminal",
-            "program": "${workspaceFolder}/main.go",
-            "args": [
-                "run",
-                "--cwd",
-                "${workspaceFolder}/examples/touch",
-                "start"
-            ],
-        },
-        {
-            "name": "Debug Daemon run registry push",
+            "name": "Registry Push (scroll-cwd)",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "program": "${workspaceFolder}/main.go",
             "args": [
-                "registry",
-                "push",
-                "--cwd",
-                "${workspaceFolder}/examples/minecraft/", ".scroll",
-                "-c", "1",
-                "-r", "1G",
-                "-d", "1G",
-                "-i", "highcard/lol",
-                "-p", "ftp",
-                "-p", "http=80",
-                "-p", "dns=53/udp",
-            ],
+                "registry", "push",
+                "--cwd", "${workspaceFolder}/examples/scroll-cwd"
+            ]
         },
         {
-            "name": "Debug Daemon run registry pull",
+            "name": "Registry Pull (scroll-cwd-pull)",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "program": "${workspaceFolder}/main.go",
             "args": [
-                "registry",
-                "pull",
-                "--cwd",
-                "${workspaceFolder}/examples/scroll-cwd-pull/", "artifacts.druid.gg/druid-team/scroll-minecraft-forge:1.20.1",
-            ],
+                "registry", "pull",
+                "--full",
+                "--cwd", "${workspaceFolder}/examples/scroll-cwd-pull",
+                "artifacts.druid.gg/druid-team/scroll-minecraft-forge:1.20.1-test"
+            ]
         },
         {
-            "name": "Debug Daemon run registry push meta",
+            "name": "Registry Login",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "program": "${workspaceFolder}/main.go",
             "args": [
-                "registry",
-                "push", 
-                "meta",
-                "registry-1.docker.io/highcard/scroll-minecraft-forge1", "meta",
-                "--cwd",
-                "${workspaceFolder}/examples/",
-            ],
+                "registry", "login",
+                "--host", "artifacts.druid.gg",
+                "-u", "$REGISTRY_USER",
+                "-p", "$REGISTRY_PASS"
+            ]
         },
         {
-            "name": "Debug Daemon port",
-            "type": "go",
-            "request": "launch",
-            "mode": "debug",
-            "program": "${workspaceFolder}/main.go",
-            "args": [
-                "port",
-                "3000", "9090"
-            ],
-        },
-        {
-            "name": "Remote Debug Daemon serve",
+            "name": "Remote Attach",
             "type": "go",
             "request": "attach",
             "mode": "remote",
@@ -360,9 +75,7 @@
             "cwd": "${workspaceFolder}",
             "port": 2345,
             "host": "127.0.0.1",
-            "trace": "verbose",
             "debugAdapter": "legacy"
-            
         },
         {
             "name": "Test Current File",
@@ -370,29 +83,6 @@
             "request": "launch",
             "mode": "test",
             "program": "${file}",
-            "env": {},
-            "args": [],
-            "showLog": true
-        },
-		{
-			"name": "Attach",
-			"type": "go",
-			"request": "attach",
-			"mode": "remote",
-			"remotePath": "",
-			"port":2345,
-			"host":"127.0.0.1",
-			"showLog": true,
-			"trace": "log",
-			"logOutput": "rpc"
-		},
-        {
-            "name": "Debug current file",
-            "type": "go",
-            "request": "launch",
-            "mode": "debug",
-            "program": "${file}",
-            "env": {},
             "args": [],
             "showLog": true
         }

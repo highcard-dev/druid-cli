@@ -79,7 +79,7 @@ var PushCommand = &cobra.Command{
 				Image:   image,
 				Ports:   ps,
 				Smart:   smart,
-			}, packMeta)
+			}, packMeta, &scroll.File)
 			if err != nil {
 				tries++
 				logger.Log().Error("Failed to push scroll to registry, retrying...", zap.Error(err), zap.Int("tries", tries))

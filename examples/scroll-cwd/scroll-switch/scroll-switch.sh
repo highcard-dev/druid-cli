@@ -1,6 +1,6 @@
 NEWVERSION=$1
 
-#wget -O forge-installer-new.jar https://s3.eu-central-1.wasabisys.com/druid-scroll-artifacts/minecraft/forge/forge-$NEWVERSION.jar
+#wget -O forge-installer-new.jar https://fsn1.your-objectstorage.com/druid-deployment-assets/minecraft/forge/forge-$NEWVERSION.jar
 
 #java -jar forge-installer-new.jar --installServer
 #rm forge-installer-new.jar

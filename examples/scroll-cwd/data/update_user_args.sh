@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env sh
 
 MAX=${DRUID_MAX_MEMORY%?}
 if [ -z "${MAX}" ];
@@ -6,4 +6,5 @@ then
     MAX=1024M
 fi
 
-java -Xmx$MAX -Xms1024M -jar spigot.jar nogui
+
+echo -Xmx$MAX > user_jvm_args.txt

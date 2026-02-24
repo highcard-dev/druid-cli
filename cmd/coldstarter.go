@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/highcard-dev/daemon/internal/core/services"
-	progressService "github.com/highcard-dev/daemon/internal/core/services/snapshot"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -32,9 +31,7 @@ var ColdstarterCmd = &cobra.Command{
 
 		portService := services.NewPortServiceWithScrollFile(&currentScroll.File)
 
-		snapshotService := progressService.NewSnapshotService()
-
-		coldStarter := services.NewColdStarter(portService, nil, snapshotService, scrollService.GetDir())
+		coldStarter := services.NewColdStarter(portService, nil, scrollService.GetDir())
 
 		finish := coldStarter.Start(context.TODO())
 		<-finish

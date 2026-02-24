@@ -83,19 +83,13 @@ require (
 require (
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
-	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/go-ini/ini v1.67.0 // indirect
-	github.com/goccy/go-json v0.10.4 // indirect
 	github.com/gorilla/mux v1.8.0 // indirect
-	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
-	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
 	github.com/oasdiff/yaml v0.0.0-20250309154309-f31be36b4037 // indirect
 	github.com/oasdiff/yaml3 v0.0.0-20250309153720-d2182401db90 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.2 // indirect
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
-	github.com/rs/xid v1.6.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sagikazarmark/locafero v0.4.0 // indirect
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
@@ -118,7 +112,6 @@ require (
 	github.com/gopacket/gopacket v1.2.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/highcard-dev/gorcon v1.3.10
-	github.com/minio/minio-go/v7 v7.0.84
 	github.com/oapi-codegen/runtime v1.1.2
 	github.com/otiai10/copy v1.14.0
 	github.com/packetcap/go-pcap v0.0.0-20240528124601-8c87ecf5dbc5

@@ -28,7 +28,7 @@ func SetupScroll(t *testing.T, scroll domain.File) (string, string) {
 	//observer := logger.SetupLogsCapture()
 	unixTime := time.Now().Unix()
 	cwd := "./druid-cli-test/" + strconv.FormatInt(unixTime, 10) + "/"
-	scrollPath := cwd + ".scroll/"
+	scrollPath := cwd
 
 	t.Logf("Creating test scroll file in %s", scrollPath)
 

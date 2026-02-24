@@ -1,8 +1,24 @@
 #!/usr/bin/env bash
 
 set -e
-SD=".scroll"
+SD="./"
 input=$@
+
+# Migrate legacy .scroll layout:
+#   Before: .scroll/<scroll files> + <serverfiles>
+#   After:  <scroll files> + data/<serverfiles>
+if [ -d "${SD}.scroll" ]; then
+    echo "Migrating legacy .scroll layout..."
+    mkdir -p "${SD}data"
+    for item in "${SD}"* "${SD}".[!.]*; do
+        [ -e "$item" ] || continue
+        name=$(basename "$item")
+        [ "$name" != "data" ] && [ "$name" != ".scroll" ] && mv "$item" "${SD}data/"
+    done
+    mv "${SD}.scroll"/* "${SD}"
+    rm -rf "${SD}.scroll"
+    echo "Legacy migration complete"
+fi
 
 echo "Druid Version: $(druid version)"
 

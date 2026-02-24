@@ -1,13 +1,13 @@
 package cmd
 
 import (
-	"path/filepath"
-
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
+
+var full bool
 
 var PullCommand = &cobra.Command{
 	Use:   "pull",
@@ -23,7 +23,7 @@ var PullCommand = &cobra.Command{
 
 		registryClient := registry.NewOciClient(host, user, password)
 
-		err := registryClient.Pull(filepath.Join(cwd, ".scroll"), artifact)
+		err := registryClient.PullSelective(cwd, artifact, full, nil)
 		if err != nil {
 			logger.Log().Error("Failed to pull from registry")
 			return err
@@ -35,4 +35,5 @@ var PullCommand = &cobra.Command{
 }
 
 func init() {
+	PullCommand.Flags().BoolVarP(&full, "full", "", false, "Download full scroll with data files")
 }

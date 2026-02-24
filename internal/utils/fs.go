@@ -4,6 +4,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/highcard-dev/daemon/internal/core/domain"
 )
 
 func FileExists(path string) (bool, error) {
@@ -93,4 +95,30 @@ func CopyFile(src, dest string) error {
 
 	// Set same permissions as source
 	return os.Chmod(dest, srcInfo.Mode())
+}
+
+// AutoChunkDataDir returns the list of chunks to pack for the data directory.
+// If explicitChunks is non-empty, it returns them as-is.
+// Otherwise, it reads top-level entries of dataDir and returns one Chunk per entry.
+func AutoChunkDataDir(dataDir string, explicitChunks []*domain.Chunks) ([]*domain.Chunks, error) {
+	if len(explicitChunks) > 0 {
+		return explicitChunks, nil
+	}
+
+	entries, err := os.ReadDir(dataDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	chunks := make([]*domain.Chunks, 0, len(entries))
+	for _, entry := range entries {
+		chunks = append(chunks, &domain.Chunks{
+			Name: entry.Name(),
+			Path: entry.Name(),
+		})
+	}
+	return chunks, nil
 }
