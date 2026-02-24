@@ -370,6 +370,15 @@ func (sc *QueueManager) RunQueue() {
 				}
 
 				if isRestartMode {
+					// For persistent mode, mark as done (don't auto-restart on graceful shutdown)
+					// For restart mode, mark as waiting (will auto-restart)
+					if command.Run == domain.RunModePersistent {
+						sc.setStatus(c, domain.ScrollLockStatusDone, i.UpdateLockStatus)
+					} else {
+						// Set status to waiting immediately so shutdown captures correct state
+						sc.setStatus(c, domain.ScrollLockStatusWaiting, i.UpdateLockStatus)
+					}
+					
 					// Exponential backoff for fast restarts (1s, 2s, 4s, ... max 5m)
 					if time.Since(startedAt) < 30*time.Second {
 						i.RestartCount++
@@ -386,7 +395,6 @@ func (sc *QueueManager) RunQueue() {
 					} else {
 						logger.Log().Info("Command done, restarting..", zap.String("command", c))
 					}
-					sc.setStatus(c, domain.ScrollLockStatusWaiting, i.UpdateLockStatus)
 				} else {
 					logger.Log().Info("Command done", zap.String("command", c))
 					sc.setStatus(c, domain.ScrollLockStatusDone, i.UpdateLockStatus)
