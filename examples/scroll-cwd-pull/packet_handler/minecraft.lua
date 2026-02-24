@@ -232,16 +232,16 @@ function pingResponse()
     if snapshotMode ~= "noop" then
         if snapshotMode == "restore" then
             if snapshotPercentage == nil or snapshotPercentage == 100 then
-                obj.version.name = "§2▶ Extracting snapshot..."
+                obj.version.name = "§2▶ Downloading snapshot... " + format("%.2f", snapshotPercentage) + "%"
             else
-                obj.version.name = "§2▶ Downloading snapshot... " + string.format("%.2f", snapshotPercentage) + "%"
+                obj.version.name = "§2▶ Extracting snapshot..."
             end
             obj.description = "Restoring Minecraft Server, this might take a moment"
         else 
             if snapshotPercentage == nil or snapshotPercentage == 100 then
-                obj.version.name = "§2▶ Backing up..."
+                obj.version.name = "§2▶ Backing up... " + format("%.2f", snapshotPercentage) + "%"
             else
-                obj.version.name = "§2▶ Backing up... " + string.format("%.2f", snapshotPercentage) + "%"
+                obj.version.name = "§2▶ Backing up..."
             end
             obj.description = "Backing up Minecraft Server, this might take a moment"
         end

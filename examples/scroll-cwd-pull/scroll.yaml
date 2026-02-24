@@ -1,12 +1,23 @@
 name: artifacts.druid.gg/druid-team/scroll-minecraft-forge
 desc: Minecraft Forge
 version: 0.0.1
-app_version: 1.20.1
+app_version: 1.20.1-test
+ports:
+  - name: main
+    protocol: tcp
+    port: 25565
+    sleep_handler: packet_handler/minecraft.lua
+    start_delay: 10
+    finish_after_command: install
+  - name: rcon
+    protocol: tcp
+    port: 25575
 init: "start"
 commands:
   start:
     needs: [install]
     run: restart
+    dependencies: [jdk17]
     procedures:
       - mode: exec
         data:
@@ -22,6 +33,7 @@ commands:
         data: stop
   install:
     run: once
+    dependencies: [wget, cacert, jdk17]
     procedures:
       - mode: exec
         data:
@@ -29,7 +41,7 @@ commands:
           - -q
           - -O
           - forge-installer.jar
-          - https://s3.eu-central-1.wasabisys.com/druid-scroll-artifacts/minecraft/forge/forge-1.20.1.jar
+          - http://192.168.100.200:9000/snapshot-cache/minecraft/forge/forge-1.20.1.jar
       - mode: exec
         data:
           - java

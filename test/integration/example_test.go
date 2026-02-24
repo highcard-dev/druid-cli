@@ -48,7 +48,7 @@ func TestExamples(t *testing.T) {
 	configs := []ServiceConfig{
 		{
 			ServiceName:    "minecraft",
-			ExamplePath:    "../../examples/minecraft/.scroll/scroll.yaml",
+			ExamplePath:    "../../examples/minecraft/scroll.yaml",
 			TestAddress:    "localhost:25565",
 			TestName:       "Minecraft",
 			LockFileStatus: []string{"start", "install"},
@@ -60,7 +60,7 @@ func TestExamples(t *testing.T) {
 		},
 		{
 			ServiceName:    "nginx",
-			ExamplePath:    "../../examples/nginx/.scroll/scroll.yaml",
+			ExamplePath:    "../../examples/nginx/scroll.yaml",
 			TestAddress:    "localhost:80",
 			TestName:       "Nginx",
 			LockFileStatus: []string{"start"},
@@ -95,7 +95,6 @@ func TestExamples(t *testing.T) {
 			//ensure the path exists and is empty
 			os.RemoveAll(path)
 			path = path + strconv.FormatInt(unixTime, 10) + "/"
-			scrollPath := path + ".scroll/"
 			err := os.MkdirAll(path, 0755)
 
 			if err != nil {
@@ -104,7 +103,7 @@ func TestExamples(t *testing.T) {
 			}
 
 			//copy example
-			err = copy.Copy(config.ExamplePath, scrollPath+"scroll.yaml")
+			err = copy.Copy(config.ExamplePath, path+"scroll.yaml")
 			if err != nil {
 				t.Error(err)
 				return
