@@ -23,28 +23,28 @@ type ColdStarter struct {
 	finishChan     chan *domain.AugmentedPort
 	chandlers      []ports.ColdStarterHandlerInterface
 	queueManager   ports.QueueManagerInterface
-	restoreService ports.SnapshotService
 	handlerMu      sync.Mutex
+	progress       *domain.SnapshotProgress
+	OnBeforeFinish func(progress *domain.SnapshotProgress) // optional hook called before signaling finish
 }
 
 // NewColdStarter initializes the ColdStarter struct with proper channel initialization and no initial finishTime.
 func NewColdStarter(
 	portsService ports.PortServiceInterface,
 	queueManager ports.QueueManagerInterface,
-	restoreService ports.SnapshotService,
 	dir string,
 ) *ColdStarter {
 	return &ColdStarter{
-		handler:        make(map[string]ports.ColdStarterServerInterface),
-		finishCount:    0,
-		dir:            dir,
-		finishTime:     nil,
-		portsService:   portsService,
-		finishChan:     make(chan *domain.AugmentedPort),
-		chandlers:      nil,
-		queueManager:   queueManager,
-		restoreService: restoreService,
-		handlerMu:      sync.Mutex{},
+		handler:      make(map[string]ports.ColdStarterServerInterface),
+		finishCount:  0,
+		dir:          dir,
+		finishTime:   nil,
+		portsService: portsService,
+		finishChan:   make(chan *domain.AugmentedPort),
+		chandlers:    nil,
+		queueManager: queueManager,
+		handlerMu:    sync.Mutex{},
+		progress:     domain.NewSnapshotProgress(),
 	}
 }
 
@@ -96,7 +96,7 @@ func (c *ColdStarter) Serve(ctx context.Context) {
 				for _, v := range port.Vars {
 					vars[v.Name] = v.Value
 				}
-				handler = lua.NewLuaHandler(c.queueManager, c.restoreService, path, c.dir, vars, augmentedPortMap)
+				handler = lua.NewLuaHandler(c.queueManager, path, c.dir, vars, augmentedPortMap, c.progress)
 			}
 
 			c.chandlers = append(c.chandlers, handler)
@@ -153,6 +153,7 @@ func (c *ColdStarter) Stop() {
 }
 
 // Finish increments the finishCount, logs, and sends the port to the finishChan channel.
+// If data directory is missing, it pulls data from the OCI registry before signaling finish.
 // This method uses a pointer receiver to ensure it modifies the original struct.
 func (c *ColdStarter) Finish(port *domain.AugmentedPort) {
 	if c.finishTime == nil {
@@ -168,6 +169,12 @@ func (c *ColdStarter) Finish(port *domain.AugmentedPort) {
 	} else {
 		logger.Log().Info(fmt.Sprintf("Server on port %d received finish signal", port.Port.Port))
 	}
+
+	// Run optional before-finish hook (e.g. pull data from registry)
+	if c.OnBeforeFinish != nil {
+		c.OnBeforeFinish(c.progress)
+	}
+
 	c.finishChan <- port
 	c.finishCount++
 }

@@ -7,4 +7,5 @@ type QueueItem struct {
 	UpdateLockStatus  bool
 	RunAfterExecution func()
 	DoneChan          chan struct{}
+	RestartCount      uint
 }

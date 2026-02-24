@@ -11,14 +11,6 @@ import (
 	"oras.land/oras-go/v2/registry/remote"
 )
 
-type SnapshotMode string
-
-const (
-	SnapshotModeSnapshot SnapshotMode = "snapshot"
-	SnapshotModeRestore  SnapshotMode = "restore"
-	SnapshotModeNoop     SnapshotMode = "noop"
-)
-
 type AuthorizerServiceInterface interface {
 	CheckHeader(r *fiber.Ctx) (*time.Time, error)
 	CheckQuery(token string) (*time.Time, error)
@@ -34,8 +26,6 @@ type ScrollServiceInterface interface {
 	WriteNewScrollLock() *domain.ScrollLock
 	GetLock() (*domain.ScrollLock, error)
 	GetCommand(cmd string) (*domain.CommandInstructionSet, error)
-	InitFiles(files ...string) error
-	InitTemplateFiles(files ...string) error
 	AddTemporaryCommand(cmd string, instructions *domain.CommandInstructionSet)
 }
 
@@ -93,9 +83,10 @@ type TemplateRendererInterface interface {
 type OciRegistryInterface interface {
 	GetRepo(repoUrl string) (*remote.Repository, error)
 	Pull(dir string, artifact string) error
+	PullSelective(dir string, artifact string, includeData bool, progress *domain.SnapshotProgress) error
 	CanUpdateTag(descriptor v1.Descriptor, folder string, tag string) (bool, error)
 	PackFolders(fs *file.Store, dirs []string, artifactType domain.ArtifactType, path string) ([]v1.Descriptor, error)
-	Push(folder string, repo string, tag string, annotationInfo domain.AnnotationInfo, packMeta bool) (v1.Descriptor, error)
+	Push(folder string, repo string, tag string, annotationInfo domain.AnnotationInfo, packMeta bool, scrollFile *domain.File) (v1.Descriptor, error)
 	PushMeta(folder string, repo string) (v1.Descriptor, error)
 	CreateMetaDescriptors(fs *file.Store, dir string, artifact string) ([]v1.Descriptor, error)
 }
@@ -136,36 +127,6 @@ type ColdStarterInterface interface {
 	Stop()
 	StopWithDeplay(uint)
 	Finish(*domain.AugmentedPort)
-}
-
-type RestoreSnapshotOptions struct {
-}
-
-type S3Destination struct {
-	AccessKey string
-	SecretKey string
-	Bucket    string
-	Endpoint  string
-	Region    string
-	Insecure  bool
-}
-type SnapshotOptions struct {
-	CompressionLevel int
-	S3Destination    *S3Destination
-}
-
-type ProgressTracker interface {
-	LogTrackProgress(current int64)
-	GetPercent() float64
-}
-
-type SnapshotService interface {
-	Snapshot(dir string, destination string, options SnapshotOptions) error
-	RestoreSnapshot(dir string, source string, options RestoreSnapshotOptions) error
-
-	GetProgressTracker() *ProgressTracker
-	GetCurrentMode() SnapshotMode
-	GetCurrentProgressTracker() *ProgressTracker
 }
 
 type ColdStarterServerInterface interface {

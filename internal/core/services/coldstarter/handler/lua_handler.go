@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	lua "github.com/yuin/gopher-lua"
@@ -12,16 +13,16 @@ import (
 )
 
 type LuaHandler struct {
-	file            string
-	luaPath         string
-	externalVars    map[string]string
-	ports           map[string]int
-	finishedAt      *time.Time
-	queueManager    ports.QueueManagerInterface
-	snapshotService ports.SnapshotService
-	stateWrapper    *LuaWrapper
-	execWg          *sync.WaitGroup
-	closed          bool
+	file         string
+	luaPath      string
+	externalVars map[string]string
+	ports        map[string]int
+	finishedAt   *time.Time
+	queueManager ports.QueueManagerInterface
+	stateWrapper *LuaWrapper
+	execWg       *sync.WaitGroup
+	closed       bool
+	progress     *domain.SnapshotProgress
 }
 
 type LuaWrapper struct {
@@ -30,19 +31,19 @@ type LuaWrapper struct {
 	closed   *bool
 }
 
-func NewLuaHandler(queueManager ports.QueueManagerInterface, snapshotService ports.SnapshotService,
-	file string, luaPath string, externalVars map[string]string, ports map[string]int) *LuaHandler {
+func NewLuaHandler(queueManager ports.QueueManagerInterface,
+	file string, luaPath string, externalVars map[string]string, ports map[string]int, progress *domain.SnapshotProgress) *LuaHandler {
 
 	handler := &LuaHandler{
-		file:            file,
-		luaPath:         luaPath,
-		externalVars:    externalVars,
-		ports:           ports,
-		queueManager:    queueManager,
-		snapshotService: snapshotService,
-		stateWrapper:    nil,
-		execWg:          &sync.WaitGroup{},
-		closed:          false,
+		file:         file,
+		luaPath:      luaPath,
+		externalVars: externalVars,
+		ports:        ports,
+		queueManager: queueManager,
+		stateWrapper: nil,
+		execWg:       &sync.WaitGroup{},
+		closed:       false,
+		progress:     progress,
 	}
 	return handler
 }
@@ -182,21 +183,22 @@ func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (po
 
 	l.SetGlobal("get_snapshot_percentage", l.NewFunction(
 		func(l *lua.LState) int {
-			progressTracker := handler.snapshotService.GetProgressTracker()
-			if progressTracker == nil {
+			if handler.progress != nil {
+				l.Push(lua.LNumber(handler.progress.Percentage.Load()))
+			} else {
 				l.Push(lua.LNumber(100))
-				return 1
 			}
-			percent := (*progressTracker).GetPercent()
-			l.Push(lua.LNumber(percent))
 			return 1
 		},
 	))
 
 	l.SetGlobal("get_snapshot_mode", l.NewFunction(
 		func(l *lua.LState) int {
-			mode := handler.snapshotService.GetCurrentMode()
-			l.Push(lua.LString(mode))
+			if handler.progress != nil {
+				l.Push(lua.LString(handler.progress.Mode.Load().(string)))
+			} else {
+				l.Push(lua.LString("noop"))
+			}
 			return 1
 		},
 	))

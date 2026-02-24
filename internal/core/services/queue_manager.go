@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
@@ -306,13 +307,14 @@ func (sc *QueueManager) RunQueue() {
 			continue
 		}
 
-		//if run Mode is restart, we need to run it again
+		//if in error state and not a restart/persistent mode, skip
 		if status == domain.ScrollLockStatusError {
 			continue
 		}
 
-		//if run Mode is restart, we need to run it again
-		if status == domain.ScrollLockStatusDone && command.Run != domain.RunModeRestart {
+		//if done and not a restart/persistent mode, skip
+		isRestartMode := command.Run == domain.RunModeRestart || command.Run == domain.RunModePersistent
+		if status == domain.ScrollLockStatusDone && !isRestartMode {
 			continue
 		}
 
@@ -354,16 +356,36 @@ func (sc *QueueManager) RunQueue() {
 					// FIXED: Non-blocking send to buffered channel
 					sc.taskDoneChan <- struct{}{}
 				}()
+
+				startedAt := time.Now()
 				err := sc.workItem(c)
+				isRestartMode := command.Run == domain.RunModeRestart || command.Run == domain.RunModePersistent
+
 				if err != nil {
-					sc.setError(c, err, i.UpdateLockStatus)
 					logger.Log().Error("Error running command", zap.String("command", c), zap.Error(err))
-					return
+					if !isRestartMode {
+						sc.setError(c, err, i.UpdateLockStatus)
+						return
+					}
 				}
 
-				//restart means we are never done!
-				if command.Run == domain.RunModeRestart {
-					logger.Log().Info("Command done, restarting..", zap.String("command", c))
+				if isRestartMode {
+					// Exponential backoff for fast restarts (1s, 2s, 4s, ... max 5m)
+					if time.Since(startedAt) < 30*time.Second {
+						i.RestartCount++
+					} else {
+						i.RestartCount = 0
+					}
+					if i.RestartCount > 0 {
+						backoff := time.Duration(1<<(i.RestartCount-1)) * time.Second
+						if backoff > 5*time.Minute {
+							backoff = 5 * time.Minute
+						}
+						logger.Log().Info("Restarting with backoff", zap.String("command", c), zap.Duration("backoff", backoff), zap.Uint("restartCount", i.RestartCount))
+						time.Sleep(backoff)
+					} else {
+						logger.Log().Info("Command done, restarting..", zap.String("command", c))
+					}
 					sc.setStatus(c, domain.ScrollLockStatusWaiting, i.UpdateLockStatus)
 				} else {
 					logger.Log().Info("Command done", zap.String("command", c))
