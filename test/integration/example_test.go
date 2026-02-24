@@ -102,7 +102,7 @@ func TestExamples(t *testing.T) {
 				return
 			}
 
-			//copy example
+			//copy example scroll.yaml directly into the scroll directory
 			err = copy.Copy(config.ExamplePath, path+"scroll.yaml")
 			if err != nil {
 				t.Error(err)

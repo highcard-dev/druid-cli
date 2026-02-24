@@ -77,4 +77,5 @@ var RunCmd = &cobra.Command{
 func init() {
 	RunCmd.Flags().BoolVarP(&ignoreVersionCheck, "ignore-version-check", "", false, "Ignore version check")
 	RunCmd.Flags().StringVarP(&dependencyResolution, "dependency-resolution", "", "auto", "Dependency resolution strategy. Valid values: auto, nix, external")
+	RunCmd.Flags().BoolVarP(&allowPluginErrors, "allow-plugin-errors", "", false, "Ignore plugin errors on startup")
 }
