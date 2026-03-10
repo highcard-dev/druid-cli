@@ -19,7 +19,6 @@ import (
 	"github.com/highcard-dev/daemon/internal/signals"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
 
@@ -60,11 +59,7 @@ to interact and monitor the Scroll Application`,
 			return err
 		}
 
-		host := viper.GetString("registry.host")
-		user := viper.GetString("registry.user")
-		password := viper.GetString("registry.password")
-
-		client := registry.NewOciClient(host, user, password)
+		client := registry.NewOciClient(LoadRegistryStore())
 		logManager := services.NewLogManager()
 		consoleService := services.NewConsoleManager(logManager)
 

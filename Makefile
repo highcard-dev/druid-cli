@@ -4,12 +4,12 @@ VERSION ?= "dev"
 
 generate-api: ## Generate API types from OpenAPI spec
 	@echo "Generating API types from OpenAPI spec..."
-	@which oapi-codegen > /dev/null || (echo "Installing oapi-codegen..." && go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest)
+	@which oapi-codegen > /dev/null || (echo "Installing oapi-codegen..." && go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.5.1)
 	@PATH="$(shell go env GOPATH)/bin:$$PATH" oapi-codegen -config api/oapi-codegen.yaml api/openapi.yaml
 
 validate-api: ## Validate OpenAPI spec
 	@echo "Validating OpenAPI spec..."
-	@which oapi-codegen > /dev/null || (echo "Installing oapi-codegen..." && go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest)
+	@which oapi-codegen > /dev/null || (echo "Installing oapi-codegen..." && go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.5.1)
 	@PATH="$(shell go env GOPATH)/bin:$$PATH" oapi-codegen -config api/oapi-codegen.yaml api/openapi.yaml > /dev/null
 	@echo "✓ OpenAPI spec is valid"
 

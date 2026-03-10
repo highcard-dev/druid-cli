@@ -326,6 +326,21 @@
             ],
         },
         {
+            "name": "Debug Daemon run registry login",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/main.go",
+            "args": [
+                "registry",
+                "login",
+                "--host", "artifacts.druid.gg/my-project",
+                "--user", "myuser",
+                "--password", "mypass"
+            ],
+        },
+        {
             "name": "Debug Daemon run registry push meta",
             "type": "go",
             "request": "launch",

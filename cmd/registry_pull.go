@@ -6,7 +6,6 @@ import (
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var PullCommand = &cobra.Command{
@@ -17,11 +16,7 @@ var PullCommand = &cobra.Command{
 
 		artifact := args[0]
 
-		user := viper.GetString("registry.user")
-		password := viper.GetString("registry.password")
-		host := viper.GetString("registry.host")
-
-		registryClient := registry.NewOciClient(host, user, password)
+		registryClient := registry.NewOciClient(LoadRegistryStore())
 
 		err := registryClient.Pull(filepath.Join(cwd, ".scroll"), artifact)
 		if err != nil {

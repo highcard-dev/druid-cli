@@ -8,7 +8,6 @@ import (
 	snapshotService "github.com/highcard-dev/daemon/internal/core/services/snapshot"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
 
@@ -20,11 +19,7 @@ var RunCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		command := args[0]
 
-		host := viper.GetString("registry.host")
-		user := viper.GetString("registry.user")
-		password := viper.GetString("registry.password")
-
-		client := registry.NewOciClient(host, user, password)
+		client := registry.NewOciClient(LoadRegistryStore())
 
 		ctx := cmd.Context()
 

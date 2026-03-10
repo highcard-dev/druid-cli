@@ -1,3 +1,0 @@
-rcon:
-  password: {{ randAlphaNum 50  }}
-  port: 25575
