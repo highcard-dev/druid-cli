@@ -11,7 +11,6 @@ import (
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var UpdateCommand = &cobra.Command{
@@ -38,11 +37,7 @@ var UpdateCommand = &cobra.Command{
 		//ctx := context.Background()
 		logger.Log().Info("Checking for updates for " + artifact)
 
-		host := viper.GetString("registry.host")
-		user := viper.GetString("registry.user")
-		password := viper.GetString("registry.password")
-
-		registryClient := registry.NewOciClient(host, user, password)
+		registryClient := registry.NewOciClient(LoadRegistryStore())
 
 		canUpdate := false
 

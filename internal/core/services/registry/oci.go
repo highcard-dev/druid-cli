@@ -23,45 +23,43 @@ import (
 )
 
 type OciClient struct {
-	host     string
-	username string
-	password string
+	credentialStore *CredentialStore
 }
 
-func NewOciClient(host string, username string, password string) *OciClient {
+func NewOciClient(credentialStore *CredentialStore) *OciClient {
 	return &OciClient{
-		host:     host,
-		username: username,
-		password: password,
+		credentialStore: credentialStore,
 	}
 }
 
 func (c *OciClient) GetRepo(repoUrl string) (*remote.Repository, error) {
-
 	repo, err := remote.NewRepository(repoUrl)
-
 	if err != nil {
 		return nil, err
 	}
 
-	if c.host == "" {
-		return nil, fmt.Errorf("registry host must be set. Please use `druid registry login` to set them")
-	}
-
-	if c.username == "" || c.password == "" {
-		logger.Log().Warn("No registry credentials found. Trying to pull anonymously")
+	cred, _ := c.credentialStore.CredentialForRepo(repoUrl)
+	if cred.Username == "" || cred.Password == "" {
+		logger.Log().Warn("No registry credentials found for " + repoUrl + ". Trying to pull anonymously")
 	} else {
+		host := extractHost(repoUrl)
 		repo.Client = &auth.Client{
-			Client: retry.DefaultClient,
-			Cache:  auth.DefaultCache,
-			Credential: auth.StaticCredential(c.host, auth.Credential{
-				Username: c.username,
-				Password: c.password,
-			}),
+			Client:     retry.DefaultClient,
+			Cache:      auth.DefaultCache,
+			Credential: auth.StaticCredential(host, cred),
 		}
 	}
 
 	return repo, nil
+}
+
+func extractHost(repoUrl string) string {
+	repoUrl = strings.TrimPrefix(repoUrl, "https://")
+	repoUrl = strings.TrimPrefix(repoUrl, "http://")
+	if idx := strings.Index(repoUrl, "/"); idx > 0 {
+		return repoUrl[:idx]
+	}
+	return repoUrl
 }
 
 func (c *OciClient) Pull(dir string, artifact string) error {
@@ -207,12 +205,11 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 }
 
 func (c *OciClient) CanUpdateTag(current v1.Descriptor, r string, tag string) (bool, error) {
-
-	repo, err := remote.NewRepository(r)
-
+	repo, err := c.GetRepo(r)
 	if err != nil {
 		return false, err
 	}
+
 	disc, err := oras.Resolve(context.TODO(), repo, tag, oras.DefaultResolveOptions)
 	if err != nil {
 		return false, err
@@ -223,7 +220,6 @@ func (c *OciClient) CanUpdateTag(current v1.Descriptor, r string, tag string) (b
 	}
 
 	return false, nil
-
 }
 
 func (c *OciClient) PackFolders(fs *file.Store, dirs []string, artifactType domain.ArtifactType, path string) ([]v1.Descriptor, error) {

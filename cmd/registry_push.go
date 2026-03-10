@@ -10,7 +10,6 @@ import (
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
 
@@ -28,12 +27,9 @@ var PushCommand = &cobra.Command{
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 
-		user := viper.GetString("registry.user")
-		password := viper.GetString("registry.password")
-		host := viper.GetString("registry.host")
-
-		if user == "" || password == "" || host == "" {
-			return fmt.Errorf("registry host, user and password must be set. Please use `druid registry login` to set them")
+		credStore := LoadRegistryStore()
+		if !credStore.HasCredentials() {
+			return fmt.Errorf("no registry credentials configured. Please use `druid registry login` to set them")
 		}
 
 		folder := "."
@@ -49,9 +45,9 @@ var PushCommand = &cobra.Command{
 			return err
 		}
 
-		logger.Log().Info("Pushing "+scroll.Name+" to registry", zap.String("path", fullPath), zap.String("registry", host))
+		logger.Log().Info("Pushing "+scroll.Name+" to registry", zap.String("path", fullPath))
 
-		ociClient := registry.NewOciClient(host, user, password)
+		ociClient := registry.NewOciClient(credStore)
 
 		repo := scroll.Name
 
@@ -93,7 +89,7 @@ var PushCommand = &cobra.Command{
 			time.Sleep(time.Duration(tries+1) * time.Second)
 		}
 
-		logger.Log().Info("Pushed "+scroll.Name+" to registry", zap.String("path", fullPath), zap.String("registry", host))
+		logger.Log().Info("Pushed "+scroll.Name+" to registry", zap.String("path", fullPath))
 		return nil
 	},
 }
