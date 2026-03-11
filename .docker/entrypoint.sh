@@ -83,7 +83,7 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]] &&  [[ $input != *
         args+=($artifact)
     fi
 
-    #Map envs to args
+    # Map envs to args (--cwd = scroll dir, --config = path to .druid.yaml)
     if [ ! -z "${DRUID_JWKS_SERVER}" ];
     then
         args+=("--jwks-server" "${DRUID_JWKS_SERVER}")
@@ -131,6 +131,11 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]] &&  [[ $input != *
     if [ ! -z "${DRUID_CWD}" ];
     then
         args+=("--cwd=$DRUID_CWD")
+    fi
+
+    if [ ! -z "${DRUID_CONFIG}" ];
+    then
+        args+=("--config=$DRUID_CONFIG")
     fi
 
     if [ ! -z "${PPROF_BIND}" ];
