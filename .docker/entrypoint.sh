@@ -42,14 +42,27 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]] &&  [[ $input != *
 
     echo "Artifact: $artifact"
 
-    
+    # Global args derived from envs that apply to multiple commands
+    global_args=()
+    if [ ! -z "${DRUID_CWD}" ];
+    then
+        global_args+=("--cwd=$DRUID_CWD")
+    fi
+
+    if [ ! -z "${DRUID_CONFIG}" ];
+    then
+        global_args+=("--config=$DRUID_CONFIG")
+    fi
 
     #Update command
     if [ "${DRUID_AUTO_UPDATE}" = "true" ] && [ -f "${SD}/scroll.yaml" ];
     then
-
         echo "Updating artifact"
-        druid update 
+
+        # Build args for `druid update` so that global envs apply as well
+        update_args=(update "${global_args[@]}")
+
+        druid "${update_args[@]}"
         echo "Updated artifact"
     fi
 
@@ -128,15 +141,8 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]] &&  [[ $input != *
         args+=("--skip-artifact-download")
     fi
 
-    if [ ! -z "${DRUID_CWD}" ];
-    then
-        args+=("--cwd=$DRUID_CWD")
-    fi
-
-    if [ ! -z "${DRUID_CONFIG}" ];
-    then
-        args+=("--config=$DRUID_CONFIG")
-    fi
+    # Reuse global args (cwd/config) for serve as well
+    args+=("${global_args[@]}")
 
     if [ ! -z "${PPROF_BIND}" ];
     then
