@@ -1,8 +1,24 @@
 #!/usr/bin/env bash
 
 set -e
-SD=".scroll"
+SD="./"
 input=$@
+
+# Migrate legacy .scroll layout:
+#   Before: .scroll/<scroll files> + <serverfiles>
+#   After:  <scroll files> + data/<serverfiles>
+if [ -d "${SD}.scroll" ]; then
+    echo "Migrating legacy .scroll layout..."
+    mkdir -p "${SD}data"
+    for item in "${SD}"* "${SD}".[!.]*; do
+        [ -e "$item" ] || continue
+        name=$(basename "$item")
+        [ "$name" != "data" ] && [ "$name" != ".scroll" ] && mv "$item" "${SD}data/"
+    done
+    mv "${SD}.scroll"/* "${SD}"
+    rm -rf "${SD}.scroll"
+    echo "Legacy migration complete"
+fi
 
 echo "Druid Version: $(druid version)"
 
@@ -26,14 +42,27 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]] &&  [[ $input != *
 
     echo "Artifact: $artifact"
 
-    
+    # Global args derived from envs that apply to multiple commands
+    global_args=()
+    if [ ! -z "${DRUID_CWD}" ];
+    then
+        global_args+=("--cwd=$DRUID_CWD")
+    fi
+
+    if [ ! -z "${DRUID_CONFIG}" ];
+    then
+        global_args+=("--config=$DRUID_CONFIG")
+    fi
 
     #Update command
     if [ "${DRUID_AUTO_UPDATE}" = "true" ] && [ -f "${SD}/scroll.yaml" ];
     then
-
         echo "Updating artifact"
-        druid update 
+
+        # Build args for `druid update` so that global envs apply as well
+        update_args=(update "${global_args[@]}")
+
+        druid "${update_args[@]}"
         echo "Updated artifact"
     fi
 
@@ -67,7 +96,7 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]] &&  [[ $input != *
         args+=($artifact)
     fi
 
-    #Map envs to args
+    # Map envs to args (--cwd = scroll dir, --config = path to .druid.yaml)
     if [ ! -z "${DRUID_JWKS_SERVER}" ];
     then
         args+=("--jwks-server" "${DRUID_JWKS_SERVER}")
@@ -112,10 +141,8 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]] &&  [[ $input != *
         args+=("--skip-artifact-download")
     fi
 
-    if [ ! -z "${DRUID_CWD}" ];
-    then
-        args+=("--cwd=$DRUID_CWD")
-    fi
+    # Reuse global args (cwd/config) for serve as well
+    args+=("${global_args[@]}")
 
     if [ ! -z "${PPROF_BIND}" ];
     then

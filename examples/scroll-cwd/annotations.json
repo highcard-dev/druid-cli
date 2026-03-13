@@ -1,0 +1,1 @@
+{"gg.druid.scroll.image":"artifacts.druid.gg/druid-team/druid:stable-nix","gg.druid.scroll.minCpu":"0.25","gg.druid.scroll.minDisk":"3Gi","gg.druid.scroll.minRam":"512Mi","gg.druid.scroll.port.main":"25565","gg.druid.scroll.port.rcon":"25575","gg.druid.scroll.smart":"true","org.opencontainers.image.created":"2026-01-31T12:08:52Z"}

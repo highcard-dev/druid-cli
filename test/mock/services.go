@@ -944,19 +944,33 @@ func (mr *MockOciRegistryInterfaceMockRecorder) Pull(dir, artifact any) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Pull", reflect.TypeOf((*MockOciRegistryInterface)(nil).Pull), dir, artifact)
 }
 
-// Push mocks base method.
-func (m *MockOciRegistryInterface) Push(folder, repo, tag string, annotationInfo domain.AnnotationInfo, packMeta bool) (v1.Descriptor, error) {
+// PullSelective mocks base method.
+func (m *MockOciRegistryInterface) PullSelective(dir, artifact string, includeData bool, progress *domain.SnapshotProgress) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Push", folder, repo, tag, annotationInfo, packMeta)
+	ret := m.ctrl.Call(m, "PullSelective", dir, artifact, includeData, progress)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// PullSelective indicates an expected call of PullSelective.
+func (mr *MockOciRegistryInterfaceMockRecorder) PullSelective(dir, artifact, includeData, progress any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PullSelective", reflect.TypeOf((*MockOciRegistryInterface)(nil).PullSelective), dir, artifact, includeData, progress)
+}
+
+// Push mocks base method.
+func (m *MockOciRegistryInterface) Push(folder, repo, tag string, annotationInfo domain.AnnotationInfo, packMeta bool, scrollFile *domain.File) (v1.Descriptor, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Push", folder, repo, tag, annotationInfo, packMeta, scrollFile)
 	ret0, _ := ret[0].(v1.Descriptor)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Push indicates an expected call of Push.
-func (mr *MockOciRegistryInterfaceMockRecorder) Push(folder, repo, tag, annotationInfo, packMeta any) *gomock.Call {
+func (mr *MockOciRegistryInterfaceMockRecorder) Push(folder, repo, tag, annotationInfo, packMeta, scrollFile any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Push", reflect.TypeOf((*MockOciRegistryInterface)(nil).Push), folder, repo, tag, annotationInfo, packMeta)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Push", reflect.TypeOf((*MockOciRegistryInterface)(nil).Push), folder, repo, tag, annotationInfo, packMeta, scrollFile)
 }
 
 // PushMeta mocks base method.
@@ -1386,150 +1400,6 @@ func (m *MockColdStarterInterface) StopWithDeplay(arg0 uint) {
 func (mr *MockColdStarterInterfaceMockRecorder) StopWithDeplay(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopWithDeplay", reflect.TypeOf((*MockColdStarterInterface)(nil).StopWithDeplay), arg0)
-}
-
-// MockProgressTracker is a mock of ProgressTracker interface.
-type MockProgressTracker struct {
-	ctrl     *gomock.Controller
-	recorder *MockProgressTrackerMockRecorder
-	isgomock struct{}
-}
-
-// MockProgressTrackerMockRecorder is the mock recorder for MockProgressTracker.
-type MockProgressTrackerMockRecorder struct {
-	mock *MockProgressTracker
-}
-
-// NewMockProgressTracker creates a new mock instance.
-func NewMockProgressTracker(ctrl *gomock.Controller) *MockProgressTracker {
-	mock := &MockProgressTracker{ctrl: ctrl}
-	mock.recorder = &MockProgressTrackerMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockProgressTracker) EXPECT() *MockProgressTrackerMockRecorder {
-	return m.recorder
-}
-
-// GetPercent mocks base method.
-func (m *MockProgressTracker) GetPercent() float64 {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetPercent")
-	ret0, _ := ret[0].(float64)
-	return ret0
-}
-
-// GetPercent indicates an expected call of GetPercent.
-func (mr *MockProgressTrackerMockRecorder) GetPercent() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPercent", reflect.TypeOf((*MockProgressTracker)(nil).GetPercent))
-}
-
-// LogTrackProgress mocks base method.
-func (m *MockProgressTracker) LogTrackProgress(current int64) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "LogTrackProgress", current)
-}
-
-// LogTrackProgress indicates an expected call of LogTrackProgress.
-func (mr *MockProgressTrackerMockRecorder) LogTrackProgress(current any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LogTrackProgress", reflect.TypeOf((*MockProgressTracker)(nil).LogTrackProgress), current)
-}
-
-// MockSnapshotService is a mock of SnapshotService interface.
-type MockSnapshotService struct {
-	ctrl     *gomock.Controller
-	recorder *MockSnapshotServiceMockRecorder
-	isgomock struct{}
-}
-
-// MockSnapshotServiceMockRecorder is the mock recorder for MockSnapshotService.
-type MockSnapshotServiceMockRecorder struct {
-	mock *MockSnapshotService
-}
-
-// NewMockSnapshotService creates a new mock instance.
-func NewMockSnapshotService(ctrl *gomock.Controller) *MockSnapshotService {
-	mock := &MockSnapshotService{ctrl: ctrl}
-	mock.recorder = &MockSnapshotServiceMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockSnapshotService) EXPECT() *MockSnapshotServiceMockRecorder {
-	return m.recorder
-}
-
-// GetCurrentMode mocks base method.
-func (m *MockSnapshotService) GetCurrentMode() ports.SnapshotMode {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetCurrentMode")
-	ret0, _ := ret[0].(ports.SnapshotMode)
-	return ret0
-}
-
-// GetCurrentMode indicates an expected call of GetCurrentMode.
-func (mr *MockSnapshotServiceMockRecorder) GetCurrentMode() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCurrentMode", reflect.TypeOf((*MockSnapshotService)(nil).GetCurrentMode))
-}
-
-// GetCurrentProgressTracker mocks base method.
-func (m *MockSnapshotService) GetCurrentProgressTracker() *ports.ProgressTracker {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetCurrentProgressTracker")
-	ret0, _ := ret[0].(*ports.ProgressTracker)
-	return ret0
-}
-
-// GetCurrentProgressTracker indicates an expected call of GetCurrentProgressTracker.
-func (mr *MockSnapshotServiceMockRecorder) GetCurrentProgressTracker() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCurrentProgressTracker", reflect.TypeOf((*MockSnapshotService)(nil).GetCurrentProgressTracker))
-}
-
-// GetProgressTracker mocks base method.
-func (m *MockSnapshotService) GetProgressTracker() *ports.ProgressTracker {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetProgressTracker")
-	ret0, _ := ret[0].(*ports.ProgressTracker)
-	return ret0
-}
-
-// GetProgressTracker indicates an expected call of GetProgressTracker.
-func (mr *MockSnapshotServiceMockRecorder) GetProgressTracker() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProgressTracker", reflect.TypeOf((*MockSnapshotService)(nil).GetProgressTracker))
-}
-
-// RestoreSnapshot mocks base method.
-func (m *MockSnapshotService) RestoreSnapshot(dir, source string, options ports.RestoreSnapshotOptions) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RestoreSnapshot", dir, source, options)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// RestoreSnapshot indicates an expected call of RestoreSnapshot.
-func (mr *MockSnapshotServiceMockRecorder) RestoreSnapshot(dir, source, options any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RestoreSnapshot", reflect.TypeOf((*MockSnapshotService)(nil).RestoreSnapshot), dir, source, options)
-}
-
-// Snapshot mocks base method.
-func (m *MockSnapshotService) Snapshot(dir, destination string, options ports.SnapshotOptions) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Snapshot", dir, destination, options)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// Snapshot indicates an expected call of Snapshot.
-func (mr *MockSnapshotServiceMockRecorder) Snapshot(dir, destination, options any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Snapshot", reflect.TypeOf((*MockSnapshotService)(nil).Snapshot), dir, destination, options)
 }
 
 // MockColdStarterServerInterface is a mock of ColdStarterServerInterface interface.

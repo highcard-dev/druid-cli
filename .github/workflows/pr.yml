@@ -57,17 +57,15 @@ jobs:
   prerelease:
     runs-on: ubuntu-latest
     needs: [unit-tests, integration-tests, validate-api, build]
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Extract branch name
-        id: extract_branch
-        run: echo "BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/} | sed 's/\//-/g')" >> $GITHUB_ENV
-      - uses: paulhatch/semantic-version@v5.3.0
+      - name: Set prerelease version from PR number
         id: version
-        with:
-          version_format: "${major}.${minor}.${patch}-${{ env.BRANCH_NAME }}${increment}"
+        run: echo "version=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           name: build-artifacts
@@ -82,3 +80,16 @@ jobs:
             bin/druid_rcon_web_rust
             .docker/entrypoint.sh
             .docker/druid-install-command.sh
+
+  docker-builds:
+    needs: prerelease
+    uses: ./.github/workflows/docker-builds.yml
+    with:
+      version_tag: ${{ needs.prerelease.outputs.version }}
+      version: ${{ needs.prerelease.outputs.version }}
+      is_pr: true
+    secrets:
+      DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      DRUID_ARTIFACTS_REGISTRY_USERNAME: ${{ vars.DRUID_ARTIFACTS_REGISTRY_USERNAME }}
+      DRUID_ARTIFACTS_REGISTRY_TOKEN: ${{ secrets.DRUID_ARTIFACTS_REGISTRY_TOKEN }}
