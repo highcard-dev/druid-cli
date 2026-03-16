@@ -4,6 +4,18 @@ set -e
 SD="./"
 input=$@
 
+# Global args derived from envs that apply to multiple commands
+global_args=()
+if [ ! -z "${DRUID_CWD}" ];
+then
+    global_args+=("--cwd=$DRUID_CWD")
+fi
+
+if [ ! -z "${DRUID_CONFIG}" ];
+then
+    global_args+=("--config=$DRUID_CONFIG")
+fi
+
 # Migrate legacy .scroll layout:
 #   Before: .scroll/<scroll files> + <serverfiles>
 #   After:  <scroll files> + data/<serverfiles>
@@ -41,18 +53,6 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]] &&  [[ $input != *
     fi
 
     echo "Artifact: $artifact"
-
-    # Global args derived from envs that apply to multiple commands
-    global_args=()
-    if [ ! -z "${DRUID_CWD}" ];
-    then
-        global_args+=("--cwd=$DRUID_CWD")
-    fi
-
-    if [ ! -z "${DRUID_CONFIG}" ];
-    then
-        global_args+=("--config=$DRUID_CONFIG")
-    fi
 
     #Update command
     if [ "${DRUID_AUTO_UPDATE}" = "true" ] && [ -f "${SD}/scroll.yaml" ];
@@ -132,5 +132,22 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]] &&  [[ $input != *
     exec druid "${args[@]}"
 else
     echo "Running druid with args: $@"
-    exec druid "$@"
+
+    # Start with user-provided args
+    args=("$@")
+
+    # Append global args unless explicitly specified by the user
+    for g in "${global_args[@]}"; do
+        key="${g%%=*}" # e.g. --cwd or --config
+        skip=false
+        for a in "${args[@]}"; do
+            if [[ "$a" == "$key" || "$a" == "$key="* ]]; then
+                skip=true
+                break
+            fi
+        done
+        $skip || args+=("$g")
+    done
+
+    exec druid "${args[@]}"
 fi
