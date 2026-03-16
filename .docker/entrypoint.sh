@@ -67,27 +67,6 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]] &&  [[ $input != *
     fi
 
 
-    #Run command
-    if [ ! -z "${artifact}" ] && [ -f "${SD}/scroll.yaml" ];
-    then
-        if ! command -v yq &> /dev/null
-        then
-            echo "WARN: yq not installed, skipping artifact check"
-        else
-            current=$(cat ${SD}/scroll.yaml | yq .name):$(cat ${SD}/scroll.yaml | yq .app_version)
-            #compare desired artifact with current installed
-
-            if [ "$current" != "$artifact" ];
-            then
-                echo "Switching from $current to $artifact"
-                druid run scroll-switch.$artifact
-            else
-                echo "Desired artifact $artifact already installed"
-            fi
-        fi
-    fi
-    
-
     #ignore-version-check otherwise we have missmatch after update
     args=(serve --ignore-version-check --additional-endpoints annotations)
 
