@@ -8,6 +8,7 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
+	"github.com/highcard-dev/daemon/internal/utils"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -33,9 +34,6 @@ var PushCommand = &cobra.Command{
 		}
 
 		folder := "."
-		if len(args) == 1 {
-			folder = args[0]
-		}
 
 		fullPath := path.Join(cwd, folder)
 
@@ -45,13 +43,16 @@ var PushCommand = &cobra.Command{
 			return err
 		}
 
-		logger.Log().Info("Pushing "+scroll.Name+" to registry", zap.String("path", fullPath))
+		repo := scroll.Name
+		tag := scroll.AppVersion
+
+		if len(args) == 1 {
+			repo, tag = utils.SplitArtifact(args[0])
+		}
+
+		logger.Log().Info("Pushing "+repo+":"+tag+" to registry", zap.String("path", fullPath))
 
 		ociClient := registry.NewOciClient(credStore)
-
-		repo := scroll.Name
-
-		tag := scroll.AppVersion
 
 		ps := make(map[string]string, len(scrollPorts))
 
