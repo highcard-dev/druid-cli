@@ -68,10 +68,9 @@ func (c *OciClient) Pull(dir string, artifact string) error {
 
 func (c *OciClient) PullSelective(dir string, artifact string, includeData bool, progress *domain.SnapshotProgress) error {
 
-	repo, tag := utils.SplitArtifact(artifact)
-
-	if tag == "" {
-		return fmt.Errorf("tag must be set")
+	repo, ref, _ := utils.ParseArtifactRef(artifact)
+	if repo == "" || ref == "" {
+		return fmt.Errorf("reference (tag or digest) must be set")
 	}
 
 	ctx := context.Background()
@@ -153,7 +152,10 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 		},
 	}
 
-	manifestDescriptor, err := oras.Copy(ctx, repoInstance, tag, fs, tag, copyOpts)
+	// Use a constant destination reference for the local file store so digest references
+	// (which contain ':' and other characters) don't become a tag key.
+	const dstRef = "root"
+	manifestDescriptor, err := oras.Copy(ctx, repoInstance, ref, fs, dstRef, copyOpts)
 	if err != nil {
 		if progress != nil {
 			progress.Mode.Store("noop")

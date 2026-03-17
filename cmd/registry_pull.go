@@ -6,11 +6,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var full bool
+var noData bool
 
 var PullCommand = &cobra.Command{
 	Use:   "pull",
-	Short: "Generate OCI Artifacts and push to a remote registry",
+	Short: "Pull a scroll from an OCI registry (tag or digest)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 
@@ -18,7 +18,7 @@ var PullCommand = &cobra.Command{
 
 		registryClient := registry.NewOciClient(LoadRegistryStore())
 
-		err := registryClient.PullSelective(cwd, artifact, full, nil)
+		err := registryClient.PullSelective(cwd, artifact, !noData, nil)
 		if err != nil {
 			logger.Log().Error("Failed to pull from registry")
 			return err
@@ -30,5 +30,5 @@ var PullCommand = &cobra.Command{
 }
 
 func init() {
-	PullCommand.Flags().BoolVarP(&full, "full", "", false, "Download full scroll with data files")
+	PullCommand.Flags().BoolVarP(&noData, "no-data", "", false, "Download full scroll with data files")
 }

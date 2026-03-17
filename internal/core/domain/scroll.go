@@ -59,6 +59,7 @@ type AugmentedPort struct {
 type File struct {
 	Name         string                            `yaml:"name" json:"name"`
 	Desc         string                            `yaml:"desc" json:"desc"`
+	PullChannel  map[string]string                 `yaml:"pull_channel" json:"pull_channel"`
 	Version      *semver.Version                   `yaml:"version" json:"version"`
 	AppVersion   string                            `yaml:"app_version" json:"app_version"` //don't make this a semver, it's not allways
 	Init         string                            `yaml:"init" json:"init"`

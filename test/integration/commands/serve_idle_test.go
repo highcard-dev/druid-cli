@@ -33,7 +33,7 @@ func TestServeIdleCommand(t *testing.T) {
 		{
 			Name:        "TestServeNoArtifactTag",
 			Args:        []string{"serve", "invalidscrollwithouttag"},
-			ExpectedErr: errors.New("tag must be set"),
+			ExpectedErr: errors.New("reference (tag or digest) must be set"),
 		},
 		{
 			Name:        "TestServeNoValidArtifact",

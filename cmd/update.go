@@ -32,7 +32,14 @@ var UpdateCommand = &cobra.Command{
 			artifact = scroll.Name + ":" + scroll.AppVersion
 		}
 
-		repo, tag := utils.SplitArtifact(artifact)
+		repo, ref, kind := utils.ParseArtifactRef(artifact)
+		if repo == "" || ref == "" {
+			return fmt.Errorf("invalid artifact reference %q (expected repo:tag or repo@sha256:digest)", artifact)
+		}
+		if kind == utils.ArtifactRefKindDigest {
+			return fmt.Errorf("update only supports tag references (repo:tag). For digests, use `druid registry pull %s`", artifact)
+		}
+		tag := ref
 
 		//ctx := context.Background()
 		logger.Log().Info("Checking for updates for " + artifact)

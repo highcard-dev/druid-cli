@@ -3,7 +3,6 @@ package utils
 import (
 	"errors"
 	"fmt"
-	"strings"
 )
 
 func MapKeysToStringSlice(m map[string]interface{}) []string {
@@ -12,15 +11,6 @@ func MapKeysToStringSlice(m map[string]interface{}) []string {
 		keys = append(keys, k)
 	}
 	return keys
-}
-
-func SplitArtifact(url string) (string, string) {
-	parts := strings.Split(url, ":")
-	if len(parts) != 2 {
-		return "", ""
-	}
-	repo, tag := parts[0], parts[1]
-	return repo, tag
 }
 
 func InterfaceToStringSlice(data interface{}) ([]string, error) {
