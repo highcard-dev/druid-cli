@@ -54,29 +54,35 @@ var PushCommand = &cobra.Command{
 
 		ociClient := registry.NewOciClient(credStore)
 
-		ps := make(map[string]string, len(scrollPorts))
-
+		overrides := map[string]string{}
+		if minRam != "" {
+			overrides["gg.druid.scroll.minRam"] = minRam
+		}
+		if minCpu != "" {
+			overrides["gg.druid.scroll.minCpu"] = minCpu
+		}
+		if minDisk != "" {
+			overrides["gg.druid.scroll.minDisk"] = minDisk
+		}
+		if image != "" {
+			overrides["gg.druid.scroll.image"] = image
+		}
+		if smart {
+			overrides["gg.druid.scroll.smart"] = "true"
+		}
 		for _, p := range scrollPorts {
-
 			parts := strings.Split(p, "=")
 			name := parts[0]
 			port := "0"
 			if len(parts) == 2 {
 				port = parts[1]
 			}
-			ps[name] = port
+			overrides[fmt.Sprintf("gg.druid.scroll.port.%s", name)] = port
 		}
 
 		var tries int
 		for tries < 3 {
-			_, err = ociClient.Push(fullPath, repo, tag, domain.AnnotationInfo{
-				MinRam:  minRam,
-				MinCpu:  minCpu,
-				MinDisk: minDisk,
-				Image:   image,
-				Ports:   ps,
-				Smart:   smart,
-			}, packMeta, &scroll.File)
+			_, err = ociClient.Push(fullPath, repo, tag, overrides, packMeta, &scroll.File)
 			if err != nil {
 				tries++
 				logger.Log().Error("Failed to push scroll to registry, retrying...", zap.Error(err), zap.Int("tries", tries))

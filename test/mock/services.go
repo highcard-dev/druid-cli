@@ -227,42 +227,6 @@ func (mr *MockScrollServiceInterfaceMockRecorder) GetScrollConfigRawYaml() *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetScrollConfigRawYaml", reflect.TypeOf((*MockScrollServiceInterface)(nil).GetScrollConfigRawYaml))
 }
 
-// InitFiles mocks base method.
-func (m *MockScrollServiceInterface) InitFiles(files ...string) error {
-	m.ctrl.T.Helper()
-	varargs := []any{}
-	for _, a := range files {
-		varargs = append(varargs, a)
-	}
-	ret := m.ctrl.Call(m, "InitFiles", varargs...)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// InitFiles indicates an expected call of InitFiles.
-func (mr *MockScrollServiceInterfaceMockRecorder) InitFiles(files ...any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InitFiles", reflect.TypeOf((*MockScrollServiceInterface)(nil).InitFiles), files...)
-}
-
-// InitTemplateFiles mocks base method.
-func (m *MockScrollServiceInterface) InitTemplateFiles(files ...string) error {
-	m.ctrl.T.Helper()
-	varargs := []any{}
-	for _, a := range files {
-		varargs = append(varargs, a)
-	}
-	ret := m.ctrl.Call(m, "InitTemplateFiles", varargs...)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// InitTemplateFiles indicates an expected call of InitTemplateFiles.
-func (mr *MockScrollServiceInterfaceMockRecorder) InitTemplateFiles(files ...any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InitTemplateFiles", reflect.TypeOf((*MockScrollServiceInterface)(nil).InitTemplateFiles), files...)
-}
-
 // WriteNewScrollLock mocks base method.
 func (m *MockScrollServiceInterface) WriteNewScrollLock() *domain.ScrollLock {
 	m.ctrl.T.Helper()
@@ -959,18 +923,18 @@ func (mr *MockOciRegistryInterfaceMockRecorder) PullSelective(dir, artifact, inc
 }
 
 // Push mocks base method.
-func (m *MockOciRegistryInterface) Push(folder, repo, tag string, annotationInfo domain.AnnotationInfo, packMeta bool, scrollFile *domain.File) (v1.Descriptor, error) {
+func (m *MockOciRegistryInterface) Push(folder, repo, tag string, overrides map[string]string, packMeta bool, scrollFile *domain.File) (v1.Descriptor, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Push", folder, repo, tag, annotationInfo, packMeta, scrollFile)
+	ret := m.ctrl.Call(m, "Push", folder, repo, tag, overrides, packMeta, scrollFile)
 	ret0, _ := ret[0].(v1.Descriptor)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Push indicates an expected call of Push.
-func (mr *MockOciRegistryInterfaceMockRecorder) Push(folder, repo, tag, annotationInfo, packMeta, scrollFile any) *gomock.Call {
+func (mr *MockOciRegistryInterfaceMockRecorder) Push(folder, repo, tag, overrides, packMeta, scrollFile any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Push", reflect.TypeOf((*MockOciRegistryInterface)(nil).Push), folder, repo, tag, annotationInfo, packMeta, scrollFile)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Push", reflect.TypeOf((*MockOciRegistryInterface)(nil).Push), folder, repo, tag, overrides, packMeta, scrollFile)
 }
 
 // PushMeta mocks base method.

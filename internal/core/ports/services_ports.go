@@ -86,7 +86,7 @@ type OciRegistryInterface interface {
 	PullSelective(dir string, artifact string, includeData bool, progress *domain.SnapshotProgress) error
 	CanUpdateTag(descriptor v1.Descriptor, folder string, tag string) (bool, error)
 	PackFolders(fs *file.Store, dirs []string, artifactType domain.ArtifactType, path string) ([]v1.Descriptor, error)
-	Push(folder string, repo string, tag string, annotationInfo domain.AnnotationInfo, packMeta bool, scrollFile *domain.File) (v1.Descriptor, error)
+	Push(folder string, repo string, tag string, overrides map[string]string, packMeta bool, scrollFile *domain.File) (v1.Descriptor, error)
 	PushMeta(folder string, repo string) (v1.Descriptor, error)
 	CreateMetaDescriptors(fs *file.Store, dir string, artifact string) ([]v1.Descriptor, error)
 }

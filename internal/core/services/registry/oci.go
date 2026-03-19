@@ -245,7 +245,7 @@ func (c *OciClient) PackFolders(fs *file.Store, dirs []string, artifactType doma
 }
 
 // the root has to leaves, one is the real scroll (fs) and the other is meta information about the scroll
-func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo domain.AnnotationInfo, packMeta bool, scrollFile *domain.File) (v1.Descriptor, error) {
+func (c *OciClient) Push(folder string, repo string, tag string, overrides map[string]string, packMeta bool, scrollFile *domain.File) (v1.Descriptor, error) {
 
 	availableFileNames := []string{"update", "scroll.yaml", "packet_handler", "public", "private"}
 	fsFileNames := []string{}
@@ -326,25 +326,22 @@ func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo 
 
 	ctx := context.Background()
 
+	// annotations.json (if present) is treated as the source of truth for OCI manifest annotations.
+	// This ensures a subsequent pull can restore the same annotations that were previously set.
 	annotations := map[string]string{}
-	if annotationInfo.MinRam != "" {
-		annotations["gg.druid.scroll.minRam"] = annotationInfo.MinRam
-	}
-	if annotationInfo.MinDisk != "" {
-		annotations["gg.druid.scroll.minDisk"] = annotationInfo.MinDisk
-	}
-	if annotationInfo.MinCpu != "" {
-		annotations["gg.druid.scroll.minCpu"] = annotationInfo.MinCpu
-	}
-	if annotationInfo.Image != "" {
-		annotations["gg.druid.scroll.image"] = annotationInfo.Image
-	}
-	if annotationInfo.Smart {
-		annotations["gg.druid.scroll.smart"] = "true"
+	annotationsFile := filepath.Join(folder, "annotations.json")
+	if b, err := os.ReadFile(annotationsFile); err == nil {
+		err := json.Unmarshal(b, &annotations)
+		if err != nil {
+			return v1.Descriptor{}, fmt.Errorf("failed to unmarshal annotations.json: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		logger.Log().Info("No annotations.json found, skipping")
 	}
 
-	for name, port := range annotationInfo.Ports {
-		annotations[fmt.Sprintf("gg.druid.scroll.port.%s", name)] = port
+	// Apply CLI overrides on top of any local `annotations.json`.
+	for k, v := range overrides {
+		annotations[k] = v
 	}
 
 	opts := oras.PackManifestOptions{
