@@ -3,11 +3,8 @@ package services
 import (
 	"errors"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
-	"slices"
-	"strings"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
@@ -16,7 +13,7 @@ import (
 )
 
 type ScrollService struct {
-	processCwd       string
+	scrollDir        string
 	scroll           *domain.Scroll
 	lock             *domain.ScrollLock
 	templateRenderer ports.TemplateRendererInterface
@@ -29,7 +26,7 @@ func NewScrollService(
 	processCwd string,
 ) (*ScrollService, error) {
 	s := &ScrollService{
-		processCwd:       processCwd,
+		scrollDir:        processCwd,
 		templateRenderer: NewTemplateRenderer(),
 	}
 
@@ -43,6 +40,12 @@ func (sc *ScrollService) ReloadScroll() (*domain.Scroll, error) {
 	os.Setenv("SCROLL_DIR", sc.GetDir())
 	scroll, err := domain.NewScroll(sc.GetDir())
 
+	if err != nil {
+		return nil, err
+	}
+
+	//enseure data dir exists
+	err = os.MkdirAll(sc.GetCwd(), os.ModePerm)
 	if err != nil {
 		return nil, err
 	}
@@ -76,80 +79,6 @@ func (sc *ScrollService) ReloadLock(ignoreVersionCheck bool) (*domain.ScrollLock
 
 }
 
-func (sc *ScrollService) InitFiles(fls ...string) error {
-	//init-files-template needs to be rendered
-	files, err := sc.filterFiles("init-files", fls...)
-	if err != nil {
-		return err
-	}
-	initFileDir := path.Join(sc.GetDir(), "init-files")
-
-	for _, file := range files {
-		basePath := strings.TrimPrefix(file, initFileDir)
-		dest := path.Join(sc.processCwd, basePath)
-
-		err := utils.CopyFile(file, dest)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (sc *ScrollService) filterFiles(path string, fls ...string) ([]string, error) {
-	//init-files-template needs to be rendered
-	initPath := strings.TrimRight(sc.GetDir(), "/") + "/" + path + "/"
-	exist, _ := utils.FileExists(initPath)
-
-	files := []string{}
-
-	if exist {
-		err := filepath.Walk(initPath, func(path string, f os.FileInfo, err error) error {
-			basePath := strings.TrimPrefix(path, initPath)
-			if !f.IsDir() && (slices.Contains(fls, basePath) || len(fls) == 0) {
-				files = append(files, path)
-			}
-			return nil
-		})
-
-		if err != nil {
-			return []string{}, err
-		}
-
-		return files, nil
-	}
-
-	return []string{}, nil
-}
-
-func (sc *ScrollService) InitTemplateFiles(fls ...string) error {
-
-	//init-files-template needs to be rendered
-	files, err := sc.filterFiles("init-files-template", fls...)
-	if err != nil {
-		return err
-	}
-	if len(files) == 0 {
-		return nil
-	}
-	templateBase := path.Join(sc.GetDir(), "init-files-template")
-
-	for i, file := range files {
-		basePath := strings.TrimPrefix(file, templateBase)
-		files[i] = basePath
-	}
-
-	return sc.templateRenderer.RenderScrollTemplateFiles(templateBase, files, sc.scroll, sc.processCwd)
-}
-
-func (sc *ScrollService) CopyingInitFiles() error {
-	err := sc.InitFiles()
-	if err != nil {
-		return err
-	}
-	return sc.InitTemplateFiles()
-}
-
 func (sc *ScrollService) LockExists() bool {
 	exisits, err := utils.FileExists(sc.GetDir() + "/scroll-lock.json")
 	return err == nil && exisits
@@ -177,11 +106,11 @@ func (sc *ScrollService) WriteNewScrollLock() *domain.ScrollLock {
 }
 
 func (sc *ScrollService) GetDir() string {
-	return utils.GetScrollDirFromCwd(sc.processCwd)
+	return sc.scrollDir
 }
 
 func (sc *ScrollService) GetCwd() string {
-	return sc.processCwd
+	return utils.GetDataDirFromScrollDir(sc.scrollDir)
 }
 
 func (s ScrollService) GetCurrent() *domain.Scroll {
@@ -199,7 +128,7 @@ func (s ScrollService) ScrollExists() bool {
 }
 
 func (s ScrollService) RenderCwdTemplates() error {
-	cwd := s.processCwd
+	cwd := s.scrollDir
 
 	libRegEx, err := regexp.Compile(`^.+\.(scroll_template)$`)
 	if err != nil {
@@ -246,7 +175,7 @@ func (s ScrollService) GetScrollConfig() interface{} {
 }
 
 func (s ScrollService) GetScrollConfigRawYaml() []byte {
-	path := s.processCwd + "/.scroll_config.yml"
+	path := s.scrollDir + "/.scroll_config.yml"
 
 	content, err := os.ReadFile(path)
 

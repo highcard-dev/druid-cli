@@ -26,6 +26,10 @@ type Cronjob struct {
 	Schedule string `yaml:"schedule"`
 	Command  string `yaml:"command"`
 }
+type Chunks struct {
+	Name string `yaml:"name"`
+	Path string `yaml:"path"`
+}
 
 type ColdStarterVars struct {
 	Name  string `yaml:"name"`
@@ -55,6 +59,7 @@ type AugmentedPort struct {
 type File struct {
 	Name         string                            `yaml:"name" json:"name"`
 	Desc         string                            `yaml:"desc" json:"desc"`
+	PullChannel  map[string]string                 `yaml:"pull_channel" json:"pull_channel"`
 	Version      *semver.Version                   `yaml:"version" json:"version"`
 	AppVersion   string                            `yaml:"app_version" json:"app_version"` //don't make this a semver, it's not allways
 	Init         string                            `yaml:"init" json:"init"`
@@ -63,6 +68,7 @@ type File struct {
 	Commands     map[string]*CommandInstructionSet `yaml:"commands" json:"commands"`
 	Plugins      map[string]map[string]string      `yaml:"plugins" json:"plugins"`
 	Cronjobs     []*Cronjob                        `yaml:"cronjobs" json:"cronjobs"`
+	Chunks       []*Chunks                         `yaml:"chunks" json:"chunks"`
 }
 
 type Scroll struct {

@@ -9,23 +9,20 @@ import (
 )
 
 type HealthHandler struct {
-	portService     ports.PortServiceInterface
-	timeoutDone     bool
-	Started         *time.Time
-	snapshotService ports.SnapshotService
+	portService ports.PortServiceInterface
+	timeoutDone bool
+	Started     *time.Time
 }
 
 func NewHealthHandler(
 	portService ports.PortServiceInterface,
 	timeoutSec uint,
-	snapshotService ports.SnapshotService,
 ) *HealthHandler {
 
 	h := &HealthHandler{
 		portService,
 		false,
 		nil,
-		snapshotService,
 	}
 
 	// if timeoutSec == 0, we want at some point to not show a bad health status
@@ -51,19 +48,6 @@ func (p *HealthHandler) GetHealthAuth(c *fiber.Ctx) error {
 	if p.Started == nil {
 		return c.JSON(api.HealthResponse{
 			Mode: "idle",
-		})
-	}
-
-	if p.snapshotService.GetCurrentMode() != ports.SnapshotModeNoop {
-		pt := p.snapshotService.GetCurrentProgressTracker()
-		var perc float64
-		if pt != nil {
-			perc = (*pt).GetPercent()
-		}
-		percFloat32 := float32(perc)
-		return c.JSON(api.HealthResponse{
-			Mode:     string(p.snapshotService.GetCurrentMode()),
-			Progress: &percFloat32,
 		})
 	}
 

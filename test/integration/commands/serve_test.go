@@ -29,22 +29,22 @@ func TestServeCommand(t *testing.T) {
 	var testCases = []TestCase{
 		{
 			Name:       "TestServeFull",
-			ScrollFile: "../../../examples/minecraft/.scroll/scroll.yaml",
+			ScrollFile: "../../../examples/minecraft/scroll.yaml",
 			Restarts:   0,
 		},
 		{
 			Name:       "TestServeFull With Restart",
-			ScrollFile: "../../../examples/minecraft/.scroll/scroll.yaml",
+			ScrollFile: "../../../examples/minecraft/scroll.yaml",
 			Restarts:   1,
 		},
 		{
 			Name:       "TestServeFull With 3 Restarts",
-			ScrollFile: "../../../examples/minecraft/.scroll/scroll.yaml",
+			ScrollFile: "../../../examples/minecraft/scroll.yaml",
 			Restarts:   3,
 		},
 		{
 			Name:             "TestServeFull With Restart (Persistent)",
-			ScrollFile:       "../../../examples/minecraft/.scroll/scroll.yaml",
+			ScrollFile:       "../../../examples/minecraft/scroll.yaml",
 			Restarts:         1,
 			RunModeOverwrite: domain.RunModePersistent,
 		},
@@ -58,16 +58,15 @@ func TestServeCommand(t *testing.T) {
 			//observer := logger.SetupLogsCapture()
 			unixTime := time.Now().Unix()
 			path := "./druid-cli-test/" + strconv.FormatInt(unixTime, 10) + "/"
-			scrollPath := path + ".scroll/"
 
-			err := copy.Copy(tc.ScrollFile, scrollPath+"scroll.yaml")
+			err := copy.Copy(tc.ScrollFile, path+"scroll.yaml")
 			if err != nil {
 				t.Fatalf("Failed to copy test scroll file: %v", err)
 			}
 
 			if tc.RunModeOverwrite != "" {
 				//overwrite "restart" with RunModeOverwrite
-				scroll, err := domain.NewScroll(scrollPath)
+				scroll, err := domain.NewScroll(path)
 				if err != nil {
 					t.Fatalf("Failed to read scroll file: %v", err)
 				}
@@ -80,7 +79,7 @@ func TestServeCommand(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Failed to marshal scroll file: %v", err)
 				}
-				err = os.WriteFile(scrollPath+"scroll.yaml", scrollBytes, 0644)
+				err = os.WriteFile(path+"scroll.yaml", scrollBytes, 0644)
 				if err != nil {
 					t.Fatalf("Failed to write scroll file: %v", err)
 				}
@@ -142,7 +141,7 @@ func TestServeCommand(t *testing.T) {
 				t.Log("Connected to minecraft server")
 
 				//double check that install was never run again
-				lock, err := domain.ReadLock(scrollPath + "scroll-lock.json")
+				lock, err := domain.ReadLock(path + "scroll-lock.json")
 				if err != nil {
 					t.Fatalf("Failed to read lock file: %v", err)
 				}
@@ -173,7 +172,7 @@ func TestServeCommand(t *testing.T) {
 					t.Fatalf("Failed to stop daemon server, server still online")
 				}
 
-				lock, err = domain.ReadLock(scrollPath + "scroll-lock.json")
+				lock, err = domain.ReadLock(path + "scroll-lock.json")
 				if err != nil {
 					t.Fatalf("Failed to read lock file: %v", err)
 				}

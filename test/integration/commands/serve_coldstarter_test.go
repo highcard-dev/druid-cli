@@ -171,7 +171,7 @@ func TestColdstarterServeCommand(t *testing.T) {
 				}
 			}
 
-			err := test_utils.WaitUntilFileExists(path+"test.txt", 15*time.Second)
+			err := test_utils.WaitUntilFileExists(path+"data/test.txt", 15*time.Second)
 			if err != nil {
 				t.Fatalf("Failed to wait for test.txt to be created: %v", err)
 			}

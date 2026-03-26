@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/utils"
@@ -62,18 +63,19 @@ func extractHost(repoUrl string) string {
 }
 
 func (c *OciClient) Pull(dir string, artifact string) error {
+	return c.PullSelective(dir, artifact, true, nil)
+}
 
-	repo, tag := utils.SplitArtifact(artifact)
+func (c *OciClient) PullSelective(dir string, artifact string, includeData bool, progress *domain.SnapshotProgress) error {
 
-	if tag == "" {
-		return fmt.Errorf("tag must be set")
+	repo, ref, _ := utils.ParseArtifactRef(artifact)
+	if repo == "" || ref == "" {
+		return fmt.Errorf("reference (tag or digest) must be set")
 	}
 
-	// 1. Connect to a remote repository
 	ctx := context.Background()
 
 	repoInstance, err := c.GetRepo(repo)
-
 	if err != nil {
 		return err
 	}
@@ -84,31 +86,101 @@ func (c *OciClient) Pull(dir string, artifact string) error {
 	}
 
 	fs, err := file.New(filepath.Join(dir))
-
 	if err != nil {
 		return err
 	}
 
-	manifestDescriptor, err := oras.Copy(ctx, repoInstance, tag, fs, tag, oras.DefaultCopyOptions)
+	// Track progress for data pulls
+	var completed atomic.Int64
+	var totalLayers atomic.Int64
+
+	if progress != nil {
+		progress.Mode.Store("restore")
+		progress.Percentage.Store(0)
+	}
+
+	copyOpts := oras.CopyOptions{
+		CopyGraphOptions: oras.CopyGraphOptions{
+			FindSuccessors: func(ctx context.Context, fetcher content.Fetcher, desc v1.Descriptor) ([]v1.Descriptor, error) {
+				successors, err := content.Successors(ctx, fetcher, desc)
+				if err != nil {
+					return nil, err
+				}
+
+				if !includeData {
+					filtered := make([]v1.Descriptor, 0, len(successors))
+					for _, s := range successors {
+						// Filter out data layers by checking media type.
+						// ORAS appends +gzip to the media type for directories.
+						baseType := strings.TrimSuffix(s.MediaType, "+gzip")
+						if baseType == string(domain.ArtifactTypeScrollData) {
+							logger.Log().Debug("Skipping data layer", zap.String("digest", s.Digest.String()))
+							continue
+						}
+						filtered = append(filtered, s)
+					}
+					totalLayers.Store(int64(len(filtered)))
+					return filtered, nil
+				}
+
+				totalLayers.Store(int64(len(successors)))
+				return successors, nil
+			},
+			PostCopy: func(ctx context.Context, desc v1.Descriptor) error {
+				if progress != nil {
+					done := completed.Add(1)
+					total := totalLayers.Load()
+					if total > 0 {
+						pct := done * 100 / total
+						progress.Percentage.Store(pct)
+					}
+					logger.Log().Info("Pulled layer", zap.String("digest", desc.Digest.String()), zap.Int64("completed", done), zap.Int64("total", total))
+				}
+				return nil
+			},
+			OnCopySkipped: func(ctx context.Context, desc v1.Descriptor) error {
+				if progress != nil {
+					done := completed.Add(1)
+					total := totalLayers.Load()
+					if total > 0 {
+						pct := done * 100 / total
+						progress.Percentage.Store(pct)
+					}
+				}
+				return nil
+			},
+		},
+	}
+
+	// Use a constant destination reference for the local file store so digest references
+	// (which contain ':' and other characters) don't become a tag key.
+	const dstRef = "root"
+	manifestDescriptor, err := oras.Copy(ctx, repoInstance, ref, fs, dstRef, copyOpts)
 	if err != nil {
+		if progress != nil {
+			progress.Mode.Store("noop")
+		}
 		return err
 	}
+
+	if progress != nil {
+		progress.Percentage.Store(100)
+		progress.Mode.Store("noop")
+	}
+
 	logger.Log().Info("Manifest pulled", zap.String("digest", manifestDescriptor.Digest.String()), zap.String("mediaType", manifestDescriptor.MediaType))
 
 	jsonData, err := json.Marshal(&manifestDescriptor)
-
 	if err != nil {
 		return fmt.Errorf("failed to marshal manifest descriptor: %w", err)
 	}
 
 	bs, err := content.FetchAll(ctx, repoInstance, manifestDescriptor)
-
 	if err != nil {
 		return fmt.Errorf("failed to fetch manifest descriptor: %w", err)
 	}
 
 	fullDesc := v1.Descriptor{}
-
 	err = json.Unmarshal(bs, &fullDesc)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal manifest descriptor: %w", err)
@@ -117,7 +189,6 @@ func (c *OciClient) Pull(dir string, artifact string) error {
 	annotations := fullDesc.Annotations
 	fileName := filepath.Join(dir, "manifest.json")
 	err = os.WriteFile(fileName, jsonData, 0644)
-
 	if err != nil {
 		return fmt.Errorf("failed to write manifest descriptor: %w", err)
 	}
@@ -128,13 +199,11 @@ func (c *OciClient) Pull(dir string, artifact string) error {
 	}
 	fileName = filepath.Join(dir, "annotations.json")
 	err = os.WriteFile(fileName, annotationsJson, 0644)
-
 	if err != nil {
 		return fmt.Errorf("failed to write annotations: %w", err)
 	}
 
 	return nil
-
 }
 
 func (c *OciClient) CanUpdateTag(current v1.Descriptor, r string, tag string) (bool, error) {
@@ -176,9 +245,9 @@ func (c *OciClient) PackFolders(fs *file.Store, dirs []string, artifactType doma
 }
 
 // the root has to leaves, one is the real scroll (fs) and the other is meta information about the scroll
-func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo domain.AnnotationInfo, packMeta bool) (v1.Descriptor, error) {
+func (c *OciClient) Push(folder string, repo string, tag string, overrides map[string]string, packMeta bool, scrollFile *domain.File) (v1.Descriptor, error) {
 
-	availableFileNames := []string{"init-files", "init-files-template", "scroll-switch", "update", "scroll.yaml", "packet_handler", "public", "private"}
+	availableFileNames := []string{"update", "scroll.yaml", "packet_handler", "public", "private"}
 	fsFileNames := []string{}
 
 	//check if files exisits (file or folder) and remove from slice if not
@@ -223,27 +292,56 @@ func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo 
 		descriptorsForRoot = append(descriptorsForRoot, scrollMetaManifestDescriptor...)
 	}
 
+	// Pack data directory chunks
+	dataDir := utils.GetDataDirFromScrollDir(folder)
+	dataExists, _ := utils.FileExists(dataDir)
+	if dataExists {
+		var explicitChunks []*domain.Chunks
+		if scrollFile != nil {
+			explicitChunks = scrollFile.Chunks
+		}
+		chunks, err := utils.AutoChunkDataDir(dataDir, explicitChunks)
+		if err != nil {
+			return v1.Descriptor{}, fmt.Errorf("failed to auto-chunk data directory: %w", err)
+		}
+		for _, chunk := range chunks {
+			chunkFullPath := filepath.Join(dataDir, chunk.Path)
+			chunkExists, _ := utils.FileExists(chunkFullPath)
+			if !chunkExists {
+				logger.Log().Warn(fmt.Sprintf("data chunk path %s does not exist, skipping", chunk.Path))
+				continue
+			}
+			// Name the layer "data/<path>" so it extracts to the correct location on pull
+			layerName := filepath.Join("data", chunk.Path)
+			desc, err := fs.Add(context.Background(), layerName, string(domain.ArtifactTypeScrollData), chunkFullPath)
+			if err != nil {
+				return v1.Descriptor{}, fmt.Errorf("failed to pack data chunk %s: %w", chunk.Name, err)
+			}
+			logger.Log().Info(fmt.Sprintf("packed data chunk %s: %v", chunk.Name, desc.Digest))
+			descriptorsForRoot = append(descriptorsForRoot, desc)
+		}
+	} else {
+		logger.Log().Info("No data directory found, skipping data chunk packing")
+	}
+
 	ctx := context.Background()
 
+	// annotations.json (if present) is treated as the source of truth for OCI manifest annotations.
+	// This ensures a subsequent pull can restore the same annotations that were previously set.
 	annotations := map[string]string{}
-	if annotationInfo.MinRam != "" {
-		annotations["gg.druid.scroll.minRam"] = annotationInfo.MinRam
-	}
-	if annotationInfo.MinDisk != "" {
-		annotations["gg.druid.scroll.minDisk"] = annotationInfo.MinDisk
-	}
-	if annotationInfo.MinCpu != "" {
-		annotations["gg.druid.scroll.minCpu"] = annotationInfo.MinCpu
-	}
-	if annotationInfo.Image != "" {
-		annotations["gg.druid.scroll.image"] = annotationInfo.Image
-	}
-	if annotationInfo.Smart {
-		annotations["gg.druid.scroll.smart"] = "true"
+	annotationsFile := filepath.Join(folder, "annotations.json")
+	if b, err := os.ReadFile(annotationsFile); err == nil {
+		err := json.Unmarshal(b, &annotations)
+		if err != nil {
+			return v1.Descriptor{}, fmt.Errorf("failed to unmarshal annotations.json: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		logger.Log().Info("No annotations.json found, skipping")
 	}
 
-	for name, port := range annotationInfo.Ports {
-		annotations[fmt.Sprintf("gg.druid.scroll.port.%s", name)] = port
+	// Apply CLI overrides on top of any local `annotations.json`.
+	for k, v := range overrides {
+		annotations[k] = v
 	}
 
 	opts := oras.PackManifestOptions{
@@ -260,7 +358,32 @@ func (c *OciClient) Push(folder string, repo string, tag string, annotationInfo 
 	if err = fs.Tag(ctx, rootManifestDescriptor, tag); err != nil {
 		return v1.Descriptor{}, err
 	}
-	_, err = oras.Copy(ctx, fs, tag, repoInstance, tag, oras.DefaultCopyOptions)
+
+	pushCopyOpts := oras.CopyOptions{
+		CopyGraphOptions: oras.CopyGraphOptions{
+			PostCopy: func(ctx context.Context, desc v1.Descriptor) error {
+				title := desc.Annotations["org.opencontainers.image.title"]
+				logger.Log().Info("Pushed layer",
+					zap.String("digest", desc.Digest.String()),
+					zap.String("mediaType", desc.MediaType),
+					zap.Int64("size", desc.Size),
+					zap.String("title", title),
+				)
+				return nil
+			},
+			OnCopySkipped: func(ctx context.Context, desc v1.Descriptor) error {
+				title := desc.Annotations["org.opencontainers.image.title"]
+				logger.Log().Info("Layer already exists in registry, skipping",
+					zap.String("digest", desc.Digest.String()),
+					zap.String("mediaType", desc.MediaType),
+					zap.Int64("size", desc.Size),
+					zap.String("title", title),
+				)
+				return nil
+			},
+		},
+	}
+	_, err = oras.Copy(ctx, fs, tag, repoInstance, tag, pushCopyOpts)
 
 	return rootManifestDescriptor, err
 }
@@ -301,7 +424,32 @@ func (c *OciClient) PushMeta(folder string, repo string) (v1.Descriptor, error) 
 	if err = fs.Tag(ctx, rootManifestDescriptor, tag); err != nil {
 		return v1.Descriptor{}, err
 	}
-	_, err = oras.Copy(ctx, fs, tag, repoInstance, tag, oras.DefaultCopyOptions)
+
+	metaCopyOpts := oras.CopyOptions{
+		CopyGraphOptions: oras.CopyGraphOptions{
+			PostCopy: func(ctx context.Context, desc v1.Descriptor) error {
+				title := desc.Annotations["org.opencontainers.image.title"]
+				logger.Log().Info("Pushed layer",
+					zap.String("digest", desc.Digest.String()),
+					zap.String("mediaType", desc.MediaType),
+					zap.Int64("size", desc.Size),
+					zap.String("title", title),
+				)
+				return nil
+			},
+			OnCopySkipped: func(ctx context.Context, desc v1.Descriptor) error {
+				title := desc.Annotations["org.opencontainers.image.title"]
+				logger.Log().Info("Layer already exists in registry, skipping",
+					zap.String("digest", desc.Digest.String()),
+					zap.String("mediaType", desc.MediaType),
+					zap.Int64("size", desc.Size),
+					zap.String("title", title),
+				)
+				return nil
+			},
+		},
+	}
+	_, err = oras.Copy(ctx, fs, tag, repoInstance, tag, metaCopyOpts)
 
 	return rootManifestDescriptor, err
 }

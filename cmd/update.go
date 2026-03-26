@@ -20,12 +20,11 @@ var UpdateCommand = &cobra.Command{
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 
-		scrollDir := utils.GetScrollDirFromCwd(cwd)
 		var artifact string
 		if len(args) > 0 {
 			artifact = args[0]
 		} else {
-			scroll, err := domain.NewScroll(scrollDir)
+			scroll, err := domain.NewScroll(cwd)
 
 			if err != nil {
 				return err
@@ -33,7 +32,14 @@ var UpdateCommand = &cobra.Command{
 			artifact = scroll.Name + ":" + scroll.AppVersion
 		}
 
-		repo, tag := utils.SplitArtifact(artifact)
+		repo, ref, kind := utils.ParseArtifactRef(artifact)
+		if repo == "" || ref == "" {
+			return fmt.Errorf("invalid artifact reference %q (expected repo:tag or repo@sha256:digest)", artifact)
+		}
+		if kind == utils.ArtifactRefKindDigest {
+			return fmt.Errorf("update only supports tag references (repo:tag). For digests, use `druid registry pull %s`", artifact)
+		}
+		tag := ref
 
 		//ctx := context.Background()
 		logger.Log().Info("Checking for updates for " + artifact)
@@ -42,7 +48,7 @@ var UpdateCommand = &cobra.Command{
 
 		canUpdate := false
 
-		fileName := utils.GetScrollDirFromCwd(cwd) + "/manifest.json"
+		fileName := (cwd) + "/manifest.json"
 		b, err := os.ReadFile(fileName)
 
 		if err != nil {
@@ -64,7 +70,7 @@ var UpdateCommand = &cobra.Command{
 
 		if canUpdate {
 			logger.Log().Info("Updated scroll files")
-			err = registryClient.Pull(scrollDir, artifact)
+			err = registryClient.Pull(cwd, artifact)
 			if err != nil {
 				return fmt.Errorf("error pulling scroll files: %v", err)
 			}

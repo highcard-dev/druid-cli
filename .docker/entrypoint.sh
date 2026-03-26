@@ -1,8 +1,36 @@
 #!/usr/bin/env bash
 
 set -e
-SD=".scroll"
+SD="./"
 input=$@
+
+# Global args derived from envs that apply to multiple commands
+global_args=()
+if [ ! -z "${DRUID_CWD}" ];
+then
+    global_args+=("--cwd=$DRUID_CWD")
+fi
+
+if [ ! -z "${DRUID_CONFIG}" ];
+then
+    global_args+=("--config=$DRUID_CONFIG")
+fi
+
+# Migrate legacy .scroll layout:
+#   Before: .scroll/<scroll files> + <serverfiles>
+#   After:  <scroll files> + data/<serverfiles>
+if [ -d "${SD}.scroll" ]; then
+    echo "Migrating legacy .scroll layout..."
+    mkdir -p "${SD}data"
+    for item in "${SD}"* "${SD}".[!.]*; do
+        [ -e "$item" ] || continue
+        name=$(basename "$item")
+        [ "$name" != "data" ] && [ "$name" != ".scroll" ] && mv "$item" "${SD}data/"
+    done
+    mv "${SD}.scroll"/* "${SD}"
+    rm -rf "${SD}.scroll"
+    echo "Legacy migration complete"
+fi
 
 echo "Druid Version: $(druid version)"
 
@@ -26,38 +54,18 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]] &&  [[ $input != *
 
     echo "Artifact: $artifact"
 
-    
-
     #Update command
     if [ "${DRUID_AUTO_UPDATE}" = "true" ] && [ -f "${SD}/scroll.yaml" ];
     then
-
         echo "Updating artifact"
-        druid update 
+
+        # Build args for `druid update` so that global envs apply as well
+        update_args=(update "${global_args[@]}")
+
+        druid "${update_args[@]}"
         echo "Updated artifact"
     fi
 
-
-    #Run command
-    if [ ! -z "${artifact}" ] && [ -f "${SD}/scroll.yaml" ];
-    then
-        if ! command -v yq &> /dev/null
-        then
-            echo "WARN: yq not installed, skipping artifact check"
-        else
-            current=$(cat ${SD}/scroll.yaml | yq .name):$(cat ${SD}/scroll.yaml | yq .app_version)
-            #compare desired artifact with current installed
-
-            if [ "$current" != "$artifact" ];
-            then
-                echo "Switching from $current to $artifact"
-                druid run scroll-switch.$artifact
-            else
-                echo "Desired artifact $artifact already installed"
-            fi
-        fi
-    fi
-    
 
     #ignore-version-check otherwise we have missmatch after update
     args=(serve --ignore-version-check --additional-endpoints annotations)
@@ -67,7 +75,7 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]] &&  [[ $input != *
         args+=($artifact)
     fi
 
-    #Map envs to args
+    # Map envs to args (--cwd = scroll dir, --config = path to .druid.yaml)
     if [ ! -z "${DRUID_JWKS_SERVER}" ];
     then
         args+=("--jwks-server" "${DRUID_JWKS_SERVER}")
@@ -112,10 +120,8 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]] &&  [[ $input != *
         args+=("--skip-artifact-download")
     fi
 
-    if [ ! -z "${DRUID_CWD}" ];
-    then
-        args+=("--cwd=$DRUID_CWD")
-    fi
+    # Reuse global args (cwd/config) for serve as well
+    args+=("${global_args[@]}")
 
     if [ ! -z "${PPROF_BIND}" ];
     then
@@ -126,5 +132,22 @@ if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]] &&  [[ $input != *
     exec druid "${args[@]}"
 else
     echo "Running druid with args: $@"
-    exec druid "$@"
+
+    # Start with user-provided args
+    args=("$@")
+
+    # Append global args unless explicitly specified by the user
+    for g in "${global_args[@]}"; do
+        key="${g%%=*}" # e.g. --cwd or --config
+        skip=false
+        for a in "${args[@]}"; do
+            if [[ "$a" == "$key" || "$a" == "$key="* ]]; then
+                skip=true
+                break
+            fi
+        done
+        $skip || args+=("$g")
+    done
+
+    exec druid "${args[@]}"
 fi

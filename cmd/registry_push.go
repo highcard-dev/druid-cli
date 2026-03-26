@@ -8,6 +8,7 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
+	"github.com/highcard-dev/daemon/internal/utils"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -33,9 +34,6 @@ var PushCommand = &cobra.Command{
 		}
 
 		folder := "."
-		if len(args) == 1 {
-			folder = args[0]
-		}
 
 		fullPath := path.Join(cwd, folder)
 
@@ -45,37 +43,46 @@ var PushCommand = &cobra.Command{
 			return err
 		}
 
-		logger.Log().Info("Pushing "+scroll.Name+" to registry", zap.String("path", fullPath))
+		repo := scroll.Name
+		tag := scroll.AppVersion
+
+		if len(args) == 1 {
+			repo, tag = utils.SplitArtifact(args[0])
+		}
+
+		logger.Log().Info("Pushing "+repo+":"+tag+" to registry", zap.String("path", fullPath))
 
 		ociClient := registry.NewOciClient(credStore)
 
-		repo := scroll.Name
-
-		tag := scroll.AppVersion
-
-		ps := make(map[string]string, len(scrollPorts))
-
+		overrides := map[string]string{}
+		if minRam != "" {
+			overrides["gg.druid.scroll.minRam"] = minRam
+		}
+		if minCpu != "" {
+			overrides["gg.druid.scroll.minCpu"] = minCpu
+		}
+		if minDisk != "" {
+			overrides["gg.druid.scroll.minDisk"] = minDisk
+		}
+		if image != "" {
+			overrides["gg.druid.scroll.image"] = image
+		}
+		if smart {
+			overrides["gg.druid.scroll.smart"] = "true"
+		}
 		for _, p := range scrollPorts {
-
 			parts := strings.Split(p, "=")
 			name := parts[0]
 			port := "0"
 			if len(parts) == 2 {
 				port = parts[1]
 			}
-			ps[name] = port
+			overrides[fmt.Sprintf("gg.druid.scroll.port.%s", name)] = port
 		}
 
 		var tries int
 		for tries < 3 {
-			_, err = ociClient.Push(fullPath, repo, tag, domain.AnnotationInfo{
-				MinRam:  minRam,
-				MinCpu:  minCpu,
-				MinDisk: minDisk,
-				Image:   image,
-				Ports:   ps,
-				Smart:   smart,
-			}, packMeta)
+			_, err = ociClient.Push(fullPath, repo, tag, overrides, packMeta, &scroll.File)
 			if err != nil {
 				tries++
 				logger.Log().Error("Failed to push scroll to registry, retrying...", zap.Error(err), zap.Int("tries", tries))
