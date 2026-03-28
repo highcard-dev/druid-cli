@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +25,11 @@ import (
 
 type OciClient struct {
 	credentialStore *CredentialStore
+	// httpClient optionally overrides the HTTP client used by GetRepo.
+	// When nil, the default retry client or auth client is used.
+	httpClient *http.Client
+	// plainHTTP forces plain HTTP (no TLS) for registry communication.
+	plainHTTP bool
 }
 
 func NewOciClient(credentialStore *CredentialStore) *OciClient {
@@ -38,13 +44,26 @@ func (c *OciClient) GetRepo(repoUrl string) (*remote.Repository, error) {
 		return nil, err
 	}
 
+	repo.PlainHTTP = c.plainHTTP
+
+	httpClient := retry.DefaultClient
+	if c.httpClient != nil {
+		httpClient = c.httpClient
+	}
+
 	cred, _ := c.credentialStore.CredentialForRepo(repoUrl)
 	if cred.Username == "" || cred.Password == "" {
 		logger.Log().Warn("No registry credentials found for " + repoUrl + ". Trying to pull anonymously")
+		if c.httpClient != nil {
+			repo.Client = &auth.Client{
+				Client: httpClient,
+				Cache:  auth.DefaultCache,
+			}
+		}
 	} else {
 		host := extractHost(repoUrl)
 		repo.Client = &auth.Client{
-			Client:     retry.DefaultClient,
+			Client:     httpClient,
 			Cache:      auth.DefaultCache,
 			Credential: auth.StaticCredential(host, cred),
 		}
@@ -311,9 +330,22 @@ func (c *OciClient) Push(folder string, repo string, tag string, overrides map[s
 				logger.Log().Warn(fmt.Sprintf("data chunk path %s does not exist, skipping", chunk.Path))
 				continue
 			}
+			fileInfo, err := os.Stat(chunkFullPath)
+			if err != nil {
+				return v1.Descriptor{}, fmt.Errorf("failed to stat data chunk %s: %w", chunk.Name, err)
+			}
+			// Some registries reject zero-byte blob uploads (sha256:e3b0...).
+			// Skip empty data files to keep push resilient.
+			if fileInfo.Mode().IsRegular() && fileInfo.Size() == 0 {
+				logger.Log().Warn(fmt.Sprintf("data chunk %s is empty, skipping", chunk.Path))
+				continue
+			}
 			// Name the layer "data/<path>" so it extracts to the correct location on pull
 			layerName := filepath.Join("data", chunk.Path)
-			desc, err := fs.Add(context.Background(), layerName, string(domain.ArtifactTypeScrollData), chunkFullPath)
+			// Use a path relative to the file store root (folder), not the full chunkFullPath,
+			// because fs.Add resolves relative paths against its working directory.
+			chunkStoreRelPath := filepath.Join("data", chunk.Path)
+			desc, err := fs.Add(context.Background(), layerName, string(domain.ArtifactTypeScrollData), chunkStoreRelPath)
 			if err != nil {
 				return v1.Descriptor{}, fmt.Errorf("failed to pack data chunk %s: %w", chunk.Name, err)
 			}
