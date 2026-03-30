@@ -7,6 +7,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var strict bool
+
 var ScrollValidateCmd = &cobra.Command{
 	Use:   "validate",
 	Short: "Validates the scroll file",
@@ -24,11 +26,15 @@ var ScrollValidateCmd = &cobra.Command{
 			return fmt.Errorf("failed to load scroll: %w", err)
 		}
 
-		if err := scroll.Validate(); err != nil {
+		if err := scroll.Validate(strict); err != nil {
 			return fmt.Errorf("failed to validate scroll: %w", err)
 		}
 
 		fmt.Println("Scroll validated successfully.")
 		return nil
 	},
+}
+
+func init() {
+	ScrollValidateCmd.Flags().BoolVar(&strict, "strict", false, "Enable strict validation mode")
 }

@@ -73,6 +73,7 @@ type File struct {
 
 type Scroll struct {
 	File
+	filePath string
 }
 
 type Procedure struct {
@@ -110,7 +111,9 @@ func NewScroll(scrollDir string) (*Scroll, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read scroll.yaml - %w", err)
 	}
-	scroll := Scroll{}
+	scroll := Scroll{
+		filePath: filePath,
+	}
 	if _, err = scroll.ParseFile(file); err != nil {
 		return nil, err
 	}
@@ -130,7 +133,7 @@ func (sc *Scroll) ParseFile(file []byte) (*Scroll, error) {
 	return sc, nil
 }
 
-func (sc *Scroll) Validate() error {
+func (sc *Scroll) Validate(strict bool) error {
 	if sc.Name == "" {
 		return fmt.Errorf("scroll name is required")
 	}
@@ -174,6 +177,28 @@ func (sc *Scroll) Validate() error {
 			ids[*p.Id] = true
 		}
 	}
+	//scan for files in sc.filePath
+	entries, err := os.ReadDir(sc.filePath)
+	if err != nil {
+		return fmt.Errorf("failed to read scroll directory - %w", err)
+	}
+	for _, entry := range entries {
+		var found = false
+		for fileName := range ScrollFiles {
+			if entry.Name() == fileName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			if !strict {
+				logger.Log().Warn("Directory contains file that is not defined in ScrollFiles", zap.String("file", entry.Name()))
+			} else {
+				return fmt.Errorf("directory contains file that is not defined in ScrollFiles: %s", entry.Name())
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -183,4 +208,13 @@ func (sc *Scroll) CanColdStart() bool {
 
 func (sc *Scroll) GetColdStartPorts() []Port {
 	return sc.Ports
+}
+
+var ScrollFiles = map[string]ArtifactType{
+	"update":         ArtifactTypeScrollFs,
+	"scroll.yaml":    ArtifactTypeScrollFs,
+	"packet_handler": ArtifactTypeScrollFs,
+	"public":         ArtifactTypeScrollFs,
+	"private":        ArtifactTypeScrollFs,
+	"data":           ArtifactTypeScrollData,
 }

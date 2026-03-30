@@ -266,11 +266,13 @@ func (c *OciClient) PackFolders(fs *file.Store, dirs []string, artifactType doma
 // the root has to leaves, one is the real scroll (fs) and the other is meta information about the scroll
 func (c *OciClient) Push(folder string, repo string, tag string, overrides map[string]string, packMeta bool, scrollFile *domain.File) (v1.Descriptor, error) {
 
-	availableFileNames := []string{"update", "scroll.yaml", "packet_handler", "public", "private"}
 	fsFileNames := []string{}
 
 	//check if files exisits (file or folder) and remove from slice if not
-	for _, fileName := range availableFileNames {
+	for fileName, artifactType := range domain.ScrollFiles {
+		if artifactType != domain.ArtifactTypeScrollData {
+			continue
+		}
 		exists, _ := utils.FileExists(filepath.Join(folder, fileName))
 		if exists {
 			fsFileNames = append(fsFileNames, fileName)
