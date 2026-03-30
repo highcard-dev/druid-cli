@@ -217,4 +217,5 @@ var ScrollFiles = map[string]ArtifactType{
 	"public":         ArtifactTypeScrollFs,
 	"private":        ArtifactTypeScrollFs,
 	"data":           ArtifactTypeScrollData,
+	".meta":          ArtifactTypeScrollMeta,
 }
