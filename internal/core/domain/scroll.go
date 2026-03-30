@@ -73,7 +73,7 @@ type File struct {
 
 type Scroll struct {
 	File
-	filePath string
+	scrollDir string
 }
 
 type Procedure struct {
@@ -112,7 +112,7 @@ func NewScroll(scrollDir string) (*Scroll, error) {
 		return nil, fmt.Errorf("failed to read scroll.yaml - %w", err)
 	}
 	scroll := Scroll{
-		filePath: filePath,
+		scrollDir: scrollDir,
 	}
 	if _, err = scroll.ParseFile(file); err != nil {
 		return nil, err
@@ -177,8 +177,8 @@ func (sc *Scroll) Validate(strict bool) error {
 			ids[*p.Id] = true
 		}
 	}
-	//scan for files in sc.filePath
-	entries, err := os.ReadDir(sc.filePath)
+	//scan for files in sc.scrollDir
+	entries, err := os.ReadDir(sc.scrollDir)
 	if err != nil {
 		return fmt.Errorf("failed to read scroll directory - %w", err)
 	}
