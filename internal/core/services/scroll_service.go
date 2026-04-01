@@ -137,9 +137,6 @@ func (s ScrollService) RenderCwdTemplates() error {
 
 	files := []string{}
 	filepath.Walk(cwd, func(path string, info os.FileInfo, err error) error {
-		if filepath.Clean(s.GetDir()) == filepath.Clean(path) {
-			return filepath.SkipDir // Skip this subdirectory
-		}
 		if !libRegEx.MatchString(path) {
 			return nil
 		}
