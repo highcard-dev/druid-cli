@@ -127,7 +127,35 @@ func (s ScrollService) ScrollExists() bool {
 	return b && err == nil
 }
 
+func isScrollConfigTemplate(path string) bool {
+	return filepath.Base(path) == domain.ScrollConfigTemplate
+}
+
+// ensureScrollConfigFromTemplate renders scroll-config.yml.scroll_template to
+// produce scroll-config.yml when the config file does not yet exist. This is a
+// one-shot bootstrap: once the file is present it is never overwritten, so
+// user edits and non-deterministic template output (e.g. randAlphaNum) are
+// preserved across restarts.
+func (s ScrollService) ensureScrollConfigFromTemplate() error {
+	configPath := filepath.Join(s.scrollDir, domain.ScrollConfigFile)
+	if exists, _ := utils.FileExists(configPath); exists {
+		return nil
+	}
+
+	templatePath := filepath.Join(s.scrollDir, domain.ScrollConfigTemplate)
+	if ok, _ := utils.FileExists(templatePath); !ok {
+		return nil
+	}
+
+	config := TemplateData{}
+	return s.templateRenderer.RenderScrollTemplateFiles("", []string{templatePath}, config, "")
+}
+
 func (s ScrollService) RenderCwdTemplates() error {
+	if err := s.ensureScrollConfigFromTemplate(); err != nil {
+		return err
+	}
+
 	cwd := s.scrollDir
 
 	libRegEx, err := regexp.Compile(`^.+\.(scroll_template)$`)
@@ -140,8 +168,10 @@ func (s ScrollService) RenderCwdTemplates() error {
 		if !libRegEx.MatchString(path) {
 			return nil
 		}
+		if isScrollConfigTemplate(path) {
+			return nil
+		}
 		files = append(files, path)
-
 		return nil
 	})
 
@@ -152,7 +182,6 @@ func (s ScrollService) RenderCwdTemplates() error {
 	config := TemplateData{Config: s.GetScrollConfig()}
 
 	return s.templateRenderer.RenderScrollTemplateFiles("", files, config, "")
-
 }
 
 func (s ScrollService) GetScrollConfig() interface{} {
@@ -172,7 +201,7 @@ func (s ScrollService) GetScrollConfig() interface{} {
 }
 
 func (s ScrollService) GetScrollConfigRawYaml() []byte {
-	path := s.scrollDir + "/.scroll_config.yml"
+	path := filepath.Join(s.scrollDir, domain.ScrollConfigFile)
 
 	content, err := os.ReadFile(path)
 

@@ -17,6 +17,21 @@
             ]
         },
         {
+            "name": "Serve (minecraft)",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/main.go",
+            "args": [
+                "serve",
+                "--cwd", "${workspaceFolder}/examples/minecraft",
+                "--additional-endpoints", "annotations",
+                "--allow-plugin-errors",
+                "-p", "9190"
+            ]
+        },
+        {
             "name": "Run (scroll-cwd)",
             "type": "go",
             "request": "launch",
@@ -38,6 +53,16 @@
             "args": [
                 "registry", "push",
                 "--cwd", "${workspaceFolder}/examples/scroll-cwd"
+            ]
+        },
+        {
+            "name": "Registry Push (arg) ",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/main.go",
+            "args": [
+                "registry", "push","examples/scroll-cwd"
             ]
         },
         {

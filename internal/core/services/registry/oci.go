@@ -133,7 +133,8 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 						// ORAS appends +gzip to the media type for directories.
 						baseType := strings.TrimSuffix(s.MediaType, "+gzip")
 						if baseType == string(domain.ArtifactTypeScrollData) {
-							logger.Log().Debug("Skipping data layer", zap.String("digest", s.Digest.String()))
+							path := s.Annotations["org.opencontainers.image.path"]
+							logger.Log().Debug("Skipping data layer", zap.String("digest", s.Digest.String()), zap.String("path", path))
 							continue
 						}
 						filtered = append(filtered, s)

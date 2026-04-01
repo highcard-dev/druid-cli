@@ -210,12 +210,18 @@ func (sc *Scroll) GetColdStartPorts() []Port {
 	return sc.Ports
 }
 
+const ScrollConfigFile = "scroll-config.yml"
+const ScrollConfigTemplate = ScrollConfigFile + ".scroll_template"
+
 var ScrollFiles = map[string]ArtifactType{
-	"update":         ArtifactTypeScrollFs,
-	"scroll.yaml":    ArtifactTypeScrollFs,
-	"packet_handler": ArtifactTypeScrollFs,
-	"public":         ArtifactTypeScrollFs,
-	"private":        ArtifactTypeScrollFs,
-	"data":           ArtifactTypeScrollData,
-	".meta":          ArtifactTypeScrollMeta,
+	"update":                            ArtifactTypeScrollFs,
+	"scroll.yaml":                       ArtifactTypeScrollFs,
+	"packet_handler":                    ArtifactTypeScrollFs,
+	"public":                            ArtifactTypeScrollFs,
+	"private":                           ArtifactTypeScrollFs,
+	"scroll-config.yml.scroll_template": ArtifactTypeScrollFs,
+	"data":                              ArtifactTypeScrollData,
+	"scroll-lock.json":                  ArtifactTypeScrollData,
+	"scroll-config.yml":                 ArtifactTypeScrollData,
+	".meta":                             ArtifactTypeScrollMeta,
 }
