@@ -270,7 +270,7 @@ func (c *OciClient) Push(folder string, repo string, tag string, overrides map[s
 
 	//check if files exisits (file or folder) and remove from slice if not
 	for fileName, artifactType := range domain.ScrollFiles {
-		if artifactType != domain.ArtifactTypeScrollData {
+		if artifactType != domain.ArtifactTypeScrollData && artifactType != domain.ArtifactTypeScrollFs {
 			continue
 		}
 		exists, _ := utils.FileExists(filepath.Join(folder, fileName))
