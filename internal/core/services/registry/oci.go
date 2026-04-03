@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/utils"
@@ -35,6 +36,51 @@ type OciClient struct {
 func NewOciClient(credentialStore *CredentialStore) *OciClient {
 	return &OciClient{
 		credentialStore: credentialStore,
+	}
+}
+
+func formatBytes(b int64) string {
+	const (
+		kb = 1024
+		mb = kb * 1024
+		gb = mb * 1024
+	)
+	switch {
+	case b >= gb:
+		return fmt.Sprintf("%.2f GB", float64(b)/float64(gb))
+	case b >= mb:
+		return fmt.Sprintf("%.2f MB", float64(b)/float64(mb))
+	case b >= kb:
+		return fmt.Sprintf("%.2f KB", float64(b)/float64(kb))
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
+}
+
+func startProgressTicker(direction string, bytesTransferred *atomic.Int64, totalBytes *atomic.Int64, layersDone *atomic.Int64, totalLayers *atomic.Int64) func() {
+	ticker := time.NewTicker(60 * time.Second)
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				transferred := bytesTransferred.Load()
+				total := totalBytes.Load()
+				layers := layersDone.Load()
+				layerTotal := totalLayers.Load()
+				logger.Log().Info(fmt.Sprintf("%s progress", direction),
+					zap.String("transferred", formatBytes(transferred)),
+					zap.String("total", formatBytes(total)),
+					zap.String("layers", fmt.Sprintf("%d/%d", layers, layerTotal)),
+				)
+			case <-done:
+				return
+			}
+		}
+	}()
+	return func() {
+		ticker.Stop()
+		close(done)
 	}
 }
 
@@ -116,6 +162,12 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 		return fmt.Errorf("reference (tag or digest) must be set")
 	}
 
+	logger.Log().Info("Starting pull from registry",
+		zap.String("repo", repo),
+		zap.String("ref", ref),
+		zap.Bool("includeData", includeData),
+	)
+
 	ctx := context.Background()
 
 	repoInstance, err := c.GetRepo(repo)
@@ -133,9 +185,10 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 		return err
 	}
 
-	// Track progress for data pulls
 	var completed atomic.Int64
 	var totalLayers atomic.Int64
+	var totalPullBytes atomic.Int64
+	var bytesDownloaded atomic.Int64
 
 	if progress != nil {
 		progress.Mode.Store("restore")
@@ -153,8 +206,6 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 				if !includeData {
 					filtered := make([]v1.Descriptor, 0, len(successors))
 					for _, s := range successors {
-						// Filter out data layers by checking media type.
-						// ORAS appends +gzip to the media type for directories.
 						baseType := strings.TrimSuffix(s.MediaType, "+gzip")
 						if baseType == string(domain.ArtifactTypeScrollData) {
 							path := s.Annotations["org.opencontainers.image.path"]
@@ -164,42 +215,78 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 						filtered = append(filtered, s)
 					}
 					totalLayers.Store(int64(len(filtered)))
+					var size int64
+					for _, s := range filtered {
+						size += s.Size
+					}
+					totalPullBytes.Store(size)
 					return filtered, nil
 				}
 
 				totalLayers.Store(int64(len(successors)))
+				var size int64
+				for _, s := range successors {
+					size += s.Size
+				}
+				totalPullBytes.Store(size)
 				return successors, nil
 			},
+			PreCopy: func(ctx context.Context, desc v1.Descriptor) error {
+				title := desc.Annotations["org.opencontainers.image.title"]
+				compressed := strings.HasSuffix(desc.MediaType, "+gzip")
+				logger.Log().Info("Downloading layer",
+					zap.String("title", title),
+					zap.String("mediaType", desc.MediaType),
+					zap.Int64("size", desc.Size),
+					zap.Bool("compressed", compressed),
+					zap.String("digest", desc.Digest.String()),
+				)
+				return nil
+			},
 			PostCopy: func(ctx context.Context, desc v1.Descriptor) error {
-				if progress != nil {
-					done := completed.Add(1)
-					total := totalLayers.Load()
-					if total > 0 {
-						pct := done * 100 / total
-						progress.Percentage.Store(pct)
-					}
-					logger.Log().Info("Pulled layer", zap.String("digest", desc.Digest.String()), zap.Int64("completed", done), zap.Int64("total", total))
+				done := completed.Add(1)
+				total := totalLayers.Load()
+				bytesDownloaded.Add(desc.Size)
+				if progress != nil && total > 0 {
+					pct := done * 100 / total
+					progress.Percentage.Store(pct)
 				}
+				title := desc.Annotations["org.opencontainers.image.title"]
+				logger.Log().Info("Pulled layer",
+					zap.String("title", title),
+					zap.Int64("size", desc.Size),
+					zap.String("digest", desc.Digest.String()),
+					zap.String("progress", fmt.Sprintf("%d/%d", done, total)),
+				)
 				return nil
 			},
 			OnCopySkipped: func(ctx context.Context, desc v1.Descriptor) error {
-				if progress != nil {
-					done := completed.Add(1)
-					total := totalLayers.Load()
-					if total > 0 {
-						pct := done * 100 / total
-						progress.Percentage.Store(pct)
-					}
+				done := completed.Add(1)
+				total := totalLayers.Load()
+				bytesDownloaded.Add(desc.Size)
+				if progress != nil && total > 0 {
+					pct := done * 100 / total
+					progress.Percentage.Store(pct)
 				}
+				title := desc.Annotations["org.opencontainers.image.title"]
+				logger.Log().Info("Layer already exists locally, skipped",
+					zap.String("title", title),
+					zap.Int64("size", desc.Size),
+					zap.String("digest", desc.Digest.String()),
+					zap.String("progress", fmt.Sprintf("%d/%d", done, total)),
+				)
 				return nil
 			},
 		},
 	}
 
+	stopProgress := startProgressTicker("Download", &bytesDownloaded, &totalPullBytes, &completed, &totalLayers)
+
 	// Use a constant destination reference for the local file store so digest references
 	// (which contain ':' and other characters) don't become a tag key.
 	const dstRef = "root"
 	manifestDescriptor, err := oras.Copy(ctx, repoInstance, ref, fs, dstRef, copyOpts)
+	stopProgress()
 	if err != nil {
 		if progress != nil {
 			progress.Mode.Store("noop")
@@ -367,6 +454,9 @@ func (c *OciClient) Push(folder string, repo string, tag string, overrides map[s
 				logger.Log().Warn(fmt.Sprintf("data chunk %s is empty, skipping", chunk.Path))
 				continue
 			}
+
+			logger.Log().Info("Packing data chunk", zap.String("path", chunk.Path), zap.Int64("size", fileInfo.Size()))
+
 			// Name the layer "data/<path>" so it extracts to the correct location on pull
 			layerName := filepath.Join("data", chunk.Path)
 			// Use a path relative to the file store root (folder), not the full chunkFullPath,
@@ -418,31 +508,76 @@ func (c *OciClient) Push(folder string, repo string, tag string, overrides map[s
 		return v1.Descriptor{}, err
 	}
 
+	var totalBytes atomic.Int64
+	for _, desc := range descriptorsForRoot {
+		totalBytes.Add(desc.Size)
+	}
+	logger.Log().Info("Starting push to registry",
+		zap.String("repo", repo),
+		zap.String("tag", tag),
+		zap.Int("layers", len(descriptorsForRoot)),
+		zap.Int64("totalSize", totalBytes.Load()),
+	)
+
+	var completed atomic.Int64
+	var bytesUploaded atomic.Int64
+	var totalLayers atomic.Int64
+	totalLayers.Store(int64(len(descriptorsForRoot)) + 1) // +1 for manifest
+
 	pushCopyOpts := oras.CopyOptions{
 		CopyGraphOptions: oras.CopyGraphOptions{
-			PostCopy: func(ctx context.Context, desc v1.Descriptor) error {
+			PreCopy: func(ctx context.Context, desc v1.Descriptor) error {
 				title := desc.Annotations["org.opencontainers.image.title"]
-				logger.Log().Info("Pushed layer",
-					zap.String("digest", desc.Digest.String()),
+				compressed := strings.HasSuffix(desc.MediaType, "+gzip")
+				logger.Log().Info("Uploading layer",
+					zap.String("title", title),
 					zap.String("mediaType", desc.MediaType),
 					zap.Int64("size", desc.Size),
+					zap.Bool("compressed", compressed),
+					zap.String("digest", desc.Digest.String()),
+				)
+				return nil
+			},
+			PostCopy: func(ctx context.Context, desc v1.Descriptor) error {
+				done := completed.Add(1)
+				bytesUploaded.Add(desc.Size)
+				title := desc.Annotations["org.opencontainers.image.title"]
+				logger.Log().Info("Pushed layer",
 					zap.String("title", title),
+					zap.Int64("size", desc.Size),
+					zap.String("digest", desc.Digest.String()),
+					zap.String("progress", fmt.Sprintf("%d/%d", done, totalLayers.Load())),
 				)
 				return nil
 			},
 			OnCopySkipped: func(ctx context.Context, desc v1.Descriptor) error {
+				done := completed.Add(1)
+				bytesUploaded.Add(desc.Size)
 				title := desc.Annotations["org.opencontainers.image.title"]
-				logger.Log().Info("Layer already exists in registry, skipping",
-					zap.String("digest", desc.Digest.String()),
-					zap.String("mediaType", desc.MediaType),
-					zap.Int64("size", desc.Size),
+				logger.Log().Info("Layer already exists, skipped",
 					zap.String("title", title),
+					zap.Int64("size", desc.Size),
+					zap.String("digest", desc.Digest.String()),
+					zap.String("progress", fmt.Sprintf("%d/%d", done, totalLayers.Load())),
 				)
 				return nil
 			},
 		},
 	}
+
+	stopProgress := startProgressTicker("Upload", &bytesUploaded, &totalBytes, &completed, &totalLayers)
 	_, err = oras.Copy(ctx, fs, tag, repoInstance, tag, pushCopyOpts)
+	stopProgress()
+
+	if err != nil {
+		return v1.Descriptor{}, err
+	}
+
+	logger.Log().Info("Push complete",
+		zap.String("repo", repo),
+		zap.String("tag", tag),
+		zap.String("digest", rootManifestDescriptor.Digest.String()),
+	)
 
 	return rootManifestDescriptor, err
 }
@@ -484,31 +619,63 @@ func (c *OciClient) PushMeta(folder string, repo string) (v1.Descriptor, error) 
 		return v1.Descriptor{}, err
 	}
 
+	var metaTotalBytes atomic.Int64
+	for _, desc := range manifestDescriptors {
+		metaTotalBytes.Add(desc.Size)
+	}
+	logger.Log().Info("Starting meta push to registry",
+		zap.String("repo", repo),
+		zap.Int("layers", len(manifestDescriptors)),
+		zap.Int64("totalSize", metaTotalBytes.Load()),
+	)
+
+	var metaCompleted atomic.Int64
+	var metaBytesUploaded atomic.Int64
+	var metaTotalLayers atomic.Int64
+	metaTotalLayers.Store(int64(len(manifestDescriptors)) + 1)
+
 	metaCopyOpts := oras.CopyOptions{
 		CopyGraphOptions: oras.CopyGraphOptions{
-			PostCopy: func(ctx context.Context, desc v1.Descriptor) error {
+			PreCopy: func(ctx context.Context, desc v1.Descriptor) error {
 				title := desc.Annotations["org.opencontainers.image.title"]
-				logger.Log().Info("Pushed layer",
-					zap.String("digest", desc.Digest.String()),
+				logger.Log().Info("Uploading meta layer",
+					zap.String("title", title),
 					zap.String("mediaType", desc.MediaType),
 					zap.Int64("size", desc.Size),
+					zap.String("digest", desc.Digest.String()),
+				)
+				return nil
+			},
+			PostCopy: func(ctx context.Context, desc v1.Descriptor) error {
+				done := metaCompleted.Add(1)
+				metaBytesUploaded.Add(desc.Size)
+				title := desc.Annotations["org.opencontainers.image.title"]
+				logger.Log().Info("Pushed meta layer",
 					zap.String("title", title),
+					zap.Int64("size", desc.Size),
+					zap.String("digest", desc.Digest.String()),
+					zap.String("progress", fmt.Sprintf("%d/%d", done, metaTotalLayers.Load())),
 				)
 				return nil
 			},
 			OnCopySkipped: func(ctx context.Context, desc v1.Descriptor) error {
+				done := metaCompleted.Add(1)
+				metaBytesUploaded.Add(desc.Size)
 				title := desc.Annotations["org.opencontainers.image.title"]
-				logger.Log().Info("Layer already exists in registry, skipping",
-					zap.String("digest", desc.Digest.String()),
-					zap.String("mediaType", desc.MediaType),
-					zap.Int64("size", desc.Size),
+				logger.Log().Info("Meta layer already exists, skipped",
 					zap.String("title", title),
+					zap.Int64("size", desc.Size),
+					zap.String("digest", desc.Digest.String()),
+					zap.String("progress", fmt.Sprintf("%d/%d", done, metaTotalLayers.Load())),
 				)
 				return nil
 			},
 		},
 	}
+
+	stopMetaProgress := startProgressTicker("Meta upload", &metaBytesUploaded, &metaTotalBytes, &metaCompleted, &metaTotalLayers)
 	_, err = oras.Copy(ctx, fs, tag, repoInstance, tag, metaCopyOpts)
+	stopMetaProgress()
 
 	return rootManifestDescriptor, err
 }
