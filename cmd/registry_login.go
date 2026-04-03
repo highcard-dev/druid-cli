@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/highcard-dev/daemon/internal/core/domain"
+	"github.com/highcard-dev/daemon/internal/core/services/registry"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -21,6 +24,13 @@ Examples:
   druid registry login --host artifacts.druid.gg/project1 -u user1 -p pass1
   druid registry login --host artifacts.druid.gg/project2 -u user2 -p pass2`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+
+		if err := registry.ValidateCredentials(registryHost, registryUser, registryPassword); err != nil {
+			return fmt.Errorf("login failed: %w", err)
+		}
+
+		cmd.Println("Login succeeded")
+
 		var registries []domain.RegistryCredential
 		viper.UnmarshalKey("registries", &registries)
 

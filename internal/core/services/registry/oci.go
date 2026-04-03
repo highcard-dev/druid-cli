@@ -81,6 +81,30 @@ func extractHost(repoUrl string) string {
 	return repoUrl
 }
 
+func ValidateCredentials(host, username, password string) error {
+	registryHost := extractHost(host)
+
+	reg, err := remote.NewRegistry(registryHost)
+	if err != nil {
+		return fmt.Errorf("invalid registry host: %w", err)
+	}
+
+	reg.Client = &auth.Client{
+		Client: retry.DefaultClient,
+		Cache:  auth.DefaultCache,
+		Credential: auth.StaticCredential(registryHost, auth.Credential{
+			Username: username,
+			Password: password,
+		}),
+	}
+
+	if err := reg.Ping(context.Background()); err != nil {
+		return fmt.Errorf("authentication failed: %w", err)
+	}
+
+	return nil
+}
+
 func (c *OciClient) Pull(dir string, artifact string) error {
 	return c.PullSelective(dir, artifact, true, nil)
 }
