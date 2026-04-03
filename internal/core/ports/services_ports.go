@@ -7,7 +7,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
-	"oras.land/oras-go/v2/content/file"
 	"oras.land/oras-go/v2/registry/remote"
 )
 
@@ -85,10 +84,8 @@ type OciRegistryInterface interface {
 	Pull(dir string, artifact string) error
 	PullSelective(dir string, artifact string, includeData bool, progress *domain.SnapshotProgress) error
 	CanUpdateTag(descriptor v1.Descriptor, folder string, tag string) (bool, error)
-	PackFolders(fs *file.Store, dirs []string, artifactType domain.ArtifactType, path string) ([]v1.Descriptor, error)
 	Push(folder string, repo string, tag string, overrides map[string]string, packMeta bool, scrollFile *domain.File) (v1.Descriptor, error)
 	PushMeta(folder string, repo string) (v1.Descriptor, error)
-	CreateMetaDescriptors(fs *file.Store, dir string, artifact string) ([]v1.Descriptor, error)
 }
 
 type CronManagerInterface interface {

@@ -19,7 +19,6 @@ import (
 	ports "github.com/highcard-dev/daemon/internal/core/ports"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	gomock "go.uber.org/mock/gomock"
-	file "oras.land/oras-go/v2/content/file"
 	remote "oras.land/oras-go/v2/registry/remote"
 )
 
@@ -849,21 +848,6 @@ func (mr *MockOciRegistryInterfaceMockRecorder) CanUpdateTag(descriptor, folder,
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CanUpdateTag", reflect.TypeOf((*MockOciRegistryInterface)(nil).CanUpdateTag), descriptor, folder, tag)
 }
 
-// CreateMetaDescriptors mocks base method.
-func (m *MockOciRegistryInterface) CreateMetaDescriptors(fs *file.Store, dir, artifact string) ([]v1.Descriptor, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateMetaDescriptors", fs, dir, artifact)
-	ret0, _ := ret[0].([]v1.Descriptor)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// CreateMetaDescriptors indicates an expected call of CreateMetaDescriptors.
-func (mr *MockOciRegistryInterfaceMockRecorder) CreateMetaDescriptors(fs, dir, artifact any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateMetaDescriptors", reflect.TypeOf((*MockOciRegistryInterface)(nil).CreateMetaDescriptors), fs, dir, artifact)
-}
-
 // GetRepo mocks base method.
 func (m *MockOciRegistryInterface) GetRepo(repoUrl string) (*remote.Repository, error) {
 	m.ctrl.T.Helper()
@@ -877,21 +861,6 @@ func (m *MockOciRegistryInterface) GetRepo(repoUrl string) (*remote.Repository, 
 func (mr *MockOciRegistryInterfaceMockRecorder) GetRepo(repoUrl any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRepo", reflect.TypeOf((*MockOciRegistryInterface)(nil).GetRepo), repoUrl)
-}
-
-// PackFolders mocks base method.
-func (m *MockOciRegistryInterface) PackFolders(fs *file.Store, dirs []string, artifactType domain.ArtifactType, path string) ([]v1.Descriptor, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PackFolders", fs, dirs, artifactType, path)
-	ret0, _ := ret[0].([]v1.Descriptor)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// PackFolders indicates an expected call of PackFolders.
-func (mr *MockOciRegistryInterfaceMockRecorder) PackFolders(fs, dirs, artifactType, path any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PackFolders", reflect.TypeOf((*MockOciRegistryInterface)(nil).PackFolders), fs, dirs, artifactType, path)
 }
 
 // Pull mocks base method.

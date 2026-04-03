@@ -3,6 +3,7 @@ package registry
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -19,8 +20,10 @@ import (
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/file"
+	"oras.land/oras-go/v2/errdef"
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
+	"oras.land/oras-go/v2/registry/remote/errcode"
 	"oras.land/oras-go/v2/registry/remote/retry"
 )
 
@@ -116,6 +119,25 @@ func (c *OciClient) GetRepo(repoUrl string) (*remote.Repository, error) {
 	}
 
 	return repo, nil
+}
+
+// checkPushAccess triggers the OCI auth challenge-response flow against
+// the repository so that credential / network problems surface before
+// any expensive local packing work.
+func (c *OciClient) checkPushAccess(ctx context.Context, repo *remote.Repository) error {
+	err := repo.Tags(ctx, "", func(tags []string) error { return nil })
+	if err == nil || isRepoNotFound(err) {
+		return nil
+	}
+	return fmt.Errorf("registry auth check failed: %w", err)
+}
+
+func isRepoNotFound(err error) bool {
+	var errResp *errcode.ErrorResponse
+	if errors.As(err, &errResp) && errResp.StatusCode == http.StatusNotFound {
+		return true
+	}
+	return errors.Is(err, errdef.ErrNotFound)
 }
 
 func extractHost(repoUrl string) string {
@@ -355,32 +377,132 @@ func (c *OciClient) CanUpdateTag(current v1.Descriptor, r string, tag string) (b
 	return false, nil
 }
 
-func (c *OciClient) PackFolders(fs *file.Store, dirs []string, artifactType domain.ArtifactType, path string) ([]v1.Descriptor, error) {
-
+func (c *OciClient) packFolders(fs *file.Store, dirs []string, artifactType domain.ArtifactType, path string) ([]v1.Descriptor, error) {
 	ctx := context.Background()
 
 	fileDescriptors := make([]v1.Descriptor, 0, len(dirs))
 	for _, name := range dirs {
-		logger.Log().Info("Packing file", zap.String("path", name), zap.String("artifactType", string(artifactType)))
 		fullPath := filepath.Join(path, name)
+		logger.Log().Info("Packing layer",
+			zap.String("path", fullPath),
+			zap.String("artifactType", string(artifactType)),
+		)
 
 		fileDescriptor, err := fs.Add(ctx, name, string(artifactType), fullPath)
 		if err != nil {
 			return []v1.Descriptor{}, err
 		}
 		fileDescriptors = append(fileDescriptors, fileDescriptor)
-		logger.Log().Info(fmt.Sprintf("file descriptor for %s: %v\n", name, fileDescriptor.Digest))
+		logger.Log().Info("Packed layer",
+			zap.String("path", fullPath),
+			zap.String("digest", fileDescriptor.Digest.String()),
+		)
 	}
 
 	return fileDescriptors, nil
 }
 
-// the root has to leaves, one is the real scroll (fs) and the other is meta information about the scroll
-func (c *OciClient) Push(folder string, repo string, tag string, overrides map[string]string, packMeta bool, scrollFile *domain.File) (v1.Descriptor, error) {
-
+func (c *OciClient) createMetaDescriptors(fs *file.Store, folder string, fsPath string) ([]v1.Descriptor, error) {
+	metaPath := filepath.Join(folder, fsPath)
+	exists, _ := utils.FileExists(metaPath)
+	if !exists {
+		return []v1.Descriptor{}, fmt.Errorf("meta file %s not found", metaPath)
+	}
 	fsFileNames := []string{}
+	subitems, _ := os.ReadDir(metaPath)
+	for _, subitem := range subitems {
+		fsFileNames = append(fsFileNames, subitem.Name())
+	}
 
-	//check if files exisits (file or folder) and remove from slice if not
+	return c.packFolders(fs, fsFileNames, domain.ArtifactTypeScrollMeta, fsPath)
+}
+
+// copyToRegistry handles progress tracking, copy options, and the actual
+// oras.Copy call. It is shared by Push and PushMeta.
+func copyToRegistry(ctx context.Context, fs *file.Store, repo *remote.Repository, tag string, layers []v1.Descriptor) error {
+	var totalBytes atomic.Int64
+	for _, desc := range layers {
+		totalBytes.Add(desc.Size)
+	}
+
+	logger.Log().Info("Starting push to registry",
+		zap.String("repo", repo.Reference.Repository),
+		zap.String("tag", tag),
+		zap.Int("layers", len(layers)),
+		zap.Int64("totalSize", totalBytes.Load()),
+	)
+
+	var completed atomic.Int64
+	var bytesUploaded atomic.Int64
+	var totalLayers atomic.Int64
+	totalLayers.Store(int64(len(layers)) + 1) // +1 for manifest
+
+	copyOpts := oras.CopyOptions{
+		CopyGraphOptions: oras.CopyGraphOptions{
+			PreCopy: func(ctx context.Context, desc v1.Descriptor) error {
+				logger.Log().Info("Uploading layer",
+					zap.String("title", desc.Annotations["org.opencontainers.image.title"]),
+					zap.String("mediaType", desc.MediaType),
+					zap.Int64("size", desc.Size),
+					zap.String("digest", desc.Digest.String()),
+				)
+				return nil
+			},
+			PostCopy: func(ctx context.Context, desc v1.Descriptor) error {
+				done := completed.Add(1)
+				bytesUploaded.Add(desc.Size)
+				logger.Log().Info("Pushed layer",
+					zap.String("title", desc.Annotations["org.opencontainers.image.title"]),
+					zap.Int64("size", desc.Size),
+					zap.String("digest", desc.Digest.String()),
+					zap.String("progress", fmt.Sprintf("%d/%d", done, totalLayers.Load())),
+				)
+				return nil
+			},
+			OnCopySkipped: func(ctx context.Context, desc v1.Descriptor) error {
+				done := completed.Add(1)
+				bytesUploaded.Add(desc.Size)
+				logger.Log().Info("Layer already exists, skipped",
+					zap.String("title", desc.Annotations["org.opencontainers.image.title"]),
+					zap.Int64("size", desc.Size),
+					zap.String("digest", desc.Digest.String()),
+					zap.String("progress", fmt.Sprintf("%d/%d", done, totalLayers.Load())),
+				)
+				return nil
+			},
+		},
+	}
+
+	stopProgress := startProgressTicker("Upload", &bytesUploaded, &totalBytes, &completed, &totalLayers)
+	_, err := oras.Copy(ctx, fs, tag, repo, tag, copyOpts)
+	stopProgress()
+
+	if err != nil {
+		return err
+	}
+
+	logger.Log().Info("Push complete",
+		zap.String("repo", repo.Reference.Repository),
+		zap.String("tag", tag),
+	)
+
+	return nil
+}
+
+func (c *OciClient) Push(folder string, repo string, tag string, overrides map[string]string, packMeta bool, scrollFile *domain.File) (v1.Descriptor, error) {
+	ctx := context.Background()
+
+	// Authenticate before doing any expensive local work.
+	repoInstance, err := c.GetRepo(repo)
+	if err != nil {
+		return v1.Descriptor{}, err
+	}
+	if err := c.checkPushAccess(ctx, repoInstance); err != nil {
+		return v1.Descriptor{}, err
+	}
+
+	// Discover pushable files.
+	fsFileNames := []string{}
 	for fileName, artifactType := range domain.ScrollFiles {
 		if artifactType != domain.ArtifactTypeScrollData && artifactType != domain.ArtifactTypeScrollFs {
 			continue
@@ -389,10 +511,9 @@ func (c *OciClient) Push(folder string, repo string, tag string, overrides map[s
 		if exists {
 			fsFileNames = append(fsFileNames, fileName)
 		} else {
-			logger.Log().Warn(fmt.Sprintf("path %s does not exist, skipping", fileName))
+			logger.Log().Warn("Path does not exist, skipping", zap.String("path", fileName))
 		}
 	}
-
 	if len(fsFileNames) == 0 {
 		return v1.Descriptor{}, fmt.Errorf("no files found to push")
 	}
@@ -403,29 +524,22 @@ func (c *OciClient) Push(folder string, repo string, tag string, overrides map[s
 	}
 	defer fs.Close()
 
-	repoInstance, err := c.GetRepo(repo)
-
+	// Pack scroll FS layers.
+	descriptorsForRoot, err := c.packFolders(fs, fsFileNames, domain.ArtifactTypeScrollFs, "")
 	if err != nil {
 		return v1.Descriptor{}, err
 	}
 
-	scrollFsManifestDescriptor, err := c.PackFolders(fs, fsFileNames, domain.ArtifactTypeScrollFs, "")
-
-	if err != nil {
-		return v1.Descriptor{}, err
-	}
-	descriptorsForRoot := scrollFsManifestDescriptor
-
+	// Pack meta descriptors.
 	if packMeta {
-
-		scrollMetaManifestDescriptor, err := c.CreateMetaDescriptors(fs, folder, ".meta")
+		metaDescriptors, err := c.createMetaDescriptors(fs, folder, ".meta")
 		if err != nil {
 			return v1.Descriptor{}, err
 		}
-		descriptorsForRoot = append(descriptorsForRoot, scrollMetaManifestDescriptor...)
+		descriptorsForRoot = append(descriptorsForRoot, metaDescriptors...)
 	}
 
-	// Pack data directory chunks
+	// Pack data directory chunks.
 	dataDir := utils.GetDataDirFromScrollDir(folder)
 	dataExists, _ := utils.FileExists(dataDir)
 	if dataExists {
@@ -441,7 +555,7 @@ func (c *OciClient) Push(folder string, repo string, tag string, overrides map[s
 			chunkFullPath := filepath.Join(dataDir, chunk.Path)
 			chunkExists, _ := utils.FileExists(chunkFullPath)
 			if !chunkExists {
-				logger.Log().Warn(fmt.Sprintf("data chunk path %s does not exist, skipping", chunk.Path))
+				logger.Log().Warn("Data chunk does not exist, skipping", zap.String("path", chunk.Path))
 				continue
 			}
 			fileInfo, err := os.Stat(chunkFullPath)
@@ -449,140 +563,80 @@ func (c *OciClient) Push(folder string, repo string, tag string, overrides map[s
 				return v1.Descriptor{}, fmt.Errorf("failed to stat data chunk %s: %w", chunk.Name, err)
 			}
 			// Some registries reject zero-byte blob uploads (sha256:e3b0...).
-			// Skip empty data files to keep push resilient.
 			if fileInfo.Mode().IsRegular() && fileInfo.Size() == 0 {
-				logger.Log().Warn(fmt.Sprintf("data chunk %s is empty, skipping", chunk.Path))
+				logger.Log().Warn("Data chunk is empty, skipping", zap.String("path", chunk.Path))
 				continue
 			}
 
-			logger.Log().Info("Packing data chunk", zap.String("path", chunk.Path), zap.Int64("size", fileInfo.Size()))
-
-			// Name the layer "data/<path>" so it extracts to the correct location on pull
-			layerName := filepath.Join("data", chunk.Path)
-			// Use a path relative to the file store root (folder), not the full chunkFullPath,
-			// because fs.Add resolves relative paths against its working directory.
-			chunkStoreRelPath := filepath.Join("data", chunk.Path)
-			desc, err := fs.Add(context.Background(), layerName, string(domain.ArtifactTypeScrollData), chunkStoreRelPath)
+			layerPath := filepath.Join("data", chunk.Path)
+			logger.Log().Info("Packing layer",
+				zap.String("path", layerPath),
+				zap.String("artifactType", string(domain.ArtifactTypeScrollData)),
+				zap.Int64("size", fileInfo.Size()),
+			)
+			desc, err := fs.Add(ctx, layerPath, string(domain.ArtifactTypeScrollData), layerPath)
 			if err != nil {
 				return v1.Descriptor{}, fmt.Errorf("failed to pack data chunk %s: %w", chunk.Name, err)
 			}
-			logger.Log().Info(fmt.Sprintf("packed data chunk %s: %v", chunk.Name, desc.Digest))
+			logger.Log().Info("Packed layer",
+				zap.String("path", layerPath),
+				zap.String("digest", desc.Digest.String()),
+			)
 			descriptorsForRoot = append(descriptorsForRoot, desc)
 		}
 	} else {
 		logger.Log().Info("No data directory found, skipping data chunk packing")
 	}
 
-	ctx := context.Background()
-
-	// annotations.json (if present) is treated as the source of truth for OCI manifest annotations.
-	// This ensures a subsequent pull can restore the same annotations that were previously set.
+	// Build manifest with annotations.
 	annotations := map[string]string{}
 	annotationsFile := filepath.Join(folder, "annotations.json")
 	if b, err := os.ReadFile(annotationsFile); err == nil {
-		err := json.Unmarshal(b, &annotations)
-		if err != nil {
+		if err := json.Unmarshal(b, &annotations); err != nil {
 			return v1.Descriptor{}, fmt.Errorf("failed to unmarshal annotations.json: %w", err)
 		}
 	} else if !os.IsNotExist(err) {
 		logger.Log().Info("No annotations.json found, skipping")
 	}
-
-	// Apply CLI overrides on top of any local `annotations.json`.
 	for k, v := range overrides {
 		annotations[k] = v
 	}
 
-	opts := oras.PackManifestOptions{
+	rootManifestDescriptor, err := oras.PackManifest(ctx, fs, oras.PackManifestVersion1_1, string(domain.ArtifactTypeScrollRoot), oras.PackManifestOptions{
 		Layers:              descriptorsForRoot,
 		ManifestAnnotations: annotations,
-	}
-	rootManifestDescriptor, err := oras.PackManifest(ctx, fs, oras.PackManifestVersion1_1, string(domain.ArtifactTypeScrollRoot), opts)
+	})
 	if err != nil {
 		return v1.Descriptor{}, err
 	}
 
-	logger.Log().Info(fmt.Sprintf("root manifest descriptor: %v\n", rootManifestDescriptor.Digest))
+	logger.Log().Info("Manifest packed",
+		zap.String("digest", rootManifestDescriptor.Digest.String()),
+	)
 
 	if err = fs.Tag(ctx, rootManifestDescriptor, tag); err != nil {
 		return v1.Descriptor{}, err
 	}
 
-	var totalBytes atomic.Int64
-	for _, desc := range descriptorsForRoot {
-		totalBytes.Add(desc.Size)
-	}
-	logger.Log().Info("Starting push to registry",
-		zap.String("repo", repo),
-		zap.String("tag", tag),
-		zap.Int("layers", len(descriptorsForRoot)),
-		zap.Int64("totalSize", totalBytes.Load()),
-	)
-
-	var completed atomic.Int64
-	var bytesUploaded atomic.Int64
-	var totalLayers atomic.Int64
-	totalLayers.Store(int64(len(descriptorsForRoot)) + 1) // +1 for manifest
-
-	pushCopyOpts := oras.CopyOptions{
-		CopyGraphOptions: oras.CopyGraphOptions{
-			PreCopy: func(ctx context.Context, desc v1.Descriptor) error {
-				title := desc.Annotations["org.opencontainers.image.title"]
-				compressed := strings.HasSuffix(desc.MediaType, "+gzip")
-				logger.Log().Info("Uploading layer",
-					zap.String("title", title),
-					zap.String("mediaType", desc.MediaType),
-					zap.Int64("size", desc.Size),
-					zap.Bool("compressed", compressed),
-					zap.String("digest", desc.Digest.String()),
-				)
-				return nil
-			},
-			PostCopy: func(ctx context.Context, desc v1.Descriptor) error {
-				done := completed.Add(1)
-				bytesUploaded.Add(desc.Size)
-				title := desc.Annotations["org.opencontainers.image.title"]
-				logger.Log().Info("Pushed layer",
-					zap.String("title", title),
-					zap.Int64("size", desc.Size),
-					zap.String("digest", desc.Digest.String()),
-					zap.String("progress", fmt.Sprintf("%d/%d", done, totalLayers.Load())),
-				)
-				return nil
-			},
-			OnCopySkipped: func(ctx context.Context, desc v1.Descriptor) error {
-				done := completed.Add(1)
-				bytesUploaded.Add(desc.Size)
-				title := desc.Annotations["org.opencontainers.image.title"]
-				logger.Log().Info("Layer already exists, skipped",
-					zap.String("title", title),
-					zap.Int64("size", desc.Size),
-					zap.String("digest", desc.Digest.String()),
-					zap.String("progress", fmt.Sprintf("%d/%d", done, totalLayers.Load())),
-				)
-				return nil
-			},
-		},
-	}
-
-	stopProgress := startProgressTicker("Upload", &bytesUploaded, &totalBytes, &completed, &totalLayers)
-	_, err = oras.Copy(ctx, fs, tag, repoInstance, tag, pushCopyOpts)
-	stopProgress()
-
-	if err != nil {
+	// Upload everything.
+	if err := copyToRegistry(ctx, fs, repoInstance, tag, descriptorsForRoot); err != nil {
 		return v1.Descriptor{}, err
 	}
 
-	logger.Log().Info("Push complete",
-		zap.String("repo", repo),
-		zap.String("tag", tag),
-		zap.String("digest", rootManifestDescriptor.Digest.String()),
-	)
-
-	return rootManifestDescriptor, err
+	return rootManifestDescriptor, nil
 }
 
 func (c *OciClient) PushMeta(folder string, repo string) (v1.Descriptor, error) {
+	ctx := context.Background()
+
+	// Authenticate before doing any expensive local work.
+	repoInstance, err := c.GetRepo(repo)
+	if err != nil {
+		return v1.Descriptor{}, err
+	}
+	if err := c.checkPushAccess(ctx, repoInstance); err != nil {
+		return v1.Descriptor{}, err
+	}
 
 	fs, err := file.New(folder)
 	if err != nil {
@@ -590,16 +644,7 @@ func (c *OciClient) PushMeta(folder string, repo string) (v1.Descriptor, error) 
 	}
 	defer fs.Close()
 
-	repoInstance, err := c.GetRepo(repo)
-
-	if err != nil {
-		return v1.Descriptor{}, err
-	}
-
-	manifestDescriptors, err := c.CreateMetaDescriptors(fs, folder, "")
-
-	ctx := context.Background()
-
+	manifestDescriptors, err := c.createMetaDescriptors(fs, folder, "")
 	if err != nil {
 		return v1.Descriptor{}, err
 	}
@@ -607,91 +652,22 @@ func (c *OciClient) PushMeta(folder string, repo string) (v1.Descriptor, error) 
 	rootManifestDescriptor, err := oras.PackManifest(ctx, fs, oras.PackManifestVersion1_1, string(domain.ArtifactTypeScrollRoot), oras.PackManifestOptions{
 		Layers: manifestDescriptors,
 	})
-
 	if err != nil {
 		return v1.Descriptor{}, err
 	}
 
-	logger.Log().Info(fmt.Sprintf("Meta manifest descriptor: %v\n", rootManifestDescriptor.Digest))
+	logger.Log().Info("Manifest packed",
+		zap.String("digest", rootManifestDescriptor.Digest.String()),
+	)
 
 	tag := "meta"
 	if err = fs.Tag(ctx, rootManifestDescriptor, tag); err != nil {
 		return v1.Descriptor{}, err
 	}
 
-	var metaTotalBytes atomic.Int64
-	for _, desc := range manifestDescriptors {
-		metaTotalBytes.Add(desc.Size)
-	}
-	logger.Log().Info("Starting meta push to registry",
-		zap.String("repo", repo),
-		zap.Int("layers", len(manifestDescriptors)),
-		zap.Int64("totalSize", metaTotalBytes.Load()),
-	)
-
-	var metaCompleted atomic.Int64
-	var metaBytesUploaded atomic.Int64
-	var metaTotalLayers atomic.Int64
-	metaTotalLayers.Store(int64(len(manifestDescriptors)) + 1)
-
-	metaCopyOpts := oras.CopyOptions{
-		CopyGraphOptions: oras.CopyGraphOptions{
-			PreCopy: func(ctx context.Context, desc v1.Descriptor) error {
-				title := desc.Annotations["org.opencontainers.image.title"]
-				logger.Log().Info("Uploading meta layer",
-					zap.String("title", title),
-					zap.String("mediaType", desc.MediaType),
-					zap.Int64("size", desc.Size),
-					zap.String("digest", desc.Digest.String()),
-				)
-				return nil
-			},
-			PostCopy: func(ctx context.Context, desc v1.Descriptor) error {
-				done := metaCompleted.Add(1)
-				metaBytesUploaded.Add(desc.Size)
-				title := desc.Annotations["org.opencontainers.image.title"]
-				logger.Log().Info("Pushed meta layer",
-					zap.String("title", title),
-					zap.Int64("size", desc.Size),
-					zap.String("digest", desc.Digest.String()),
-					zap.String("progress", fmt.Sprintf("%d/%d", done, metaTotalLayers.Load())),
-				)
-				return nil
-			},
-			OnCopySkipped: func(ctx context.Context, desc v1.Descriptor) error {
-				done := metaCompleted.Add(1)
-				metaBytesUploaded.Add(desc.Size)
-				title := desc.Annotations["org.opencontainers.image.title"]
-				logger.Log().Info("Meta layer already exists, skipped",
-					zap.String("title", title),
-					zap.Int64("size", desc.Size),
-					zap.String("digest", desc.Digest.String()),
-					zap.String("progress", fmt.Sprintf("%d/%d", done, metaTotalLayers.Load())),
-				)
-				return nil
-			},
-		},
+	if err := copyToRegistry(ctx, fs, repoInstance, tag, manifestDescriptors); err != nil {
+		return v1.Descriptor{}, err
 	}
 
-	stopMetaProgress := startProgressTicker("Meta upload", &metaBytesUploaded, &metaTotalBytes, &metaCompleted, &metaTotalLayers)
-	_, err = oras.Copy(ctx, fs, tag, repoInstance, tag, metaCopyOpts)
-	stopMetaProgress()
-
-	return rootManifestDescriptor, err
-}
-
-func (c *OciClient) CreateMetaDescriptors(fs *file.Store, folder string, fsPath string) ([]v1.Descriptor, error) {
-
-	metaPath := filepath.Join(folder, fsPath)
-	exists, _ := utils.FileExists(metaPath)
-	if !exists {
-		return []v1.Descriptor{}, fmt.Errorf("meta file %s not found", metaPath)
-	}
-	fsFileNames := []string{}
-	subitems, _ := os.ReadDir(metaPath)
-	for _, subitem := range subitems {
-		fsFileNames = append(fsFileNames, subitem.Name())
-	}
-
-	return c.PackFolders(fs, fsFileNames, domain.ArtifactTypeScrollMeta, fsPath)
+	return rootManifestDescriptor, nil
 }

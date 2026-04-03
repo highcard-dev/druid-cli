@@ -20,6 +20,11 @@ func fakeRegistry(t *testing.T) *httptest.Server {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /v2/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/tags/list") {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"tags":[]}`))
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	})
 
