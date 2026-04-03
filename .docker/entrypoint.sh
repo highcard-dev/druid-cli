@@ -34,6 +34,12 @@ fi
 
 echo "Druid Version: $(druid version)"
 
+if [ ! -z "${DRUID_REGISTRY_HOST}" ] && [ ! -z "${DRUID_REGISTRY_USER}" ] && [ ! -z "${DRUID_REGISTRY_PASSWORD}" ];
+then
+    echo "Logging into registry ${DRUID_REGISTRY_HOST}"
+    druid registry login --host "${DRUID_REGISTRY_HOST}" -u "${DRUID_REGISTRY_USER}" -p "${DRUID_REGISTRY_PASSWORD}"
+fi
+
 if [ "${ENSURE_NIX}" = "true" ];
 then
     if [ ! -e "$HOME/.nix-profile" ];
