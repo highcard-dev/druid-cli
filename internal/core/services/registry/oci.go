@@ -361,7 +361,7 @@ func (c *OciClient) PackFolders(fs *file.Store, dirs []string, artifactType doma
 
 	fileDescriptors := make([]v1.Descriptor, 0, len(dirs))
 	for _, name := range dirs {
-
+		logger.Log().Info("Packing file", zap.String("path", name), zap.String("artifactType", string(artifactType)))
 		fullPath := filepath.Join(path, name)
 
 		fileDescriptor, err := fs.Add(ctx, name, string(artifactType), fullPath)
