@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"path"
 	"strings"
-	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
@@ -80,20 +79,9 @@ var PushCommand = &cobra.Command{
 			overrides[fmt.Sprintf("gg.druid.scroll.port.%s", name)] = port
 		}
 
-		var tries int
-		for tries < 3 {
-			_, err = ociClient.Push(fullPath, repo, tag, overrides, packMeta, &scroll.File)
-			if err != nil {
-				tries++
-				logger.Log().Error("Failed to push scroll to registry, retrying...", zap.Error(err), zap.Int("tries", tries))
-				if tries >= 3 {
-					logger.Log().Error("Failed to push scroll to registry after 3 attempts", zap.Error(err))
-					return err
-				}
-			} else {
-				break
-			}
-			time.Sleep(time.Duration(tries+1) * time.Second)
+		_, err = ociClient.Push(fullPath, repo, tag, overrides, packMeta, &scroll.File)
+		if err != nil {
+			return err
 		}
 
 		logger.Log().Info("Pushed "+scroll.Name+" to registry", zap.String("path", fullPath))

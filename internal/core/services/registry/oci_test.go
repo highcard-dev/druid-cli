@@ -31,7 +31,10 @@ func fakeRegistry(t *testing.T) *httptest.Server {
 	mux.HandleFunc("HEAD /v2/{rest...}", func(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Split(r.URL.Path, "/blobs/")
 		if len(parts) == 2 {
-			if _, ok := blobs[parts[1]]; ok {
+			digest := parts[1]
+			if data, ok := blobs[digest]; ok {
+				w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
+				w.Header().Set("Docker-Content-Digest", digest)
 				w.WriteHeader(http.StatusOK)
 				return
 			}

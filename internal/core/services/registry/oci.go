@@ -417,9 +417,52 @@ func (c *OciClient) createMetaDescriptors(fs *file.Store, folder string, fsPath 
 	return c.packFolders(fs, fsFileNames, domain.ArtifactTypeScrollMeta, fsPath)
 }
 
-// copyToRegistry handles progress tracking, copy options, and the actual
-// oras.Copy call. It is shared by Push and PushMeta.
-func copyToRegistry(ctx context.Context, fs *file.Store, repo *remote.Repository, tag string, layers []v1.Descriptor) error {
+// pushBlobWithRetry pushes a single blob from src to dst, retrying up to
+// maxRetries times on transient failures. Returns (true, nil) when the blob
+// already exists in the destination and was skipped.
+func pushBlobWithRetry(ctx context.Context, src *file.Store, dst *remote.Repository, desc v1.Descriptor, maxRetries int) (bool, error) {
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		exists, err := dst.Exists(ctx, desc)
+		if err == nil && exists {
+			return true, nil
+		}
+
+		rc, err := src.Fetch(ctx, desc)
+		if err != nil {
+			return false, fmt.Errorf("failed to read local blob: %w", err)
+		}
+
+		err = dst.Push(ctx, desc, rc)
+		rc.Close()
+		if err == nil {
+			return false, nil
+		}
+
+		if errors.Is(err, errdef.ErrAlreadyExists) {
+			return true, nil
+		}
+
+		lastErr = err
+		if attempt < maxRetries {
+			backoff := time.Duration(attempt+1) * 2 * time.Second
+			logger.Log().Warn("Layer push failed, retrying",
+				zap.String("title", desc.Annotations["org.opencontainers.image.title"]),
+				zap.String("digest", desc.Digest.String()),
+				zap.Int("attempt", attempt+1),
+				zap.Int("maxRetries", maxRetries),
+				zap.Duration("backoff", backoff),
+				zap.Error(err),
+			)
+			time.Sleep(backoff)
+		}
+	}
+	return false, fmt.Errorf("failed after %d attempts: %w", maxRetries+1, lastErr)
+}
+
+// copyToRegistry handles progress tracking, per-layer retries, and the
+// final manifest push via oras.Copy. It is shared by Push and PushMeta.
+func copyToRegistry(ctx context.Context, fs *file.Store, repo *remote.Repository, tag string, layers []v1.Descriptor, maxRetries int) error {
 	var totalBytes atomic.Int64
 	for _, desc := range layers {
 		totalBytes.Add(desc.Size)
@@ -435,48 +478,53 @@ func copyToRegistry(ctx context.Context, fs *file.Store, repo *remote.Repository
 	var completed atomic.Int64
 	var bytesUploaded atomic.Int64
 	var totalLayers atomic.Int64
-	totalLayers.Store(int64(len(layers)) + 1) // +1 for manifest
-
-	copyOpts := oras.CopyOptions{
-		CopyGraphOptions: oras.CopyGraphOptions{
-			PreCopy: func(ctx context.Context, desc v1.Descriptor) error {
-				logger.Log().Info("Uploading layer",
-					zap.String("title", desc.Annotations["org.opencontainers.image.title"]),
-					zap.String("mediaType", desc.MediaType),
-					zap.Int64("size", desc.Size),
-					zap.String("digest", desc.Digest.String()),
-				)
-				return nil
-			},
-			PostCopy: func(ctx context.Context, desc v1.Descriptor) error {
-				done := completed.Add(1)
-				bytesUploaded.Add(desc.Size)
-				logger.Log().Info("Pushed layer",
-					zap.String("title", desc.Annotations["org.opencontainers.image.title"]),
-					zap.Int64("size", desc.Size),
-					zap.String("digest", desc.Digest.String()),
-					zap.String("progress", fmt.Sprintf("%d/%d", done, totalLayers.Load())),
-				)
-				return nil
-			},
-			OnCopySkipped: func(ctx context.Context, desc v1.Descriptor) error {
-				done := completed.Add(1)
-				bytesUploaded.Add(desc.Size)
-				logger.Log().Info("Layer already exists, skipped",
-					zap.String("title", desc.Annotations["org.opencontainers.image.title"]),
-					zap.Int64("size", desc.Size),
-					zap.String("digest", desc.Digest.String()),
-					zap.String("progress", fmt.Sprintf("%d/%d", done, totalLayers.Load())),
-				)
-				return nil
-			},
-		},
-	}
+	totalLayers.Store(int64(len(layers)))
 
 	stopProgress := startProgressTicker("Upload", &bytesUploaded, &totalBytes, &completed, &totalLayers)
-	_, err := oras.Copy(ctx, fs, tag, repo, tag, copyOpts)
+
+	for _, desc := range layers {
+		title := desc.Annotations["org.opencontainers.image.title"]
+		logger.Log().Info("Uploading layer",
+			zap.String("title", title),
+			zap.String("mediaType", desc.MediaType),
+			zap.Int64("size", desc.Size),
+			zap.String("digest", desc.Digest.String()),
+		)
+
+		skipped, err := pushBlobWithRetry(ctx, fs, repo, desc, maxRetries)
+		if err != nil {
+			stopProgress()
+			return fmt.Errorf("failed to push layer %s: %w", title, err)
+		}
+
+		done := completed.Add(1)
+		bytesUploaded.Add(desc.Size)
+		total := totalLayers.Load()
+
+		if skipped {
+			logger.Log().Info("Layer already exists, skipped",
+				zap.String("title", title),
+				zap.Int64("size", desc.Size),
+				zap.String("digest", desc.Digest.String()),
+				zap.String("progress", fmt.Sprintf("%d/%d", done, total)),
+			)
+		} else {
+			logger.Log().Info("Pushed layer",
+				zap.String("title", title),
+				zap.Int64("size", desc.Size),
+				zap.String("digest", desc.Digest.String()),
+				zap.String("progress", fmt.Sprintf("%d/%d", done, total)),
+			)
+		}
+	}
+
 	stopProgress()
 
+	logger.Log().Info("Pushing manifest",
+		zap.String("repo", repo.Reference.Repository),
+		zap.String("tag", tag),
+	)
+	_, err := oras.Copy(ctx, fs, tag, repo, tag, oras.CopyOptions{})
 	if err != nil {
 		return err
 	}
@@ -619,7 +667,7 @@ func (c *OciClient) Push(folder string, repo string, tag string, overrides map[s
 	}
 
 	// Upload everything.
-	if err := copyToRegistry(ctx, fs, repoInstance, tag, descriptorsForRoot); err != nil {
+	if err := copyToRegistry(ctx, fs, repoInstance, tag, descriptorsForRoot, 3); err != nil {
 		return v1.Descriptor{}, err
 	}
 
@@ -665,7 +713,7 @@ func (c *OciClient) PushMeta(folder string, repo string) (v1.Descriptor, error) 
 		return v1.Descriptor{}, err
 	}
 
-	if err := copyToRegistry(ctx, fs, repoInstance, tag, manifestDescriptors); err != nil {
+	if err := copyToRegistry(ctx, fs, repoInstance, tag, manifestDescriptors, 3); err != nil {
 		return v1.Descriptor{}, err
 	}
 
