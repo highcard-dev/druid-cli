@@ -12,7 +12,7 @@ import (
 
 var PushMetaCommand = &cobra.Command{
 	Use:   "meta",
-	Short: "Generate Meta OCI Artifacts and push to a remote registry.",
+	Short: "Push .meta OCI Artifacts from a scroll directory to a remote registry.",
 	Args:  cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 
@@ -22,14 +22,14 @@ var PushMetaCommand = &cobra.Command{
 		}
 
 		artifact := args[0]
-		folder := "."
+		scrollDir := "."
 		if len(args) == 2 {
-			folder = args[1]
+			scrollDir = args[1]
 		}
 
-		fullPath := path.Join(cwd, folder)
+		fullPath := path.Join(cwd, scrollDir)
 
-		logger.Log().Info("Pushing "+artifact+" meta to registry", zap.String("path", fullPath))
+		logger.Log().Info("Pushing "+artifact+" meta to registry", zap.String("scrollDir", fullPath))
 
 		ociClient := registry.NewOciClient(credStore)
 

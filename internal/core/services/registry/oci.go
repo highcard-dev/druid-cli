@@ -402,7 +402,7 @@ func (c *OciClient) packFolders(fs *file.Store, dirs []string, artifactType doma
 			zap.String("artifactType", string(artifactType)),
 		)
 
-		fileDescriptor, err := fs.Add(ctx, name, string(artifactType), fullPath)
+		fileDescriptor, err := fs.Add(ctx, fullPath, string(artifactType), fullPath)
 		if err != nil {
 			return []v1.Descriptor{}, err
 		}
@@ -696,7 +696,7 @@ func (c *OciClient) Push(folder string, repo string, tag string, overrides map[s
 	return rootManifestDescriptor, nil
 }
 
-func (c *OciClient) PushMeta(folder string, repo string) (v1.Descriptor, error) {
+func (c *OciClient) PushMeta(scrollDir string, repo string) (v1.Descriptor, error) {
 	ctx := context.Background()
 
 	// Authenticate before doing any expensive local work.
@@ -708,13 +708,13 @@ func (c *OciClient) PushMeta(folder string, repo string) (v1.Descriptor, error) 
 		return v1.Descriptor{}, err
 	}
 
-	fs, err := file.New(folder)
+	fs, err := file.New(scrollDir)
 	if err != nil {
 		return v1.Descriptor{}, err
 	}
 	defer fs.Close()
 
-	manifestDescriptors, err := c.createMetaDescriptors(fs, folder, "")
+	manifestDescriptors, err := c.createMetaDescriptors(fs, scrollDir, ".meta")
 	if err != nil {
 		return v1.Descriptor{}, err
 	}
