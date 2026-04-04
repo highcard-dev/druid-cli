@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -58,6 +59,19 @@ func formatBytes(b int64) string {
 	default:
 		return fmt.Sprintf("%d B", b)
 	}
+}
+
+type progressReader struct {
+	inner       io.Reader
+	transferred *atomic.Int64
+}
+
+func (r *progressReader) Read(p []byte) (int, error) {
+	n, err := r.inner.Read(p)
+	if n > 0 {
+		r.transferred.Add(int64(n))
+	}
+	return n, err
 }
 
 func startProgressTicker(direction string, bytesTransferred *atomic.Int64, totalBytes *atomic.Int64, layersDone *atomic.Int64, totalLayers *atomic.Int64) func() {
@@ -418,13 +432,20 @@ func (c *OciClient) createMetaDescriptors(fs *file.Store, folder string, fsPath 
 }
 
 // pushBlobWithRetry pushes a single blob from src to dst, retrying up to
-// maxRetries times on transient failures. Returns (true, nil) when the blob
-// already exists in the destination and was skipped.
-func pushBlobWithRetry(ctx context.Context, src *file.Store, dst *remote.Repository, desc v1.Descriptor, maxRetries int) (bool, error) {
+// maxRetries times on transient failures. bytesUploaded is updated in
+// real-time as data is streamed. Returns (true, nil) when the blob already
+// exists in the destination and was skipped.
+func pushBlobWithRetry(ctx context.Context, src *file.Store, dst *remote.Repository, desc v1.Descriptor, maxRetries int, bytesUploaded *atomic.Int64) (bool, error) {
+	baseline := bytesUploaded.Load()
 	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			bytesUploaded.Store(baseline)
+		}
+
 		exists, err := dst.Exists(ctx, desc)
 		if err == nil && exists {
+			bytesUploaded.Store(baseline + desc.Size)
 			return true, nil
 		}
 
@@ -433,13 +454,15 @@ func pushBlobWithRetry(ctx context.Context, src *file.Store, dst *remote.Reposit
 			return false, fmt.Errorf("failed to read local blob: %w", err)
 		}
 
-		err = dst.Push(ctx, desc, rc)
+		pr := &progressReader{inner: rc, transferred: bytesUploaded}
+		err = dst.Push(ctx, desc, pr)
 		rc.Close()
 		if err == nil {
 			return false, nil
 		}
 
 		if errors.Is(err, errdef.ErrAlreadyExists) {
+			bytesUploaded.Store(baseline + desc.Size)
 			return true, nil
 		}
 
@@ -491,14 +514,13 @@ func copyToRegistry(ctx context.Context, fs *file.Store, repo *remote.Repository
 			zap.String("digest", desc.Digest.String()),
 		)
 
-		skipped, err := pushBlobWithRetry(ctx, fs, repo, desc, maxRetries)
+		skipped, err := pushBlobWithRetry(ctx, fs, repo, desc, maxRetries, &bytesUploaded)
 		if err != nil {
 			stopProgress()
 			return fmt.Errorf("failed to push layer %s: %w", title, err)
 		}
 
 		done := completed.Add(1)
-		bytesUploaded.Add(desc.Size)
 		total := totalLayers.Load()
 
 		if skipped {
