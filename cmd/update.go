@@ -13,6 +13,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var updateIncludeData bool
+
 var UpdateCommand = &cobra.Command{
 	Use:   "update",
 	Short: "Check for current version of the Scroll and update if necessary",
@@ -70,7 +72,7 @@ var UpdateCommand = &cobra.Command{
 
 		if canUpdate {
 			logger.Log().Info("Updated scroll files")
-			err = registryClient.Pull(cwd, artifact)
+			err = registryClient.PullSelective(cwd, artifact, updateIncludeData, nil)
 			if err != nil {
 				return fmt.Errorf("error pulling scroll files: %v", err)
 			}
@@ -81,4 +83,8 @@ var UpdateCommand = &cobra.Command{
 
 		return nil
 	},
+}
+
+func init() {
+	UpdateCommand.Flags().BoolVar(&updateIncludeData, "include-data", false, "Also pull scroll data layers")
 }
