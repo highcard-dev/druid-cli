@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -40,64 +39,6 @@ type OciClient struct {
 func NewOciClient(credentialStore *CredentialStore) *OciClient {
 	return &OciClient{
 		credentialStore: credentialStore,
-	}
-}
-
-func formatBytes(b int64) string {
-	const (
-		kb = 1024
-		mb = kb * 1024
-		gb = mb * 1024
-	)
-	switch {
-	case b >= gb:
-		return fmt.Sprintf("%.2f GB", float64(b)/float64(gb))
-	case b >= mb:
-		return fmt.Sprintf("%.2f MB", float64(b)/float64(mb))
-	case b >= kb:
-		return fmt.Sprintf("%.2f KB", float64(b)/float64(kb))
-	default:
-		return fmt.Sprintf("%d B", b)
-	}
-}
-
-type progressReader struct {
-	inner       io.Reader
-	transferred *atomic.Int64
-}
-
-func (r *progressReader) Read(p []byte) (int, error) {
-	n, err := r.inner.Read(p)
-	if n > 0 {
-		r.transferred.Add(int64(n))
-	}
-	return n, err
-}
-
-func startProgressTicker(direction string, bytesTransferred *atomic.Int64, totalBytes *atomic.Int64, layersDone *atomic.Int64, totalLayers *atomic.Int64) func() {
-	ticker := time.NewTicker(60 * time.Second)
-	done := make(chan struct{})
-	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				transferred := bytesTransferred.Load()
-				total := totalBytes.Load()
-				layers := layersDone.Load()
-				layerTotal := totalLayers.Load()
-				logger.Log().Info(fmt.Sprintf("%s progress", direction),
-					zap.String("transferred", formatBytes(transferred)),
-					zap.String("total", formatBytes(total)),
-					zap.String("layers", fmt.Sprintf("%d/%d", layers, layerTotal)),
-				)
-			case <-done:
-				return
-			}
-		}
-	}()
-	return func() {
-		ticker.Stop()
-		close(done)
 	}
 }
 
@@ -316,7 +257,7 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 		},
 	}
 
-	stopProgress := startProgressTicker("Download", &bytesDownloaded, &totalPullBytes, &completed, &totalLayers)
+	stopProgress := utils.StartTransferProgressTicker("Download", &bytesDownloaded, &totalPullBytes, &completed, &totalLayers)
 
 	// Use a constant destination reference for the local file store so digest references
 	// (which contain ':' and other characters) don't become a tag key.
@@ -454,7 +395,7 @@ func pushBlobWithRetry(ctx context.Context, src *file.Store, dst *remote.Reposit
 			return false, fmt.Errorf("failed to read local blob: %w", err)
 		}
 
-		pr := &progressReader{inner: rc, transferred: bytesUploaded}
+		pr := utils.NewCountingReader(rc, bytesUploaded)
 		err = dst.Push(ctx, desc, pr)
 		rc.Close()
 		if err == nil {
@@ -503,7 +444,7 @@ func copyToRegistry(ctx context.Context, fs *file.Store, repo *remote.Repository
 	var totalLayers atomic.Int64
 	totalLayers.Store(int64(len(layers)))
 
-	stopProgress := startProgressTicker("Upload", &bytesUploaded, &totalBytes, &completed, &totalLayers)
+	stopProgress := utils.StartTransferProgressTicker("Upload", &bytesUploaded, &totalBytes, &completed, &totalLayers)
 
 	for _, desc := range layers {
 		title := desc.Annotations["org.opencontainers.image.title"]
