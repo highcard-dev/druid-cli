@@ -1,7 +1,11 @@
 package utils
 
-import "path/filepath"
+import (
+	"path/filepath"
+
+	"github.com/highcard-dev/daemon/internal/core/domain"
+)
 
 func GetDataDirFromScrollDir(cwd string) string {
-	return filepath.Join(cwd, "data")
+	return filepath.Join(cwd, domain.ScrollDataDir)
 }

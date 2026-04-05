@@ -577,6 +577,10 @@ func (c *OciClient) Push(folder string, repo string, tag string, overrides map[s
 		if artifactType != domain.ArtifactTypeScrollData && artifactType != domain.ArtifactTypeScrollFs {
 			continue
 		}
+		// Skip the data directory, it is auto-chunked and packed individually further below.
+		if fileName == domain.ScrollDataDir {
+			continue
+		}
 		exists, _ := utils.FileExists(filepath.Join(folder, fileName))
 		if exists {
 			fsFileNames = append(fsFileNames, fileName)

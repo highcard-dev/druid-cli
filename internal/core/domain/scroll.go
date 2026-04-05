@@ -212,6 +212,7 @@ func (sc *Scroll) GetColdStartPorts() []Port {
 
 const ScrollConfigFile = "scroll-config.yml"
 const ScrollConfigTemplate = ScrollConfigFile + ".scroll_template"
+const ScrollDataDir = "data"
 
 var ScrollFiles = map[string]ArtifactType{
 	"update":                            ArtifactTypeScrollFs,
