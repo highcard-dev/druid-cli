@@ -20,6 +20,7 @@ var image string
 var scrollPorts []string
 var packMeta bool
 var smart bool
+var category string
 
 var PushCommand = &cobra.Command{
 	Use:   "push",
@@ -69,6 +70,9 @@ var PushCommand = &cobra.Command{
 		if smart {
 			overrides["gg.druid.scroll.smart"] = "true"
 		}
+		if category != "" {
+			overrides["gg.druid.scroll.category"] = category
+		}
 		for _, p := range scrollPorts {
 			parts := strings.Split(p, "=")
 			name := parts[0]
@@ -96,6 +100,7 @@ func init() {
 	PushCommand.Flags().StringVarP(&minCpu, "min-cpu", "c", minCpu, "Minimum CPU required to run the application. (Will be added as a manifest annotation gg.druid.scroll.minCpu)")
 	PushCommand.Flags().StringVarP(&minDisk, "min-disk", "d", minDisk, "Minimum Disk required to run the application. (Will be added as a manifest annotation gg.druid.scroll.minDisk)")
 	PushCommand.Flags().BoolVarP(&smart, "smart", "s", false, "Indicates, if the scroll is able to run as a smart deployment (Will be added as a manifest annotation gg.druid.scroll.smart)")
+	PushCommand.Flags().StringVarP(&category, "category", "", category, "Category of the scroll. (Will be added as a manifest annotation gg.druid.scroll.category)")
 
 	PushCommand.Flags().StringVarP(&image, "image", "i", image, "Image to use for the scroll. (Will be added as a manifest annotation gg.druid.scroll.image)")
 
