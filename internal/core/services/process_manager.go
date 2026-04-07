@@ -74,32 +74,28 @@ func (po *ProcessManager) RunTty(commandName string, command []string, cwd strin
 
 	var exitCode int
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	combinedChannel := make(chan string, 20)
+	var readWG sync.WaitGroup
+	readWG.Add(1)
 	go func() {
+		defer readWG.Done()
 		defer close(combinedChannel)
+		tmpBuffer := make([]byte, 1024)
 		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				tmpBuffer := make([]byte, 1024)
-				n, err := out.Read(tmpBuffer)
-				if err != nil {
-					return
-				}
+			n, err := out.Read(tmpBuffer)
+			if n > 0 {
 				combinedChannel <- string(tmpBuffer[:n])
+			}
+			if err != nil {
+				return
 			}
 		}
 	}()
 
 	console, doneChan := po.consoleManager.AddConsoleWithChannel(commandName, domain.ConsoleTypeTTY, "stdin", combinedChannel)
 
-	//reset periodically
 	process.Cmd.Wait()
-	cancel() // Signal the goroutine to stop
+	readWG.Wait() // drain PTY until EOF; early cancel dropped output vs. Wait()
 
 	po.processMonitor.RemoveProcess(commandName)
 	po.RemoveProcess(commandName)
