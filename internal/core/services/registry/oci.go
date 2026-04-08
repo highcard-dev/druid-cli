@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -357,19 +358,58 @@ func (c *OciClient) packFolders(fs *file.Store, dirs []string, artifactType doma
 	return fileDescriptors, nil
 }
 
-func (c *OciClient) createMetaDescriptors(fs *file.Store, folder string, fsPath string) ([]v1.Descriptor, error) {
+// DefaultCategoryMarkdownPattern matches locale markdown basenames such as de-DE.md (used by PushCategory).
+const DefaultCategoryMarkdownPattern = `^[a-z]{2}-[A-Z]{2}\.md$`
+
+// createMetaDescriptors packs children of folder/fsPath as meta layers. If namePattern is non-empty,
+// it must be a valid regexp; only non-empty regular files whose basename matches are included (directories are skipped).
+// If namePattern is empty, every immediate child is passed to packFolders (directories may become archives).
+func (c *OciClient) createMetaDescriptors(fs *file.Store, folder string, fsPath string, namePattern string) ([]v1.Descriptor, error) {
 	metaPath := filepath.Join(folder, fsPath)
 	exists, _ := utils.FileExists(metaPath)
 	if !exists {
-		return []v1.Descriptor{}, fmt.Errorf("meta file %s not found", metaPath)
-	}
-	fsFileNames := []string{}
-	subitems, _ := os.ReadDir(metaPath)
-	for _, subitem := range subitems {
-		fsFileNames = append(fsFileNames, subitem.Name())
+		return nil, fmt.Errorf("meta file %s not found", metaPath)
 	}
 
-	return c.packFolders(fs, fsFileNames, domain.ArtifactTypeScrollMeta, fsPath)
+	entries, err := os.ReadDir(metaPath)
+	if err != nil {
+		return nil, fmt.Errorf("read meta directory: %w", err)
+	}
+
+	var fileRE *regexp.Regexp
+	if namePattern != "" {
+		fileRE, err = regexp.Compile(namePattern)
+		if err != nil {
+			return nil, fmt.Errorf("invalid name pattern: %w", err)
+		}
+	}
+
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if fileRE != nil {
+			if e.IsDir() || !fileRE.MatchString(e.Name()) {
+				continue
+			}
+			fi, err := e.Info()
+			if err != nil {
+				return nil, fmt.Errorf("stat %s: %w", filepath.Join(metaPath, e.Name()), err)
+			}
+			if !fi.Mode().IsRegular() {
+				continue
+			}
+			if fi.Size() == 0 {
+				logger.Log().Warn("Skipping empty meta file", zap.String("path", filepath.Join(metaPath, e.Name())))
+				continue
+			}
+		}
+		names = append(names, e.Name())
+	}
+
+	if fileRE != nil && len(names) == 0 {
+		return nil, fmt.Errorf("no files matching pattern %q in %s", namePattern, metaPath)
+	}
+
+	return c.packFolders(fs, names, domain.ArtifactTypeScrollMeta, fsPath)
 }
 
 // pushBlobWithRetry pushes a single blob from src to dst, retrying up to
@@ -425,7 +465,7 @@ func pushBlobWithRetry(ctx context.Context, src *file.Store, dst *remote.Reposit
 }
 
 // copyToRegistry handles progress tracking, per-layer retries, and the
-// final manifest push via oras.Copy. It is shared by Push and PushMeta.
+// final manifest push via oras.Copy. It is shared by Push and PushCategory.
 func copyToRegistry(ctx context.Context, fs *file.Store, repo *remote.Repository, tag string, layers []v1.Descriptor, maxRetries int) error {
 	var totalBytes atomic.Int64
 	for _, desc := range layers {
@@ -547,7 +587,7 @@ func (c *OciClient) Push(folder string, repo string, tag string, overrides map[s
 
 	// Pack meta descriptors.
 	if packMeta {
-		metaDescriptors, err := c.createMetaDescriptors(fs, folder, ".meta")
+		metaDescriptors, err := c.createMetaDescriptors(fs, folder, ".meta", "")
 		if err != nil {
 			return v1.Descriptor{}, err
 		}
@@ -641,7 +681,8 @@ func (c *OciClient) Push(folder string, repo string, tag string, overrides map[s
 	return rootManifestDescriptor, nil
 }
 
-func (c *OciClient) PushMeta(scrollDir string, repo string) (v1.Descriptor, error) {
+func (c *OciClient) PushCategory(dir string, repo string, category string) (v1.Descriptor, error) {
+
 	ctx := context.Background()
 
 	// Authenticate before doing any expensive local work.
@@ -653,13 +694,13 @@ func (c *OciClient) PushMeta(scrollDir string, repo string) (v1.Descriptor, erro
 		return v1.Descriptor{}, err
 	}
 
-	fs, err := file.New(scrollDir)
+	fs, err := file.New(dir)
 	if err != nil {
 		return v1.Descriptor{}, err
 	}
 	defer fs.Close()
 
-	manifestDescriptors, err := c.createMetaDescriptors(fs, scrollDir, ".meta")
+	manifestDescriptors, err := c.createMetaDescriptors(fs, dir, "", DefaultCategoryMarkdownPattern)
 	if err != nil {
 		return v1.Descriptor{}, err
 	}
@@ -675,7 +716,7 @@ func (c *OciClient) PushMeta(scrollDir string, repo string) (v1.Descriptor, erro
 		zap.String("digest", rootManifestDescriptor.Digest.String()),
 	)
 
-	tag := "meta"
+	tag := "druid-category--" + category
 	if err = fs.Tag(ctx, rootManifestDescriptor, tag); err != nil {
 		return v1.Descriptor{}, err
 	}

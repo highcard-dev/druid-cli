@@ -906,21 +906,6 @@ func (mr *MockOciRegistryInterfaceMockRecorder) Push(folder, repo, tag, override
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Push", reflect.TypeOf((*MockOciRegistryInterface)(nil).Push), folder, repo, tag, overrides, packMeta, scrollFile)
 }
 
-// PushMeta mocks base method.
-func (m *MockOciRegistryInterface) PushMeta(folder, repo string) (v1.Descriptor, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PushMeta", folder, repo)
-	ret0, _ := ret[0].(v1.Descriptor)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// PushMeta indicates an expected call of PushMeta.
-func (mr *MockOciRegistryInterfaceMockRecorder) PushMeta(folder, repo any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PushMeta", reflect.TypeOf((*MockOciRegistryInterface)(nil).PushMeta), folder, repo)
-}
-
 // MockCronManagerInterface is a mock of CronManagerInterface interface.
 type MockCronManagerInterface struct {
 	ctrl     *gomock.Controller

@@ -94,7 +94,7 @@ var PushCommand = &cobra.Command{
 }
 
 func init() {
-	PushCommand.AddCommand(PushMetaCommand)
+	PushCommand.AddCommand(PushCategoryCommand)
 
 	PushCommand.Flags().StringVarP(&minRam, "min-ram", "r", minRam, "Minimum RAM required to run the application. (Will be added as a manifest annotation gg.druid.scroll.minRam)")
 	PushCommand.Flags().StringVarP(&minCpu, "min-cpu", "c", minCpu, "Minimum CPU required to run the application. (Will be added as a manifest annotation gg.druid.scroll.minCpu)")
