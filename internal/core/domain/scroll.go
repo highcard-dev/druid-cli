@@ -214,6 +214,10 @@ const ScrollConfigFile = "scroll-config.yml"
 const ScrollConfigTemplate = ScrollConfigFile + ".scroll_template"
 const ScrollDataDir = "data"
 
+// DataLoadedMarkerFile is created under the scroll data directory after a successful
+// registry pull of scroll-data layers (e.g. from coldstarter OnBeforeFinish).
+const DataLoadedMarkerFile = ".data-loaded"
+
 var ScrollFiles = map[string]ArtifactType{
 	"update":                            ArtifactTypeScrollFs,
 	"scroll.yaml":                       ArtifactTypeScrollFs,
@@ -224,5 +228,4 @@ var ScrollFiles = map[string]ArtifactType{
 	"data":                              ArtifactTypeScrollData,
 	"scroll-lock.json":                  ArtifactTypeScrollData,
 	"scroll-config.yml":                 ArtifactTypeScrollData,
-	".meta":                             ArtifactTypeScrollMeta,
 }

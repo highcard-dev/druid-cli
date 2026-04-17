@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	_ "net/http/pprof"
 	"runtime"
 	"slices"
@@ -123,28 +125,34 @@ to interact and monitor the Scroll Application`,
 
 		coldStarter := services.NewColdStarter(portService, queueManager, scrollService.GetDir())
 
-		// Set up data pull on coldstarter finish
+		// Data layers are pulled only from OnBeforeFinish (coldstarter Finish), not at bootstrap.
+		// If --coldstarter is false, Finish never runs and this hook does not execute.
 		if artifact != "" {
 			coldStarter.OnBeforeFinish = func(progress *domain.SnapshotProgress) {
-				dataDir := scrollService.GetCwd()
-				dataExists, _ := utils.FileExists(dataDir)
-				if !dataExists {
-					logger.Log().Info("Data directory not found, pulling data from registry", zap.String("artifact", artifact))
-					progress.Mode.Store("restore")
-					progress.Percentage.Store(0)
-
-					err := client.PullSelective(scrollService.GetDir(), artifact, true, progress)
-					if err != nil {
-						logger.Log().Error("Failed to pull data from registry", zap.Error(err))
-						progress.Mode.Store("noop")
-					} else {
-						logger.Log().Info("Data pull complete")
-						progress.Percentage.Store(100)
-						progress.Mode.Store("noop")
-					}
-				} else {
-					logger.Log().Info("Data directory already exists, skipping data pull")
+				markerPath := filepath.Join(scrollService.GetCwd(), domain.DataLoadedMarkerFile)
+				markerExists, _ := utils.FileExists(markerPath)
+				if markerExists {
+					logger.Log().Info("Data already loaded (marker present), skipping data pull", zap.String("marker", markerPath))
+					return
 				}
+
+				logger.Log().Info("Pulling data from registry after coldstarter", zap.String("artifact", artifact))
+				progress.Mode.Store("restore")
+				progress.Percentage.Store(0)
+
+				err := client.PullSelective(scrollService.GetDir(), artifact, true, progress)
+				if err != nil {
+					logger.Log().Error("Failed to pull data from registry", zap.Error(err))
+					progress.Mode.Store("noop")
+					return
+				}
+
+				if werr := os.WriteFile(markerPath, nil, 0644); werr != nil {
+					logger.Log().Error("Failed to write data-loaded marker", zap.String("path", markerPath), zap.Error(werr))
+				}
+				logger.Log().Info("Data pull complete", zap.String("marker", markerPath))
+				progress.Percentage.Store(100)
+				progress.Mode.Store("noop")
 			}
 		}
 
