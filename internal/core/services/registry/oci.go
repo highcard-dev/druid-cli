@@ -607,6 +607,13 @@ func (c *OciClient) Push(folder string, repo string, tag string, overrides map[s
 			return v1.Descriptor{}, fmt.Errorf("failed to auto-chunk data directory: %w", err)
 		}
 		for _, chunk := range chunks {
+			var layerPath string
+			if chunk.Path == "." {
+				layerPath = "data"
+			} else {
+				layerPath = filepath.Join("data", chunk.Path)
+			}
+
 			chunkFullPath := filepath.Join(dataDir, chunk.Path)
 			chunkExists, _ := utils.FileExists(chunkFullPath)
 			if !chunkExists {
@@ -617,17 +624,14 @@ func (c *OciClient) Push(folder string, repo string, tag string, overrides map[s
 			if err != nil {
 				return v1.Descriptor{}, fmt.Errorf("failed to stat data chunk %s: %w", chunk.Name, err)
 			}
-			// Some registries reject zero-byte blob uploads (sha256:e3b0...).
 			if fileInfo.Mode().IsRegular() && fileInfo.Size() == 0 {
 				logger.Log().Warn("Data chunk is empty, skipping", zap.String("path", chunk.Path))
 				continue
 			}
 
-			layerPath := filepath.Join("data", chunk.Path)
 			logger.Log().Info("Packing layer",
 				zap.String("path", layerPath),
 				zap.String("artifactType", string(domain.ArtifactTypeScrollData)),
-				zap.Int64("size", fileInfo.Size()),
 			)
 			desc, err := fs.Add(ctx, layerPath, string(domain.ArtifactTypeScrollData), layerPath)
 			if err != nil {
