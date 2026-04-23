@@ -153,8 +153,8 @@ func (c *ColdStarter) Stop() {
 }
 
 // Finish increments the finishCount, logs, and sends the port to the finishChan channel.
-// If data directory is missing, it pulls data from the OCI registry before signaling finish.
-// This method uses a pointer receiver to ensure it modifies the original struct.
+// Before signaling finish it runs the optional OnBeforeFinish hook (set by cmd/serve)
+// which pulls OCI data layers when the .data-loaded marker is absent.
 func (c *ColdStarter) Finish(port *domain.AugmentedPort) {
 	if c.finishTime == nil {
 		now := time.Now()

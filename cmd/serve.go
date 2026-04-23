@@ -9,6 +9,7 @@ import (
 	_ "net/http/pprof"
 	"runtime"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/highcard-dev/daemon/cmd/server/web"
@@ -125,36 +126,8 @@ to interact and monitor the Scroll Application`,
 
 		coldStarter := services.NewColdStarter(portService, queueManager, scrollService.GetDir())
 
-		// Data layers are pulled only from OnBeforeFinish (coldstarter Finish), not at bootstrap.
-		// If --coldstarter is false, Finish never runs and this hook does not execute.
-		if artifact != "" {
-			coldStarter.OnBeforeFinish = func(progress *domain.SnapshotProgress) {
-				markerPath := filepath.Join(scrollService.GetCwd(), domain.DataLoadedMarkerFile)
-				markerExists, _ := utils.FileExists(markerPath)
-				if markerExists {
-					logger.Log().Info("Data already loaded (marker present), skipping data pull", zap.String("marker", markerPath))
-					return
-				}
-
-				logger.Log().Info("Pulling data from registry after coldstarter", zap.String("artifact", artifact))
-				progress.Mode.Store("restore")
-				progress.Percentage.Store(0)
-
-				err := client.PullSelective(scrollService.GetDir(), artifact, true, progress)
-				if err != nil {
-					logger.Log().Error("Failed to pull data from registry", zap.Error(err))
-					progress.Mode.Store("noop")
-					return
-				}
-
-				if werr := os.WriteFile(markerPath, nil, 0644); werr != nil {
-					logger.Log().Error("Failed to write data-loaded marker", zap.String("path", markerPath), zap.Error(werr))
-				}
-				logger.Log().Info("Data pull complete", zap.String("marker", markerPath))
-				progress.Percentage.Store(100)
-				progress.Mode.Store("noop")
-			}
-		}
+		var dataPullErr error
+		var dataPullMu sync.Mutex
 
 		uiDevService := services.NewUiDevService(
 			queueManager, scrollService,
@@ -186,6 +159,46 @@ to interact and monitor the Scroll Application`,
 		a := s.Initialize()
 
 		signalHandler.SetApp(a)
+
+		// Data layers are pulled only from OnBeforeFinish (coldstarter Finish), not at bootstrap.
+		// If --coldstarter is false, Finish never runs and this hook does not execute.
+		if artifact != "" {
+			coldStarter.OnBeforeFinish = func(progress *domain.SnapshotProgress) {
+				markerPath := filepath.Join(scrollService.GetCwd(), domain.DataLoadedMarkerFile)
+				if markerExists, _ := utils.FileExists(markerPath); markerExists {
+					logger.Log().Info("Data already loaded (marker present), skipping data pull", zap.String("marker", markerPath))
+					return
+				}
+
+				logger.Log().Info("Pulling data from registry after coldstarter", zap.String("artifact", artifact))
+				progress.Mode.Store("restore")
+				progress.Percentage.Store(0)
+
+				if err := client.PullSelective(scrollService.GetDir(), artifact, true, progress); err != nil {
+					logger.Log().Error("Failed to pull data from registry", zap.Error(err))
+					progress.Mode.Store("noop")
+					dataPullMu.Lock()
+					dataPullErr = fmt.Errorf("data pull failed: %w", err)
+					dataPullMu.Unlock()
+					signalHandler.Stop()
+					return
+				}
+
+				if err := os.WriteFile(markerPath, nil, 0644); err != nil {
+					logger.Log().Error("Failed to write data-loaded marker", zap.String("path", markerPath), zap.Error(err))
+					progress.Mode.Store("noop")
+					dataPullMu.Lock()
+					dataPullErr = fmt.Errorf("failed to write data-loaded marker: %w", err)
+					dataPullMu.Unlock()
+					signalHandler.Stop()
+					return
+				}
+
+				logger.Log().Info("Data pull complete", zap.String("marker", markerPath))
+				progress.Percentage.Store(100)
+				progress.Mode.Store("noop")
+			}
+		}
 
 		if watchPorts {
 			logger.Log().Info("Starting port watcher", zap.Strings("interfaces", watchPortsInterfaces))
@@ -287,6 +300,13 @@ to interact and monitor the Scroll Application`,
 		err = s.Serve(a, port)
 
 		logger.Log().Info("Shutting down")
+
+		dataPullMu.Lock()
+		dpErr := dataPullErr
+		dataPullMu.Unlock()
+		if dpErr != nil {
+			return dpErr
+		}
 
 		return err
 	},
