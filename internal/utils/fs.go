@@ -123,12 +123,16 @@ func AutoChunkDataDir(dataDir string, explicitChunks []*domain.Chunks) ([]*domai
 	}
 
 	hasSymlink := false
-	for _, entry := range entries {
-		if entry.Type()&os.ModeSymlink != 0 {
-			hasSymlink = true
-			break
+	_ = filepath.WalkDir(dataDir, func(_ string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
 		}
-	}
+		if d.Type()&os.ModeSymlink != 0 {
+			hasSymlink = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
 
 	if hasSymlink {
 		return []*domain.Chunks{{Name: "data", Path: "."}}, nil
