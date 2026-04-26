@@ -374,13 +374,6 @@ func startup(scrollService *services.ScrollService, processLauncher *services.Pr
 		logger.Log().Info("Bootstrapping done")
 	}
 
-	logger.Log().Info("Ensuring scroll.serve process is queued")
-	err = queueManager.AddAndRememberItem(currentScroll.Serve)
-	if err != nil && !errors.Is(err, services.ErrAlreadyInQueue) && !errors.Is(err, services.ErrCommandDoneOnce) {
-		doneChan <- err
-		return
-	}
-
 	callbacks := map[string]func(){}
 
 	for _, port := range portSerivce.GetPorts() {
@@ -403,6 +396,16 @@ func startup(scrollService *services.ScrollService, processLauncher *services.Pr
 		}
 	} else {
 		logger.Log().Info("Skipping lock file queue (--ignore-lockfile-queue set)")
+	}
+
+	// Must run after QueueLockFile so that dependency commands (e.g. install)
+	// are already populated in the queue. Otherwise RunQueue may re-add them
+	// as fresh items instead of recognising their "done" state from the lockfile.
+	logger.Log().Info("Ensuring scroll.serve process is queued")
+	err = queueManager.AddAndRememberItem(currentScroll.Serve)
+	if err != nil && !errors.Is(err, services.ErrAlreadyInQueue) && !errors.Is(err, services.ErrCommandDoneOnce) {
+		doneChan <- err
+		return
 	}
 
 	//schedule crons
