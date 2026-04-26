@@ -139,7 +139,7 @@ to interact and monitor the Scroll Application`,
 		scrollMetricHandler := handler.NewScrollMetricHandler(scrollService, processMonitor)
 		queueHandler := handler.NewQueueHandler(queueManager)
 		portHandler := handler.NewPortHandler(portService)
-		healthHandler := handler.NewHealthHandler(portService, maxStartupHealthCheckTimeout)
+		healthHandler := handler.NewHealthHandler(portService, maxStartupHealthCheckTimeout, coldStarter.GetProgress())
 		coldstarterHandler := handler.NewColdstarterHandler(coldStarter)
 		uiDevHandler := handler.NewWatchHandler(uiDevService, scrollService)
 

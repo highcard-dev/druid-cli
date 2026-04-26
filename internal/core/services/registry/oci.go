@@ -192,21 +192,25 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 						}
 						filtered = append(filtered, s)
 					}
-					totalLayers.Store(int64(len(filtered)))
-					var size int64
-					for _, s := range filtered {
-						size += s.Size
+					if len(filtered) > 0 {
+						totalLayers.Store(int64(len(filtered)))
+						var size int64
+						for _, s := range filtered {
+							size += s.Size
+						}
+						totalPullBytes.Store(size)
 					}
-					totalPullBytes.Store(size)
 					return filtered, nil
 				}
 
-				totalLayers.Store(int64(len(successors)))
-				var size int64
-				for _, s := range successors {
-					size += s.Size
+				if len(successors) > 0 {
+					totalLayers.Store(int64(len(successors)))
+					var size int64
+					for _, s := range successors {
+						size += s.Size
+					}
+					totalPullBytes.Store(size)
 				}
-				totalPullBytes.Store(size)
 				return successors, nil
 			},
 			PreCopy: func(ctx context.Context, desc v1.Descriptor) error {

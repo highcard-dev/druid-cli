@@ -5,6 +5,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/highcard-dev/daemon/internal/api"
+	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 )
 
@@ -12,17 +13,20 @@ type HealthHandler struct {
 	portService ports.PortServiceInterface
 	timeoutDone bool
 	Started     *time.Time
+	progress    *domain.SnapshotProgress
 }
 
 func NewHealthHandler(
 	portService ports.PortServiceInterface,
 	timeoutSec uint,
+	progress *domain.SnapshotProgress,
 ) *HealthHandler {
 
 	h := &HealthHandler{
-		portService,
-		false,
-		nil,
+		portService: portService,
+		timeoutDone: false,
+		Started:     nil,
+		progress:    progress,
 	}
 
 	// if timeoutSec == 0, we want at some point to not show a bad health status
@@ -35,6 +39,16 @@ func NewHealthHandler(
 }
 
 func (p *HealthHandler) GetHealthAuth(c *fiber.Ctx) error {
+
+	if p.progress != nil {
+		if mode, ok := p.progress.Mode.Load().(string); ok && mode == "restore" {
+			pct := float32(p.progress.Percentage.Load())
+			return c.JSON(api.HealthResponse{
+				Mode:     "restore",
+				Progress: &pct,
+			})
+		}
+	}
 
 	portsOpen := p.portService.MandatoryPortsOpen()
 

@@ -63,6 +63,11 @@ func (c *ColdStarter) FinishCount() uint {
 	return c.finishCount
 }
 
+// GetProgress returns the snapshot progress tracker used by the coldstarter.
+func (c *ColdStarter) GetProgress() *domain.SnapshotProgress {
+	return c.progress
+}
+
 // Serve starts the servers for each port and listens for context cancellation or errors.
 func (c *ColdStarter) Serve(ctx context.Context) {
 	augmentedPorts := c.portsService.GetPorts()
