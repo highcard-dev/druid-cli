@@ -271,7 +271,11 @@ components:
           description: Application version (not necessarily semver)
         init:
           type: string
-          description: Initialization command
+          description: Initialization command (deprecated, use serve)
+          deprecated: true
+        serve:
+          type: string
+          description: Serve command
         ports:
           type: array
           items:

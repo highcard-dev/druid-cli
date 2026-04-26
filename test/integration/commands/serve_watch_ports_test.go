@@ -51,7 +51,7 @@ func TestWatchPortsServeCommand(t *testing.T) {
 						CheckActivity: true,
 					},
 				},
-				Init:     "start",
+				Serve:    "start",
 				Commands: testCommandTCP(),
 			},
 		},

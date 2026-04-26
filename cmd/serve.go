@@ -369,19 +369,16 @@ func startup(scrollService *services.ScrollService, processLauncher *services.Pr
 	currentScroll := scrollService.GetCurrent()
 
 	if newScroll {
-		logger.Log().Info("Starting scroll.init process")
-		//start scroll.init process
-		//initialize if nothing is there
-		err = queueManager.AddAndRememberItem(currentScroll.Init)
-		if err != nil {
-			doneChan <- err
-			return
-		}
-
 		logger.Log().Info("Writing new scroll lock")
 		scrollService.WriteNewScrollLock()
-
 		logger.Log().Info("Bootstrapping done")
+	}
+
+	logger.Log().Info("Ensuring scroll.serve process is queued")
+	err = queueManager.AddAndRememberItem(currentScroll.Serve)
+	if err != nil && !errors.Is(err, services.ErrAlreadyInQueue) && !errors.Is(err, services.ErrCommandDoneOnce) {
+		doneChan <- err
+		return
 	}
 
 	callbacks := map[string]func(){}

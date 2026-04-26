@@ -28,7 +28,7 @@ ports:
   - name: main
     protocol: udp
 
-init: "start"
+serve: "start"
 commands:
   start:
     needs: [install]

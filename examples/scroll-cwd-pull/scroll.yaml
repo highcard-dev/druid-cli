@@ -12,7 +12,7 @@ ports:
   - name: rcon
     protocol: tcp
     port: 25575
-init: "start"
+serve: "start"
 commands:
   start:
     needs: [install]

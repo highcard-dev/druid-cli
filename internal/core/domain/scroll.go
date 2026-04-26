@@ -63,6 +63,7 @@ type File struct {
 	Version      *semver.Version                   `yaml:"version" json:"version"`
 	AppVersion   string                            `yaml:"app_version" json:"app_version"` //don't make this a semver, it's not allways
 	Init         string                            `yaml:"init" json:"init"`
+	Serve        string                            `yaml:"serve" json:"serve"`
 	Ports        []Port                            `yaml:"ports" json:"ports"`
 	KeepAlivePPM uint                              `yaml:"keepAlivePPM" json:"keepAlivePPM"`
 	Commands     map[string]*CommandInstructionSet `yaml:"commands" json:"commands"`
@@ -130,7 +131,17 @@ func (sc *Scroll) ParseFile(file []byte) (*Scroll, error) {
 	}
 
 	sc.File = f
+	sc.migrateInitToServe()
 	return sc, nil
+}
+
+func (sc *Scroll) migrateInitToServe() {
+	if sc.Serve == "" && sc.Init != "" {
+		logger.Log().Warn("scroll.init is deprecated, use scroll.serve instead")
+		sc.Serve = sc.Init
+	} else if sc.Serve != "" && sc.Init != "" {
+		logger.Log().Warn("both scroll.init and scroll.serve are set, scroll.init will be ignored")
+	}
 }
 
 func (sc *Scroll) Validate(strict bool) error {
@@ -146,8 +157,8 @@ func (sc *Scroll) Validate(strict bool) error {
 	if sc.AppVersion == "" {
 		return fmt.Errorf("scroll app_version is required")
 	}
-	if sc.Init == "" {
-		return fmt.Errorf("scroll init is required")
+	if sc.Serve == "" {
+		return fmt.Errorf("scroll serve is required")
 	}
 	if len(sc.Commands) == 0 {
 		return fmt.Errorf("scroll commands are required")
