@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"os/exec"
 	"sync"
 
@@ -53,6 +54,7 @@ func (po *ProcessManager) RunTty(commandName string, command []string, cwd strin
 
 	process.Cmd = exec.Command(name, args...)
 	process.Cmd.Dir = cwd
+	process.Cmd.Env = envWithDefaultTerm(os.Environ())
 
 	logger.Log().Info("Starting tty process", zap.String("commandName", commandName), zap.String("name", name), zap.Strings("args", args), zap.String("dir", cwd))
 
@@ -281,6 +283,22 @@ func (pm *ProcessManager) GetRunningProcess(commandName string) *domain.Process 
 		return process
 	}
 	return nil
+}
+
+func envWithDefaultTerm(env []string) []string {
+	for i, item := range env {
+		if len(item) < len("TERM=") || item[:len("TERM=")] != "TERM=" {
+			continue
+		}
+		if item == "TERM=" {
+			env[i] = "TERM=xterm-256color"
+		} else {
+			return env
+		}
+		return env
+	}
+
+	return append(env, "TERM=xterm-256color")
 }
 
 func (pm *ProcessManager) RemoveProcess(commandName string) {
