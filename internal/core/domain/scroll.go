@@ -27,8 +27,9 @@ type Cronjob struct {
 	Command  string `yaml:"command"`
 }
 type Chunks struct {
-	Name string `yaml:"name"`
-	Path string `yaml:"path"`
+	Name   string    `yaml:"name"`
+	Path   string    `yaml:"path"`
+	Chunks []*Chunks `yaml:"chunks,omitempty" json:"chunks,omitempty"`
 }
 
 type ColdStarterVars struct {
