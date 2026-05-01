@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
+	ocidigest "github.com/opencontainers/go-digest"
 )
 
 // fakeRegistry returns a plain-HTTP httptest server that implements the bare
@@ -17,12 +18,37 @@ import (
 func fakeRegistry(t *testing.T) *httptest.Server {
 	t.Helper()
 	blobs := map[string][]byte{}
+	manifests := map[string][]byte{}
+	manifestTypes := map[string]string{}
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /v2/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/tags/list") {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"tags":[]}`))
+			return
+		}
+		if strings.Contains(r.URL.Path, "/blobs/") {
+			digest := strings.Split(r.URL.Path, "/blobs/")[1]
+			if data, ok := blobs[digest]; ok {
+				w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
+				w.Header().Set("Docker-Content-Digest", digest)
+				w.WriteHeader(http.StatusOK)
+				w.Write(data)
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if strings.Contains(r.URL.Path, "/manifests/") {
+			ref := strings.Split(r.URL.Path, "/manifests/")[1]
+			if data, ok := manifests[ref]; ok {
+				w.Header().Set("Content-Type", manifestTypes[ref])
+				w.WriteHeader(http.StatusOK)
+				w.Write(data)
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
@@ -35,6 +61,16 @@ func fakeRegistry(t *testing.T) *httptest.Server {
 			if data, ok := blobs[digest]; ok {
 				w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
 				w.Header().Set("Docker-Content-Digest", digest)
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+		}
+		parts = strings.Split(r.URL.Path, "/manifests/")
+		if len(parts) == 2 {
+			ref := parts[1]
+			if data, ok := manifests[ref]; ok {
+				w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
+				w.Header().Set("Content-Type", manifestTypes[ref])
 				w.WriteHeader(http.StatusOK)
 				return
 			}
@@ -54,6 +90,18 @@ func fakeRegistry(t *testing.T) *httptest.Server {
 			r.Body.Read(body)
 			blobs[digest] = body
 			w.Header().Set("Docker-Content-Digest", digest)
+			w.WriteHeader(http.StatusCreated)
+			return
+		}
+		if strings.Contains(r.URL.Path, "/manifests/") {
+			ref := strings.Split(r.URL.Path, "/manifests/")[1]
+			body := make([]byte, r.ContentLength)
+			r.Body.Read(body)
+			bodyDigest := ocidigest.FromBytes(body).String()
+			manifests[ref] = body
+			manifests[bodyDigest] = body
+			manifestTypes[ref] = r.Header.Get("Content-Type")
+			manifestTypes[bodyDigest] = r.Header.Get("Content-Type")
 			w.WriteHeader(http.StatusCreated)
 			return
 		}
@@ -119,5 +167,53 @@ func TestPushDataChunkPathNotDoubled(t *testing.T) {
 	_, err := client.Push(relFolder, repoRef, "1.17", map[string]string{}, false, nil)
 	if err != nil {
 		t.Fatalf("Push failed unexpectedly: %v", err)
+	}
+}
+
+func TestPushPullExecutableDataChunkPreservesMode(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	srv := fakeRegistry(t)
+	registryHost := strings.TrimPrefix(srv.URL, "http://")
+
+	relFolder := filepath.Join("scrolls", "lgsm", "arkserver")
+	dataDir := filepath.Join(relFolder, "data")
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(relFolder, "scroll.yaml"), []byte("name: test\nversion: 0.1.0\napp_version: arkserver\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "arkserver"), []byte("#!/bin/sh\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	client := &OciClient{
+		credentialStore: NewCredentialStore([]domain.RegistryCredential{}),
+		plainHTTP:       true,
+	}
+
+	repoRef := registryHost + "/test/scroll"
+	scrollFile := &domain.File{
+		Chunks: []*domain.Chunks{
+			{Name: "lgsm-launcher", Path: "arkserver"},
+		},
+	}
+	if _, err := client.Push(relFolder, repoRef, "arkserver", map[string]string{}, false, scrollFile); err != nil {
+		t.Fatalf("Push failed unexpectedly: %v", err)
+	}
+
+	pullDir := filepath.Join("pull", "arkserver")
+	if err := client.PullSelective(pullDir, repoRef+":arkserver", true, nil); err != nil {
+		t.Fatalf("Pull failed unexpectedly: %v", err)
+	}
+
+	info, err := os.Stat(filepath.Join(pullDir, "data", "arkserver"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0755 {
+		t.Fatalf("data/arkserver mode = %v, want 0755", got)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -27,6 +28,9 @@ import (
 	"oras.land/oras-go/v2/registry/remote/errcode"
 	"oras.land/oras-go/v2/registry/remote/retry"
 )
+
+const annotationDruidFileMode = "gg.druid.file.mode"
+const chmodModeMask = os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky
 
 type OciClient struct {
 	credentialStore *CredentialStore
@@ -240,6 +244,9 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 					zap.String("digest", desc.Digest.String()),
 					zap.String("progress", fmt.Sprintf("%d/%d", done, total)),
 				)
+				if err := applyDescriptorMode(dir, desc); err != nil {
+					return err
+				}
 				return nil
 			},
 			OnCopySkipped: func(ctx context.Context, desc v1.Descriptor) error {
@@ -337,7 +344,7 @@ func (c *OciClient) CanUpdateTag(current v1.Descriptor, r string, tag string) (b
 	return false, nil
 }
 
-func (c *OciClient) packFolders(fs *file.Store, dirs []string, artifactType domain.ArtifactType, path string) ([]v1.Descriptor, error) {
+func (c *OciClient) packFolders(fs *file.Store, folder string, dirs []string, artifactType domain.ArtifactType, path string) ([]v1.Descriptor, error) {
 	ctx := context.Background()
 
 	fileDescriptors := make([]v1.Descriptor, 0, len(dirs))
@@ -352,6 +359,7 @@ func (c *OciClient) packFolders(fs *file.Store, dirs []string, artifactType doma
 		if err != nil {
 			return []v1.Descriptor{}, err
 		}
+		annotateDescriptorMode(folder, fullPath, &fileDescriptor)
 		fileDescriptors = append(fileDescriptors, fileDescriptor)
 		logger.Log().Info("Packed layer",
 			zap.String("path", fullPath),
@@ -360,6 +368,41 @@ func (c *OciClient) packFolders(fs *file.Store, dirs []string, artifactType doma
 	}
 
 	return fileDescriptors, nil
+}
+
+func annotateDescriptorMode(folder string, layerPath string, desc *v1.Descriptor) {
+	info, err := os.Stat(filepath.Join(folder, filepath.FromSlash(layerPath)))
+	if err != nil {
+		return
+	}
+	if desc.Annotations == nil {
+		desc.Annotations = map[string]string{}
+	}
+	desc.Annotations[annotationDruidFileMode] = strconv.FormatUint(uint64(info.Mode()&chmodModeMask), 8)
+}
+
+func applyDescriptorMode(root string, desc v1.Descriptor) error {
+	modeValue := desc.Annotations[annotationDruidFileMode]
+	if modeValue == "" {
+		return nil
+	}
+
+	path := desc.Annotations["org.opencontainers.image.path"]
+	if path == "" {
+		path = desc.Annotations["org.opencontainers.image.title"]
+	}
+	if path == "" {
+		return nil
+	}
+
+	mode, err := strconv.ParseUint(modeValue, 8, 32)
+	if err != nil {
+		return fmt.Errorf("invalid descriptor file mode %q for %s: %w", modeValue, path, err)
+	}
+	if err := os.Chmod(filepath.Join(root, filepath.FromSlash(path)), os.FileMode(mode)); err != nil {
+		return fmt.Errorf("failed to chmod %s to %s: %w", path, modeValue, err)
+	}
+	return nil
 }
 
 // DefaultCategoryMarkdownPattern matches locale markdown basenames such as de-DE.md (used by PushCategory).
@@ -413,7 +456,7 @@ func (c *OciClient) createMetaDescriptors(fs *file.Store, folder string, fsPath 
 		return nil, fmt.Errorf("no files matching pattern %q in %s", namePattern, metaPath)
 	}
 
-	return c.packFolders(fs, names, domain.ArtifactTypeScrollMeta, fsPath)
+	return c.packFolders(fs, folder, names, domain.ArtifactTypeScrollMeta, fsPath)
 }
 
 // pushBlobWithRetry pushes a single blob from src to dst, retrying up to
@@ -584,7 +627,7 @@ func (c *OciClient) Push(folder string, repo string, tag string, overrides map[s
 	defer fs.Close()
 
 	// Pack scroll FS layers.
-	descriptorsForRoot, err := c.packFolders(fs, fsFileNames, domain.ArtifactTypeScrollFs, "")
+	descriptorsForRoot, err := c.packFolders(fs, folder, fsFileNames, domain.ArtifactTypeScrollFs, "")
 	if err != nil {
 		return v1.Descriptor{}, err
 	}
@@ -641,6 +684,7 @@ func (c *OciClient) Push(folder string, repo string, tag string, overrides map[s
 			if err != nil {
 				return v1.Descriptor{}, fmt.Errorf("failed to pack data chunk %s: %w", chunk.Name, err)
 			}
+			annotateDescriptorMode(folder, layerPath, &desc)
 			logger.Log().Info("Packed layer",
 				zap.String("path", layerPath),
 				zap.String("digest", desc.Digest.String()),
