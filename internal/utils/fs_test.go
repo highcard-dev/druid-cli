@@ -87,14 +87,37 @@ func TestAutoChunkDataDirExpandsNestedChunksWithParentRemainder(t *testing.T) {
 	})
 }
 
-func TestAutoChunkDataDirRejectsGlobWithoutMatches(t *testing.T) {
+func TestAutoChunkDataDirSkipsGlobWithoutMatches(t *testing.T) {
 	dataDir := t.TempDir()
 
-	_, err := AutoChunkDataDir(dataDir, []*domain.Chunks{
+	chunks, err := AutoChunkDataDir(dataDir, []*domain.Chunks{
 		{Name: "missing", Path: "serverfiles/ShooterGame/Content/*"},
 	})
-	if err == nil || !strings.Contains(err.Error(), "glob matched no files") {
-		t.Fatalf("expected missing glob error, got %v", err)
+	if err != nil {
+		t.Fatalf("AutoChunkDataDir returned error: %v", err)
+	}
+	if len(chunks) != 0 {
+		t.Fatalf("expected missing glob to produce no chunks, got %v", chunks)
+	}
+}
+
+func TestAutoChunkDataDirSkipsMissingNestedParentRemainder(t *testing.T) {
+	dataDir := t.TempDir()
+
+	chunks, err := AutoChunkDataDir(dataDir, []*domain.Chunks{
+		{
+			Name: "serverfiles",
+			Path: "serverfiles",
+			Chunks: []*domain.Chunks{
+				{Name: "maps", Path: "ShooterGame/Content/Maps/*"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("AutoChunkDataDir returned error: %v", err)
+	}
+	if len(chunks) != 0 {
+		t.Fatalf("expected missing nested tree to produce no chunks, got %v", chunks)
 	}
 }
 

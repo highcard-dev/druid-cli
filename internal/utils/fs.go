@@ -233,7 +233,7 @@ func expandChunkPaths(dataDir string, parentPath string, chunkPath string) ([]st
 		return nil, err
 	}
 	if len(matches) == 0 {
-		return nil, fmt.Errorf("glob matched no files")
+		return nil, nil
 	}
 	sort.Strings(matches)
 
@@ -271,6 +271,9 @@ func expandParentRemainder(dataDir string, chunk *domain.Chunks, parentPath stri
 	parentFullPath := filepath.Join(dataDir, filepath.FromSlash(parentPath))
 	entries, err := os.ReadDir(parentFullPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
 		return nil, err
 	}
 
