@@ -373,6 +373,9 @@ func validateExplicitChunks(dataDir string, chunks []*domain.Chunks) ([]*domain.
 		chunkRoot := filepath.Join(dataDir, chunk.Path)
 		err := filepath.WalkDir(chunkRoot, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
+				if os.IsNotExist(err) {
+					return filepath.SkipDir
+				}
 				return err
 			}
 			if d.Type()&os.ModeSymlink == 0 {

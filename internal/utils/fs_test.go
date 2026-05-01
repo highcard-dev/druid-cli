@@ -121,6 +121,22 @@ func TestAutoChunkDataDirSkipsMissingNestedParentRemainder(t *testing.T) {
 	}
 }
 
+func TestAutoChunkDataDirSkipsMissingExplicitChunkDuringValidation(t *testing.T) {
+	dataDir := t.TempDir()
+	writeFile(t, filepath.Join(dataDir, "install-lgsm.sh"), "install\n")
+
+	chunks, err := AutoChunkDataDir(dataDir, []*domain.Chunks{
+		{Name: "install-lgsm", Path: "install-lgsm.sh"},
+		{Name: "lgsm-launcher", Path: "arkserver"},
+		{Name: "serverfiles", Path: "serverfiles"},
+	})
+	if err != nil {
+		t.Fatalf("AutoChunkDataDir returned error: %v", err)
+	}
+
+	assertChunkPaths(t, chunks, []string{"install-lgsm.sh", "arkserver", "serverfiles"})
+}
+
 func TestAutoChunkDataDirRejectsOverlappingChunks(t *testing.T) {
 	dataDir := t.TempDir()
 	mkdirAll(t, filepath.Join(dataDir, "serverfiles", "ShooterGame", "Content", "Maps"))
