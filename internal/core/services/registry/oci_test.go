@@ -120,7 +120,7 @@ func fakeRegistry(t *testing.T) *httptest.Server {
 // in-process OCI registry. This verifies the data-chunk file paths are
 // resolved correctly (store-relative) and do not get doubled.
 //
-// Regression test for: when --cwd is a relative path like
+// Regression test for: when the scroll dir is a relative path like
 // ./scrolls/minecraft/1.17, the ORAS file store root is resolved to an
 // absolute path internally. Passing the full relative chunkFullPath
 // (scrolls/minecraft/1.17/data/<file>) to fs.Add caused the store to look

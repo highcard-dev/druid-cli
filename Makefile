@@ -1,6 +1,7 @@
-.PHONY: test build
+.PHONY: test build build-coldstarter-image
 
 VERSION ?= "dev"
+COLDSTARTER_IMAGE ?= druid-coldstarter:local
 
 generate-api: ## Generate API types from OpenAPI spec
 	@echo "Generating API types from OpenAPI spec..."
@@ -13,8 +14,13 @@ validate-api: ## Validate OpenAPI spec
 	@PATH="$(shell go env GOPATH)/bin:$$PATH" oapi-codegen -config api/oapi-codegen.yaml api/openapi.yaml > /dev/null
 	@echo "✓ OpenAPI spec is valid"
 
-build: generate-api ## Build Daemon
-	CGO_ENABLED=0 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/druid
+build: generate-api ## Build Daemon and helper binaries
+	CGO_ENABLED=0 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/druid ./apps/druid
+	CGO_ENABLED=0 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/druid-client ./apps/druid-client
+	CGO_ENABLED=0 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/druid-coldstarter ./apps/druid-coldstarter
+
+build-coldstarter-image: ## Build local druid-coldstarter Docker image without pushing
+	VERSION=$(VERSION) IMAGE=$(COLDSTARTER_IMAGE) ./scripts/build_coldstarter_image.sh
 
 build-x86-docker:
 	docker run -e GOOS=linux -e GOARCH=amd64 -it --rm -v ./:/app -w /app --entrypoint=/bin/bash docker.elastic.co/beats-dev/golang-crossbuild:1.22.5-main  -c 'CGO_ENABLED=1 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/x86/druid'
@@ -22,19 +28,11 @@ build-x86-docker:
 install: ## Install Daemon
 	cp ./bin/druid /usr/local/bin/druid
 
-build-plugins: ## Build Plugins
-	CGO_ENABLED=0 go build -o ./bin/druid_rcon ./plugin/rcon/rcon.go
-	CGO_ENABLED=0 go build -o ./bin/druid_rcon_web_rust ./plugin/rcon_web_rust/rcon_web_rust.go
-
-proto:
-	protoc --go_out=paths=source_relative:./ --go-grpc_out=paths=source_relative:./ --go-grpc_opt=paths=source_relative plugin/proto/*.proto
-
-
 generate-md-docs:
 	go run ./docs_md/main.go
 
 run: ## Run Daemon
-	go run main.go
+	go run ./apps/druid
 
 mock:
 	mockgen -source=internal/core/ports/services_ports.go -destination test/mock/services.go

@@ -6,9 +6,12 @@ package api
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"path"
 	"strings"
@@ -19,144 +22,36 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+// Defines values for RuntimeScrollStatus.
 const (
-	BearerAuthScopes = "bearerAuth.Scopes"
+	Created RuntimeScrollStatus = "created"
+	Deleted RuntimeScrollStatus = "deleted"
+	Error   RuntimeScrollStatus = "error"
+	Running RuntimeScrollStatus = "running"
+	Stopped RuntimeScrollStatus = "stopped"
 )
 
-// Defines values for AddPortRequestProtocol.
-const (
-	Tcp AddPortRequestProtocol = "tcp"
-	Udp AddPortRequestProtocol = "udp"
-)
+// CreateScrollRequest defines model for CreateScrollRequest.
+type CreateScrollRequest struct {
+	// Artifact OCI artifact reference or local scroll path
+	Artifact string `json:"artifact"`
 
-// Defines values for CommandInstructionSetRun.
-const (
-	Always     CommandInstructionSetRun = "always"
-	Once       CommandInstructionSetRun = "once"
-	Persistent CommandInstructionSetRun = "persistent"
-	Restart    CommandInstructionSetRun = "restart"
-)
+	// DataRoot Optional daemon-local path or backend ref containing runtime data directory. If omitted, a materializing runtime backend may pull the artifact.
+	DataRoot *string `json:"data_root,omitempty"`
 
-// Defines values for ConsoleType.
-const (
-	ConsoleTypePlugin  ConsoleType = "plugin"
-	ConsoleTypeProcess ConsoleType = "process"
-	ConsoleTypeTty     ConsoleType = "tty"
-)
+	// Id Deprecated alias for name. Optional local runtime scroll id/name.
+	Id *string `json:"id,omitempty"`
 
-// Defines values for ScrollLockStatus.
-const (
-	Done    ScrollLockStatus = "done"
-	Error   ScrollLockStatus = "error"
-	Running ScrollLockStatus = "running"
-	Waiting ScrollLockStatus = "waiting"
-)
+	// Name Optional local runtime scroll id/name. If omitted, the daemon derives it from scroll.yaml name.
+	Name *string `json:"name,omitempty"`
 
-// AddPortRequest defines model for AddPortRequest.
-type AddPortRequest struct {
-	// CheckActivity Whether to monitor port activity
-	CheckActivity *bool `json:"check_activity,omitempty"`
-
-	// Description Optional port description
-	Description *string `json:"description,omitempty"`
-
-	// Mandatory Whether this port must be open for health check
-	Mandatory *bool `json:"mandatory,omitempty"`
-
-	// Name Port name/identifier
-	Name string `json:"name"`
-
-	// Port Port number (1-65535)
-	Port int `json:"port"`
-
-	// Protocol Network protocol (tcp or udp)
-	Protocol AddPortRequestProtocol `json:"protocol"`
+	// ScrollRoot Optional daemon-local path or backend ref containing scroll.yaml and scroll spec files. If omitted, a materializing runtime backend may pull the artifact.
+	ScrollRoot *string `json:"scroll_root,omitempty"`
 }
 
-// AddPortRequestProtocol Network protocol (tcp or udp)
-type AddPortRequestProtocol string
-
-// AugmentedPort defines model for AugmentedPort.
-type AugmentedPort struct {
-	CheckActivity      *bool   `json:"check_activity,omitempty"`
-	Description        *string `json:"description,omitempty"`
-	FinishAfterCommand *string `json:"finish_after_command,omitempty"`
-
-	// InactiveSince When the port became inactive
-	InactiveSince time.Time `json:"inactive_since"`
-
-	// InactiveSinceSec Seconds since port became inactive
-	InactiveSinceSec int   `json:"inactive_since_sec"`
-	Mandatory        *bool `json:"mandatory,omitempty"`
-
-	// Name Port name/identifier
-	Name string `json:"name"`
-
-	// Open Whether the port is currently open
-	Open bool `json:"open"`
-
-	// Port Port number
-	Port int `json:"port"`
-
-	// Protocol Network protocol
-	Protocol     string             `json:"protocol"`
-	SleepHandler *string            `json:"sleep_handler"`
-	StartDelay   *int               `json:"start_delay,omitempty"`
-	Vars         *[]ColdStarterVars `json:"vars,omitempty"`
-}
-
-// ColdStarterVars defines model for ColdStarterVars.
-type ColdStarterVars struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
-}
-
-// CommandInstructionSet defines model for CommandInstructionSet.
-type CommandInstructionSet struct {
-	Dependencies *[]string   `json:"dependencies,omitempty"`
-	Needs        *[]string   `json:"needs,omitempty"`
-	Procedures   []Procedure `json:"procedures"`
-
-	// Run Run mode for the command
-	Run *CommandInstructionSetRun `json:"run,omitempty"`
-}
-
-// CommandInstructionSetRun Run mode for the command
-type CommandInstructionSetRun string
-
-// Console defines model for Console.
-type Console struct {
-	// Exit Exit code if console has exited
-	Exit *int `json:"exit"`
-
-	// InputMode Input mode for the console
-	InputMode string `json:"inputMode"`
-
-	// Type Console type
-	Type ConsoleType `json:"type"`
-}
-
-// ConsoleType Console type
-type ConsoleType string
-
-// ConsolesResponse defines model for ConsolesResponse.
-type ConsolesResponse struct {
-	Consoles map[string]Console `json:"consoles"`
-}
-
-// Cronjob defines model for Cronjob.
-type Cronjob struct {
-	Command string `json:"command"`
-	Name    string `json:"name"`
-
-	// Schedule Cron schedule expression
-	Schedule string `json:"schedule"`
-}
-
-// ErrorResponse defines model for ErrorResponse.
-type ErrorResponse struct {
-	// Error Error message
-	Error  string `json:"error"`
+// DeletedScroll defines model for DeletedScroll.
+type DeletedScroll struct {
+	Id     string `json:"id"`
 	Status string `json:"status"`
 }
 
@@ -172,407 +67,981 @@ type HealthResponse struct {
 	StartDate *time.Time `json:"start_date"`
 }
 
-// Port defines model for Port.
-type Port struct {
-	// CheckActivity Whether to monitor port activity
-	CheckActivity *bool `json:"check_activity,omitempty"`
-
-	// Description Port description
-	Description *string `json:"description,omitempty"`
-
-	// FinishAfterCommand Command to run after port is available
-	FinishAfterCommand *string `json:"finish_after_command,omitempty"`
-
-	// Mandatory Whether this port must be open for health check
-	Mandatory *bool `json:"mandatory,omitempty"`
-
-	// Name Port name/identifier
-	Name string `json:"name"`
-
-	// Port Port number
-	Port int `json:"port"`
-
-	// Protocol Network protocol
-	Protocol string `json:"protocol"`
-
-	// SleepHandler Handler to call when port becomes inactive
-	SleepHandler *string `json:"sleep_handler"`
-
-	// StartDelay Delay in seconds before starting port check
-	StartDelay *int               `json:"start_delay,omitempty"`
-	Vars       *[]ColdStarterVars `json:"vars,omitempty"`
+// RuntimePortStatus defines model for RuntimePortStatus.
+type RuntimePortStatus struct {
+	Bound            bool       `json:"bound"`
+	HostIp           *string    `json:"host_ip,omitempty"`
+	HostPort         *int       `json:"host_port,omitempty"`
+	KeepAliveTraffic *string    `json:"keepAliveTraffic,omitempty"`
+	LastActivityAt   *time.Time `json:"last_activity_at,omitempty"`
+	Name             string     `json:"name"`
+	Port             int        `json:"port"`
+	Procedure        string     `json:"procedure"`
+	Protocol         string     `json:"protocol"`
+	RxBytes          *int64     `json:"rx_bytes,omitempty"`
+	Source           string     `json:"source"`
+	Traffic          bool       `json:"traffic"`
+	TrafficBytes     *int64     `json:"traffic_bytes,omitempty"`
+	TrafficOk        *bool      `json:"traffic_ok,omitempty"`
+	TrafficWindow    *string    `json:"traffic_window,omitempty"`
+	TxBytes          *int64     `json:"tx_bytes,omitempty"`
 }
 
-// Procedure defines model for Procedure.
-type Procedure struct {
-	// Data Procedure data payload
-	Data interface{} `json:"data,omitempty"`
-
-	// Id Unique procedure identifier
-	Id *string `json:"id"`
-
-	// IgnoreFailure Whether to continue on failure
-	IgnoreFailure *bool `json:"ignore_failure,omitempty"`
-
-	// Mode Procedure execution mode
-	Mode string `json:"mode"`
-
-	// Wait Wait condition
-	Wait *Procedure_Wait `json:"wait,omitempty"`
+// RuntimeScroll defines model for RuntimeScroll.
+type RuntimeScroll struct {
+	Artifact   string                  `json:"artifact"`
+	Commands   *map[string]interface{} `json:"commands,omitempty"`
+	CreatedAt  time.Time               `json:"created_at"`
+	DataRoot   string                  `json:"data_root"`
+	Id         string                  `json:"id"`
+	OwnerId    *string                 `json:"owner_id,omitempty"`
+	ScrollName string                  `json:"scroll_name"`
+	ScrollRoot string                  `json:"scroll_root"`
+	Status     RuntimeScrollStatus     `json:"status"`
+	UpdatedAt  time.Time               `json:"updated_at"`
 }
 
-// ProcedureWait0 defines model for .
-type ProcedureWait0 = string
+// RuntimeScrollStatus defines model for RuntimeScroll.Status.
+type RuntimeScrollStatus string
 
-// ProcedureWait1 defines model for .
-type ProcedureWait1 = int
+// CreateScrollJSONRequestBody defines body for CreateScroll for application/json ContentType.
+type CreateScrollJSONRequestBody = CreateScrollRequest
 
-// ProcedureWait2 defines model for .
-type ProcedureWait2 = bool
+// RequestEditorFn  is the function signature for the RequestEditor callback function
+type RequestEditorFn func(ctx context.Context, req *http.Request) error
 
-// Procedure_Wait Wait condition
-type Procedure_Wait struct {
-	union json.RawMessage
+// Doer performs HTTP requests.
+//
+// The standard http.Client implements this interface.
+type HttpRequestDoer interface {
+	Do(req *http.Request) (*http.Response, error)
 }
 
-// Process defines model for Process.
-type Process struct {
-	// Name Process name/identifier
-	Name string `json:"name"`
+// Client which conforms to the OpenAPI3 specification for this service.
+type Client struct {
+	// The endpoint of the server conforming to this interface, with scheme,
+	// https://api.deepmap.com for example. This can contain a path relative
+	// to the server, such as https://api.deepmap.com/dev-test, and all the
+	// paths in the swagger spec will be appended to the server.
+	Server string
 
-	// Type Process type
-	Type string `json:"type"`
+	// Doer for performing requests, typically a *http.Client with any
+	// customized settings, such as certificate chains.
+	Client HttpRequestDoer
+
+	// A list of callbacks for modifying requests which are generated before sending over
+	// the network.
+	RequestEditors []RequestEditorFn
 }
 
-// ProcessMonitorMetrics defines model for ProcessMonitorMetrics.
-type ProcessMonitorMetrics struct {
-	// Connections Active network connections
-	Connections []string `json:"connections"`
+// ClientOption allows setting custom parameters during construction
+type ClientOption func(*Client) error
 
-	// Cpu CPU usage percentage
-	Cpu float64 `json:"cpu"`
-
-	// Memory Memory usage in bytes
-	Memory int `json:"memory"`
-
-	// Pid Process ID
-	Pid int `json:"pid"`
+// Creates a new Client, with reasonable defaults
+func NewClient(server string, opts ...ClientOption) (*Client, error) {
+	// create a client with sane default values
+	client := Client{
+		Server: server,
+	}
+	// mutate client and add all optional params
+	for _, o := range opts {
+		if err := o(&client); err != nil {
+			return nil, err
+		}
+	}
+	// ensure the server URL always has a trailing slash
+	if !strings.HasSuffix(client.Server, "/") {
+		client.Server += "/"
+	}
+	// create httpClient, if not already present
+	if client.Client == nil {
+		client.Client = &http.Client{}
+	}
+	return &client, nil
 }
 
-// ProcessTreeNode defines model for ProcessTreeNode.
-type ProcessTreeNode struct {
-	Children   *[]ProcessTreeNode `json:"children,omitempty"`
-	Cmdline    *string            `json:"cmdline,omitempty"`
-	CpuPercent *float64           `json:"cpu_percent,omitempty"`
-	Gids       *[]int             `json:"gids,omitempty"`
-
-	// IoCounters I/O counters
-	IoCounters *string `json:"io_counters,omitempty"`
-
-	// Memory Memory statistics
-	Memory *string `json:"memory,omitempty"`
-
-	// MemoryEx Extended memory statistics
-	MemoryEx *string `json:"memory_ex,omitempty"`
-	Name     *string `json:"name,omitempty"`
-
-	// Process Process information (simplified from gopsutil)
-	Process  *string `json:"process,omitempty"`
-	Username *string `json:"username,omitempty"`
+// WithHTTPClient allows overriding the default Doer, which is
+// automatically created using http.Client. This is useful for tests.
+func WithHTTPClient(doer HttpRequestDoer) ClientOption {
+	return func(c *Client) error {
+		c.Client = doer
+		return nil
+	}
 }
 
-// ProcessTreeRoot defines model for ProcessTreeRoot.
-type ProcessTreeRoot struct {
-	Root                 ProcessTreeNode `json:"root"`
-	TotalCpuPercent      float64         `json:"total_cpu_percent"`
-	TotalIoCountersRead  int64           `json:"total_io_counters_read"`
-	TotalIoCountersWrite int64           `json:"total_io_counters_write"`
-	TotalMemoryRss       int64           `json:"total_memory_rss"`
-	TotalMemorySwap      int64           `json:"total_memory_swap"`
-	TotalMemoryVms       int64           `json:"total_memory_vms"`
-	TotalProcessCount    int             `json:"total_process_count"`
+// WithRequestEditorFn allows setting up a callback function, which will be
+// called right before sending the request. This can be used to mutate the request.
+func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
+	return func(c *Client) error {
+		c.RequestEditors = append(c.RequestEditors, fn)
+		return nil
+	}
 }
 
-// ProcessesResponse defines model for ProcessesResponse.
-type ProcessesResponse struct {
-	Processes map[string]Process `json:"processes"`
+// The interface specification for the client above.
+type ClientInterface interface {
+	// GetHealthAuth request
+	GetHealthAuth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListScrolls request
+	ListScrolls(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateScrollWithBody request with any body
+	CreateScrollWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateScroll(ctx context.Context, body CreateScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteScroll request
+	DeleteScroll(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetScroll request
+	GetScroll(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RunScrollCommand request
+	RunScrollCommand(ctx context.Context, id string, command string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetScrollPorts request
+	GetScrollPorts(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
-// QueueResponse Map of command IDs to their execution status
-type QueueResponse map[string]ScrollLockStatus
-
-// ScrollFile Scroll configuration file structure
-type ScrollFile struct {
-	// AppVersion Application version (not necessarily semver)
-	AppVersion *string                           `json:"app_version,omitempty"`
-	Commands   *map[string]CommandInstructionSet `json:"commands,omitempty"`
-	Cronjobs   *[]Cronjob                        `json:"cronjobs,omitempty"`
-
-	// Desc Scroll description
-	Desc *string `json:"desc,omitempty"`
-
-	// Init Initialization command (deprecated, use serve)
-	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
-	Init *string `json:"init,omitempty"`
-
-	// KeepAlivePPM Keep alive packets per minute
-	KeepAlivePPM *int `json:"keepAlivePPM,omitempty"`
-
-	// Name Scroll name
-	Name    *string                       `json:"name,omitempty"`
-	Plugins *map[string]map[string]string `json:"plugins,omitempty"`
-	Ports   *[]Port                       `json:"ports,omitempty"`
-
-	// Serve Serve command
-	Serve *string `json:"serve,omitempty"`
-
-	// Version Scroll version (semver)
-	Version *string `json:"version,omitempty"`
-}
-
-// ScrollLockStatus Status of a command in the queue
-type ScrollLockStatus string
-
-// ScrollLogStream defines model for ScrollLogStream.
-type ScrollLogStream struct {
-	// Key The log stream identifier
-	Key string `json:"key"`
-
-	// Log Array of log lines
-	Log []string `json:"log"`
-}
-
-// StartCommandRequest defines model for StartCommandRequest.
-type StartCommandRequest struct {
-	// Command The command ID to execute
-	Command string `json:"command"`
-
-	// Sync Whether to run synchronously (wait for completion)
-	Sync *bool `json:"sync,omitempty"`
-}
-
-// StartProcedureRequest defines model for StartProcedureRequest.
-type StartProcedureRequest struct {
-	// Data The data payload for the procedure
-	Data string `json:"data"`
-
-	// Dependencies List of dependency IDs this procedure depends on
-	Dependencies *[]string `json:"dependencies,omitempty"`
-
-	// Mode The procedure mode (e.g., "stdin", or plugin mode)
-	Mode string `json:"mode"`
-
-	// Process The process name to run the procedure against
-	Process string `json:"process"`
-
-	// Sync Whether to run synchronously
-	Sync *bool `json:"sync,omitempty"`
-}
-
-// TokenResponse defines model for TokenResponse.
-type TokenResponse struct {
-	// Token The generated authentication token
-	Token string `json:"token"`
-}
-
-// WatchModeRequest defines model for WatchModeRequest.
-type WatchModeRequest struct {
-	// HotReloadCommands Commands to run when files change
-	HotReloadCommands *[]string `json:"hotReloadCommands,omitempty"`
-
-	// WatchPaths Directories to watch
-	WatchPaths []string `json:"watchPaths"`
-}
-
-// WatchModeResponse defines model for WatchModeResponse.
-type WatchModeResponse struct {
-	// Enabled Current watch mode state
-	Enabled bool `json:"enabled"`
-
-	// Status Result status of the operation
-	Status string `json:"status"`
-}
-
-// WatchStatusResponse defines model for WatchStatusResponse.
-type WatchStatusResponse struct {
-	// Enabled Whether watch mode is currently enabled
-	Enabled bool `json:"enabled"`
-
-	// WatchedPaths List of currently watched file paths
-	WatchedPaths []string `json:"watchedPaths"`
-}
-
-// RunCommandJSONRequestBody defines body for RunCommand for application/json ContentType.
-type RunCommandJSONRequestBody = StartCommandRequest
-
-// AddPortJSONRequestBody defines body for AddPort for application/json ContentType.
-type AddPortJSONRequestBody = AddPortRequest
-
-// RunProcedureJSONRequestBody defines body for RunProcedure for application/json ContentType.
-type RunProcedureJSONRequestBody = StartProcedureRequest
-
-// AddCommandJSONRequestBody defines body for AddCommand for application/json ContentType.
-type AddCommandJSONRequestBody = CommandInstructionSet
-
-// EnableWatchJSONRequestBody defines body for EnableWatch for application/json ContentType.
-type EnableWatchJSONRequestBody = WatchModeRequest
-
-// AsProcedureWait0 returns the union data inside the Procedure_Wait as a ProcedureWait0
-func (t Procedure_Wait) AsProcedureWait0() (ProcedureWait0, error) {
-	var body ProcedureWait0
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromProcedureWait0 overwrites any union data inside the Procedure_Wait as the provided ProcedureWait0
-func (t *Procedure_Wait) FromProcedureWait0(v ProcedureWait0) error {
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeProcedureWait0 performs a merge with any union data inside the Procedure_Wait, using the provided ProcedureWait0
-func (t *Procedure_Wait) MergeProcedureWait0(v ProcedureWait0) error {
-	b, err := json.Marshal(v)
+func (c *Client) GetHealthAuth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetHealthAuthRequest(c.Server)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListScrolls(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListScrollsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateScrollWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateScrollRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateScroll(ctx context.Context, body CreateScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateScrollRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteScroll(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteScrollRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetScroll(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetScrollRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RunScrollCommand(ctx context.Context, id string, command string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRunScrollCommandRequest(c.Server, id, command)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetScrollPorts(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetScrollPortsRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// NewGetHealthAuthRequest generates requests for GetHealthAuth
+func NewGetHealthAuthRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
 	}
 
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
-// AsProcedureWait1 returns the union data inside the Procedure_Wait as a ProcedureWait1
-func (t Procedure_Wait) AsProcedureWait1() (ProcedureWait1, error) {
-	var body ProcedureWait1
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromProcedureWait1 overwrites any union data inside the Procedure_Wait as the provided ProcedureWait1
-func (t *Procedure_Wait) FromProcedureWait1(v ProcedureWait1) error {
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeProcedureWait1 performs a merge with any union data inside the Procedure_Wait, using the provided ProcedureWait1
-func (t *Procedure_Wait) MergeProcedureWait1(v ProcedureWait1) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
+	operationPath := fmt.Sprintf("/api/v1/health")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
 	}
 
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
-// AsProcedureWait2 returns the union data inside the Procedure_Wait as a ProcedureWait2
-func (t Procedure_Wait) AsProcedureWait2() (ProcedureWait2, error) {
-	var body ProcedureWait2
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromProcedureWait2 overwrites any union data inside the Procedure_Wait as the provided ProcedureWait2
-func (t *Procedure_Wait) FromProcedureWait2(v ProcedureWait2) error {
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeProcedureWait2 performs a merge with any union data inside the Procedure_Wait, using the provided ProcedureWait2
-func (t *Procedure_Wait) MergeProcedureWait2(v ProcedureWait2) error {
-	b, err := json.Marshal(v)
+	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
 }
 
-func (t Procedure_Wait) MarshalJSON() ([]byte, error) {
-	b, err := t.union.MarshalJSON()
-	return b, err
+// NewListScrollsRequest generates requests for ListScrolls
+func NewListScrollsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
 }
 
-func (t *Procedure_Wait) UnmarshalJSON(b []byte) error {
-	err := t.union.UnmarshalJSON(b)
-	return err
+// NewCreateScrollRequest calls the generic CreateScroll builder with application/json body
+func NewCreateScrollRequest(server string, body CreateScrollJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateScrollRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateScrollRequestWithBody generates requests for CreateScroll with any type of body
+func NewCreateScrollRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteScrollRequest generates requests for DeleteScroll
+func NewDeleteScrollRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetScrollRequest generates requests for GetScroll
+func NewGetScrollRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRunScrollCommandRequest generates requests for RunScrollCommand
+func NewRunScrollCommandRequest(server string, id string, command string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "command", runtime.ParamLocationPath, command)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/commands/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetScrollPortsRequest generates requests for GetScrollPorts
+func NewGetScrollPortsRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/ports", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
+	for _, r := range c.RequestEditors {
+		if err := r(ctx, req); err != nil {
+			return err
+		}
+	}
+	for _, r := range additionalEditors {
+		if err := r(ctx, req); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ClientWithResponses builds on ClientInterface to offer response payloads
+type ClientWithResponses struct {
+	ClientInterface
+}
+
+// NewClientWithResponses creates a new ClientWithResponses, which wraps
+// Client with return type handling
+func NewClientWithResponses(server string, opts ...ClientOption) (*ClientWithResponses, error) {
+	client, err := NewClient(server, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &ClientWithResponses{client}, nil
+}
+
+// WithBaseURL overrides the baseURL.
+func WithBaseURL(baseURL string) ClientOption {
+	return func(c *Client) error {
+		newBaseURL, err := url.Parse(baseURL)
+		if err != nil {
+			return err
+		}
+		c.Server = newBaseURL.String()
+		return nil
+	}
+}
+
+// ClientWithResponsesInterface is the interface specification for the client with responses above.
+type ClientWithResponsesInterface interface {
+	// GetHealthAuthWithResponse request
+	GetHealthAuthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHealthAuthResponse, error)
+
+	// ListScrollsWithResponse request
+	ListScrollsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListScrollsResponse, error)
+
+	// CreateScrollWithBodyWithResponse request with any body
+	CreateScrollWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateScrollResponse, error)
+
+	CreateScrollWithResponse(ctx context.Context, body CreateScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateScrollResponse, error)
+
+	// DeleteScrollWithResponse request
+	DeleteScrollWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*DeleteScrollResponse, error)
+
+	// GetScrollWithResponse request
+	GetScrollWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollResponse, error)
+
+	// RunScrollCommandWithResponse request
+	RunScrollCommandWithResponse(ctx context.Context, id string, command string, reqEditors ...RequestEditorFn) (*RunScrollCommandResponse, error)
+
+	// GetScrollPortsWithResponse request
+	GetScrollPortsWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollPortsResponse, error)
+}
+
+type GetHealthAuthResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *HealthResponse
+	JSON503      *HealthResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetHealthAuthResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetHealthAuthResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListScrollsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *[]RuntimeScroll
+}
+
+// Status returns HTTPResponse.Status
+func (r ListScrollsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListScrollsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateScrollResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *RuntimeScroll
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateScrollResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateScrollResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteScrollResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *DeletedScroll
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteScrollResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteScrollResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetScrollResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *RuntimeScroll
+}
+
+// Status returns HTTPResponse.Status
+func (r GetScrollResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetScrollResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RunScrollCommandResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *RuntimeScroll
+}
+
+// Status returns HTTPResponse.Status
+func (r RunScrollCommandResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RunScrollCommandResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetScrollPortsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *[]RuntimePortStatus
+}
+
+// Status returns HTTPResponse.Status
+func (r GetScrollPortsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetScrollPortsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// GetHealthAuthWithResponse request returning *GetHealthAuthResponse
+func (c *ClientWithResponses) GetHealthAuthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHealthAuthResponse, error) {
+	rsp, err := c.GetHealthAuth(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetHealthAuthResponse(rsp)
+}
+
+// ListScrollsWithResponse request returning *ListScrollsResponse
+func (c *ClientWithResponses) ListScrollsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListScrollsResponse, error) {
+	rsp, err := c.ListScrolls(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListScrollsResponse(rsp)
+}
+
+// CreateScrollWithBodyWithResponse request with arbitrary body returning *CreateScrollResponse
+func (c *ClientWithResponses) CreateScrollWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateScrollResponse, error) {
+	rsp, err := c.CreateScrollWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateScrollResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateScrollWithResponse(ctx context.Context, body CreateScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateScrollResponse, error) {
+	rsp, err := c.CreateScroll(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateScrollResponse(rsp)
+}
+
+// DeleteScrollWithResponse request returning *DeleteScrollResponse
+func (c *ClientWithResponses) DeleteScrollWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*DeleteScrollResponse, error) {
+	rsp, err := c.DeleteScroll(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteScrollResponse(rsp)
+}
+
+// GetScrollWithResponse request returning *GetScrollResponse
+func (c *ClientWithResponses) GetScrollWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollResponse, error) {
+	rsp, err := c.GetScroll(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetScrollResponse(rsp)
+}
+
+// RunScrollCommandWithResponse request returning *RunScrollCommandResponse
+func (c *ClientWithResponses) RunScrollCommandWithResponse(ctx context.Context, id string, command string, reqEditors ...RequestEditorFn) (*RunScrollCommandResponse, error) {
+	rsp, err := c.RunScrollCommand(ctx, id, command, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRunScrollCommandResponse(rsp)
+}
+
+// GetScrollPortsWithResponse request returning *GetScrollPortsResponse
+func (c *ClientWithResponses) GetScrollPortsWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollPortsResponse, error) {
+	rsp, err := c.GetScrollPorts(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetScrollPortsResponse(rsp)
+}
+
+// ParseGetHealthAuthResponse parses an HTTP response from a GetHealthAuthWithResponse call
+func ParseGetHealthAuthResponse(rsp *http.Response) (*GetHealthAuthResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetHealthAuthResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest HealthResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest HealthResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListScrollsResponse parses an HTTP response from a ListScrollsWithResponse call
+func ParseListScrollsResponse(rsp *http.Response) (*ListScrollsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListScrollsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []RuntimeScroll
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateScrollResponse parses an HTTP response from a CreateScrollWithResponse call
+func ParseCreateScrollResponse(rsp *http.Response) (*CreateScrollResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateScrollResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest RuntimeScroll
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteScrollResponse parses an HTTP response from a DeleteScrollWithResponse call
+func ParseDeleteScrollResponse(rsp *http.Response) (*DeleteScrollResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteScrollResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DeletedScroll
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetScrollResponse parses an HTTP response from a GetScrollWithResponse call
+func ParseGetScrollResponse(rsp *http.Response) (*GetScrollResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetScrollResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RuntimeScroll
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRunScrollCommandResponse parses an HTTP response from a RunScrollCommandWithResponse call
+func ParseRunScrollCommandResponse(rsp *http.Response) (*RunScrollCommandResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RunScrollCommandResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RuntimeScroll
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetScrollPortsResponse parses an HTTP response from a GetScrollPortsWithResponse call
+func ParseGetScrollPortsResponse(rsp *http.Response) (*GetScrollPortsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetScrollPortsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []RuntimePortStatus
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
 }
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
-	// Finish cold start
-	// (POST /api/v1/coldstarter/finish)
-	FinishColdstarter(c *fiber.Ctx) error
-	// Run a command
-	// (POST /api/v1/command)
-	RunCommand(c *fiber.Ctx) error
-	// List all consoles
-	// (GET /api/v1/consoles)
-	GetConsoles(c *fiber.Ctx) error
-	// Stop daemon
-	// (POST /api/v1/daemon/stop)
-	StopDaemon(c *fiber.Ctx) error
 	// Get health status
 	// (GET /api/v1/health)
 	GetHealthAuth(c *fiber.Ctx) error
-	// List all log streams
-	// (GET /api/v1/logs)
-	ListAllLogs(c *fiber.Ctx) error
-	// List logs for a specific stream
-	// (GET /api/v1/logs/{stream})
-	ListStreamLogs(c *fiber.Ctx, stream string) error
-	// Get process metrics
-	// (GET /api/v1/metrics)
-	GetMetrics(c *fiber.Ctx) error
-	// Get port information
-	// (GET /api/v1/ports)
-	GetPorts(c *fiber.Ctx) error
-	// Add a port to watch
-	// (POST /api/v1/ports)
-	AddPort(c *fiber.Ctx) error
-	// Remove a watched port
-	// (DELETE /api/v1/ports/{port})
-	DeletePort(c *fiber.Ctx, port int) error
-	// Run a procedure
-	// (POST /api/v1/procedure)
-	RunProcedure(c *fiber.Ctx) error
-	// Get procedure statuses
-	// (GET /api/v1/procedures)
-	GetProcedures(c *fiber.Ctx) error
-	// List running processes
-	// (GET /api/v1/processes)
-	GetProcesses(c *fiber.Ctx) error
-	// Get process tree
-	// (GET /api/v1/pstree)
-	GetPsTree(c *fiber.Ctx) error
-	// Get command queue
-	// (GET /api/v1/queue)
-	GetQueue(c *fiber.Ctx) error
-	// Get current scroll
-	// (GET /api/v1/scroll)
-	GetScroll(c *fiber.Ctx) error
-	// Add command to current scroll
-	// (PUT /api/v1/scroll/commands/{command})
-	AddCommand(c *fiber.Ctx, command string) error
-	// Create WebSocket token
-	// (GET /api/v1/token)
-	CreateToken(c *fiber.Ctx) error
-	// Disable development mode
-	// (POST /api/v1/watch/disable)
-	DisableWatch(c *fiber.Ctx) error
-	// Enable development mode
-	// (POST /api/v1/watch/enable)
-	EnableWatch(c *fiber.Ctx) error
-	// Get watch mode status
-	// (GET /api/v1/watch/status)
-	GetWatchStatus(c *fiber.Ctx) error
+	// List runtime scrolls
+	// (GET /api/v1/scrolls)
+	ListScrolls(c *fiber.Ctx) error
+	// Create runtime scroll
+	// (POST /api/v1/scrolls)
+	CreateScroll(c *fiber.Ctx) error
+	// Delete runtime scroll
+	// (DELETE /api/v1/scrolls/{id})
+	DeleteScroll(c *fiber.Ctx, id string) error
+	// Get runtime scroll
+	// (GET /api/v1/scrolls/{id})
+	GetScroll(c *fiber.Ctx, id string) error
+	// Run runtime scroll command
+	// (POST /api/v1/scrolls/{id}/commands/{command})
+	RunScrollCommand(c *fiber.Ctx, id string, command string) error
+	// Get runtime scroll port status
+	// (GET /api/v1/scrolls/{id}/ports)
+	GetScrollPorts(c *fiber.Ctx, id string) error
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -582,166 +1051,68 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc fiber.Handler
 
-// FinishColdstarter operation middleware
-func (siw *ServerInterfaceWrapper) FinishColdstarter(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.FinishColdstarter(c)
-}
-
-// RunCommand operation middleware
-func (siw *ServerInterfaceWrapper) RunCommand(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.RunCommand(c)
-}
-
-// GetConsoles operation middleware
-func (siw *ServerInterfaceWrapper) GetConsoles(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.GetConsoles(c)
-}
-
-// StopDaemon operation middleware
-func (siw *ServerInterfaceWrapper) StopDaemon(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.StopDaemon(c)
-}
-
 // GetHealthAuth operation middleware
 func (siw *ServerInterfaceWrapper) GetHealthAuth(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
 
 	return siw.Handler.GetHealthAuth(c)
 }
 
-// ListAllLogs operation middleware
-func (siw *ServerInterfaceWrapper) ListAllLogs(c *fiber.Ctx) error {
+// ListScrolls operation middleware
+func (siw *ServerInterfaceWrapper) ListScrolls(c *fiber.Ctx) error {
 
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.ListAllLogs(c)
+	return siw.Handler.ListScrolls(c)
 }
 
-// ListStreamLogs operation middleware
-func (siw *ServerInterfaceWrapper) ListStreamLogs(c *fiber.Ctx) error {
+// CreateScroll operation middleware
+func (siw *ServerInterfaceWrapper) CreateScroll(c *fiber.Ctx) error {
+
+	return siw.Handler.CreateScroll(c)
+}
+
+// DeleteScroll operation middleware
+func (siw *ServerInterfaceWrapper) DeleteScroll(c *fiber.Ctx) error {
 
 	var err error
 
-	// ------------- Path parameter "stream" -------------
-	var stream string
+	// ------------- Path parameter "id" -------------
+	var id string
 
-	err = runtime.BindStyledParameterWithOptions("simple", "stream", c.Params("stream"), &stream, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
 	if err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter stream: %w", err).Error())
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
 	}
 
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.ListStreamLogs(c, stream)
-}
-
-// GetMetrics operation middleware
-func (siw *ServerInterfaceWrapper) GetMetrics(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.GetMetrics(c)
-}
-
-// GetPorts operation middleware
-func (siw *ServerInterfaceWrapper) GetPorts(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.GetPorts(c)
-}
-
-// AddPort operation middleware
-func (siw *ServerInterfaceWrapper) AddPort(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.AddPort(c)
-}
-
-// DeletePort operation middleware
-func (siw *ServerInterfaceWrapper) DeletePort(c *fiber.Ctx) error {
-
-	var err error
-
-	// ------------- Path parameter "port" -------------
-	var port int
-
-	err = runtime.BindStyledParameterWithOptions("simple", "port", c.Params("port"), &port, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter port: %w", err).Error())
-	}
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.DeletePort(c, port)
-}
-
-// RunProcedure operation middleware
-func (siw *ServerInterfaceWrapper) RunProcedure(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.RunProcedure(c)
-}
-
-// GetProcedures operation middleware
-func (siw *ServerInterfaceWrapper) GetProcedures(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.GetProcedures(c)
-}
-
-// GetProcesses operation middleware
-func (siw *ServerInterfaceWrapper) GetProcesses(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.GetProcesses(c)
-}
-
-// GetPsTree operation middleware
-func (siw *ServerInterfaceWrapper) GetPsTree(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.GetPsTree(c)
-}
-
-// GetQueue operation middleware
-func (siw *ServerInterfaceWrapper) GetQueue(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.GetQueue(c)
+	return siw.Handler.DeleteScroll(c, id)
 }
 
 // GetScroll operation middleware
 func (siw *ServerInterfaceWrapper) GetScroll(c *fiber.Ctx) error {
 
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
+	var err error
 
-	return siw.Handler.GetScroll(c)
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	return siw.Handler.GetScroll(c, id)
 }
 
-// AddCommand operation middleware
-func (siw *ServerInterfaceWrapper) AddCommand(c *fiber.Ctx) error {
+// RunScrollCommand operation middleware
+func (siw *ServerInterfaceWrapper) RunScrollCommand(c *fiber.Ctx) error {
 
 	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
 
 	// ------------- Path parameter "command" -------------
 	var command string
@@ -751,41 +1122,23 @@ func (siw *ServerInterfaceWrapper) AddCommand(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter command: %w", err).Error())
 	}
 
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.AddCommand(c, command)
+	return siw.Handler.RunScrollCommand(c, id, command)
 }
 
-// CreateToken operation middleware
-func (siw *ServerInterfaceWrapper) CreateToken(c *fiber.Ctx) error {
+// GetScrollPorts operation middleware
+func (siw *ServerInterfaceWrapper) GetScrollPorts(c *fiber.Ctx) error {
 
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
+	var err error
 
-	return siw.Handler.CreateToken(c)
-}
+	// ------------- Path parameter "id" -------------
+	var id string
 
-// DisableWatch operation middleware
-func (siw *ServerInterfaceWrapper) DisableWatch(c *fiber.Ctx) error {
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
 
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.DisableWatch(c)
-}
-
-// EnableWatch operation middleware
-func (siw *ServerInterfaceWrapper) EnableWatch(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.EnableWatch(c)
-}
-
-// GetWatchStatus operation middleware
-func (siw *ServerInterfaceWrapper) GetWatchStatus(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.GetWatchStatus(c)
+	return siw.Handler.GetScrollPorts(c, id)
 }
 
 // FiberServerOptions provides options for the Fiber server.
@@ -809,126 +1162,53 @@ func RegisterHandlersWithOptions(router fiber.Router, si ServerInterface, option
 		router.Use(fiber.Handler(m))
 	}
 
-	router.Post(options.BaseURL+"/api/v1/coldstarter/finish", wrapper.FinishColdstarter)
-
-	router.Post(options.BaseURL+"/api/v1/command", wrapper.RunCommand)
-
-	router.Get(options.BaseURL+"/api/v1/consoles", wrapper.GetConsoles)
-
-	router.Post(options.BaseURL+"/api/v1/daemon/stop", wrapper.StopDaemon)
-
 	router.Get(options.BaseURL+"/api/v1/health", wrapper.GetHealthAuth)
 
-	router.Get(options.BaseURL+"/api/v1/logs", wrapper.ListAllLogs)
+	router.Get(options.BaseURL+"/api/v1/scrolls", wrapper.ListScrolls)
 
-	router.Get(options.BaseURL+"/api/v1/logs/:stream", wrapper.ListStreamLogs)
+	router.Post(options.BaseURL+"/api/v1/scrolls", wrapper.CreateScroll)
 
-	router.Get(options.BaseURL+"/api/v1/metrics", wrapper.GetMetrics)
+	router.Delete(options.BaseURL+"/api/v1/scrolls/:id", wrapper.DeleteScroll)
 
-	router.Get(options.BaseURL+"/api/v1/ports", wrapper.GetPorts)
+	router.Get(options.BaseURL+"/api/v1/scrolls/:id", wrapper.GetScroll)
 
-	router.Post(options.BaseURL+"/api/v1/ports", wrapper.AddPort)
+	router.Post(options.BaseURL+"/api/v1/scrolls/:id/commands/:command", wrapper.RunScrollCommand)
 
-	router.Delete(options.BaseURL+"/api/v1/ports/:port", wrapper.DeletePort)
-
-	router.Post(options.BaseURL+"/api/v1/procedure", wrapper.RunProcedure)
-
-	router.Get(options.BaseURL+"/api/v1/procedures", wrapper.GetProcedures)
-
-	router.Get(options.BaseURL+"/api/v1/processes", wrapper.GetProcesses)
-
-	router.Get(options.BaseURL+"/api/v1/pstree", wrapper.GetPsTree)
-
-	router.Get(options.BaseURL+"/api/v1/queue", wrapper.GetQueue)
-
-	router.Get(options.BaseURL+"/api/v1/scroll", wrapper.GetScroll)
-
-	router.Put(options.BaseURL+"/api/v1/scroll/commands/:command", wrapper.AddCommand)
-
-	router.Get(options.BaseURL+"/api/v1/token", wrapper.CreateToken)
-
-	router.Post(options.BaseURL+"/api/v1/watch/disable", wrapper.DisableWatch)
-
-	router.Post(options.BaseURL+"/api/v1/watch/enable", wrapper.EnableWatch)
-
-	router.Get(options.BaseURL+"/api/v1/watch/status", wrapper.GetWatchStatus)
+	router.Get(options.BaseURL+"/api/v1/scrolls/:id/ports", wrapper.GetScrollPorts)
 
 }
 
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
-	"dbQZ19nT3dP/BgAA//8Nu8Jt11IAAA==",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

@@ -1,0 +1,143 @@
+name: ghcr.io/druid-examples/container-lab
+desc: Multi-service container-only scroll for runtime backend testing
+version: 0.1.0
+app_version: "1.0"
+
+ports:
+  - name: http
+    protocol: http
+    port: 8080
+    mandatory: true
+  - name: redis
+    protocol: tcp
+    port: 6379
+    mandatory: true
+
+serve: "start"
+commands:
+  prepare:
+    run: once
+    procedures:
+      - id: prepare-content
+        image: alpine:3.20
+        env:
+          LAB_TITLE: Druid container lab
+          LAB_MESSAGE: persistent services without coldstarter
+        mounts:
+          - path: /work
+        command:
+          - sh
+          - -c
+          - >-
+            set -eu;
+            mkdir -p /work/site /work/redis /work/reports;
+            printf '<!doctype html><title>Druid container lab</title><h1>Druid container lab</h1><p>persistent services without coldstarter</p>\n'
+            > /work/site/index.html;
+            env | grep '^LAB_' | sort > /work/reports/env.txt;
+            printf 'prepared\n' > /work/reports/prepare.txt
+
+  seed-cache:
+    needs: [prepare]
+    run: always
+    procedures:
+      - id: seed-cache-files
+        image: alpine:3.20
+        mounts:
+          - path: /work
+        command:
+          - sh
+          - -c
+          - >-
+            set -eu;
+            date -u '+seeded at %Y-%m-%dT%H:%M:%SZ' > /work/redis/seed.txt;
+            printf 'cache seed refreshed\n' > /work/reports/seed-cache.txt
+
+  start:
+    needs: [prepare, seed-cache]
+    run: persistent
+    procedures:
+      - id: web
+        image: python:3.12-alpine
+        expectedPorts:
+          - name: http
+            keepAliveTraffic: 1b/5m
+        mounts:
+          - path: /site
+            sub_path: site
+            read_only: true
+        command:
+          - python
+          - -m
+          - http.server
+          - "8080"
+          - --directory
+          - /site
+
+      - id: cache
+        image: redis:7.4-alpine
+        expectedPorts:
+          - name: redis
+            keepAliveTraffic: 1b/5m
+        mounts:
+          - path: /data
+            sub_path: redis
+        command:
+          - redis-server
+          - --appendonly
+          - "yes"
+          - --dir
+          - /data
+
+  verify:
+    needs: [start]
+    run: always
+    procedures:
+      - id: verify-http
+        image: alpine:3.20
+        mounts:
+          - path: /work
+        command:
+          - sh
+          - -c
+          - >-
+            set -eu;
+            grep -q 'Druid container lab' /work/site/index.html;
+            printf 'site content verified\n' > /work/reports/http-verify.txt
+
+      - id: verify-cache
+        image: alpine:3.20
+        mounts:
+          - path: /work
+        command:
+          - sh
+          - -c
+          - >-
+            set -eu;
+            test -s /work/redis/seed.txt;
+            printf 'cache data directory verified\n' > /work/reports/cache-verify.txt
+
+  report:
+    needs: [verify]
+    run: always
+    procedures:
+      - id: report
+        image: alpine:3.20
+        mounts:
+          - path: /work
+        command:
+          - sh
+          - -c
+          - >-
+            set -eu;
+            printf 'container lab reports:\n';
+            find /work/reports -maxdepth 1 -type f -print -exec sh -c 'echo "--- $1"; cat "$1"' _ {} \;
+
+  stop:
+    run: always
+    procedures:
+      - type: signal
+        target: web
+        signal: SIGTERM
+      - type: signal
+        target: cache
+        signal: SIGTERM

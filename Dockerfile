@@ -10,7 +10,6 @@ WORKDIR /go
 ENV VERSION=${VERSION}
 
 RUN make build
-RUN make build-plugins
 
 # The binaries are in ./bin/ directory after build
 

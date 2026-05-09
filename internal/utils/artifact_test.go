@@ -78,3 +78,10 @@ func TestParseArtifactRef(t *testing.T) {
 	}
 }
 
+func TestSplitArtifactSupportsRegistryPort(t *testing.T) {
+	repo, tag := SplitArtifact("localhost:5001/container-lab:1.0")
+
+	if repo != "localhost:5001/container-lab" || tag != "1.0" {
+		t.Fatalf("SplitArtifact repo=%q tag=%q, want localhost:5001/container-lab 1.0", repo, tag)
+	}
+}

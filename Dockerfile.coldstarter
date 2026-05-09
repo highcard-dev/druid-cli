@@ -1,0 +1,10 @@
+FROM golang:bullseye AS builder
+
+ARG VERSION=docker
+WORKDIR /src
+COPY . .
+RUN CGO_ENABLED=0 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=${VERSION}" -o /out/druid-coldstarter ./apps/druid-coldstarter
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=builder /out/druid-coldstarter /usr/bin/druid-coldstarter
+ENTRYPOINT ["/usr/bin/druid-coldstarter"]

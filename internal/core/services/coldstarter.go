@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -89,7 +90,7 @@ func (c *ColdStarter) Serve(ctx context.Context) {
 			sleepHandler = *port.SleepHandler
 		}
 
-		path := fmt.Sprintf("%s/%s", c.dir, sleepHandler)
+		path := filepath.Join(c.dir, domain.ScrollDataDir, "coldstart", sleepHandler)
 
 		go func(port *domain.AugmentedPort) {
 			var handler ports.ColdStarterHandlerInterface
@@ -121,7 +122,7 @@ func (c *ColdStarter) Serve(ctx context.Context) {
 				c.handlerMu.Lock()
 				defer c.handlerMu.Unlock()
 				c.handler[port.Name] = udpServer
-			} else if port.Protocol == "tcp" {
+			} else if port.Protocol == "tcp" || port.Protocol == "http" || port.Protocol == "https" || port.Protocol == "" {
 				logger.Log().Info(fmt.Sprintf("Starting TCP server on port %d", port.Port.Port))
 				tcpServer := servers.NewTCP(handler)
 				err := tcpServer.Start(port.Port.Port, finishFunc)

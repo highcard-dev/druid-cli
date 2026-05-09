@@ -44,7 +44,13 @@ type OciClient struct {
 func NewOciClient(credentialStore *CredentialStore) *OciClient {
 	return &OciClient{
 		credentialStore: credentialStore,
+		plainHTTP:       plainHTTPFromEnv(),
 	}
+}
+
+func plainHTTPFromEnv() bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("DRUID_REGISTRY_PLAIN_HTTP")))
+	return value == "1" || value == "true" || value == "yes"
 }
 
 func (c *OciClient) GetRepo(repoUrl string) (*remote.Repository, error) {
