@@ -19,28 +19,14 @@ type AuthorizerServiceInterface interface {
 type ScrollServiceInterface interface {
 	GetCurrent() *domain.Scroll
 	GetFile() *domain.File
-	GetScrollConfigRawYaml() []byte
 	GetDir() string
 	GetCwd() string
-	WriteNewScrollLock() *domain.ScrollLock
-	GetLock() (*domain.ScrollLock, error)
 	GetCommand(cmd string) (*domain.CommandInstructionSet, error)
-	AddTemporaryCommand(cmd string, instructions *domain.CommandInstructionSet)
 }
 
 type ProcedureLauchnerInterface interface {
-	LaunchPlugins() error
-	RunProcedure(*domain.Procedure, string, []string) (string, *int, error)
-	Run(cmd string, runCommandCb func(cmd string) error) error
+	Run(cmd string) error
 	GetProcedureStatuses() map[string]domain.ScrollLockStatus
-}
-
-type PluginManagerInterface interface {
-	CanRunStandaloneProcedure(mode string) bool
-	GetNotifyConsoleChannel() chan *domain.StreamItem
-	ParseFromScroll(pluginDefinitionMap map[string]map[string]string, config string, cwd string) error
-	HasMode(mode string) bool
-	RunProcedure(mode string, value string) (string, error)
 }
 
 type LogManagerInterface interface {
@@ -48,12 +34,31 @@ type LogManagerInterface interface {
 	AddLine(stream string, sc []byte)
 }
 
-type ProcessManagerInterface interface {
-	GetRunningProcesses() map[string]*domain.Process
-	GetRunningProcess(commandName string) *domain.Process
-	Run(commandName string, command []string, dir string) (*int, error)
-	RunTty(comandName string, command []string, dir string) (*int, error)
-	WriteStdin(process *domain.Process, data string) error
+type RuntimeBackendInterface interface {
+	Name() string
+	ReadScrollFile(scrollRoot string) ([]byte, error)
+	RunCommand(command RuntimeCommand) (*int, error)
+	ExpectedPorts(dataRoot string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error)
+	Attach(commandName string, data string) error
+	Signal(commandName string, target string, signal string, dataRoot string) error
+}
+
+type RuntimeCommand struct {
+	Name        string
+	Command     *domain.CommandInstructionSet
+	DataRoot    string
+	GlobalPorts []domain.Port
+}
+
+type RuntimeMaterialization struct {
+	Artifact   string
+	ScrollRoot string
+	DataRoot   string
+	ScrollYAML []byte
+}
+
+type RuntimeMaterializerInterface interface {
+	MaterializeScroll(ctx context.Context, artifact string, requestedName string) (*RuntimeMaterialization, error)
 }
 
 type BroadcastChannelInterface interface {
@@ -65,18 +70,6 @@ type ConsoleManagerInterface interface {
 	GetConsole(consoleId string) *domain.Console
 	GetConsoles() map[string]*domain.Console
 	AddConsoleWithChannel(consoleId string, consoleType domain.ConsoleType, inputMode string, channel chan string) (*domain.Console, chan struct{})
-}
-
-type ProcessMonitorInterface interface {
-	GetAllProcessesMetrics() map[string]*domain.ProcessMonitorMetrics
-	GetPsTrees() map[string]*domain.ProcessTreeRoot
-	AddProcess(pid int32, name string)
-	RemoveProcess(name string)
-}
-
-type TemplateRendererInterface interface {
-	RenderTemplate(templatePath string, data interface{}) (string, error)
-	RenderScrollTemplateFiles(templateBase string, templateFiles []string, data interface{}, ouputPath string) error
 }
 
 type OciRegistryInterface interface {
@@ -100,13 +93,7 @@ type QueueManagerInterface interface {
 }
 
 type PortServiceInterface interface {
-	StartMonitoring(context.Context, []string, uint)
-	GetLastActivity(port int) uint
-	CheckOpen(prot int) bool
 	GetPorts() []*domain.AugmentedPort
-	MandatoryPortsOpen() bool
-	AddPort(port domain.Port) (*domain.AugmentedPort, error)
-	RemovePort(port int) error
 }
 
 type ColdStarterHandlerInterface interface {
@@ -142,9 +129,4 @@ type WatchServiceInterface interface {
 	GetWatchedPaths() []string
 	IsWatching() bool
 	SetHotReloadCommands(procs []string) error
-}
-
-type NixDependencyServiceInterface interface {
-	GetCommand(cmd []string, deps []string) []string
-	EnsureNixInstalled() error
 }

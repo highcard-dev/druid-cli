@@ -3,13 +3,14 @@ package domain
 type ConsoleType string
 
 const (
-	ConsoleTypeTTY     ConsoleType = "tty"
-	ConsoleTypeProcess ConsoleType = "process"
-	ConsoleTypePlugin  ConsoleType = "plugin"
+	ConsoleTypeTTY       ConsoleType = "tty"
+	ConsoleTypeContainer ConsoleType = "container"
 )
 
 type Console struct {
 	Channel *BroadcastChannel `json:"-" validate:"required"`
+
+	WriteInput func(data string) error `json:"-"`
 
 	Type ConsoleType `json:"type" validate:"required"`
 

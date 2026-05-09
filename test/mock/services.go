@@ -114,18 +114,6 @@ func (m *MockScrollServiceInterface) EXPECT() *MockScrollServiceInterfaceMockRec
 	return m.recorder
 }
 
-// AddTemporaryCommand mocks base method.
-func (m *MockScrollServiceInterface) AddTemporaryCommand(cmd string, instructions *domain.CommandInstructionSet) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "AddTemporaryCommand", cmd, instructions)
-}
-
-// AddTemporaryCommand indicates an expected call of AddTemporaryCommand.
-func (mr *MockScrollServiceInterfaceMockRecorder) AddTemporaryCommand(cmd, instructions any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddTemporaryCommand", reflect.TypeOf((*MockScrollServiceInterface)(nil).AddTemporaryCommand), cmd, instructions)
-}
-
 // GetCommand mocks base method.
 func (m *MockScrollServiceInterface) GetCommand(cmd string) (*domain.CommandInstructionSet, error) {
 	m.ctrl.T.Helper()
@@ -197,49 +185,6 @@ func (mr *MockScrollServiceInterfaceMockRecorder) GetFile() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFile", reflect.TypeOf((*MockScrollServiceInterface)(nil).GetFile))
 }
 
-// GetLock mocks base method.
-func (m *MockScrollServiceInterface) GetLock() (*domain.ScrollLock, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetLock")
-	ret0, _ := ret[0].(*domain.ScrollLock)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetLock indicates an expected call of GetLock.
-func (mr *MockScrollServiceInterfaceMockRecorder) GetLock() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLock", reflect.TypeOf((*MockScrollServiceInterface)(nil).GetLock))
-}
-
-// GetScrollConfigRawYaml mocks base method.
-func (m *MockScrollServiceInterface) GetScrollConfigRawYaml() []byte {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetScrollConfigRawYaml")
-	ret0, _ := ret[0].([]byte)
-	return ret0
-}
-
-// GetScrollConfigRawYaml indicates an expected call of GetScrollConfigRawYaml.
-func (mr *MockScrollServiceInterfaceMockRecorder) GetScrollConfigRawYaml() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetScrollConfigRawYaml", reflect.TypeOf((*MockScrollServiceInterface)(nil).GetScrollConfigRawYaml))
-}
-
-// WriteNewScrollLock mocks base method.
-func (m *MockScrollServiceInterface) WriteNewScrollLock() *domain.ScrollLock {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "WriteNewScrollLock")
-	ret0, _ := ret[0].(*domain.ScrollLock)
-	return ret0
-}
-
-// WriteNewScrollLock indicates an expected call of WriteNewScrollLock.
-func (mr *MockScrollServiceInterfaceMockRecorder) WriteNewScrollLock() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WriteNewScrollLock", reflect.TypeOf((*MockScrollServiceInterface)(nil).WriteNewScrollLock))
-}
-
 // MockProcedureLauchnerInterface is a mock of ProcedureLauchnerInterface interface.
 type MockProcedureLauchnerInterface struct {
 	ctrl     *gomock.Controller
@@ -278,143 +223,18 @@ func (mr *MockProcedureLauchnerInterfaceMockRecorder) GetProcedureStatuses() *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProcedureStatuses", reflect.TypeOf((*MockProcedureLauchnerInterface)(nil).GetProcedureStatuses))
 }
 
-// LaunchPlugins mocks base method.
-func (m *MockProcedureLauchnerInterface) LaunchPlugins() error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "LaunchPlugins")
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// LaunchPlugins indicates an expected call of LaunchPlugins.
-func (mr *MockProcedureLauchnerInterfaceMockRecorder) LaunchPlugins() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LaunchPlugins", reflect.TypeOf((*MockProcedureLauchnerInterface)(nil).LaunchPlugins))
-}
-
 // Run mocks base method.
-func (m *MockProcedureLauchnerInterface) Run(cmd string, runCommandCb func(string) error) error {
+func (m *MockProcedureLauchnerInterface) Run(cmd string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Run", cmd, runCommandCb)
+	ret := m.ctrl.Call(m, "Run", cmd)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Run indicates an expected call of Run.
-func (mr *MockProcedureLauchnerInterfaceMockRecorder) Run(cmd, runCommandCb any) *gomock.Call {
+func (mr *MockProcedureLauchnerInterfaceMockRecorder) Run(cmd any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Run", reflect.TypeOf((*MockProcedureLauchnerInterface)(nil).Run), cmd, runCommandCb)
-}
-
-// RunProcedure mocks base method.
-func (m *MockProcedureLauchnerInterface) RunProcedure(arg0 *domain.Procedure, arg1 string, arg2 []string) (string, *int, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RunProcedure", arg0, arg1, arg2)
-	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(*int)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
-}
-
-// RunProcedure indicates an expected call of RunProcedure.
-func (mr *MockProcedureLauchnerInterfaceMockRecorder) RunProcedure(arg0, arg1, arg2 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunProcedure", reflect.TypeOf((*MockProcedureLauchnerInterface)(nil).RunProcedure), arg0, arg1, arg2)
-}
-
-// MockPluginManagerInterface is a mock of PluginManagerInterface interface.
-type MockPluginManagerInterface struct {
-	ctrl     *gomock.Controller
-	recorder *MockPluginManagerInterfaceMockRecorder
-	isgomock struct{}
-}
-
-// MockPluginManagerInterfaceMockRecorder is the mock recorder for MockPluginManagerInterface.
-type MockPluginManagerInterfaceMockRecorder struct {
-	mock *MockPluginManagerInterface
-}
-
-// NewMockPluginManagerInterface creates a new mock instance.
-func NewMockPluginManagerInterface(ctrl *gomock.Controller) *MockPluginManagerInterface {
-	mock := &MockPluginManagerInterface{ctrl: ctrl}
-	mock.recorder = &MockPluginManagerInterfaceMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockPluginManagerInterface) EXPECT() *MockPluginManagerInterfaceMockRecorder {
-	return m.recorder
-}
-
-// CanRunStandaloneProcedure mocks base method.
-func (m *MockPluginManagerInterface) CanRunStandaloneProcedure(mode string) bool {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CanRunStandaloneProcedure", mode)
-	ret0, _ := ret[0].(bool)
-	return ret0
-}
-
-// CanRunStandaloneProcedure indicates an expected call of CanRunStandaloneProcedure.
-func (mr *MockPluginManagerInterfaceMockRecorder) CanRunStandaloneProcedure(mode any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CanRunStandaloneProcedure", reflect.TypeOf((*MockPluginManagerInterface)(nil).CanRunStandaloneProcedure), mode)
-}
-
-// GetNotifyConsoleChannel mocks base method.
-func (m *MockPluginManagerInterface) GetNotifyConsoleChannel() chan *domain.StreamItem {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetNotifyConsoleChannel")
-	ret0, _ := ret[0].(chan *domain.StreamItem)
-	return ret0
-}
-
-// GetNotifyConsoleChannel indicates an expected call of GetNotifyConsoleChannel.
-func (mr *MockPluginManagerInterfaceMockRecorder) GetNotifyConsoleChannel() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNotifyConsoleChannel", reflect.TypeOf((*MockPluginManagerInterface)(nil).GetNotifyConsoleChannel))
-}
-
-// HasMode mocks base method.
-func (m *MockPluginManagerInterface) HasMode(mode string) bool {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "HasMode", mode)
-	ret0, _ := ret[0].(bool)
-	return ret0
-}
-
-// HasMode indicates an expected call of HasMode.
-func (mr *MockPluginManagerInterfaceMockRecorder) HasMode(mode any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasMode", reflect.TypeOf((*MockPluginManagerInterface)(nil).HasMode), mode)
-}
-
-// ParseFromScroll mocks base method.
-func (m *MockPluginManagerInterface) ParseFromScroll(pluginDefinitionMap map[string]map[string]string, config, cwd string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ParseFromScroll", pluginDefinitionMap, config, cwd)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// ParseFromScroll indicates an expected call of ParseFromScroll.
-func (mr *MockPluginManagerInterfaceMockRecorder) ParseFromScroll(pluginDefinitionMap, config, cwd any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ParseFromScroll", reflect.TypeOf((*MockPluginManagerInterface)(nil).ParseFromScroll), pluginDefinitionMap, config, cwd)
-}
-
-// RunProcedure mocks base method.
-func (m *MockPluginManagerInterface) RunProcedure(mode, value string) (string, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RunProcedure", mode, value)
-	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// RunProcedure indicates an expected call of RunProcedure.
-func (mr *MockPluginManagerInterfaceMockRecorder) RunProcedure(mode, value any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunProcedure", reflect.TypeOf((*MockPluginManagerInterface)(nil).RunProcedure), mode, value)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Run", reflect.TypeOf((*MockProcedureLauchnerInterface)(nil).Run), cmd)
 }
 
 // MockLogManagerInterface is a mock of LogManagerInterface interface.
@@ -467,100 +287,154 @@ func (mr *MockLogManagerInterfaceMockRecorder) GetStreams() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStreams", reflect.TypeOf((*MockLogManagerInterface)(nil).GetStreams))
 }
 
-// MockProcessManagerInterface is a mock of ProcessManagerInterface interface.
-type MockProcessManagerInterface struct {
+// MockRuntimeBackendInterface is a mock of RuntimeBackendInterface interface.
+type MockRuntimeBackendInterface struct {
 	ctrl     *gomock.Controller
-	recorder *MockProcessManagerInterfaceMockRecorder
+	recorder *MockRuntimeBackendInterfaceMockRecorder
 	isgomock struct{}
 }
 
-// MockProcessManagerInterfaceMockRecorder is the mock recorder for MockProcessManagerInterface.
-type MockProcessManagerInterfaceMockRecorder struct {
-	mock *MockProcessManagerInterface
+// MockRuntimeBackendInterfaceMockRecorder is the mock recorder for MockRuntimeBackendInterface.
+type MockRuntimeBackendInterfaceMockRecorder struct {
+	mock *MockRuntimeBackendInterface
 }
 
-// NewMockProcessManagerInterface creates a new mock instance.
-func NewMockProcessManagerInterface(ctrl *gomock.Controller) *MockProcessManagerInterface {
-	mock := &MockProcessManagerInterface{ctrl: ctrl}
-	mock.recorder = &MockProcessManagerInterfaceMockRecorder{mock}
+// NewMockRuntimeBackendInterface creates a new mock instance.
+func NewMockRuntimeBackendInterface(ctrl *gomock.Controller) *MockRuntimeBackendInterface {
+	mock := &MockRuntimeBackendInterface{ctrl: ctrl}
+	mock.recorder = &MockRuntimeBackendInterfaceMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockProcessManagerInterface) EXPECT() *MockProcessManagerInterfaceMockRecorder {
+func (m *MockRuntimeBackendInterface) EXPECT() *MockRuntimeBackendInterfaceMockRecorder {
 	return m.recorder
 }
 
-// GetRunningProcess mocks base method.
-func (m *MockProcessManagerInterface) GetRunningProcess(commandName string) *domain.Process {
+// Attach mocks base method.
+func (m *MockRuntimeBackendInterface) Attach(commandName, data string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetRunningProcess", commandName)
-	ret0, _ := ret[0].(*domain.Process)
-	return ret0
-}
-
-// GetRunningProcess indicates an expected call of GetRunningProcess.
-func (mr *MockProcessManagerInterfaceMockRecorder) GetRunningProcess(commandName any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRunningProcess", reflect.TypeOf((*MockProcessManagerInterface)(nil).GetRunningProcess), commandName)
-}
-
-// GetRunningProcesses mocks base method.
-func (m *MockProcessManagerInterface) GetRunningProcesses() map[string]*domain.Process {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetRunningProcesses")
-	ret0, _ := ret[0].(map[string]*domain.Process)
-	return ret0
-}
-
-// GetRunningProcesses indicates an expected call of GetRunningProcesses.
-func (mr *MockProcessManagerInterfaceMockRecorder) GetRunningProcesses() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRunningProcesses", reflect.TypeOf((*MockProcessManagerInterface)(nil).GetRunningProcesses))
-}
-
-// Run mocks base method.
-func (m *MockProcessManagerInterface) Run(commandName string, command []string, dir string) (*int, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Run", commandName, command, dir)
-	ret0, _ := ret[0].(*int)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// Run indicates an expected call of Run.
-func (mr *MockProcessManagerInterfaceMockRecorder) Run(commandName, command, dir any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Run", reflect.TypeOf((*MockProcessManagerInterface)(nil).Run), commandName, command, dir)
-}
-
-// RunTty mocks base method.
-func (m *MockProcessManagerInterface) RunTty(comandName string, command []string, dir string) (*int, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RunTty", comandName, command, dir)
-	ret0, _ := ret[0].(*int)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// RunTty indicates an expected call of RunTty.
-func (mr *MockProcessManagerInterfaceMockRecorder) RunTty(comandName, command, dir any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunTty", reflect.TypeOf((*MockProcessManagerInterface)(nil).RunTty), comandName, command, dir)
-}
-
-// WriteStdin mocks base method.
-func (m *MockProcessManagerInterface) WriteStdin(process *domain.Process, data string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "WriteStdin", process, data)
+	ret := m.ctrl.Call(m, "Attach", commandName, data)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// WriteStdin indicates an expected call of WriteStdin.
-func (mr *MockProcessManagerInterfaceMockRecorder) WriteStdin(process, data any) *gomock.Call {
+// Attach indicates an expected call of Attach.
+func (mr *MockRuntimeBackendInterfaceMockRecorder) Attach(commandName, data any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WriteStdin", reflect.TypeOf((*MockProcessManagerInterface)(nil).WriteStdin), process, data)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Attach", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).Attach), commandName, data)
+}
+
+// ExpectedPorts mocks base method.
+func (m *MockRuntimeBackendInterface) ExpectedPorts(dataRoot string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ExpectedPorts", dataRoot, commands, globalPorts)
+	ret0, _ := ret[0].([]domain.RuntimePortStatus)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ExpectedPorts indicates an expected call of ExpectedPorts.
+func (mr *MockRuntimeBackendInterfaceMockRecorder) ExpectedPorts(dataRoot, commands, globalPorts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExpectedPorts", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).ExpectedPorts), dataRoot, commands, globalPorts)
+}
+
+// Name mocks base method.
+func (m *MockRuntimeBackendInterface) Name() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Name")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// Name indicates an expected call of Name.
+func (mr *MockRuntimeBackendInterfaceMockRecorder) Name() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Name", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).Name))
+}
+
+// ReadScrollFile mocks base method.
+func (m *MockRuntimeBackendInterface) ReadScrollFile(scrollRoot string) ([]byte, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReadScrollFile", scrollRoot)
+	ret0, _ := ret[0].([]byte)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReadScrollFile indicates an expected call of ReadScrollFile.
+func (mr *MockRuntimeBackendInterfaceMockRecorder) ReadScrollFile(scrollRoot any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadScrollFile", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).ReadScrollFile), scrollRoot)
+}
+
+// RunCommand mocks base method.
+func (m *MockRuntimeBackendInterface) RunCommand(command ports.RuntimeCommand) (*int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RunCommand", command)
+	ret0, _ := ret[0].(*int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RunCommand indicates an expected call of RunCommand.
+func (mr *MockRuntimeBackendInterfaceMockRecorder) RunCommand(command any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunCommand", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).RunCommand), command)
+}
+
+// Signal mocks base method.
+func (m *MockRuntimeBackendInterface) Signal(commandName, target, signal, dataRoot string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Signal", commandName, target, signal, dataRoot)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Signal indicates an expected call of Signal.
+func (mr *MockRuntimeBackendInterfaceMockRecorder) Signal(commandName, target, signal, dataRoot any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Signal", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).Signal), commandName, target, signal, dataRoot)
+}
+
+// MockRuntimeMaterializerInterface is a mock of RuntimeMaterializerInterface interface.
+type MockRuntimeMaterializerInterface struct {
+	ctrl     *gomock.Controller
+	recorder *MockRuntimeMaterializerInterfaceMockRecorder
+	isgomock struct{}
+}
+
+// MockRuntimeMaterializerInterfaceMockRecorder is the mock recorder for MockRuntimeMaterializerInterface.
+type MockRuntimeMaterializerInterfaceMockRecorder struct {
+	mock *MockRuntimeMaterializerInterface
+}
+
+// NewMockRuntimeMaterializerInterface creates a new mock instance.
+func NewMockRuntimeMaterializerInterface(ctrl *gomock.Controller) *MockRuntimeMaterializerInterface {
+	mock := &MockRuntimeMaterializerInterface{ctrl: ctrl}
+	mock.recorder = &MockRuntimeMaterializerInterfaceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockRuntimeMaterializerInterface) EXPECT() *MockRuntimeMaterializerInterfaceMockRecorder {
+	return m.recorder
+}
+
+// MaterializeScroll mocks base method.
+func (m *MockRuntimeMaterializerInterface) MaterializeScroll(ctx context.Context, artifact, requestedName string) (*ports.RuntimeMaterialization, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MaterializeScroll", ctx, artifact, requestedName)
+	ret0, _ := ret[0].(*ports.RuntimeMaterialization)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// MaterializeScroll indicates an expected call of MaterializeScroll.
+func (mr *MockRuntimeMaterializerInterfaceMockRecorder) MaterializeScroll(ctx, artifact, requestedName any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MaterializeScroll", reflect.TypeOf((*MockRuntimeMaterializerInterface)(nil).MaterializeScroll), ctx, artifact, requestedName)
 }
 
 // MockBroadcastChannelInterface is a mock of BroadcastChannelInterface interface.
@@ -678,135 +552,6 @@ func (m *MockConsoleManagerInterface) GetConsoles() map[string]*domain.Console {
 func (mr *MockConsoleManagerInterfaceMockRecorder) GetConsoles() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetConsoles", reflect.TypeOf((*MockConsoleManagerInterface)(nil).GetConsoles))
-}
-
-// MockProcessMonitorInterface is a mock of ProcessMonitorInterface interface.
-type MockProcessMonitorInterface struct {
-	ctrl     *gomock.Controller
-	recorder *MockProcessMonitorInterfaceMockRecorder
-	isgomock struct{}
-}
-
-// MockProcessMonitorInterfaceMockRecorder is the mock recorder for MockProcessMonitorInterface.
-type MockProcessMonitorInterfaceMockRecorder struct {
-	mock *MockProcessMonitorInterface
-}
-
-// NewMockProcessMonitorInterface creates a new mock instance.
-func NewMockProcessMonitorInterface(ctrl *gomock.Controller) *MockProcessMonitorInterface {
-	mock := &MockProcessMonitorInterface{ctrl: ctrl}
-	mock.recorder = &MockProcessMonitorInterfaceMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockProcessMonitorInterface) EXPECT() *MockProcessMonitorInterfaceMockRecorder {
-	return m.recorder
-}
-
-// AddProcess mocks base method.
-func (m *MockProcessMonitorInterface) AddProcess(pid int32, name string) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "AddProcess", pid, name)
-}
-
-// AddProcess indicates an expected call of AddProcess.
-func (mr *MockProcessMonitorInterfaceMockRecorder) AddProcess(pid, name any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddProcess", reflect.TypeOf((*MockProcessMonitorInterface)(nil).AddProcess), pid, name)
-}
-
-// GetAllProcessesMetrics mocks base method.
-func (m *MockProcessMonitorInterface) GetAllProcessesMetrics() map[string]*domain.ProcessMonitorMetrics {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetAllProcessesMetrics")
-	ret0, _ := ret[0].(map[string]*domain.ProcessMonitorMetrics)
-	return ret0
-}
-
-// GetAllProcessesMetrics indicates an expected call of GetAllProcessesMetrics.
-func (mr *MockProcessMonitorInterfaceMockRecorder) GetAllProcessesMetrics() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAllProcessesMetrics", reflect.TypeOf((*MockProcessMonitorInterface)(nil).GetAllProcessesMetrics))
-}
-
-// GetPsTrees mocks base method.
-func (m *MockProcessMonitorInterface) GetPsTrees() map[string]*domain.ProcessTreeRoot {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetPsTrees")
-	ret0, _ := ret[0].(map[string]*domain.ProcessTreeRoot)
-	return ret0
-}
-
-// GetPsTrees indicates an expected call of GetPsTrees.
-func (mr *MockProcessMonitorInterfaceMockRecorder) GetPsTrees() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPsTrees", reflect.TypeOf((*MockProcessMonitorInterface)(nil).GetPsTrees))
-}
-
-// RemoveProcess mocks base method.
-func (m *MockProcessMonitorInterface) RemoveProcess(name string) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "RemoveProcess", name)
-}
-
-// RemoveProcess indicates an expected call of RemoveProcess.
-func (mr *MockProcessMonitorInterfaceMockRecorder) RemoveProcess(name any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveProcess", reflect.TypeOf((*MockProcessMonitorInterface)(nil).RemoveProcess), name)
-}
-
-// MockTemplateRendererInterface is a mock of TemplateRendererInterface interface.
-type MockTemplateRendererInterface struct {
-	ctrl     *gomock.Controller
-	recorder *MockTemplateRendererInterfaceMockRecorder
-	isgomock struct{}
-}
-
-// MockTemplateRendererInterfaceMockRecorder is the mock recorder for MockTemplateRendererInterface.
-type MockTemplateRendererInterfaceMockRecorder struct {
-	mock *MockTemplateRendererInterface
-}
-
-// NewMockTemplateRendererInterface creates a new mock instance.
-func NewMockTemplateRendererInterface(ctrl *gomock.Controller) *MockTemplateRendererInterface {
-	mock := &MockTemplateRendererInterface{ctrl: ctrl}
-	mock.recorder = &MockTemplateRendererInterfaceMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockTemplateRendererInterface) EXPECT() *MockTemplateRendererInterfaceMockRecorder {
-	return m.recorder
-}
-
-// RenderScrollTemplateFiles mocks base method.
-func (m *MockTemplateRendererInterface) RenderScrollTemplateFiles(templateBase string, templateFiles []string, data any, ouputPath string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RenderScrollTemplateFiles", templateBase, templateFiles, data, ouputPath)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// RenderScrollTemplateFiles indicates an expected call of RenderScrollTemplateFiles.
-func (mr *MockTemplateRendererInterfaceMockRecorder) RenderScrollTemplateFiles(templateBase, templateFiles, data, ouputPath any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RenderScrollTemplateFiles", reflect.TypeOf((*MockTemplateRendererInterface)(nil).RenderScrollTemplateFiles), templateBase, templateFiles, data, ouputPath)
-}
-
-// RenderTemplate mocks base method.
-func (m *MockTemplateRendererInterface) RenderTemplate(templatePath string, data any) (string, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RenderTemplate", templatePath, data)
-	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// RenderTemplate indicates an expected call of RenderTemplate.
-func (mr *MockTemplateRendererInterfaceMockRecorder) RenderTemplate(templatePath, data any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RenderTemplate", reflect.TypeOf((*MockTemplateRendererInterface)(nil).RenderTemplate), templatePath, data)
 }
 
 // MockOciRegistryInterface is a mock of OciRegistryInterface interface.
@@ -1060,49 +805,6 @@ func (m *MockPortServiceInterface) EXPECT() *MockPortServiceInterfaceMockRecorde
 	return m.recorder
 }
 
-// AddPort mocks base method.
-func (m *MockPortServiceInterface) AddPort(port domain.Port) (*domain.AugmentedPort, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AddPort", port)
-	ret0, _ := ret[0].(*domain.AugmentedPort)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// AddPort indicates an expected call of AddPort.
-func (mr *MockPortServiceInterfaceMockRecorder) AddPort(port any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddPort", reflect.TypeOf((*MockPortServiceInterface)(nil).AddPort), port)
-}
-
-// CheckOpen mocks base method.
-func (m *MockPortServiceInterface) CheckOpen(prot int) bool {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CheckOpen", prot)
-	ret0, _ := ret[0].(bool)
-	return ret0
-}
-
-// CheckOpen indicates an expected call of CheckOpen.
-func (mr *MockPortServiceInterfaceMockRecorder) CheckOpen(prot any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CheckOpen", reflect.TypeOf((*MockPortServiceInterface)(nil).CheckOpen), prot)
-}
-
-// GetLastActivity mocks base method.
-func (m *MockPortServiceInterface) GetLastActivity(port int) uint {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetLastActivity", port)
-	ret0, _ := ret[0].(uint)
-	return ret0
-}
-
-// GetLastActivity indicates an expected call of GetLastActivity.
-func (mr *MockPortServiceInterfaceMockRecorder) GetLastActivity(port any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLastActivity", reflect.TypeOf((*MockPortServiceInterface)(nil).GetLastActivity), port)
-}
-
 // GetPorts mocks base method.
 func (m *MockPortServiceInterface) GetPorts() []*domain.AugmentedPort {
 	m.ctrl.T.Helper()
@@ -1115,46 +817,6 @@ func (m *MockPortServiceInterface) GetPorts() []*domain.AugmentedPort {
 func (mr *MockPortServiceInterfaceMockRecorder) GetPorts() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPorts", reflect.TypeOf((*MockPortServiceInterface)(nil).GetPorts))
-}
-
-// MandatoryPortsOpen mocks base method.
-func (m *MockPortServiceInterface) MandatoryPortsOpen() bool {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "MandatoryPortsOpen")
-	ret0, _ := ret[0].(bool)
-	return ret0
-}
-
-// MandatoryPortsOpen indicates an expected call of MandatoryPortsOpen.
-func (mr *MockPortServiceInterfaceMockRecorder) MandatoryPortsOpen() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MandatoryPortsOpen", reflect.TypeOf((*MockPortServiceInterface)(nil).MandatoryPortsOpen))
-}
-
-// RemovePort mocks base method.
-func (m *MockPortServiceInterface) RemovePort(port int) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RemovePort", port)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// RemovePort indicates an expected call of RemovePort.
-func (mr *MockPortServiceInterfaceMockRecorder) RemovePort(port any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemovePort", reflect.TypeOf((*MockPortServiceInterface)(nil).RemovePort), port)
-}
-
-// StartMonitoring mocks base method.
-func (m *MockPortServiceInterface) StartMonitoring(arg0 context.Context, arg1 []string, arg2 uint) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "StartMonitoring", arg0, arg1, arg2)
-}
-
-// StartMonitoring indicates an expected call of StartMonitoring.
-func (mr *MockPortServiceInterfaceMockRecorder) StartMonitoring(arg0, arg1, arg2 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartMonitoring", reflect.TypeOf((*MockPortServiceInterface)(nil).StartMonitoring), arg0, arg1, arg2)
 }
 
 // MockColdStarterHandlerInterface is a mock of ColdStarterHandlerInterface interface.
@@ -1534,56 +1196,4 @@ func (m *MockWatchServiceInterface) Unsubscribe(client chan *[]byte) {
 func (mr *MockWatchServiceInterfaceMockRecorder) Unsubscribe(client any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Unsubscribe", reflect.TypeOf((*MockWatchServiceInterface)(nil).Unsubscribe), client)
-}
-
-// MockNixDependencyServiceInterface is a mock of NixDependencyServiceInterface interface.
-type MockNixDependencyServiceInterface struct {
-	ctrl     *gomock.Controller
-	recorder *MockNixDependencyServiceInterfaceMockRecorder
-	isgomock struct{}
-}
-
-// MockNixDependencyServiceInterfaceMockRecorder is the mock recorder for MockNixDependencyServiceInterface.
-type MockNixDependencyServiceInterfaceMockRecorder struct {
-	mock *MockNixDependencyServiceInterface
-}
-
-// NewMockNixDependencyServiceInterface creates a new mock instance.
-func NewMockNixDependencyServiceInterface(ctrl *gomock.Controller) *MockNixDependencyServiceInterface {
-	mock := &MockNixDependencyServiceInterface{ctrl: ctrl}
-	mock.recorder = &MockNixDependencyServiceInterfaceMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockNixDependencyServiceInterface) EXPECT() *MockNixDependencyServiceInterfaceMockRecorder {
-	return m.recorder
-}
-
-// EnsureNixInstalled mocks base method.
-func (m *MockNixDependencyServiceInterface) EnsureNixInstalled() error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "EnsureNixInstalled")
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// EnsureNixInstalled indicates an expected call of EnsureNixInstalled.
-func (mr *MockNixDependencyServiceInterfaceMockRecorder) EnsureNixInstalled() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnsureNixInstalled", reflect.TypeOf((*MockNixDependencyServiceInterface)(nil).EnsureNixInstalled))
-}
-
-// GetCommand mocks base method.
-func (m *MockNixDependencyServiceInterface) GetCommand(cmd, deps []string) []string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetCommand", cmd, deps)
-	ret0, _ := ret[0].([]string)
-	return ret0
-}
-
-// GetCommand indicates an expected call of GetCommand.
-func (mr *MockNixDependencyServiceInterfaceMockRecorder) GetCommand(cmd, deps any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCommand", reflect.TypeOf((*MockNixDependencyServiceInterface)(nil).GetCommand), cmd, deps)
 }

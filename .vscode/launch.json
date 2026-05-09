@@ -2,94 +2,269 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Serve (scroll-cwd)",
+            "name": "druid: serve",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "console": "integratedTerminal",
-            "program": "${workspaceFolder}/main.go",
+            "program": "${workspaceFolder}/apps/druid",
             "args": [
                 "serve",
-                "--cwd", "${workspaceFolder}/examples/scroll-cwd",
-                "--additional-endpoints", "annotations",
-                "--allow-plugin-errors",
-                "-p", "9190"
+                "--socket",
+                "/tmp/druid-vscode-runtime.sock",
+                "--state-dir",
+                "${workspaceFolder}/.runtime-state",
+                "--runtime",
+                "${input:runtimeBackend}"
             ]
         },
         {
-            "name": "Serve (minecraft)",
+            "name": "druid: validate",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "console": "integratedTerminal",
-            "program": "${workspaceFolder}/main.go",
+            "program": "${workspaceFolder}/apps/druid",
             "args": [
-                "serve",
-                "--cwd", "${workspaceFolder}/examples/minecraft",
-                "--additional-endpoints", "annotations",
-                "--allow-plugin-errors",
-                "-p", "9190"
+                "validate",
+                "--strict",
+                "${workspaceFolder}/${input:scrollPath}"
             ]
         },
         {
-            "name": "Run (scroll-cwd)",
+            "name": "druid: update",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "console": "integratedTerminal",
-            "program": "${workspaceFolder}/main.go",
+            "program": "${workspaceFolder}/apps/druid",
+            "cwd": "${workspaceFolder}/${input:scrollPath}",
             "args": [
+                "update",
+                "${input:artifactRef}",
+                "${workspaceFolder}/${input:scrollPath}"
+            ]
+        },
+        {
+            "name": "druid: app_version",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/apps/druid",
+            "cwd": "${workspaceFolder}/${input:scrollPath}",
+            "args": [
+                "app_version"
+            ]
+        },
+        {
+            "name": "druid: version",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/apps/druid",
+            "args": [
+                "version"
+            ]
+        },
+        {
+            "name": "druid-client: login",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/apps/druid-client",
+            "cwd": "${workspaceFolder}",
+            "args": [
+                "login",
+                "--host",
+                "${input:registryHost}",
+                "--user",
+                "${input:registryUser}",
+                "--password",
+                "${input:registryPassword}"
+            ]
+        },
+        {
+            "name": "druid-client: pull",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/apps/druid-client",
+            "args": [
+                "pull",
+                "${input:artifactRef}",
+                "${workspaceFolder}/${input:scrollPath}"
+            ]
+        },
+        {
+            "name": "druid-client: push",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/apps/druid-client",
+            "args": [
+                "push",
+                "${input:artifactRef}",
+                "${workspaceFolder}/${input:scrollPath}"
+            ]
+        },
+        {
+            "name": "druid-client: push category",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/apps/druid-client",
+            "args": [
+                "push",
+                "category",
+                "${input:artifactRef}",
+                "${input:categoryName}",
+                "${workspaceFolder}/${input:scrollPath}"
+            ]
+        },
+        {
+            "name": "druid-client: create",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/apps/druid-client",
+            "cwd": "${workspaceFolder}",
+            "args": [
+                "--daemon-socket",
+                "/tmp/druid-vscode-runtime.sock",
+                "create",
+                "--state-dir",
+                "${workspaceFolder}/.runtime-state",
+                "${input:artifactPath}"
+            ]
+        },
+        {
+            "name": "druid-client: register",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/apps/druid-client",
+            "args": [
+                "--daemon-socket",
+                "/tmp/druid-vscode-runtime.sock",
+                "register",
+                "${workspaceFolder}/${input:scrollPath}"
+            ]
+        },
+        {
+            "name": "druid-client: list",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/apps/druid-client",
+            "args": [
+                "--daemon-socket",
+                "/tmp/druid-vscode-runtime.sock",
+                "list"
+            ]
+        },
+        {
+            "name": "druid-client: describe",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/apps/druid-client",
+            "args": [
+                "--daemon-socket",
+                "/tmp/druid-vscode-runtime.sock",
+                "describe",
+                "${input:scrollId}"
+            ]
+        },
+        {
+            "name": "druid-client: ports",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/apps/druid-client",
+            "args": [
+                "--daemon-socket",
+                "/tmp/druid-vscode-runtime.sock",
+                "ports",
+                "${input:scrollId}"
+            ]
+        },
+        {
+            "name": "druid-client: run",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/apps/druid-client",
+            "args": [
+                "--daemon-socket",
+                "/tmp/druid-vscode-runtime.sock",
                 "run",
-                "--cwd", "${workspaceFolder}/examples/scroll-cwd",
-                "start"
+                "${input:scrollId}",
+                "${input:commandName}"
             ]
         },
         {
-            "name": "Registry Push (scroll-cwd)",
+            "name": "druid-client: delete",
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/main.go",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/apps/druid-client",
             "args": [
-                "registry", "push",
-                "--cwd", "${workspaceFolder}/examples/scroll-cwd"
+                "--daemon-socket",
+                "/tmp/druid-vscode-runtime.sock",
+                "delete",
+                "${input:scrollId}"
             ]
         },
         {
-            "name": "Registry Push (arg) ",
+            "name": "druid-client: attach",
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/main.go",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/apps/druid-client",
             "args": [
-                "registry", "push","examples/scroll-cwd"
+                "--daemon-socket",
+                "/tmp/druid-vscode-runtime.sock",
+                "attach",
+                "${input:scrollId}",
+                "${input:consoleName}"
             ]
         },
         {
-            "name": "Registry Pull (scroll-cwd-pull)",
+            "name": "druid-coldstarter: run",
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/main.go",
+            "console": "integratedTerminal",
+            "program": "${workspaceFolder}/apps/druid-coldstarter",
             "args": [
-                "registry", "pull",
-                "--full",
-                "--cwd", "${workspaceFolder}/examples/scroll-cwd-pull",
-                "artifacts.druid.gg/druid-team/scroll-minecraft-forge:1.20.1-test"
+                "--runtime-config",
+                "${workspaceFolder}/${input:scrollPath}/data/.druid/runtime.json",
+                "--status-file",
+                "coldstart/status.json"
             ]
         },
         {
-            "name": "Registry Login",
+            "name": "Test Current File",
             "type": "go",
             "request": "launch",
-            "mode": "debug",
-            "program": "${workspaceFolder}/main.go",
-            "args": [
-                "registry", "login",
-                "--host", "artifacts.druid.gg",
-                "-u", "$REGISTRY_USER",
-                "-p", "$REGISTRY_PASS"
-            ]
+            "mode": "test",
+            "program": "${file}",
+            "args": [],
+            "showLog": true
         },
         {
             "name": "Remote Attach",
@@ -101,15 +276,83 @@
             "port": 2345,
             "host": "127.0.0.1",
             "debugAdapter": "legacy"
+        }
+    ],
+    "inputs": [
+        {
+            "id": "runtimeBackend",
+            "type": "pickString",
+            "description": "Runtime backend",
+            "options": [
+                "docker"
+            ],
+            "default": "docker"
         },
         {
-            "name": "Test Current File",
-            "type": "go",
-            "request": "launch",
-            "mode": "test",
-            "program": "${file}",
-            "args": [],
-            "showLog": true
+            "id": "scrollPath",
+            "type": "pickString",
+            "description": "Scroll directory",
+            "options": [
+                "examples/jobs",
+                "examples/static-web",
+                "examples/minecraft",
+                "examples/mysql"
+            ],
+            "default": "examples/jobs"
+        },
+        {
+            "id": "artifactPath",
+            "type": "promptString",
+            "description": "Artifact reference or local scroll path",
+            "default": "examples/jobs"
+        },
+        {
+            "id": "artifactRef",
+            "type": "promptString",
+            "description": "Artifact reference",
+            "default": "ghcr.io/druid-examples/jobs:1.0"
+        },
+        {
+            "id": "scrollId",
+            "type": "promptString",
+            "description": "Runtime scroll id",
+            "default": "jobs"
+        },
+        {
+            "id": "commandName",
+            "type": "promptString",
+            "description": "Command name",
+            "default": "report"
+        },
+        {
+            "id": "consoleName",
+            "type": "promptString",
+            "description": "Console name",
+            "default": "report"
+        },
+        {
+            "id": "categoryName",
+            "type": "promptString",
+            "description": "Registry category name",
+            "default": "docs"
+        },
+        {
+            "id": "registryHost",
+            "type": "promptString",
+            "description": "Registry host",
+            "default": "ghcr.io"
+        },
+        {
+            "id": "registryUser",
+            "type": "promptString",
+            "description": "Registry username",
+            "default": ""
+        },
+        {
+            "id": "registryPassword",
+            "type": "promptString",
+            "description": "Registry password/token",
+            "default": ""
         }
     ]
 }

@@ -42,15 +42,13 @@ jobs:
           go-version: "^1.24"
       - run: make build
         name: Build
-      - run: make build-plugins
-        name: Build Plugins
       - uses: actions/upload-artifact@v4
         with:
           name: build-artifacts
           path: |
             bin/druid
-            bin/druid_rcon
-            bin/druid_rcon_web_rust
+            bin/druid-client
+            bin/druid-coldstarter
             .docker/entrypoint.sh
             .docker/druid-install-command.sh
 
@@ -76,8 +74,8 @@ jobs:
           prerelease: true
           files: |
             bin/druid
-            bin/druid_rcon
-            bin/druid_rcon_web_rust
+            bin/druid-client
+            bin/druid-coldstarter
             .docker/entrypoint.sh
             .docker/druid-install-command.sh
 

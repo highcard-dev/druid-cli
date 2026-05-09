@@ -1,0 +1,47 @@
+name: ghcr.io/druid-examples/mysql
+desc: MySQL server using commands as runtime units
+version: 0.1.0
+app_version: "8.4"
+
+ports:
+  - name: mysql
+    protocol: tcp
+    port: 3306
+    mandatory: true
+
+serve: "start"
+commands:
+  start:
+    run: restart
+    procedures:
+      - image: mysql:8.4
+        expectedPorts:
+          - name: mysql
+            keepAliveTraffic: 1b/5m
+        env:
+          MYSQL_DATABASE: app
+          MYSQL_USER: app
+          MYSQL_PASSWORD: from-secret:mysql-password
+          MYSQL_ROOT_PASSWORD: from-secret:mysql-root-password
+        mounts:
+          - path: /var/lib/mysql
+            sub_path: mysql
+
+  backup:
+    run: always
+    procedures:
+      - image: mysql:8.4
+        command:
+          - sh
+          - -c
+          - MYSQL_PWD=$(cat /run/secrets/mysql-root-password) mysqldump -h start -u root --all-databases > /backup/dump.sql
+        mounts:
+          - path: /backup
+            sub_path: backups
+
+  stop:
+    run: always
+    procedures:
+      - type: signal
+        target: start
+        signal: SIGTERM

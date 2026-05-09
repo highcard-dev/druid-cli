@@ -1,2 +1,10 @@
 examples
 __debug_bin*
+.git
+.runtime-state
+bin
+dist
+tmp
+*.db
+*.sock
+.DS_Store

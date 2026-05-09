@@ -1,78 +1,69 @@
-name: registry-1.docker.io/highcard/scroll-minecraft-spigot
-desc: Minecraft Spigot
-version: 0.0.1
+name: ghcr.io/druid-examples/minecraft
+desc: Minecraft server using commands as runtime units
+version: 0.1.0
 app_version: 1.20.4
-keepAlivePPM: 5
+
 ports:
   - name: minecraft
     protocol: tcp
     port: 25565
-    sleep_handler: packet_handler/minecraft.lua
+    sleep_handler: generic
     mandatory: true
-  - name: query
-    protocol: udp
-    sleep_handler: packet_handler/query.lua
-    vars:
-      - name: GameName
-        value: "ARK: Survival Evolved"
-      - name: GameSteamFolder
-        value: ark_survival_evolved
-      - name: GameSteamId
-        value: "0"
-      - name: MapName
-        value: server idle
-      - name: ServerListName
-        value: "⏸️ Druid Gameserver (idle) - Start server by joining"
-      - name: ServerListNameStarting
-        value: "▶️ Druid Gameserver (starting) - %ds"
-  - name: main
-    protocol: udp
 
 serve: "start"
 commands:
+  install:
+    run: once
+    procedures:
+      - image: eclipse-temurin:21-jre
+        mounts:
+          - path: /server
+        working_dir: /server
+        command:
+          - sh
+          - -c
+          - >-
+            curl -fsSL -o server.jar
+            https://piston-data.mojang.com/v1/objects/8dd1a28015f51b1803213892b50b7b4fc76e594d/server.jar
+            && echo eula=true > eula.txt
+
   start:
     needs: [install]
     run: restart
-    dependencies: [jdk17]
     procedures:
-      - mode: exec
-        data:
-          - java
-          - -version
-      - mode: exec
-        id: start-process
-        data:
+      - id: coldstart
+        image: druid-coldstarter:local
+        expectedPorts:
+          - name: minecraft
+            keepAliveTraffic: 10kb/5m
+        mounts:
+          - path: /runtime
+        command:
+          - druid-coldstarter
+          - --runtime-config
+          - /runtime/.druid/runtime.json
+          - --status-file
+          - .coldstarter-finished.json
+
+      - id: start
+        image: eclipse-temurin:21-jre
+        expectedPorts:
+          - name: minecraft
+            keepAliveTraffic: 10kb/5m
+        mounts:
+          - path: /server
+        working_dir: /server
+        command:
           - java
           - -Xmx1024M
           - -Xms1024M
           - -jar
-          - spigot.jar
+          - server.jar
           - nogui
+
   stop:
+    run: always
     procedures:
-      - mode: stdin
-        data:
-          - start-process
-          - stop
-  install:
-    run: once
-    procedures:
-      - mode: exec
-        data:
-          - wget
-          - -O
-          - spigot.jar
-          - https://launcher.mojang.com/v1/objects/8dd1a28015f51b1803213892b50b7b4fc76e594d/server.jar
-      - mode: exec
-        data:
-          - bash
-          - -c
-          - echo eula=true > eula.txt
-  restart:
-    procedures:
-      - mode: command
-        data:
-          - stop
-      - mode: command
-        data:
-          - start
+      - type: signal
+        target: start
+        signal: SIGTERM

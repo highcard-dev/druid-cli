@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 set -e
-SD="./"
 input=$@
 
 # Global args derived from envs that apply to multiple commands
@@ -16,123 +15,26 @@ then
     global_args+=("--config=$DRUID_CONFIG")
 fi
 
-# Migrate legacy .scroll layout:
-#   Before: .scroll/<scroll files> + <serverfiles>
-#   After:  <scroll files> + data/<serverfiles>
-if [ -d "${SD}.scroll" ]; then
-    echo "Migrating legacy .scroll layout..."
-    mkdir -p "${SD}data"
-    for item in "${SD}"* "${SD}".[!.]*; do
-        [ -e "$item" ] || continue
-        name=$(basename "$item")
-        [ "$name" != "data" ] && [ "$name" != ".scroll" ] && mv "$item" "${SD}data/"
-    done
-    mv "${SD}.scroll"/* "${SD}"
-    rm -rf "${SD}.scroll"
-    echo "Legacy migration complete"
-fi
-
 echo "Druid Version: $(druid version)"
 
 if [ ! -z "${DRUID_REGISTRY_HOST}" ] && [ ! -z "${DRUID_REGISTRY_USER}" ] && [ ! -z "${DRUID_REGISTRY_PASSWORD}" ];
 then
     echo "Logging into registry ${DRUID_REGISTRY_HOST}"
-    druid registry login --host "${DRUID_REGISTRY_HOST}" -u "${DRUID_REGISTRY_USER}" -p "${DRUID_REGISTRY_PASSWORD}"
+    druid login --host "${DRUID_REGISTRY_HOST}" -u "${DRUID_REGISTRY_USER}" -p "${DRUID_REGISTRY_PASSWORD}"
 fi
 
-if [ "${ENSURE_NIX}" = "true" ];
-then
-    if [ ! -e "$HOME/.nix-profile" ];
-    then
-        echo "Installing Nix package manager"
-        sh <(curl --proto '=https' --tlsv1.2 -L https://nixos.org/nix/install) --no-daemon
-        echo "Nix installed"
-    fi
-    nix-channel --update
-fi
-
-#Check if we should serve as default or when only artifact is specified
-if [ -z "$input" ] || [[ $input =~ ([^/]+)/([^:]+):([^/]+) ]] &&  [[ $input != *" "* ]]; then    artifact="${input}"
-    if [ -z "${artifact}" ];
-    then
-        artifact=$DRUID_SCROLL_ARTIFACT
-    fi
-
-    echo "Artifact: $artifact"
-
-    #Update command
-    if [ "${DRUID_AUTO_UPDATE}" = "true" ] && [ -f "${SD}/scroll.yaml" ];
-    then
-        echo "Updating artifact"
-
-        # Build args for `druid update` so that global envs apply as well
-        update_args=(update "${global_args[@]}")
-
-        druid "${update_args[@]}"
-        echo "Updated artifact"
-    fi
-
-
-    #ignore-version-check otherwise we have missmatch after update
-    args=(serve --ignore-version-check --additional-endpoints annotations)
-
-    if [ ! -z "${artifact}" ];
-    then
-        args+=($artifact)
-    fi
-
-    # Map envs to args (--cwd = scroll dir, --config = path to .druid.yaml)
-    if [ ! -z "${DRUID_JWKS_SERVER}" ];
-    then
-        args+=("--jwks-server" "${DRUID_JWKS_SERVER}")
-    fi
-    
-    if [ ! -z "${DRUID_USER_ID}" ];
-    then
-        args+=("--user-id" "${DRUID_USER_ID}")
-    fi
+# Serve as default when no command is provided.
+if [ -z "$input" ]; then
+    args=(serve)
 
     if [ ! -z "${DRUID_PORT}" ];
     then
+        args+=("--tcp")
         args+=("--port" "${DRUID_PORT}")
-    fi
-
-    if [ ! -z "${DRUID_IDLE}" ];
-    then
-        args+=("--idle=$DRUID_IDLE")
-    fi
-    if [ ! -z "${DRUID_WATCH_PORTS}" ];
-    then
-        args+=("--watch-ports=$DRUID_WATCH_PORTS")
-    fi
-
-    if [ ! -z "${DRUID_WATCH_PORTS_INTERFACES}" ];
-    then
-        args+=("--watch-ports-interfaces" "${DRUID_WATCH_PORTS_INTERFACES}")
-    fi
-
-    if [ ! -z "${DRUID_COLDSTARTER}" ];
-    then
-        args+=("--coldstarter=$DRUID_COLDSTARTER")
-    fi
-
-    if [ ! -z "${DRUID_INIT_SNAPSHOT_URL}" ];
-    then
-        args+=("--init-snapshot-url=$DRUID_INIT_SNAPSHOT_URL")
-    fi
-
-    if [ ! -z "${DRUID_SKIP_ARTIFACT_DOWNLOAD}" ];
-    then
-        args+=("--skip-artifact-download")
     fi
 
     # Reuse global args (cwd/config) for serve as well
     args+=("${global_args[@]}")
-
-    if [ ! -z "${PPROF_BIND}" ];
-    then
-        args+=("--pprof=$PPROF_BIND")
-    fi
         
     echo "Running druid with args from env: ${args[@]}"
     exec druid "${args[@]}"
