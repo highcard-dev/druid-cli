@@ -62,6 +62,7 @@ func TestQueueManager(t *testing.T) {
 			queueManager := services.NewQueueManager(scrollService, procedureLauncher)
 
 			exitCode := 0
+			runtimeBackend.EXPECT().Name().Return("docker").AnyTimes()
 			runtimeBackend.EXPECT().RunCommand(gomock.Any()).Return(&exitCode, nil).Times(testCase.AccualExecution)
 
 			scrollService.EXPECT().GetCommand("test").Return(&domain.CommandInstructionSet{
@@ -159,6 +160,7 @@ func TestQueueManager(t *testing.T) {
 		queueManager := services.NewQueueManager(scrollService, procedureLauncher)
 
 		exitCode := 0
+		runtimeBackend.EXPECT().Name().Return("docker").AnyTimes()
 		runtimeBackend.EXPECT().RunCommand(gomock.Any()).Return(&exitCode, nil).Times(4)
 
 		scrollService.EXPECT().GetCommand("test").Return(&domain.CommandInstructionSet{

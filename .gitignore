@@ -6,6 +6,8 @@
 druid**
 !apps/
 !apps/**
+!config/
+!config/**
 dlv.log
 
 .DS_Store

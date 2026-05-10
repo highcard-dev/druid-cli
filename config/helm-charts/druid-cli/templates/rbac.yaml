@@ -1,0 +1,41 @@
+{{- $clusterWide := eq .Values.runtime.namespaces.mode "all" -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: {{ ternary "ClusterRole" "Role" $clusterWide }}
+metadata:
+  name: {{ include "druid-cli.fullname" . }}
+  labels:
+    {{- include "druid-cli.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims", "services", "pods"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: {{ ternary "ClusterRoleBinding" "RoleBinding" $clusterWide }}
+metadata:
+  name: {{ include "druid-cli.fullname" . }}
+  labels:
+    {{- include "druid-cli.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: {{ ternary "ClusterRole" "Role" $clusterWide }}
+  name: {{ include "druid-cli.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "druid-cli.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}

@@ -119,6 +119,14 @@ func (p *Procedure) IsSignal() bool {
 	return p.Kind() == ProcedureTypeSignal
 }
 
+func ProcedureName(commandName string, idx int, procedure *Procedure) string {
+	name := fmt.Sprintf("%s.%d", commandName, idx)
+	if procedure != nil && procedure.Id != nil {
+		name = *procedure.Id
+	}
+	return name
+}
+
 func (p *Procedure) hasContainerFields() bool {
 	return p.Image != "" ||
 		len(p.Command) > 0 ||

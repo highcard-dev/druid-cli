@@ -10,14 +10,16 @@ func TestRootCommandDoesNotExposeOCICommands(t *testing.T) {
 	}
 }
 
-func TestServeCommandIsSocketOnly(t *testing.T) {
+func TestServeCommandExposesRuntimeListeners(t *testing.T) {
 	for _, name := range []string{"tcp", "port"} {
 		if flag := ServeCommand.Flags().Lookup(name); flag != nil {
 			t.Fatalf("druid serve should not expose --%s", name)
 		}
 	}
-	if flag := ServeCommand.Flags().Lookup("socket"); flag == nil {
-		t.Fatal("druid serve should expose --socket")
+	for _, name := range []string{"socket", "listen", "public-listen", "internal-token"} {
+		if flag := ServeCommand.Flags().Lookup(name); flag == nil {
+			t.Fatalf("druid serve should expose --%s", name)
+		}
 	}
 }
 

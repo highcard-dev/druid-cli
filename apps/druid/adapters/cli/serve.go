@@ -27,6 +27,9 @@ var k8sPullImage string
 var k8sRegistrySecret string
 var hubbleRelayAddr string
 var k8sKubeconfig string
+var runtimeListen string
+var runtimePublicListen string
+var runtimeInternalToken string
 
 var ServeCommand = &cobra.Command{
 	Use:   "serve",
@@ -41,6 +44,9 @@ func init() {
 	ServeCommand.Flags().StringVar(&runtimeSocket, "socket", utils.DefaultRuntimeSocketPath(), "Runtime daemon Unix socket path")
 	ServeCommand.Flags().StringSliceVar(&jwksUrls, "jwks-server", nil, "JWKS servers to authenticate requests against. Can be comma-separated or set multiple times")
 	ServeCommand.Flags().StringVarP(&userId, "user-id", "u", "", "Allowed user ID. When JWKS authentication is enabled, checks claims.sub of the JWT token")
+	ServeCommand.Flags().StringVar(&runtimeListen, "listen", "", "Optional management HTTP listen address, for example :8081")
+	ServeCommand.Flags().StringVar(&runtimePublicListen, "public-listen", "", "Optional public dashboard HTTP listen address, for example :8082")
+	ServeCommand.Flags().StringVar(&runtimeInternalToken, "internal-token", "", "Optional bearer token required for management HTTP API requests")
 	ServeCommand.Flags().StringVar(&runtimeStateDir, "state-dir", "", "Runtime state directory (default: ~/.druid/runtime)")
 	ServeCommand.Flags().StringVar(&runtimeBackend, "runtime", "docker", "Default runtime backend. Valid values: docker, kubernetes")
 	ServeCommand.Flags().StringVar(&k8sNamespace, "k8s-namespace", "", "Kubernetes namespace for runtime resources (default: service account namespace or DRUID_K8S_NAMESPACE)")
@@ -76,17 +82,64 @@ func runRuntimeDaemon() error {
 		return err
 	}
 
-	app := fiber.New(fiber.Config{DisableStartupMessage: true})
-	runtimehandlers.RegisterRoutes(app, runtimehandlers.RouteHandlers{
+	if runtimeInternalToken == "" {
+		runtimeInternalToken = os.Getenv("DRUID_INTERNAL_TOKEN")
+	}
+	handlers := runtimehandlers.RouteHandlers{
 		Server: runtimehandlers.NewRuntimeServer(
 			runtimehandlers.NewHealthHandler(),
-			runtimehandlers.NewScrollHandler(supervisor),
+			runtimehandlers.NewScrollHandler(supervisor, consoleService, logManager),
 		),
-		Websocket: runtimehandlers.NewWebsocketHandler(consoleService),
+		Websocket:  runtimehandlers.NewWebsocketHandler(consoleService),
 		Authorizer: authorizer,
-	})
+	}
 
-	return listenRuntimeDaemon(app, store.StateDir())
+	managementApp := fiber.New(fiber.Config{DisableStartupMessage: true})
+	if runtimeInternalToken != "" {
+		managementApp.Use(func(c *fiber.Ctx) error {
+			path := c.Path()
+			if path == "/health" || path == "/api/v1/health" {
+				return c.Next()
+			}
+			token := strings.TrimPrefix(c.Get("Authorization"), "Bearer ")
+			if token == "" {
+				token = c.Get("X-Druid-Internal-Token")
+			}
+			if token != runtimeInternalToken {
+				return fiber.NewError(fiber.StatusUnauthorized, "invalid internal runtime token")
+			}
+			return c.Next()
+		})
+	}
+	runtimehandlers.RegisterManagementRoutes(managementApp, handlers)
+
+	var publicApp *fiber.App
+	if runtimePublicListen != "" {
+		publicApp = fiber.New(fiber.Config{DisableStartupMessage: true})
+		runtimehandlers.RegisterPublicRoutes(publicApp, handlers)
+	}
+	return listenRuntimeHTTP(managementApp, publicApp, store.StateDir())
+}
+
+func listenRuntimeHTTP(managementApp *fiber.App, publicApp *fiber.App, stateDir string) error {
+	errCh := make(chan error, 2)
+	if runtimeListen != "" {
+		go func() {
+			logger.Log().Info("Starting runtime management listener", zap.String("listen", runtimeListen), zap.String("stateDir", stateDir))
+			errCh <- managementApp.Listen(runtimeListen)
+		}()
+	} else {
+		go func() {
+			errCh <- listenRuntimeDaemon(managementApp, stateDir)
+		}()
+	}
+	if publicApp != nil {
+		go func() {
+			logger.Log().Info("Starting runtime public listener", zap.String("listen", runtimePublicListen), zap.String("stateDir", stateDir))
+			errCh <- publicApp.Listen(runtimePublicListen)
+		}()
+	}
+	return <-errCh
 }
 
 func listenRuntimeDaemon(app *fiber.App, stateDir string) error {

@@ -1,6 +1,7 @@
 package kubernetes
 
 import (
+	"path"
 	"path/filepath"
 	"sort"
 
@@ -46,10 +47,44 @@ func pullJobSpec(namespace string, jobName string, pvc string, image string, art
 	return job
 }
 
+func backupJobSpec(namespace string, jobName string, pvc string, image string, artifact string, registrySecret string, registryPlainHTTP bool) *batchv1.Job {
+	command := []string{"druid-client", "push", artifact, "/scroll"}
+	job := helperJobSpec(namespace, jobName, pvc, image, command, registrySecret, map[string]string{
+		labelComponent: "backup",
+	})
+	if registryPlainHTTP {
+		job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{Name: "DRUID_REGISTRY_PLAIN_HTTP", Value: "true"})
+	}
+	return job
+}
+
 func readScrollJobSpec(namespace string, jobName string, pvc string, helperImage string) *batchv1.Job {
 	return helperJobSpec(namespace, jobName, pvc, helperImage, []string{"cat", "/scroll/scroll.yaml"}, "", map[string]string{
 		labelComponent: "read-scroll",
 	})
+}
+
+func readDataFileJobSpec(namespace string, jobName string, pvc string, helperImage string, relativePath string) *batchv1.Job {
+	return helperJobSpec(namespace, jobName, pvc, helperImage, []string{"cat", path.Join("/scroll", relativePath)}, "", map[string]string{
+		labelComponent: "read-data-file",
+	})
+}
+
+func writeDataFileJobSpec(namespace string, jobName string, pvc string, helperImage string, relativePath string, encodedData string) *batchv1.Job {
+	job := helperJobSpec(namespace, jobName, pvc, helperImage, []string{
+		"sh",
+		"-c",
+		`mkdir -p "$(dirname "$1")" && printf '%s' "$DRUID_DATA_FILE_B64" | base64 -d > "$1"`,
+		"sh",
+		path.Join("/scroll", relativePath),
+	}, "", map[string]string{
+		labelComponent: "write-data-file",
+	})
+	job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{
+		Name:  "DRUID_DATA_FILE_B64",
+		Value: encodedData,
+	})
+	return job
 }
 
 func copyPVCJobSpec(namespace string, jobName string, sourcePVC string, targetPVC string, helperImage string) *batchv1.Job {
@@ -85,6 +120,14 @@ func copyPVCJobSpec(namespace string, jobName string, sourcePVC string, targetPV
 	}
 }
 
+func replacePVCJobSpec(namespace string, jobName string, sourcePVC string, targetPVC string, helperImage string) *batchv1.Job {
+	job := copyPVCJobSpec(namespace, jobName, sourcePVC, targetPVC, helperImage)
+	job.Spec.Template.Spec.Containers[0].Command = []string{"sh", "-c", "find /final -mindepth 1 -maxdepth 1 -exec rm -rf {} + && cp -a /stage/. /final/"}
+	job.Labels[labelComponent] = "restore-scroll"
+	job.Spec.Template.Labels[labelComponent] = "restore-scroll"
+	return job
+}
+
 func helperJobSpec(namespace string, jobName string, pvc string, image string, command []string, registrySecret string, labels map[string]string) *batchv1.Job {
 	allLabels := map[string]string{
 		labelManagedBy: "druid",
@@ -118,7 +161,7 @@ func helperJobSpec(namespace string, jobName string, pvc string, image string, c
 	}
 }
 
-func procedureJobSpec(namespace string, dataRoot string, procedureName string, procedure *domain.Procedure, registrySecret string) (*batchv1.Job, error) {
+func procedureJobSpec(namespace string, dataRoot string, procedureName string, procedure *domain.Procedure, env map[string]string, registrySecret string) (*batchv1.Job, error) {
 	_, pvc, err := parseRef(dataRoot)
 	if err != nil {
 		return nil, err
@@ -135,7 +178,7 @@ func procedureJobSpec(namespace string, dataRoot string, procedureName string, p
 		TTY:             procedure.TTY,
 		Stdin:           procedure.TTY,
 		ImagePullPolicy: corev1.PullIfNotPresent,
-		Env:             envVars(procedure.Env),
+		Env:             envVars(env),
 		VolumeMounts:    volumeMounts(procedure.Mounts),
 	}
 	podSpec := corev1.PodSpec{
@@ -162,7 +205,7 @@ func procedureJobSpec(namespace string, dataRoot string, procedureName string, p
 	}, nil
 }
 
-func procedureStatefulSetSpec(namespace string, dataRoot string, procedureName string, procedure *domain.Procedure, registrySecret string) (*appsv1.StatefulSet, error) {
+func procedureStatefulSetSpec(namespace string, dataRoot string, procedureName string, procedure *domain.Procedure, env map[string]string, registrySecret string) (*appsv1.StatefulSet, error) {
 	_, pvc, err := parseRef(dataRoot)
 	if err != nil {
 		return nil, err
@@ -179,7 +222,7 @@ func procedureStatefulSetSpec(namespace string, dataRoot string, procedureName s
 		TTY:             procedure.TTY,
 		Stdin:           procedure.TTY,
 		ImagePullPolicy: corev1.PullIfNotPresent,
-		Env:             envVars(procedure.Env),
+		Env:             envVars(env),
 		VolumeMounts:    volumeMounts(procedure.Mounts),
 	}
 	podSpec := corev1.PodSpec{

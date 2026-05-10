@@ -37,7 +37,7 @@ func (a *App) registerCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			scroll, err := service.Create(cmd.Context(), name, scrollRoot, scrollRoot, scrollRoot)
+			scroll, err := service.Create(cmd.Context(), name, scrollRoot, scrollRoot, scrollRoot, true)
 			if err != nil {
 				return err
 			}

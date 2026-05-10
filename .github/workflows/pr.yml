@@ -20,8 +20,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "^1.24"
-      - run: make test-integration-docker
-        name: Run integration tests inside Docker
+      - uses: azure/setup-kubectl@v4
+      - run: make test-integration
+        name: Run CLI backend integration tests
 
   validate-api:
     runs-on: ubuntu-latest

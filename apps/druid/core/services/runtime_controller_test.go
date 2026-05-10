@@ -105,6 +105,53 @@ func TestRuntimeSessionHydrateSkipsMissingServe(t *testing.T) {
 	}
 }
 
+func TestRuntimeSessionHydrateDropsStaleCommandStatus(t *testing.T) {
+	session := newRuntimeSessionForTest(t, map[string]domain.LockStatus{
+		"missing": {Status: domain.ScrollLockStatusDone},
+	}, cachedScrollYAML(""))
+
+	if err := session.Hydrate(); err != nil {
+		t.Fatal(err)
+	}
+
+	updated, err := session.store.GetScroll(session.runtimeScroll.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := updated.Commands["missing"]; ok {
+		t.Fatalf("stale command was not removed: %#v", updated.Commands)
+	}
+}
+
+func TestRuntimeSessionHydrateDoesNotRequeueRunningPersistentServe(t *testing.T) {
+	session := newRuntimeSessionForTest(t, map[string]domain.LockStatus{
+		"start": {Status: domain.ScrollLockStatusDone},
+	}, `name: cached
+desc: Cached scroll
+version: 0.1.0
+app_version: "1.0"
+serve: start
+commands:
+  start:
+    run: persistent
+    procedures:
+      - image: alpine:3.20
+        command: ["true"]
+`)
+	session.runtimeScroll.Status = domain.RuntimeScrollStatusRunning
+	if err := session.store.UpdateScroll(session.runtimeScroll); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := session.Hydrate(); err != nil {
+		t.Fatal(err)
+	}
+
+	if queue := session.queueManager.GetQueue(); len(queue) != 0 {
+		t.Fatalf("queue = %#v, want empty", queue)
+	}
+}
+
 func TestRuntimeSessionAutoStartsServeOnCreatePath(t *testing.T) {
 	session := newRuntimeSessionForTest(t, map[string]domain.LockStatus{}, cachedScrollYAML("start"))
 
@@ -113,6 +160,79 @@ func TestRuntimeSessionAutoStartsServeOnCreatePath(t *testing.T) {
 	}
 
 	assertQueued(t, session, "start")
+}
+
+func TestRuntimeSupervisorEnsureCanCreateWithoutStarting(t *testing.T) {
+	scrollRoot := t.TempDir()
+	dataRoot := scrollRoot
+	if err := os.WriteFile(filepath.Join(scrollRoot, "scroll.yaml"), []byte(cachedScrollYAML("start")), 0644); err != nil {
+		t.Fatal(err)
+	}
+	store := coreservices.NewRuntimeStateStore(t.TempDir())
+	supervisor := NewRuntimeSupervisor(
+		store,
+		coreservices.NewRuntimeScrollManager(store),
+		coreservices.NewConsoleManager(coreservices.NewLogManager()),
+		"docker",
+	)
+
+	runtimeScroll, err := supervisor.Ensure("local", "quiet-scroll", scrollRoot, dataRoot, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if runtimeScroll.Status != domain.RuntimeScrollStatusCreated {
+		t.Fatalf("status = %s, want created", runtimeScroll.Status)
+	}
+	if len(runtimeScroll.Commands) != 0 {
+		t.Fatalf("commands = %#v, want empty", runtimeScroll.Commands)
+	}
+}
+
+func TestRuntimeSupervisorCreateCanCreateWithoutStarting(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "scroll.yaml"), []byte(cachedScrollYAML("start")), 0644); err != nil {
+		t.Fatal(err)
+	}
+	store := coreservices.NewRuntimeStateStore(t.TempDir())
+	supervisor := NewRuntimeSupervisor(
+		store,
+		coreservices.NewRuntimeScrollManager(store),
+		coreservices.NewConsoleManager(coreservices.NewLogManager()),
+		"docker",
+	)
+
+	runtimeScroll, err := supervisor.Create("local", "quiet-create", root, root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if runtimeScroll.Status != domain.RuntimeScrollStatusCreated {
+		t.Fatalf("status = %s, want created", runtimeScroll.Status)
+	}
+	if len(runtimeScroll.Commands) != 0 {
+		t.Fatalf("commands = %#v, want empty", runtimeScroll.Commands)
+	}
+}
+
+func TestRuntimeSessionApplyRoutingPersistsAssignments(t *testing.T) {
+	session := newRuntimeSessionForTest(t, map[string]domain.LockStatus{}, cachedScrollYAML(""))
+
+	updated, err := session.ApplyRouting([]domain.RuntimeRouteAssignment{{
+		Name:       "web-http",
+		PortName:   "http",
+		Host:       "scroll.example.test",
+		PublicPort: 443,
+		URL:        "https://scroll.example.test",
+		Protocol:   "https",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(updated.Routing) != 1 || updated.Routing[0].Host != "scroll.example.test" {
+		t.Fatalf("routing = %#v", updated.Routing)
+	}
 }
 
 func TestDeriveRuntimeScrollStatusTreatsDonePersistentAsRunning(t *testing.T) {

@@ -19,6 +19,17 @@ func NewWebsocketHandler(consoleService *services.ConsoleManager) *WebsocketHand
 
 func (h *WebsocketHandler) AttachConsole(c *websocket.Conn) {
 	consoleID := c.Params("console")
+	if id := c.Params("id"); id != "" {
+		consoleID = id + "/" + consoleID
+	}
+	h.attach(c, consoleID)
+}
+
+func (h *WebsocketHandler) AttachScrollConsole(c *websocket.Conn) {
+	h.AttachConsole(c)
+}
+
+func (h *WebsocketHandler) attach(c *websocket.Conn, consoleID string) {
 	defer c.Close()
 
 	console := h.consoleService.GetConsole(consoleID)

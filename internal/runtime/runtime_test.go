@@ -1,6 +1,7 @@
 package runtime_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -56,6 +57,24 @@ func TestDockerRunCommandBuildsCanonicalMounts(t *testing.T) {
 	}
 }
 
+func TestDockerBuildContainerSpecUsesProvidedRuntimeEnv(t *testing.T) {
+	dataRoot := t.TempDir()
+	spec, err := docker.BuildContainerSpecWithEnv("start", &domain.Procedure{
+		Image: "alpine:3.20",
+		Env: map[string]string{
+			"PROCEDURE_ONLY": "ignored",
+		},
+	}, dataRoot, nil, map[string]string{
+		"DRUID_PORT_HTTP": "8080",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(spec.Env, []string{"DRUID_PORT_HTTP=8080"}) {
+		t.Fatalf("env = %#v", spec.Env)
+	}
+}
+
 func TestDockerRunCommandDefaultsMountSubPathToDataRoot(t *testing.T) {
 	dataRoot := t.TempDir()
 	spec, err := docker.BuildContainerSpec("start", &domain.Procedure{
@@ -105,5 +124,46 @@ func TestDockerReadScrollFile(t *testing.T) {
 	}
 	if string(got) != string(want) {
 		t.Fatalf("scroll yaml = %q, want %q", got, want)
+	}
+}
+
+func TestDockerReadDataFileScopesToDataRoot(t *testing.T) {
+	dataRoot := t.TempDir()
+	want := []byte("bundle")
+	path := filepath.Join(dataRoot, "data", "private", "dist")
+	if err := os.MkdirAll(path, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "app.wasm"), want, 0644); err != nil {
+		t.Fatal(err)
+	}
+	backend := &docker.Backend{}
+	got, err := backend.ReadDataFile(context.Background(), dataRoot, "/data/private/dist/app.wasm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("data file = %q, want %q", got, want)
+	}
+	if _, err := backend.ReadDataFile(context.Background(), dataRoot, "../escape"); err == nil {
+		t.Fatal("expected traversal path to be rejected")
+	}
+}
+
+func TestDockerWriteDataFileScopesToDataRoot(t *testing.T) {
+	dataRoot := t.TempDir()
+	backend := &docker.Backend{}
+	if err := backend.WriteDataFile(context.Background(), dataRoot, "data/private/config.json", []byte("{}")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dataRoot, "data", "private", "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "{}" {
+		t.Fatalf("written data = %q, want {}", got)
+	}
+	if err := backend.WriteDataFile(context.Background(), dataRoot, "../escape", []byte("bad")); err == nil {
+		t.Fatal("expected traversal path to be rejected")
 	}
 }

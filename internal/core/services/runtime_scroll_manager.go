@@ -124,6 +124,9 @@ func MaterializeScrollArtifact(artifact string, scrollRoot string, dataRoot stri
 		if err := materializeLocalArtifact(artifact, scrollRoot); err != nil {
 			return err
 		}
+		if scrollRoot == dataRoot {
+			return os.MkdirAll(filepath.Join(dataRoot, domain.RuntimeDataDir), 0755)
+		}
 		return moveRuntimeData(scrollRoot, dataRoot)
 	}
 	if ociRegistry == nil {
@@ -133,6 +136,9 @@ func MaterializeScrollArtifact(artifact string, scrollRoot string, dataRoot stri
 		return err
 	}
 	if includeData {
+		if scrollRoot == dataRoot {
+			return os.MkdirAll(filepath.Join(dataRoot, domain.RuntimeDataDir), 0755)
+		}
 		return moveRuntimeData(scrollRoot, dataRoot)
 	}
 	return os.MkdirAll(filepath.Join(dataRoot, domain.RuntimeDataDir), 0755)
@@ -160,6 +166,23 @@ func moveRuntimeData(scrollRoot string, dataRoot string) error {
 }
 
 func MoveMaterializedScroll(srcScrollRoot string, srcDataRoot string, dstScrollRoot string, dstDataRoot string) error {
+	if srcScrollRoot == srcDataRoot && dstScrollRoot == dstDataRoot {
+		if localPathExists(dstScrollRoot) {
+			return fmt.Errorf("target scroll root already exists: %s", dstScrollRoot)
+		}
+		if err := os.MkdirAll(filepath.Dir(dstScrollRoot), 0755); err != nil {
+			return err
+		}
+		if err := os.Rename(srcScrollRoot, dstScrollRoot); err != nil {
+			if err := copyDir(srcScrollRoot, dstScrollRoot); err != nil {
+				return err
+			}
+			if err := os.RemoveAll(srcScrollRoot); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	if localPathExists(dstScrollRoot) {
 		return fmt.Errorf("target scroll root already exists: %s", dstScrollRoot)
 	}

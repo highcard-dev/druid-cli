@@ -34,7 +34,7 @@ func NewOpenAPIClient(daemonSocket string) (*OpenAPIClient, error) {
 	return &OpenAPIClient{client: client}, nil
 }
 
-func (c *OpenAPIClient) CreateScroll(ctx context.Context, name string, artifact string, scrollRoot string, dataRoot string) (*api.RuntimeScroll, error) {
+func (c *OpenAPIClient) CreateScroll(ctx context.Context, name string, artifact string, scrollRoot string, dataRoot string, start bool) (*api.RuntimeScroll, error) {
 	var requestName *string
 	if name != "" {
 		requestName = &name
@@ -52,6 +52,7 @@ func (c *OpenAPIClient) CreateScroll(ctx context.Context, name string, artifact 
 		Name:       requestName,
 		ScrollRoot: requestScrollRoot,
 		DataRoot:   requestDataRoot,
+		Start:      &start,
 	})
 	if err != nil {
 		return nil, err
@@ -124,6 +125,53 @@ func (c *OpenAPIClient) GetScrollPorts(ctx context.Context, id string) ([]api.Ru
 		return nil, nil
 	}
 	return *res.JSON200, nil
+}
+
+func (c *OpenAPIClient) StartScroll(ctx context.Context, id string) (*api.RuntimeScroll, error) {
+	res, err := c.client.StartScrollWithResponse(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureStatus(res.StatusCode(), res.Body); err != nil {
+		return nil, err
+	}
+	return res.JSON200, nil
+}
+
+func (c *OpenAPIClient) StopScroll(ctx context.Context, id string) (*api.RuntimeScroll, error) {
+	res, err := c.client.StopScrollWithResponse(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureStatus(res.StatusCode(), res.Body); err != nil {
+		return nil, err
+	}
+	return res.JSON200, nil
+}
+
+func (c *OpenAPIClient) GetScrollRoutingTargets(ctx context.Context, id string) ([]api.RuntimeRoutingTarget, error) {
+	res, err := c.client.GetScrollRoutingTargetsWithResponse(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureStatus(res.StatusCode(), res.Body); err != nil {
+		return nil, err
+	}
+	if res.JSON200 == nil {
+		return nil, nil
+	}
+	return *res.JSON200, nil
+}
+
+func (c *OpenAPIClient) ApplyScrollRouting(ctx context.Context, id string, assignments []api.RuntimeRouteAssignment) (*api.RuntimeScroll, error) {
+	res, err := c.client.ApplyScrollRoutingWithResponse(ctx, id, api.ApplyRoutingRequest{Assignments: assignments})
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureStatus(res.StatusCode(), res.Body); err != nil {
+		return nil, err
+	}
+	return res.JSON200, nil
 }
 
 func ensureStatus(statusCode int, body []byte) error {

@@ -292,6 +292,9 @@ func (sc *QueueManager) RunQueue() {
 				zap.String("command", cmd),
 				zap.Error(err),
 			)
+			sc.mu.Lock()
+			delete(sc.commandQueue, cmd)
+			sc.mu.Unlock()
 			continue
 		}
 

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -58,9 +59,40 @@ func (b *Backend) ReadScrollFile(scrollRoot string) ([]byte, error) {
 	return os.ReadFile(filepath.Join(scrollRoot, "scroll.yaml"))
 }
 
+func (b *Backend) ReadDataFile(_ context.Context, dataRoot string, relativePath string) ([]byte, error) {
+	filePath, err := dataFilePath(dataRoot, relativePath)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(filePath)
+}
+
+func (b *Backend) WriteDataFile(_ context.Context, dataRoot string, relativePath string, data []byte) error {
+	filePath, err := dataFilePath(dataRoot, relativePath)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(filePath, data, 0644)
+}
+
+func dataFilePath(dataRoot string, relativePath string) (string, error) {
+	cleaned := filepath.Clean(strings.TrimPrefix(relativePath, "/"))
+	if cleaned == "." || cleaned == ".." || filepath.IsAbs(cleaned) || strings.HasPrefix(cleaned, ".."+string(os.PathSeparator)) {
+		return "", fmt.Errorf("invalid data file path %q", relativePath)
+	}
+	return filepath.Join(dataRoot, cleaned), nil
+}
+
 func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 	for idx, procedure := range command.Command.Procedures {
-		procedureName := commandProcedureName(command.Name, idx, procedure)
+		procedureName := domain.ProcedureName(command.Name, idx, procedure)
+		env := command.ProcedureEnv[procedureName]
+		if env == nil {
+			env = procedure.Env
+		}
 		if command.Command.Run == domain.RunModePersistent {
 			if procedure.IsSignal() {
 				if err := b.Signal(procedureName, procedure.Target, procedure.Signal, command.DataRoot); err != nil {
@@ -71,12 +103,12 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 			if procedure.Image == "" {
 				return nil, fmt.Errorf("docker runtime procedure %s requires image", procedureName)
 			}
-			if err := b.startPersistentContainer(procedureName, procedure, command.DataRoot, command.GlobalPorts); err != nil {
+			if err := b.startPersistentContainer(runtimeConsoleID(command.ScrollID, procedureName), procedureName, procedure, command.DataRoot, command.GlobalPorts, env); err != nil {
 				return nil, err
 			}
 			continue
 		}
-		exitCode, err := b.runProcedure(procedureName, procedure, command.DataRoot, command.GlobalPorts)
+		exitCode, err := b.runProcedure(runtimeConsoleID(command.ScrollID, procedureName), procedureName, procedure, command.DataRoot, command.GlobalPorts, env)
 		if err != nil {
 			return exitCode, err
 		}
@@ -90,14 +122,14 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 	return nil, nil
 }
 
-func (b *Backend) runProcedure(procedureName string, procedure *domain.Procedure, dataRoot string, globalPorts []domain.Port) (*int, error) {
+func (b *Backend) runProcedure(consoleID string, procedureName string, procedure *domain.Procedure, dataRoot string, globalPorts []domain.Port, env map[string]string) (*int, error) {
 	if procedure.IsSignal() {
 		return nil, b.Signal(procedureName, procedure.Target, procedure.Signal, dataRoot)
 	}
 	if procedure.Image == "" {
 		return nil, fmt.Errorf("docker runtime procedure %s requires image", procedureName)
 	}
-	return b.runContainer(procedureName, procedure, dataRoot, globalPorts)
+	return b.runContainer(consoleID, procedureName, procedure, dataRoot, globalPorts, env)
 }
 
 func (b *Backend) ExpectedPorts(dataRoot string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
@@ -155,7 +187,45 @@ func (b *Backend) Signal(_ string, target string, signal string, dataRoot string
 	return b.client.ContainerStop(ctx, containerID, options)
 }
 
-func (b *Backend) runContainer(commandName string, procedure *domain.Procedure, dataRoot string, globalPorts []domain.Port) (*int, error) {
+func (b *Backend) StopRuntime(dataRoot string) error {
+	if dataRoot == "" {
+		return fmt.Errorf("data root is required")
+	}
+	ctx := context.Background()
+	items, err := b.client.ContainerList(ctx, container.ListOptions{
+		All:     true,
+		Filters: filters.NewArgs(filters.Arg("label", "druid.data-root-hash="+dataRootHash(dataRoot))),
+	})
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		if err := b.client.ContainerRemove(ctx, item.ID, container.RemoveOptions{Force: true}); err != nil {
+			return err
+		}
+	}
+	b.mu.Lock()
+	for key := range b.containers {
+		delete(b.containers, key)
+	}
+	for key := range b.stdin {
+		delete(b.stdin, key)
+	}
+	b.mu.Unlock()
+	return nil
+}
+
+func (b *Backend) DeleteRuntime(dataRoot string, purgeData bool) error {
+	if err := b.StopRuntime(dataRoot); err != nil {
+		return err
+	}
+	if purgeData {
+		return os.RemoveAll(dataRoot)
+	}
+	return nil
+}
+
+func (b *Backend) runContainer(consoleID string, commandName string, procedure *domain.Procedure, dataRoot string, globalPorts []domain.Port, env map[string]string) (*int, error) {
 	ctx := context.Background()
 	if err := os.MkdirAll(filepath.Join(dataRoot, domain.RuntimeDataDir), 0755); err != nil {
 		return nil, err
@@ -168,7 +238,7 @@ func (b *Backend) runContainer(commandName string, procedure *domain.Procedure, 
 		return nil, err
 	}
 
-	config, hostConfig, err := containerSpec(commandName, procedure, dataRoot, globalPorts)
+	config, hostConfig, err := containerSpec(commandName, procedure, dataRoot, globalPorts, env)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +273,7 @@ func (b *Backend) runContainer(commandName string, procedure *domain.Procedure, 
 	if procedure.TTY {
 		consoleType = domain.ConsoleTypeTTY
 	}
-	console, doneChan := b.consoleManager.AddConsoleWithChannel(commandName, consoleType, "stdin", combined)
+	console, doneChan := b.consoleManager.AddConsoleWithChannel(consoleID, consoleType, "stdin", combined)
 	console.WriteInput = func(data string) error {
 		return b.Attach(commandName, data)
 	}
@@ -242,7 +312,7 @@ func (b *Backend) runContainer(commandName string, procedure *domain.Procedure, 
 	return &exitCode, nil
 }
 
-func (b *Backend) startPersistentContainer(commandName string, procedure *domain.Procedure, dataRoot string, globalPorts []domain.Port) error {
+func (b *Backend) startPersistentContainer(consoleID string, commandName string, procedure *domain.Procedure, dataRoot string, globalPorts []domain.Port, env map[string]string) error {
 	ctx := context.Background()
 	if err := os.MkdirAll(filepath.Join(dataRoot, domain.RuntimeDataDir), 0755); err != nil {
 		return err
@@ -253,7 +323,7 @@ func (b *Backend) startPersistentContainer(commandName string, procedure *domain
 	if err := b.pullImage(ctx, procedure.Image); err != nil {
 		return err
 	}
-	config, hostConfig, err := containerSpec(commandName, procedure, dataRoot, globalPorts)
+	config, hostConfig, err := containerSpec(commandName, procedure, dataRoot, globalPorts, env)
 	if err != nil {
 		return err
 	}
@@ -281,7 +351,7 @@ func (b *Backend) startPersistentContainer(commandName string, procedure *domain
 	if procedure.TTY {
 		consoleType = domain.ConsoleTypeTTY
 	}
-	console, _ := b.consoleManager.AddConsoleWithChannel(commandName, consoleType, "stdin", combined)
+	console, _ := b.consoleManager.AddConsoleWithChannel(consoleID, consoleType, "stdin", combined)
 	console.WriteInput = func(data string) error {
 		return b.Attach(commandName, data)
 	}
@@ -373,7 +443,7 @@ func (w channelWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func containerSpec(commandName string, procedure *domain.Procedure, dataRoot string, globalPorts []domain.Port) (*container.Config, *container.HostConfig, error) {
+func containerSpec(commandName string, procedure *domain.Procedure, dataRoot string, globalPorts []domain.Port, env map[string]string) (*container.Config, *container.HostConfig, error) {
 	if procedure.Image == "" {
 		return nil, nil, errors.New("docker image is required")
 	}
@@ -422,7 +492,7 @@ func containerSpec(commandName string, procedure *domain.Procedure, dataRoot str
 			Image:        procedure.Image,
 			Cmd:          procedure.Command,
 			WorkingDir:   procedure.WorkingDir,
-			Env:          envArgs(procedure.Env),
+			Env:          envArgs(env),
 			ExposedPorts: exposedPorts,
 			AttachStdin:  true,
 			AttachStdout: true,
@@ -430,7 +500,8 @@ func containerSpec(commandName string, procedure *domain.Procedure, dataRoot str
 			OpenStdin:    true,
 			Tty:          procedure.TTY,
 			Labels: map[string]string{
-				"druid.command": commandName,
+				"druid.command":        commandName,
+				"druid.data-root-hash": dataRootHash(dataRoot),
 			},
 		}, &container.HostConfig{
 			Binds:        binds,
@@ -444,12 +515,24 @@ func ContainerName(scrollRoot string, commandName string) string {
 	return fmt.Sprintf("druid-%s-%s", hex.EncodeToString(hash[:])[:10], name)
 }
 
+func dataRootHash(dataRoot string) string {
+	hash := sha1.Sum([]byte(dataRoot))
+	return hex.EncodeToString(hash[:])[:10]
+}
+
 func commandProcedureName(commandName string, idx int, procedure *domain.Procedure) string {
 	procedureName := fmt.Sprintf("%s.%d", commandName, idx)
 	if procedure != nil && procedure.Id != nil {
 		procedureName = *procedure.Id
 	}
 	return procedureName
+}
+
+func runtimeConsoleID(scrollID string, procedureName string) string {
+	if scrollID == "" {
+		return procedureName
+	}
+	return scrollID + "/" + procedureName
 }
 
 func sanitizeContainerName(name string) string {
@@ -489,7 +572,11 @@ type ContainerSpec struct {
 }
 
 func BuildContainerSpec(commandName string, procedure *domain.Procedure, dataRoot string, globalPorts []domain.Port) (*ContainerSpec, error) {
-	config, hostConfig, err := containerSpec(commandName, procedure, dataRoot, globalPorts)
+	return BuildContainerSpecWithEnv(commandName, procedure, dataRoot, globalPorts, procedure.Env)
+}
+
+func BuildContainerSpecWithEnv(commandName string, procedure *domain.Procedure, dataRoot string, globalPorts []domain.Port, env map[string]string) (*ContainerSpec, error) {
+	config, hostConfig, err := containerSpec(commandName, procedure, dataRoot, globalPorts, env)
 	if err != nil {
 		return nil, err
 	}

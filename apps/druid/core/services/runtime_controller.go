@@ -22,6 +22,7 @@ import (
 )
 
 var ErrRuntimeMaterializationUnsupported = errors.New("runtime backend does not support daemon materialization")
+var ErrRuntimeOperationUnsupported = errors.New("runtime backend does not support this operation")
 
 var newKubernetesRuntimeStore = func(config runtimekubernetes.Config) (coreservices.RuntimeScrollStore, error) {
 	return runtimekubernetes.NewConfigMapStateStore(config)
@@ -114,7 +115,11 @@ func (s *RuntimeSupervisor) Start() error {
 	return nil
 }
 
-func (s *RuntimeSupervisor) Create(artifact string, name string, scrollRoot string, dataRoot string) (*domain.RuntimeScroll, error) {
+func (s *RuntimeSupervisor) Create(artifact string, name string, scrollRoot string, dataRoot string, start bool) (*domain.RuntimeScroll, error) {
+	return s.create(artifact, name, scrollRoot, dataRoot, start)
+}
+
+func (s *RuntimeSupervisor) create(artifact string, name string, scrollRoot string, dataRoot string, autoStart bool) (*domain.RuntimeScroll, error) {
 	runtimeService, err := runtimebackend.NewBackend(s.runtimeBackend, s.consoleService, runtimebackend.WithKubernetesConfig(s.runtimeOptions.Kubernetes))
 	if err != nil {
 		return nil, err
@@ -148,12 +153,37 @@ func (s *RuntimeSupervisor) Create(artifact string, name string, scrollRoot stri
 	session, err := s.startSession(runtimeScroll)
 	if err != nil {
 		runtimeScroll.Status = domain.RuntimeScrollStatusError
+		runtimeScroll.LastError = err.Error()
 		_ = s.store.UpdateScroll(runtimeScroll)
 		return nil, err
 	}
-	if err := session.AutoStartServe(); err != nil {
-		runtimeScroll.Status = domain.RuntimeScrollStatusError
-		_ = s.store.UpdateScroll(runtimeScroll)
+	if autoStart {
+		if err := session.AutoStartServe(); err != nil {
+			runtimeScroll.Status = domain.RuntimeScrollStatusError
+			runtimeScroll.LastError = err.Error()
+			_ = s.store.UpdateScroll(runtimeScroll)
+			return nil, err
+		}
+	}
+	return runtimeScroll, nil
+}
+
+func (s *RuntimeSupervisor) Ensure(artifact string, name string, scrollRoot string, dataRoot string, start bool) (*domain.RuntimeScroll, error) {
+	id := coreservices.RuntimeScrollIDFromName(name)
+	if id != "" {
+		runtimeScroll, err := s.store.GetScroll(id)
+		if err == nil {
+			if start {
+				return s.StartScroll(runtimeScroll.ID)
+			}
+			return runtimeScroll, nil
+		}
+		if !errors.Is(err, coreservices.ErrScrollNotFound) {
+			return nil, err
+		}
+	}
+	runtimeScroll, err := s.create(artifact, name, scrollRoot, dataRoot, start)
+	if err != nil {
 		return nil, err
 	}
 	return runtimeScroll, nil
@@ -168,14 +198,76 @@ func (s *RuntimeSupervisor) Get(id string) (*domain.RuntimeScroll, error) {
 }
 
 func (s *RuntimeSupervisor) Delete(id string) error {
+	return s.DeleteWithPolicy(id, false)
+}
+
+func (s *RuntimeSupervisor) DeleteWithPolicy(id string, purgeData bool) error {
 	s.mu.Lock()
 	session := s.sessions[id]
 	delete(s.sessions, id)
 	s.mu.Unlock()
-	if session != nil {
-		session.Shutdown()
+	if session == nil {
+		var err error
+		session, err = s.sessionFor(id)
+		if err != nil {
+			return err
+		}
+		s.mu.Lock()
+		delete(s.sessions, id)
+		s.mu.Unlock()
 	}
+	if err := session.DeleteRuntime(purgeData); err != nil {
+		return err
+	}
+	session.Shutdown()
 	return s.store.DeleteScroll(id)
+}
+
+func (s *RuntimeSupervisor) StartScroll(id string) (*domain.RuntimeScroll, error) {
+	session, err := s.sessionFor(id)
+	if err != nil {
+		return nil, err
+	}
+	if err := session.AutoStartServe(); err != nil {
+		session.markError(err)
+		return nil, err
+	}
+	session.mu.Lock()
+	session.runtimeScroll.Status = deriveRuntimeScrollStatus(session.runtimeScroll.Commands, session.scrollService.GetFile().Commands)
+	if session.runtimeScroll.Status == domain.RuntimeScrollStatusCreated {
+		session.runtimeScroll.Status = domain.RuntimeScrollStatusRunning
+	}
+	session.runtimeScroll.LastError = ""
+	err = s.store.UpdateScroll(session.runtimeScroll)
+	id = session.runtimeScroll.ID
+	session.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	return s.store.GetScroll(id)
+}
+
+func (s *RuntimeSupervisor) Stop(id string) (*domain.RuntimeScroll, error) {
+	s.mu.Lock()
+	session := s.sessions[id]
+	delete(s.sessions, id)
+	s.mu.Unlock()
+	if session == nil {
+		var err error
+		session, err = s.sessionFor(id)
+		if err != nil {
+			return nil, err
+		}
+		s.mu.Lock()
+		delete(s.sessions, id)
+		s.mu.Unlock()
+	}
+	if err := session.StopRuntime(); err != nil {
+		session.markError(err)
+		return nil, err
+	}
+	session.Shutdown()
+	return s.store.GetScroll(id)
 }
 
 func (s *RuntimeSupervisor) Run(id string, command string) (*domain.RuntimeScroll, error) {
@@ -192,6 +284,105 @@ func (s *RuntimeSupervisor) Ports(id string) ([]domain.RuntimePortStatus, error)
 		return nil, err
 	}
 	return session.Ports()
+}
+
+func (s *RuntimeSupervisor) RoutingTargets(id string) ([]domain.RuntimeRoutingTarget, error) {
+	session, err := s.sessionFor(id)
+	if err != nil {
+		return nil, err
+	}
+	return session.RoutingTargets()
+}
+
+func (s *RuntimeSupervisor) ApplyRouting(id string, assignments []domain.RuntimeRouteAssignment) (*domain.RuntimeScroll, error) {
+	session, err := s.sessionFor(id)
+	if err != nil {
+		return nil, err
+	}
+	return session.ApplyRouting(assignments)
+}
+
+func (s *RuntimeSupervisor) Backup(id string, artifact string) (*domain.RuntimeScroll, error) {
+	session, err := s.sessionFor(id)
+	if err != nil {
+		return nil, err
+	}
+	if err := session.Backup(context.Background(), artifact); err != nil {
+		session.markError(err)
+		return nil, err
+	}
+	return s.store.GetScroll(id)
+}
+
+func (s *RuntimeSupervisor) Restore(id string, artifact string, restart bool) (*domain.RuntimeScroll, error) {
+	session, err := s.sessionFor(id)
+	if err != nil {
+		return nil, err
+	}
+	if err := session.Restore(context.Background(), artifact); err != nil {
+		session.markError(err)
+		return nil, err
+	}
+	if restart {
+		return s.StartScroll(id)
+	}
+	return s.store.GetScroll(id)
+}
+
+func (s *RuntimeSupervisor) DataFile(id string, relativePath string) ([]byte, error) {
+	runtimeScroll, err := s.store.GetScroll(id)
+	if err != nil {
+		return nil, err
+	}
+	runtimeService, err := runtimebackend.NewBackend(s.runtimeBackend, s.consoleService, runtimebackend.WithKubernetesConfig(s.runtimeOptions.Kubernetes))
+	if err != nil {
+		return nil, err
+	}
+	fileBackend, ok := runtimeService.(ports.RuntimeFileBackendInterface)
+	if !ok {
+		return nil, ErrRuntimeOperationUnsupported
+	}
+	return fileBackend.ReadDataFile(context.Background(), runtimeScroll.DataRoot, relativePath)
+}
+
+func (s *RuntimeSupervisor) WriteDataFile(id string, relativePath string, data []byte) error {
+	runtimeScroll, err := s.store.GetScroll(id)
+	if err != nil {
+		return err
+	}
+	runtimeService, err := runtimebackend.NewBackend(s.runtimeBackend, s.consoleService, runtimebackend.WithKubernetesConfig(s.runtimeOptions.Kubernetes))
+	if err != nil {
+		return err
+	}
+	fileBackend, ok := runtimeService.(ports.RuntimeFileBackendInterface)
+	if !ok {
+		return ErrRuntimeOperationUnsupported
+	}
+	return fileBackend.WriteDataFile(context.Background(), runtimeScroll.DataRoot, relativePath, data)
+}
+
+func (s *RuntimeSupervisor) ScrollFile(id string) (*domain.File, error) {
+	session, err := s.sessionFor(id)
+	if err != nil {
+		return nil, err
+	}
+	return session.scrollService.GetFile(), nil
+}
+
+func (s *RuntimeSupervisor) Queue(id string) (map[string]domain.ScrollLockStatus, error) {
+	session, err := s.sessionFor(id)
+	if err != nil {
+		return nil, err
+	}
+	return session.queueManager.GetQueue(), nil
+}
+
+func (s *RuntimeSupervisor) Procedures(id string) (map[string]domain.ScrollLockStatus, error) {
+	session, err := s.sessionFor(id)
+	if err != nil {
+		return nil, err
+	}
+	return session.queueManager.GetQueue(), nil
 }
 
 func (s *RuntimeSupervisor) sessionFor(id string) (*RuntimeSession, error) {
@@ -236,6 +427,7 @@ func (s *RuntimeSupervisor) startSession(runtimeScroll *domain.RuntimeScroll) (*
 func (s *RuntimeSupervisor) markScrollError(runtimeScroll *domain.RuntimeScroll, err error) {
 	logger.Log().Error("failed to restore runtime scroll", zap.String("scroll", runtimeScroll.ID), zap.Error(err))
 	runtimeScroll.Status = domain.RuntimeScrollStatusError
+	runtimeScroll.LastError = err.Error()
 	if runtimeScroll.Commands == nil {
 		runtimeScroll.Commands = map[string]domain.LockStatus{}
 	}
@@ -282,18 +474,24 @@ func NewRuntimeSession(
 	if err != nil {
 		return nil, err
 	}
-	processLauncher, err := coreservices.NewProcedureLauncher(scrollService, runtimeService, runtimeScroll.DataRoot)
-	if err != nil {
-		return nil, err
-	}
-	queueManager := coreservices.NewQueueManager(scrollService, processLauncher)
 	session := &RuntimeSession{
 		store:          store,
 		runtimeScroll:  runtimeScroll,
 		scrollService:  scrollService,
-		queueManager:   queueManager,
 		runtimeBackend: runtimeService,
 	}
+	processLauncher, err := coreservices.NewProcedureLauncherForRuntime(scrollService, runtimeService, runtimeScroll.DataRoot, runtimeScroll.ID, runtimeScroll.ScrollName, func() []domain.RuntimeRouteAssignment {
+		session.mu.Lock()
+		defer session.mu.Unlock()
+		routing := make([]domain.RuntimeRouteAssignment, len(session.runtimeScroll.Routing))
+		copy(routing, session.runtimeScroll.Routing)
+		return routing
+	})
+	if err != nil {
+		return nil, err
+	}
+	queueManager := coreservices.NewQueueManager(scrollService, processLauncher)
+	session.queueManager = queueManager
 	queueManager.SetStatusObserver(session.persistCommandStatus)
 	return session, nil
 }
@@ -311,8 +509,39 @@ func (s *RuntimeSession) Start() {
 func (s *RuntimeSession) Hydrate() error {
 	s.mu.Lock()
 	statuses := copyCommandStatuses(s.runtimeScroll.Commands)
+	runtimeStatus := s.runtimeScroll.Status
 	s.mu.Unlock()
+	commands := s.scrollService.GetFile().Commands
 	if len(statuses) > 0 {
+		filtered := map[string]domain.LockStatus{}
+		removedStaleStatus := false
+		for commandName, status := range statuses {
+			command := commands[commandName]
+			if command == nil {
+				removedStaleStatus = true
+				continue
+			}
+			// Kubernetes keeps persistent workloads alive; do not requeue them just because
+			// the singleton API process restarted.
+			if runtimeStatus == domain.RuntimeScrollStatusRunning && status.Status == domain.ScrollLockStatusDone && command.Run == domain.RunModePersistent {
+				continue
+			}
+			filtered[commandName] = status
+		}
+		if removedStaleStatus {
+			s.mu.Lock()
+			for commandName := range s.runtimeScroll.Commands {
+				if commands[commandName] == nil {
+					delete(s.runtimeScroll.Commands, commandName)
+				}
+			}
+			err := s.store.UpdateScroll(s.runtimeScroll)
+			s.mu.Unlock()
+			if err != nil {
+				return err
+			}
+		}
+		statuses = filtered
 		if err := s.queueManager.HydrateCommandStatuses(statuses); err != nil {
 			return err
 		}
@@ -335,6 +564,15 @@ func (s *RuntimeSession) AutoStartServe() error {
 	if err := WriteRuntimeConfig(s.runtimeScroll, s.scrollService.GetFile(), s.runtimeBackend.Name()); err != nil {
 		return err
 	}
+	if command := s.scrollService.GetFile().Commands[serveCommand]; command != nil && command.Run == domain.RunModePersistent {
+		s.mu.Lock()
+		status, ok := s.runtimeScroll.Commands[serveCommand]
+		runtimeStatus := s.runtimeScroll.Status
+		s.mu.Unlock()
+		if ok && status.Status == domain.ScrollLockStatusDone && runtimeStatus == domain.RuntimeScrollStatusRunning {
+			return nil
+		}
+	}
 	if err := s.queueManager.AddForcedItem(serveCommand); err != nil && !errors.Is(err, coreservices.ErrAlreadyInQueue) {
 		return err
 	}
@@ -348,14 +586,14 @@ func (s *RuntimeSession) Run(command string) (*domain.RuntimeScroll, error) {
 	s.refreshCommandState()
 	targetCommand, err := s.scrollService.GetCommand(command)
 	if err != nil {
-		s.markError()
+		s.markError(err)
 		return nil, err
 	}
 	longRunning := targetCommand.Run == domain.RunModeRestart || targetCommand.Run == domain.RunModePersistent
 	s.rememberDoneDependencies(targetCommand, map[string]bool{})
 
 	if err := s.queueManager.AddTempItem(command); err != nil {
-		s.markError()
+		s.markError(err)
 		return nil, err
 	}
 	if !longRunning {
@@ -377,6 +615,17 @@ func (s *RuntimeSession) refreshCommandState() {
 	fresh, err := s.store.GetScroll(s.runtimeScroll.ID)
 	if err != nil {
 		return
+	}
+	commands := s.scrollService.GetFile().Commands
+	removedStaleStatus := false
+	for commandName := range fresh.Commands {
+		if commands[commandName] == nil {
+			delete(fresh.Commands, commandName)
+			removedStaleStatus = true
+		}
+	}
+	if removedStaleStatus {
+		_ = s.store.UpdateScroll(fresh)
 	}
 	s.mu.Lock()
 	s.runtimeScroll.Commands = copyCommandStatuses(fresh.Commands)
@@ -411,6 +660,125 @@ func (s *RuntimeSession) Ports() ([]domain.RuntimePortStatus, error) {
 	return s.runtimeBackend.ExpectedPorts(runtimeScroll.DataRoot, s.scrollService.GetFile().Commands, s.scrollService.GetFile().Ports)
 }
 
+func (s *RuntimeSession) RoutingTargets() ([]domain.RuntimeRoutingTarget, error) {
+	routingBackend, ok := s.runtimeBackend.(ports.RuntimeRoutingBackendInterface)
+	if !ok {
+		return nil, ErrRuntimeOperationUnsupported
+	}
+	s.mu.Lock()
+	runtimeScroll := *s.runtimeScroll
+	s.mu.Unlock()
+	return routingBackend.RoutingTargets(runtimeScroll.DataRoot, s.scrollService.GetFile().Commands, s.scrollService.GetFile().Ports)
+}
+
+func (s *RuntimeSession) ApplyRouting(assignments []domain.RuntimeRouteAssignment) (*domain.RuntimeScroll, error) {
+	s.mu.Lock()
+	s.runtimeScroll.Routing = assignments
+	s.runtimeScroll.LastError = ""
+	err := s.store.UpdateScroll(s.runtimeScroll)
+	id := s.runtimeScroll.ID
+	s.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	return s.store.GetScroll(id)
+}
+
+func (s *RuntimeSession) StopRuntime() error {
+	lifecycleBackend, ok := s.runtimeBackend.(ports.RuntimeLifecycleBackendInterface)
+	if !ok {
+		return ErrRuntimeOperationUnsupported
+	}
+	s.mu.Lock()
+	dataRoot := s.runtimeScroll.DataRoot
+	s.mu.Unlock()
+	if err := lifecycleBackend.StopRuntime(dataRoot); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.runtimeScroll.Status = domain.RuntimeScrollStatusStopped
+	s.runtimeScroll.LastError = ""
+	err := s.store.UpdateScroll(s.runtimeScroll)
+	s.mu.Unlock()
+	return err
+}
+
+func (s *RuntimeSession) DeleteRuntime(purgeData bool) error {
+	lifecycleBackend, ok := s.runtimeBackend.(ports.RuntimeLifecycleBackendInterface)
+	if !ok {
+		return ErrRuntimeOperationUnsupported
+	}
+	s.mu.Lock()
+	dataRoot := s.runtimeScroll.DataRoot
+	s.mu.Unlock()
+	return lifecycleBackend.DeleteRuntime(dataRoot, purgeData)
+}
+
+func (s *RuntimeSession) Backup(ctx context.Context, artifact string) error {
+	backupBackend, ok := s.runtimeBackend.(ports.RuntimeBackupBackendInterface)
+	if !ok {
+		return ErrRuntimeOperationUnsupported
+	}
+	s.mu.Lock()
+	dataRoot := s.runtimeScroll.DataRoot
+	s.mu.Unlock()
+	return backupBackend.BackupRuntime(ctx, dataRoot, artifact)
+}
+
+func (s *RuntimeSession) Restore(ctx context.Context, artifact string) error {
+	backupBackend, ok := s.runtimeBackend.(ports.RuntimeBackupBackendInterface)
+	if !ok {
+		return ErrRuntimeOperationUnsupported
+	}
+	s.mu.Lock()
+	dataRoot := s.runtimeScroll.DataRoot
+	s.mu.Unlock()
+	if err := backupBackend.RestoreRuntime(ctx, dataRoot, artifact); err != nil {
+		return err
+	}
+	scrollYAML, err := s.runtimeBackend.ReadScrollFile(dataRoot)
+	if err != nil {
+		return err
+	}
+	scrollService, err := coreservices.NewCachedScrollService(dataRoot, scrollYAML)
+	if err != nil {
+		return err
+	}
+	processLauncher, err := coreservices.NewProcedureLauncherForRuntime(scrollService, s.runtimeBackend, dataRoot, s.runtimeScroll.ID, s.runtimeScroll.ScrollName, func() []domain.RuntimeRouteAssignment {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		routing := make([]domain.RuntimeRouteAssignment, len(s.runtimeScroll.Routing))
+		copy(routing, s.runtimeScroll.Routing)
+		return routing
+	})
+	if err != nil {
+		return err
+	}
+	queueManager := coreservices.NewQueueManager(scrollService, processLauncher)
+	queueManager.SetStatusObserver(s.persistCommandStatus)
+
+	s.mu.Lock()
+	commands := scrollService.GetFile().Commands
+	for commandName := range s.runtimeScroll.Commands {
+		if commands[commandName] == nil {
+			delete(s.runtimeScroll.Commands, commandName)
+		}
+	}
+	s.runtimeScroll.Artifact = artifact
+	s.runtimeScroll.ScrollRoot = dataRoot
+	s.runtimeScroll.ScrollYAML = string(scrollYAML)
+	s.runtimeScroll.Status = domain.RuntimeScrollStatusStopped
+	s.runtimeScroll.LastError = ""
+	s.scrollService = scrollService
+	s.queueManager = queueManager
+	if s.started {
+		go queueManager.Work()
+	}
+	err = s.store.UpdateScroll(s.runtimeScroll)
+	s.mu.Unlock()
+	return err
+}
+
 func (s *RuntimeSession) Shutdown() {
 	s.queueManager.Shutdown()
 }
@@ -418,8 +786,17 @@ func (s *RuntimeSession) Shutdown() {
 func (s *RuntimeSession) persistCommandStatus(command string, status domain.ScrollLockStatus, exitCode *int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	commands := s.scrollService.GetFile().Commands
+	if commands[command] == nil {
+		return
+	}
 	if s.runtimeScroll.Commands == nil {
 		s.runtimeScroll.Commands = map[string]domain.LockStatus{}
+	}
+	for commandName := range s.runtimeScroll.Commands {
+		if commands[commandName] == nil {
+			delete(s.runtimeScroll.Commands, commandName)
+		}
 	}
 	s.runtimeScroll.Commands[command] = domain.LockStatus{
 		Status:           status,
@@ -432,10 +809,13 @@ func (s *RuntimeSession) persistCommandStatus(command string, status domain.Scro
 	}
 }
 
-func (s *RuntimeSession) markError() {
+func (s *RuntimeSession) markError(err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.runtimeScroll.Status = domain.RuntimeScrollStatusError
+	if err != nil {
+		s.runtimeScroll.LastError = err.Error()
+	}
 	_ = s.store.UpdateScroll(s.runtimeScroll)
 }
 

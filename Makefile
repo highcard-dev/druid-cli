@@ -1,7 +1,11 @@
-.PHONY: test build build-coldstarter-image
+.PHONY: test build build-coldstarter-image test-integration test-integration-docker test-integration-kubernetes kind-integration-up kind-integration-down
 
 VERSION ?= "dev"
 COLDSTARTER_IMAGE ?= druid-coldstarter:local
+INTEGRATION_TIMEOUT ?= 1200s
+KIND_CLUSTER ?= druid-cli-integration
+KIND_VERSION ?= v0.27.0
+GO_BIN ?= $(shell go env GOPATH)/bin
 
 generate-api: ## Generate API types from OpenAPI spec
 	@echo "Generating API types from OpenAPI spec..."
@@ -49,14 +53,23 @@ test-docker:
 	docker run -v ./:/app --entrypoint=/bin/bash --rm druid-cli-test -c "go test -v ./..."
 
 
-test-integration:
-	go test -timeout 1200s -tags=integration ./test/integration
+test-integration: test-integration-docker test-integration-kubernetes
 
 test-integration-docker:
-	docker build . -f Dockerfile.testing -t druid-cli-test
-	docker run -v ./:/app --entrypoint=/bin/bash --rm druid-cli-test -c "go test -timeout 1200s -tags=integration -v ./test/integration"
-	docker run -v ./:/app --entrypoint=/bin/bash --rm druid-cli-test -c "go test -timeout 1200s -tags=integration -v ./test/integration/commands"
+	go test -count=1 -timeout $(INTEGRATION_TIMEOUT) -tags='integration docker' -v ./test/integration/docker
+
+test-integration-kubernetes: kind-integration-up
+	go test -count=1 -timeout $(INTEGRATION_TIMEOUT) -tags='integration kubernetes' -v ./test/integration/kubernetes
+
+kind-integration-up:
+	@command -v kind >/dev/null 2>&1 || (echo "Installing kind $(KIND_VERSION)..." && go install sigs.k8s.io/kind@$(KIND_VERSION))
+	@PATH="$(GO_BIN):$$PATH"; if ! kind get clusters | grep -qx "$(KIND_CLUSTER)"; then kind create cluster --name "$(KIND_CLUSTER)" --wait 120s; fi
+	@PATH="$(GO_BIN):$$PATH"; kind export kubeconfig --name "$(KIND_CLUSTER)" >/dev/null
+	@kubectl config use-context "kind-$(KIND_CLUSTER)" >/dev/null
+
+kind-integration-down:
+	@PATH="$(GO_BIN):$$PATH"; kind delete cluster --name "$(KIND_CLUSTER)"
 
 test-integration-docker-debug:
 	docker build . -f Dockerfile.testing -t druid-cli-test
-	docker run -v ./:/app --entrypoint=/bin/bash --rm -p 2345:2345 -it druid-cli-test -c "dlv --listen=:2345 --headless=true --log=true --log-output=debugger,debuglineerr,gdbwire,lldbout,rpc --accept-multiclient --api-version=2 test ./test/integration/commands"
+	docker run -v ./:/app -v /var/run/docker.sock:/var/run/docker.sock --entrypoint=/bin/bash --rm -p 2345:2345 -it druid-cli-test -c "dlv --listen=:2345 --headless=true --log=true --log-output=debugger,debuglineerr,gdbwire,lldbout,rpc --accept-multiclient --api-version=2 test --build-flags='-tags=integration docker' ./test/integration/docker"

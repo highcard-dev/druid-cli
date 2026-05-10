@@ -43,11 +43,32 @@ type RuntimeBackendInterface interface {
 	Signal(commandName string, target string, signal string, dataRoot string) error
 }
 
+type RuntimeLifecycleBackendInterface interface {
+	StopRuntime(dataRoot string) error
+	DeleteRuntime(dataRoot string, purgeData bool) error
+}
+
+type RuntimeRoutingBackendInterface interface {
+	RoutingTargets(dataRoot string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error)
+}
+
+type RuntimeBackupBackendInterface interface {
+	BackupRuntime(ctx context.Context, dataRoot string, artifact string) error
+	RestoreRuntime(ctx context.Context, dataRoot string, artifact string) error
+}
+
+type RuntimeFileBackendInterface interface {
+	ReadDataFile(ctx context.Context, dataRoot string, relativePath string) ([]byte, error)
+	WriteDataFile(ctx context.Context, dataRoot string, relativePath string, data []byte) error
+}
+
 type RuntimeCommand struct {
-	Name        string
-	Command     *domain.CommandInstructionSet
-	DataRoot    string
-	GlobalPorts []domain.Port
+	Name         string
+	ScrollID     string
+	Command      *domain.CommandInstructionSet
+	DataRoot     string
+	GlobalPorts  []domain.Port
+	ProcedureEnv map[string]map[string]string
 }
 
 type RuntimeMaterialization struct {

@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -51,5 +52,41 @@ func TestRuntimeScrollManagerCreateFailsDuplicateID(t *testing.T) {
 	_, err := manager.Create("artifact", "", t.TempDir(), filepath.Join(t.TempDir(), "data"), []byte(testScrollYAML))
 	if !errors.Is(err, ErrScrollAlreadyExists) {
 		t.Fatalf("error = %v, want ErrScrollAlreadyExists", err)
+	}
+}
+
+func TestRuntimeStateStoreUsesSingleRuntimeRoot(t *testing.T) {
+	store := NewRuntimeStateStore(t.TempDir())
+	if got, want := store.DataRoot("scroll-a"), store.ScrollRoot("scroll-a"); got != want {
+		t.Fatalf("DataRoot = %s, want %s", got, want)
+	}
+}
+
+func TestMaterializeScrollArtifactKeepsScrollYamlNextToData(t *testing.T) {
+	artifact := t.TempDir()
+	if err := os.WriteFile(filepath.Join(artifact, "scroll.yaml"), []byte(testScrollYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(artifact, "data", "private"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(artifact, "data", "private", "state.txt"), []byte("ok"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+
+	if err := MaterializeScrollArtifact(artifact, root, root, nil, true); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(filepath.Join(root, "scroll.yaml")); err != nil {
+		t.Fatalf("scroll.yaml not materialized next to data: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(root, "data", "private", "state.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "ok" {
+		t.Fatalf("state = %q, want ok", got)
 	}
 }

@@ -1,0 +1,89 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/highcard-dev/druid
+  tag: dev
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  managementPort: 8081
+  publicPort: 8082
+
+ingress:
+  enabled: false
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, PUT, POST, DELETE, PATCH, OPTIONS, PROPFIND, MOVE, MKCOL, COPY"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization,depth,destination,overwrite,if,lock-token,timeout,dav"
+    nginx.ingress.kubernetes.io/cors-expose-headers: "Druid-Version"
+  hosts: []
+  tls: []
+
+runtime:
+  backend: kubernetes
+  stateDir: /var/lib/druid/runtime
+  namespaces:
+    mode: single
+    single: ""
+  storageClass: ""
+  pullImage: ghcr.io/highcard-dev/druid-client:dev
+  helperImage: alpine:3.20
+  registrySecret: ""
+  registryPlainHTTP: false
+  kubeconfigSecret:
+    name: ""
+    key: kubeconfig
+
+hubble:
+  relayAddr: hubble-relay.kube-system.svc.cluster.local:80
+
+auth:
+  enabled: false
+  existingSecret: ""
+  tokenKey: token
+
+resources: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+persistence:
+  enabled: true
+  storageClass: ""
+  size: 1Gi
+
+networkPolicy:
+  enabled: false
+  ingress:
+    namespaceSelector: {}
+    podSelector: {}
+
+extraEnv: []

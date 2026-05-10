@@ -92,6 +92,110 @@ components:
         data_root:
           type: string
           description: Optional daemon-local path or backend ref containing runtime data directory. If omitted, a materializing runtime backend may pull the artifact.
+        start:
+          type: boolean
+          default: true
+
+    EnsureScrollRequest:
+      type: object
+      required:
+        - artifact
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        artifact:
+          type: string
+        scroll_root:
+          type: string
+        data_root:
+          type: string
+        start:
+          type: boolean
+          default: true
+
+    RuntimeRoutingTarget:
+      type: object
+      required:
+        - name
+        - procedure
+        - port_name
+        - port
+        - protocol
+        - service_name
+        - service_port
+      properties:
+        name:
+          type: string
+        procedure:
+          type: string
+        port_name:
+          type: string
+        port:
+          type: integer
+        protocol:
+          type: string
+        namespace:
+          type: string
+        service_name:
+          type: string
+        service_port:
+          type: integer
+        selector:
+          type: object
+          additionalProperties:
+            type: string
+
+    RuntimeRouteAssignment:
+      type: object
+      properties:
+        name:
+          type: string
+        port_name:
+          type: string
+        host:
+          type: string
+        external_ip:
+          type: string
+        public_port:
+          type: integer
+        url:
+          type: string
+        protocol:
+          type: string
+
+    ApplyRoutingRequest:
+      type: object
+      required:
+        - assignments
+      properties:
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeRouteAssignment'
+
+    RuntimeArtifactOperationRequest:
+      type: object
+      required:
+        - artifact
+      properties:
+        artifact:
+          type: string
+        restart:
+          type: boolean
+          default: false
+
+    CommandStatusMap:
+      type: object
+      additionalProperties: true
+
+    ScrollLogMap:
+      type: object
+      additionalProperties:
+        type: array
+        items:
+          type: string
     RuntimeScroll:
       type: object
       required:
@@ -119,6 +223,12 @@ components:
         status:
           type: string
           enum: [created, running, stopped, error, deleted]
+        last_error:
+          type: string
+        routing:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeRouteAssignment'
         created_at:
           type: string
           format: date-time
@@ -223,6 +333,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/RuntimeScroll'
 
+  /api/v1/scrolls/ensure:
+    post:
+      operationId: ensureScroll
+      summary: Ensure runtime scroll exists and optionally starts
+      tags: [runtime, daemon]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnsureScrollRequest'
+      responses:
+        '200':
+          description: Runtime scroll ensured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeScroll'
+
   /api/v1/scrolls/{id}:
     get:
       operationId: getScroll
@@ -263,6 +392,44 @@ paths:
         '404':
           description: Runtime scroll not found
 
+  /api/v1/scrolls/{id}/start:
+    post:
+      operationId: startScroll
+      summary: Start runtime scroll
+      tags: [runtime, daemon]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Started runtime scroll
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeScroll'
+
+  /api/v1/scrolls/{id}/stop:
+    post:
+      operationId: stopScroll
+      summary: Stop runtime scroll workloads while preserving data
+      tags: [runtime, daemon]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Stopped runtime scroll
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeScroll'
+
   /api/v1/scrolls/{id}/commands/{command}:
     post:
       operationId: runScrollCommand
@@ -289,6 +456,102 @@ paths:
         '404':
           description: Runtime scroll not found
 
+  /api/v1/scrolls/{id}/config:
+    get:
+      operationId: getScrollConfig
+      summary: Get parsed scroll config
+      tags: [runtime, daemon]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Parsed scroll config
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/scrolls/{id}/queue:
+    get:
+      operationId: getScrollQueue
+      summary: Get runtime queue state
+      tags: [queue, runtime]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Queue state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandStatusMap'
+
+  /api/v1/scrolls/{id}/procedures:
+    get:
+      operationId: getScrollProcedures
+      summary: Get procedure state
+      tags: [runtime, daemon]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Procedure state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandStatusMap'
+
+  /api/v1/scrolls/{id}/consoles:
+    get:
+      operationId: getScrollConsoles
+      summary: Get scroll-scoped consoles
+      tags: [runtime, daemon]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Consoles keyed by procedure
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/v1/scrolls/{id}/logs:
+    get:
+      operationId: getScrollLogs
+      summary: Get scroll-scoped logs
+      tags: [logs, runtime]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Logs keyed by procedure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrollLogMap'
+
   /api/v1/scrolls/{id}/ports:
     get:
       operationId: getScrollPorts
@@ -311,6 +574,102 @@ paths:
                   $ref: '#/components/schemas/RuntimePortStatus'
         '404':
           description: Runtime scroll not found
+
+  /api/v1/scrolls/{id}/routing/targets:
+    get:
+      operationId: getScrollRoutingTargets
+      summary: Get stable backend routing targets
+      tags: [runtime, port]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Routing targets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RuntimeRoutingTarget'
+
+  /api/v1/scrolls/{id}/routing:
+    post:
+      operationId: applyScrollRouting
+      summary: Persist operator-assigned public routing
+      tags: [runtime, port]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyRoutingRequest'
+      responses:
+        '200':
+          description: Updated runtime scroll
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeScroll'
+
+  /api/v1/scrolls/{id}/backup:
+    post:
+      operationId: backupScroll
+      summary: Execute runtime backup
+      tags: [runtime, daemon]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeArtifactOperationRequest'
+      responses:
+        '200':
+          description: Backup completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeScroll'
+
+  /api/v1/scrolls/{id}/restore:
+    post:
+      operationId: restoreScroll
+      summary: Execute runtime restore
+      tags: [runtime, daemon]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeArtifactOperationRequest'
+      responses:
+        '200':
+          description: Restore completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeScroll'
 
   # Health Endpoint
   /api/v1/health:

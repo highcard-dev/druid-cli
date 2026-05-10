@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/highcard-dev/daemon/apps/druid-client/adapters/daemon"
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -19,6 +20,7 @@ func (a *App) createCmd() *cobra.Command {
 	var scrollRoot string
 	var dataRoot string
 	var noData bool
+	var noStart bool
 	cmd := &cobra.Command{
 		Use:   "create <artifact-or-path> [name]",
 		Short: "Create a scroll through the daemon",
@@ -36,8 +38,8 @@ func (a *App) createCmd() *cobra.Command {
 				}
 				stateDir = defaultStateDir
 			}
-			if (scrollRoot == "") != (dataRoot == "") {
-				return fmt.Errorf("--scroll-root and --data-root must be provided together")
+			if (scrollRoot == "") != (dataRoot == "") || (scrollRoot != "" && scrollRoot != dataRoot) {
+				return fmt.Errorf("--scroll-root and --data-root are legacy flags and must be omitted or equal")
 			}
 
 			service, err := a.runtimeService()
@@ -46,12 +48,17 @@ func (a *App) createCmd() *cobra.Command {
 			}
 
 			if scrollRoot != "" {
-				if err := coreservices.MaterializeScrollArtifact(artifact, scrollRoot, dataRoot, registry.NewOciClient(a.loadRegistryStore()), !noData); err != nil {
-					return err
+				if strings.Contains(scrollRoot, "://") {
+					dataRoot = scrollRoot
+				} else {
+					if err := coreservices.MaterializeScrollArtifact(artifact, scrollRoot, scrollRoot, registry.NewOciClient(a.loadRegistryStore()), !noData); err != nil {
+						return err
+					}
+					dataRoot = scrollRoot
 				}
 			} else {
 				if !localArtifactExists(artifact) {
-					scroll, err := service.Create(cmd.Context(), name, artifact, "", "")
+					scroll, err := service.Create(cmd.Context(), name, artifact, "", "", !noStart)
 					if err == nil {
 						return printJSON(scroll)
 					}
@@ -70,12 +77,11 @@ func (a *App) createCmd() *cobra.Command {
 				}
 				defer os.RemoveAll(tmpDir)
 
-				stagedScrollRoot := filepath.Join(tmpDir, "spec")
-				stagedDataRoot := filepath.Join(tmpDir, "data")
-				if err := coreservices.MaterializeScrollArtifact(artifact, stagedScrollRoot, stagedDataRoot, registry.NewOciClient(a.loadRegistryStore()), !noData); err != nil {
+				stagedRoot := filepath.Join(tmpDir, "root")
+				if err := coreservices.MaterializeScrollArtifact(artifact, stagedRoot, stagedRoot, registry.NewOciClient(a.loadRegistryStore()), !noData); err != nil {
 					return err
 				}
-				stagedScroll, err := domain.NewScroll(stagedScrollRoot)
+				stagedScroll, err := domain.NewScroll(stagedRoot)
 				if err != nil {
 					return err
 				}
@@ -84,13 +90,13 @@ func (a *App) createCmd() *cobra.Command {
 					return err
 				}
 				scrollRoot = store.ScrollRoot(id)
-				dataRoot = store.DataRoot(id)
-				if err := coreservices.MoveMaterializedScroll(stagedScrollRoot, stagedDataRoot, scrollRoot, dataRoot); err != nil {
+				dataRoot = scrollRoot
+				if err := coreservices.MoveMaterializedScroll(stagedRoot, stagedRoot, scrollRoot, dataRoot); err != nil {
 					return err
 				}
 			}
 
-			scroll, err := service.Create(cmd.Context(), name, artifact, scrollRoot, dataRoot)
+			scroll, err := service.Create(cmd.Context(), name, artifact, scrollRoot, dataRoot, !noStart)
 			if err != nil {
 				return err
 			}
@@ -101,6 +107,7 @@ func (a *App) createCmd() *cobra.Command {
 	cmd.Flags().StringVar(&scrollRoot, "scroll-root", "", "Daemon-local path containing materialized scroll spec")
 	cmd.Flags().StringVar(&dataRoot, "data-root", "", "Daemon-local path containing runtime data")
 	cmd.Flags().BoolVar(&noData, "no-data", false, "Skip scroll data files")
+	cmd.Flags().BoolVar(&noStart, "no-start", false, "Create the scroll without starting its serve command")
 	return cmd
 }
 

@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"github.com/spf13/cobra"
@@ -18,9 +16,6 @@ func (a *App) pushCategoryCmd() *cobra.Command {
 		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			credStore := a.loadRegistryStore()
-			if !credStore.HasCredentials() {
-				return fmt.Errorf("no registry credentials configured. Please use `druid-client login` to set them")
-			}
 
 			repo := args[0]
 			category := args[1]

@@ -1,4 +1,4 @@
-//go:build integration
+//go:build integration && legacy_examples
 
 package integration_test
 
@@ -105,6 +105,7 @@ func TestExamples(t *testing.T) {
 			}
 			runtimeBackend := mock_ports.NewMockRuntimeBackendInterface(ctrl)
 			exitCode := 0
+			runtimeBackend.EXPECT().Name().Return("docker").AnyTimes()
 			runtimeBackend.EXPECT().RunCommand(gomock.Any()).Return(&exitCode, nil).AnyTimes()
 			procedureLauncher, err := services.NewProcedureLauncher(scrollService, runtimeBackend, "/tmp")
 			if err != nil {

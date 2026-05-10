@@ -11,11 +11,14 @@ import (
 )
 
 type ProcedureLauncher struct {
-	runtimeBackend  ports.RuntimeBackendInterface
-	runtimeDataRoot string
-	scrollService   ports.ScrollServiceInterface
-	procedures      map[string]domain.ScrollLockStatus
-	proceduresMutex *sync.Mutex
+	runtimeBackend    ports.RuntimeBackendInterface
+	runtimeDataRoot   string
+	runtimeScrollID   string
+	runtimeScrollName string
+	routingProvider   func() []domain.RuntimeRouteAssignment
+	scrollService     ports.ScrollServiceInterface
+	procedures        map[string]domain.ScrollLockStatus
+	proceduresMutex   *sync.Mutex
 }
 
 func NewProcedureLauncher(
@@ -23,16 +26,39 @@ func NewProcedureLauncher(
 	runtimeBackend ports.RuntimeBackendInterface,
 	runtimeDataRoot string,
 ) (*ProcedureLauncher, error) {
+	return NewProcedureLauncherForScroll(scrollService, runtimeBackend, runtimeDataRoot, "")
+}
+
+func NewProcedureLauncherForScroll(
+	scrollService ports.ScrollServiceInterface,
+	runtimeBackend ports.RuntimeBackendInterface,
+	runtimeDataRoot string,
+	runtimeScrollID string,
+) (*ProcedureLauncher, error) {
+	return NewProcedureLauncherForRuntime(scrollService, runtimeBackend, runtimeDataRoot, runtimeScrollID, "", nil)
+}
+
+func NewProcedureLauncherForRuntime(
+	scrollService ports.ScrollServiceInterface,
+	runtimeBackend ports.RuntimeBackendInterface,
+	runtimeDataRoot string,
+	runtimeScrollID string,
+	runtimeScrollName string,
+	routingProvider func() []domain.RuntimeRouteAssignment,
+) (*ProcedureLauncher, error) {
 	if runtimeBackend == nil {
 		return nil, errors.New("runtime backend is required")
 	}
 
 	s := &ProcedureLauncher{
-		runtimeBackend:  runtimeBackend,
-		runtimeDataRoot: runtimeDataRoot,
-		scrollService:   scrollService,
-		procedures:      make(map[string]domain.ScrollLockStatus),
-		proceduresMutex: &sync.Mutex{},
+		runtimeBackend:    runtimeBackend,
+		runtimeDataRoot:   runtimeDataRoot,
+		runtimeScrollID:   runtimeScrollID,
+		runtimeScrollName: runtimeScrollName,
+		routingProvider:   routingProvider,
+		scrollService:     scrollService,
+		procedures:        make(map[string]domain.ScrollLockStatus),
+		proceduresMutex:   &sync.Mutex{},
 	}
 
 	return s, nil
@@ -66,12 +92,29 @@ func (sc *ProcedureLauncher) Run(cmd string) error {
 	if dataRoot == "" {
 		dataRoot = sc.scrollService.GetCwd()
 	}
+	file := sc.scrollService.GetFile()
+	routing := []domain.RuntimeRouteAssignment{}
+	if sc.routingProvider != nil {
+		routing = sc.routingProvider()
+	}
+	procedureEnv, err := BuildRuntimeProcedureEnv(file, cmd, command, RuntimeEnvContext{
+		ScrollID:   sc.runtimeScrollID,
+		ScrollName: sc.runtimeScrollName,
+		Backend:    sc.runtimeBackend.Name(),
+		Routing:    routing,
+	})
+	if err != nil {
+		sc.setProcedureStatus(cmd, domain.ScrollLockStatusError)
+		return err
+	}
 	sc.setProcedureStatus(cmd, domain.ScrollLockStatusRunning)
 	exitCode, err := sc.runtimeBackend.RunCommand(ports.RuntimeCommand{
-		Name:        cmd,
-		Command:     command,
-		DataRoot:    dataRoot,
-		GlobalPorts: sc.scrollService.GetFile().Ports,
+		Name:         cmd,
+		ScrollID:     sc.runtimeScrollID,
+		Command:      command,
+		DataRoot:     dataRoot,
+		GlobalPorts:  file.Ports,
+		ProcedureEnv: procedureEnv,
 	})
 	if err != nil {
 		sc.setProcedureStatus(cmd, domain.ScrollLockStatusError)

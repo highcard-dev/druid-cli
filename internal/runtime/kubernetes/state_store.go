@@ -28,9 +28,11 @@ const (
 	configMapKeyScrollName   = "scroll_name"
 	configMapKeyScrollYAML   = "scroll_yaml"
 	configMapKeyStatus       = "status"
+	configMapKeyLastError    = "last_error"
 	configMapKeyCreatedAt    = "created_at"
 	configMapKeyUpdatedAt    = "updated_at"
 	configMapKeyCommandsJSON = "commands_json"
+	configMapKeyRoutingJSON  = "routing_json"
 )
 
 type ConfigMapStateStore struct {
@@ -159,6 +161,10 @@ func runtimeScrollConfigMap(namespace string, scroll *domain.RuntimeScroll) (*co
 	if err != nil {
 		return nil, err
 	}
+	routing, err := json.Marshal(scroll.Routing)
+	if err != nil {
+		return nil, err
+	}
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      scrollConfigMapName(scroll.ID),
@@ -179,9 +185,11 @@ func runtimeScrollConfigMap(namespace string, scroll *domain.RuntimeScroll) (*co
 			configMapKeyScrollName:   scroll.ScrollName,
 			configMapKeyScrollYAML:   scroll.ScrollYAML,
 			configMapKeyStatus:       string(scroll.Status),
+			configMapKeyLastError:    scroll.LastError,
 			configMapKeyCreatedAt:    formatRuntimeTime(scroll.CreatedAt),
 			configMapKeyUpdatedAt:    formatRuntimeTime(scroll.UpdatedAt),
 			configMapKeyCommandsJSON: string(commands),
+			configMapKeyRoutingJSON:  string(routing),
 		},
 	}, nil
 }
@@ -194,6 +202,14 @@ func runtimeScrollFromConfigMap(configMap *corev1.ConfigMap) (*domain.RuntimeScr
 	}
 	commands := map[string]domain.LockStatus{}
 	if err := json.Unmarshal([]byte(commandsJSON), &commands); err != nil {
+		return nil, err
+	}
+	routingJSON := data[configMapKeyRoutingJSON]
+	if routingJSON == "" {
+		routingJSON = "[]"
+	}
+	routing := []domain.RuntimeRouteAssignment{}
+	if err := json.Unmarshal([]byte(routingJSON), &routing); err != nil {
 		return nil, err
 	}
 	id := data[configMapKeyID]
@@ -209,6 +225,8 @@ func runtimeScrollFromConfigMap(configMap *corev1.ConfigMap) (*domain.RuntimeScr
 		ScrollName: data[configMapKeyScrollName],
 		ScrollYAML: data[configMapKeyScrollYAML],
 		Status:     domain.RuntimeScrollStatus(data[configMapKeyStatus]),
+		LastError:  data[configMapKeyLastError],
+		Routing:    routing,
 		CreatedAt:  parseRuntimeTime(data[configMapKeyCreatedAt]),
 		UpdatedAt:  parseRuntimeTime(data[configMapKeyUpdatedAt]),
 		Commands:   commands,

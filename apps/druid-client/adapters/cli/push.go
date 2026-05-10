@@ -30,9 +30,6 @@ func (a *App) pushCmd() *cobra.Command {
 		Args:  cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			credStore := a.loadRegistryStore()
-			if !credStore.HasCredentials() {
-				return fmt.Errorf("no registry credentials configured. Please use `druid-client login` to set them")
-			}
 
 			fullPath := currentWorkingDir()
 			artifact := ""
