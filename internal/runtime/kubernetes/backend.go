@@ -961,14 +961,6 @@ func portsByName(ports []domain.Port) map[string]domain.Port {
 	return result
 }
 
-func commandProcedureName(commandName string, idx int, procedure *domain.Procedure) string {
-	procedureName := fmt.Sprintf("%s.%d", commandName, idx)
-	if procedure != nil && procedure.Id != nil {
-		procedureName = *procedure.Id
-	}
-	return procedureName
-}
-
 func runtimeConsoleID(scrollID string, procedureName string) string {
 	if scrollID == "" {
 		return procedureName

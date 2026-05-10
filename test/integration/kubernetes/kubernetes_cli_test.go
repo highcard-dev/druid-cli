@@ -26,7 +26,6 @@ func TestKubernetesBackendCLIComplexLifecycle(t *testing.T) {
 	ref := fmt.Sprintf("k8s://%s/%s", namespace, pvc)
 	name := "k8s-cli-" + suffix
 	fixture := e2e.WriteFixture(t, filepath.Join(t.TempDir(), "scroll"), name, port, routePort)
-	fixture.ScrollRootRef = ref
 
 	e2e.Run(t, "kubectl", "create", "namespace", namespace)
 	t.Cleanup(func() {
@@ -94,12 +93,12 @@ func TestKubernetesBackendCLIComplexLifecycle(t *testing.T) {
 	if stopped.Status != "stopped" {
 		t.Fatalf("stopped status = %s, want stopped", stopped.Status)
 	}
-	waitKubernetesWorkloadsGone(t, namespace, pvc)
+	waitKubernetesResourcesGone(t, namespace, pvc, "statefulset,job,pod")
 	deleted := e2e.RunClient(t, bins, socket, "delete", created.ID)
 	if !strings.Contains(deleted, `"status": "deleted"`) {
 		t.Fatalf("delete response = %s, want deleted status", deleted)
 	}
-	waitKubernetesServicesGone(t, namespace, pvc)
+	waitKubernetesResourcesGone(t, namespace, pvc, "service")
 }
 
 func requireKubernetes(t *testing.T) {
@@ -311,16 +310,6 @@ func kubectlOutput(args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "kubectl", args...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
-}
-
-func waitKubernetesWorkloadsGone(t *testing.T, namespace string, pvc string) {
-	t.Helper()
-	waitKubernetesResourcesGone(t, namespace, pvc, "statefulset,job,pod")
-}
-
-func waitKubernetesServicesGone(t *testing.T, namespace string, pvc string) {
-	t.Helper()
-	waitKubernetesResourcesGone(t, namespace, pvc, "service")
 }
 
 func waitKubernetesResourcesGone(t *testing.T, namespace string, pvc string, resource string) {

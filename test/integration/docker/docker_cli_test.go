@@ -53,7 +53,9 @@ func TestDockerBackendCLIComplexLifecycle(t *testing.T) {
 
 	e2e.RunClient(t, bins, socket, "run", created.ID, "record")
 	dataRoot := filepath.Join(stateDir, "scrolls", created.ID, "data")
-	assertFileContains(t, filepath.Join(dataRoot, "finite.txt"), "finite-ok")
+	if got := readFile(t, filepath.Join(dataRoot, "finite.txt")); !strings.Contains(got, "finite-ok") {
+		t.Fatalf("finite file = %q, want finite-ok", got)
+	}
 	recordEnv := e2e.ParseEnv(readFile(t, filepath.Join(dataRoot, "record-env.txt")))
 	e2e.AssertRuntimeEnv(t, recordEnv, fixture, "docker", created.ID)
 	if recordEnv["USER_ENV"] != "finite" {
@@ -82,14 +84,6 @@ func assertPortBound(t *testing.T, statuses []e2e.RuntimePortStatus, fixture e2e
 		}
 	}
 	t.Fatalf("http port for %s not found in %#v", fixture.ServeProc, statuses)
-}
-
-func assertFileContains(t *testing.T, path string, want string) {
-	t.Helper()
-	got := readFile(t, path)
-	if !strings.Contains(got, want) {
-		t.Fatalf("%s = %q, want to contain %q", path, got, want)
-	}
 }
 
 func readFile(t *testing.T, path string) string {

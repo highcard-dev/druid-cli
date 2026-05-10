@@ -25,24 +25,20 @@ type Binaries struct {
 }
 
 type Fixture struct {
-	Dir           string
-	Name          string
-	ServeProc     string
-	RecordProc    string
-	Port          int
-	RouteHost     string
-	RouteURL      string
-	RoutePort     int
-	RoutingFile   string
-	Assignment    string
-	ScrollRootRef string
+	Dir         string
+	Name        string
+	ServeProc   string
+	RecordProc  string
+	Port        int
+	RouteHost   string
+	RouteURL    string
+	RoutePort   int
+	RoutingFile string
 }
 
 type RuntimeScroll struct {
-	ID         string `json:"id"`
-	DataRoot   string `json:"data_root"`
-	ScrollName string `json:"scroll_name"`
-	Status     string `json:"status"`
+	ID     string `json:"id"`
+	Status string `json:"status"`
 }
 
 type RuntimePortStatus struct {
@@ -51,14 +47,11 @@ type RuntimePortStatus struct {
 	Port      int    `json:"port"`
 	Bound     bool   `json:"bound"`
 	HostPort  int    `json:"host_port"`
-	Source    string `json:"source"`
 }
 
 type RuntimeRoutingTarget struct {
-	Name        string `json:"name"`
 	Procedure   string `json:"procedure"`
 	PortName    string `json:"port_name"`
-	Port        int    `json:"port"`
 	Namespace   string `json:"namespace"`
 	ServiceName string `json:"service_name"`
 	ServicePort int    `json:"service_port"`
@@ -289,7 +282,6 @@ commands:
 		RouteURL:    routeURL,
 		RoutePort:   routePort,
 		RoutingFile: routingFile,
-		Assignment:  serveProc + "-http",
 	}
 }
 
