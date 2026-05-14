@@ -13,19 +13,19 @@ const (
 )
 
 type RuntimeScroll struct {
-	ID         string                   `json:"id"`
-	OwnerID    string                   `json:"owner_id,omitempty"`
-	Artifact   string                   `json:"artifact"`
-	ScrollRoot string                   `json:"scroll_root"`
-	DataRoot   string                   `json:"data_root"`
-	ScrollName string                   `json:"scroll_name"`
-	ScrollYAML string                   `json:"-"`
-	Status     RuntimeScrollStatus      `json:"status"`
-	LastError  string                   `json:"last_error,omitempty"`
-	Routing    []RuntimeRouteAssignment `json:"routing,omitempty"`
-	CreatedAt  time.Time                `json:"created_at"`
-	UpdatedAt  time.Time                `json:"updated_at"`
-	Commands   map[string]LockStatus    `json:"commands,omitempty"`
+	ID             string                   `json:"id"`
+	OwnerID        string                   `json:"owner_id,omitempty"`
+	Artifact       string                   `json:"artifact"`
+	ArtifactDigest string                   `json:"artifact_digest,omitempty"`
+	Root           string                   `json:"root"`
+	ScrollName     string                   `json:"scroll_name"`
+	ScrollYAML     string                   `json:"-"`
+	Status         RuntimeScrollStatus      `json:"status"`
+	LastError      string                   `json:"last_error,omitempty"`
+	Routing        []RuntimeRouteAssignment `json:"routing,omitempty"`
+	CreatedAt      time.Time                `json:"created_at"`
+	UpdatedAt      time.Time                `json:"updated_at"`
+	Commands       map[string]LockStatus    `json:"commands,omitempty"`
 }
 
 type RuntimeState struct {

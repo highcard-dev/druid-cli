@@ -22,4 +22,6 @@ spec:
           port: {{ .Values.service.managementPort }}
         - protocol: TCP
           port: {{ .Values.service.publicPort }}
+        - protocol: TCP
+          port: {{ .Values.service.workerCallbackPort }}
 {{- end }}

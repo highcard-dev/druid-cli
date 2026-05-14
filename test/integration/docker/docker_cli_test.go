@@ -4,6 +4,8 @@ package docker_test
 
 import (
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,24 +20,32 @@ func TestDockerBackendCLIComplexLifecycle(t *testing.T) {
 	bins := e2e.BuildBinaries(t)
 	port := e2e.FreePort(t)
 	routePort := e2e.FreePort(t)
+	callbackPort := e2e.FreePort(t)
 	name := fmt.Sprintf("docker-cli-%d", time.Now().UnixNano())
 	fixture := e2e.WriteFixture(t, filepath.Join(t.TempDir(), "scroll"), name, port, routePort)
+	workerImage := e2e.BuildDockerImage(t, "druid-cli-e2e:"+name)
+	containerHost := e2e.DockerHostAddress(t)
 
 	socket := filepath.Join(os.TempDir(), fmt.Sprintf("druid-docker-%d.sock", time.Now().UnixNano()))
 	t.Cleanup(func() { _ = os.Remove(socket) })
 	stateDir := filepath.Join(t.TempDir(), "state")
-	logs := e2e.StartDaemon(t, bins, "docker", socket, stateDir, nil, nil)
+	logs := e2e.StartDaemon(t, bins, "docker", socket, stateDir, []string{
+		"--docker-worker-image", workerImage,
+		"--docker-storage", "bind",
+		"--docker-bind-root", filepath.Join(stateDir, "scrolls"),
+		"--worker-callback-listen", fmt.Sprintf(":%d", callbackPort),
+		"--worker-callback-url", fmt.Sprintf("http://%s:%d", containerHost, callbackPort),
+	}, nil)
 	t.Cleanup(func() {
 		if t.Failed() {
 			t.Logf("druid daemon logs:\n%s", logs.String())
 		}
 	})
 
-	created := e2e.RunClientJSON[e2e.RuntimeScroll](t, bins, socket, "create", "--no-start", "--state-dir", stateDir, fixture.Dir, fixture.Name)
+	created := e2e.RunClientJSON[e2e.RuntimeScroll](t, bins, socket, "create", "-p", fmt.Sprintf("%d:http", fixture.RoutePort), fixture.Dir, fixture.Name)
 	if created.Status != "created" {
 		t.Fatalf("created status = %s, want created", created.Status)
 	}
-	e2e.RunClient(t, bins, socket, "routing", "apply", created.ID, "--file", fixture.RoutingFile)
 
 	started := e2e.RunClientJSON[e2e.RuntimeScroll](t, bins, socket, "start", created.ID)
 	if started.Status != "running" {
@@ -52,11 +62,11 @@ func TestDockerBackendCLIComplexLifecycle(t *testing.T) {
 	assertPortBound(t, statuses, fixture)
 
 	e2e.RunClient(t, bins, socket, "run", created.ID, "record")
-	dataRoot := filepath.Join(stateDir, "scrolls", created.ID, "data")
-	if got := readFile(t, filepath.Join(dataRoot, "finite.txt")); !strings.Contains(got, "finite-ok") {
+	root := strings.TrimPrefix(created.Root, "docker-bind://")
+	if got := readDockerRootFile(t, root, "data/finite.txt"); !strings.Contains(got, "finite-ok") {
 		t.Fatalf("finite file = %q, want finite-ok", got)
 	}
-	recordEnv := e2e.ParseEnv(readFile(t, filepath.Join(dataRoot, "record-env.txt")))
+	recordEnv := e2e.ParseEnv(readDockerRootFile(t, root, "data/record-env.txt"))
 	e2e.AssertRuntimeEnv(t, recordEnv, fixture, "docker", created.ID)
 	if recordEnv["USER_ENV"] != "finite" {
 		t.Fatalf("record USER_ENV = %q, want finite", recordEnv["USER_ENV"])
@@ -68,6 +78,130 @@ func TestDockerBackendCLIComplexLifecycle(t *testing.T) {
 	if !strings.Contains(deleted, `"status": "deleted"`) {
 		t.Fatalf("delete response = %s, want deleted status", deleted)
 	}
+}
+
+func TestDockerBackendVolumeStorageWorkerLifecycleBackupRestore(t *testing.T) {
+	e2e.RequireDocker(t)
+	bins := e2e.BuildBinaries(t)
+	port := e2e.FreePort(t)
+	routePort := e2e.FreePort(t)
+	callbackPort := e2e.FreePort(t)
+	publicPort := e2e.FreePort(t)
+	managementPort := e2e.FreePort(t)
+	registryPort := e2e.StartRegistry(t)
+	containerHost := e2e.DockerHostAddress(t)
+	name := fmt.Sprintf("docker-volume-%d", time.Now().UnixNano())
+	fixture := e2e.WriteFixture(t, filepath.Join(t.TempDir(), "scroll"), name, port, routePort)
+	workerImage := e2e.BuildDockerImage(t, "druid-cli-e2e:"+name)
+
+	pushArtifact := fmt.Sprintf("127.0.0.1:%d/druid-e2e/%s:v1", registryPort, name)
+	runtimeArtifact := fmt.Sprintf("%s:%d/druid-e2e/%s:v1", containerHost, registryPort, name)
+	backupArtifact := fmt.Sprintf("%s:%d/druid-e2e/%s-backup:v1", containerHost, registryPort, name)
+	e2e.RunEnv(t, []string{"DRUID_REGISTRY_PLAIN_HTTP=true", "HOME=" + bins.Home}, bins.Druid, "push", pushArtifact, fixture.Dir)
+
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("druid-docker-volume-%d.sock", time.Now().UnixNano()))
+	t.Cleanup(func() { _ = os.Remove(socket) })
+	stateDir := filepath.Join(t.TempDir(), "state")
+	logs := e2e.StartDaemon(t, bins, "docker", socket, stateDir, []string{
+		"--docker-worker-image", workerImage,
+		"--docker-volume-prefix", "druid-e2e",
+		"--worker-callback-listen", fmt.Sprintf(":%d", callbackPort),
+		"--worker-callback-url", fmt.Sprintf("http://%s:%d", containerHost, callbackPort),
+		"--listen", fmt.Sprintf(":%d", managementPort),
+		"--worker-daemon-url", fmt.Sprintf("http://%s:%d", containerHost, managementPort),
+		"--public-listen", fmt.Sprintf(":%d", publicPort),
+	}, []string{"DRUID_REGISTRY_PLAIN_HTTP=true"})
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("druid daemon logs:\n%s", logs.String())
+		}
+	})
+
+	created := e2e.RunClientJSON[e2e.RuntimeScroll](t, bins, socket,
+		"create",
+		"-p", fmt.Sprintf("%d:http", fixture.RoutePort),
+		"-p", fmt.Sprintf("%d:webdav", publicPort),
+		runtimeArtifact,
+		fixture.Name,
+	)
+	if created.Status != "created" {
+		t.Fatalf("created status = %s, want created", created.Status)
+	}
+	if !strings.HasPrefix(created.Root, "docker-volume://druid-e2e-") {
+		t.Fatalf("root = %s, want docker volume ref", created.Root)
+	}
+	started := e2e.RunClientJSON[e2e.RuntimeScroll](t, bins, socket, "start", created.ID)
+	if started.Status != "running" {
+		t.Fatalf("started status = %s, want running", started.Status)
+	}
+	body := e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/env.txt", fixture.Port))
+	env := e2e.ParseEnv(body)
+	e2e.AssertRuntimeEnv(t, env, fixture, "docker", created.ID)
+
+	e2e.RunClient(t, bins, socket, "dev", created.ID, "--watch", "data", "--command", "record")
+
+	finiteURL := fmt.Sprintf("http://127.0.0.1:%d/webdav/data/finite.txt", publicPort)
+	if got := e2e.WaitHTTP(t, finiteURL); !strings.Contains(got, "finite-ok") {
+		t.Fatalf("finite file = %q, want finite-ok", got)
+	}
+
+	e2e.UnixJSONRequest(t, socket, http.MethodPost, "/api/v1/scrolls/"+created.ID+"/backup", fmt.Sprintf(`{"artifact":%q}`, backupArtifact))
+	indexURL := fmt.Sprintf("http://127.0.0.1:%d/webdav/data/public/index.txt", publicPort)
+	httpPut(t, indexURL, "mutated\n")
+	if got := e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/index.txt", fixture.Port)); !strings.Contains(got, "mutated") {
+		t.Fatalf("mutated index = %q, want mutated", got)
+	}
+
+	e2e.UnixJSONRequest(t, socket, http.MethodPost, "/api/v1/scrolls/"+created.ID+"/restore", fmt.Sprintf(`{"artifact":%q,"restart":true}`, backupArtifact))
+	if got := e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/index.txt", fixture.Port)); !strings.Contains(got, "healthy") {
+		t.Fatalf("restored index = %q, want healthy", got)
+	}
+	e2e.UnixJSONRequest(t, socket, http.MethodDelete, "/api/v1/scrolls/"+created.ID+"?purge_data=true", "")
+}
+
+func TestDockerBackendColdstarterFrontsRuntime(t *testing.T) {
+	e2e.RequireDocker(t)
+	bins := e2e.BuildBinaries(t)
+	runtimePort := e2e.FreePort(t)
+	publicPort := e2e.FreePort(t)
+	callbackPort := e2e.FreePort(t)
+	name := fmt.Sprintf("docker-coldstart-%d", time.Now().UnixNano())
+	image := e2e.BuildDockerImage(t, "druid-coldstart-e2e:"+name)
+	fixtureDir := writeColdstarterFixture(t, filepath.Join(t.TempDir(), "scroll"), name, image, runtimePort)
+	containerHost := e2e.DockerHostAddress(t)
+
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("druid-coldstart-%d.sock", time.Now().UnixNano()))
+	t.Cleanup(func() { _ = os.Remove(socket) })
+	stateDir := filepath.Join(t.TempDir(), "state")
+	logs := e2e.StartDaemon(t, bins, "docker", socket, stateDir, []string{
+		"--docker-worker-image", image,
+		"--docker-storage", "bind",
+		"--docker-bind-root", filepath.Join(stateDir, "scrolls"),
+		"--worker-callback-listen", fmt.Sprintf(":%d", callbackPort),
+		"--worker-callback-url", fmt.Sprintf("http://%s:%d", containerHost, callbackPort),
+	}, nil)
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("druid daemon logs:\n%s", logs.String())
+		}
+	})
+
+	created := e2e.RunClientJSON[e2e.RuntimeScroll](t, bins, socket, "create", "-p", fmt.Sprintf("%d:http", publicPort), fixtureDir, name)
+	if created.Status != "created" {
+		t.Fatalf("created status = %s, want created", created.Status)
+	}
+	started := e2e.RunClientJSON[e2e.RuntimeScroll](t, bins, socket, "start", created.ID)
+	if started.Status != "running" {
+		t.Fatalf("started status = %s, want running", started.Status)
+	}
+	if got := e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/index.txt", runtimePort)); !strings.Contains(got, "cold-started") {
+		t.Fatalf("served body = %q, want cold-started", got)
+	}
+	root := strings.TrimPrefix(created.Root, "docker-bind://")
+	if got := readDockerRootFile(t, root, ".coldstarter-finished.json"); !strings.Contains(got, "http") {
+		t.Fatalf("coldstarter status file = %q, want port status", got)
+	}
+	e2e.RunClient(t, bins, socket, "delete", created.ID)
 }
 
 func assertPortBound(t *testing.T, statuses []e2e.RuntimePortStatus, fixture e2e.Fixture) {
@@ -86,13 +220,77 @@ func assertPortBound(t *testing.T, statuses []e2e.RuntimePortStatus, fixture e2e
 	t.Fatalf("http port for %s not found in %#v", fixture.ServeProc, statuses)
 }
 
-func readFile(t *testing.T, path string) string {
+func writeColdstarterFixture(t *testing.T, dir string, name string, image string, port int) string {
 	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
+	yaml := fmt.Sprintf(`name: %s
+desc: Coldstarter integration fixture
+version: 0.1.0
+app_version: "test"
+serve: start
+ports:
+  - name: http
+    protocol: http
+    port: %d
+    mandatory: true
+    sleep_handler: generic
+commands:
+  start:
+    run: restart
+    procedures:
+      - id: coldstart
+        image: %s
+        expectedPorts:
+          - name: http
+            keepAliveTraffic: 1b/5m
+        mounts:
+          - path: /runtime
+            sub_path: .
+        command:
+          - druid-coldstarter
+          - --root
+          - /runtime
+          - --status-file
+          - .coldstarter-finished.json
+      - id: web
+        image: busybox:1.36
+        expectedPorts:
+          - name: http
+            keepAliveTraffic: 1b/5m
+        mounts:
+          - path: /site
+            sub_path: public
+        command:
+          - sh
+          - -c
+          - >-
+            set -eu;
+            mkdir -p /site;
+            printf 'cold-started\n' > /site/index.txt;
+            httpd -f -p %d -h /site
+`, name, port, image, port)
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	return string(data)
+	if err := os.WriteFile(filepath.Join(dir, "scroll.yaml"), []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func readDockerRootFile(t *testing.T, root string, path string) string {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	var last string
+	for time.Now().Before(deadline) {
+		out := e2e.Run(t, "docker", "run", "--rm", "-v", root+":/runtime:ro", "busybox:1.36", "sh", "-c", "cat /runtime/"+path+" 2>&1 || true")
+		if !strings.Contains(out, "No such file") {
+			return out
+		}
+		last = out
+		time.Sleep(250 * time.Millisecond)
+	}
+	t.Fatalf("read docker root %s:%s: %s", root, path, last)
+	return ""
 }
 
 func waitDockerContainersGone(t *testing.T, labels ...string) {
@@ -112,4 +310,21 @@ func waitDockerContainersGone(t *testing.T, labels ...string) {
 		time.Sleep(500 * time.Millisecond)
 	}
 	t.Fatalf("docker containers still exist for labels %v", labels)
+}
+
+func httpPut(t *testing.T, url string, body string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPut, url, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		data, _ := io.ReadAll(resp.Body)
+		t.Fatalf("PUT %s failed with %d: %s", url, resp.StatusCode, data)
+	}
 }

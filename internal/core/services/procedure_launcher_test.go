@@ -34,8 +34,8 @@ func TestProcedureLauncherPassesCommandContextToRuntimeBackend(t *testing.T) {
 		if runtimeCommand.Command != command {
 			t.Fatal("Command was not forwarded to runtime backend")
 		}
-		if runtimeCommand.DataRoot != "/runtime-data" {
-			t.Fatalf("DataRoot = %s, want /runtime-data", runtimeCommand.DataRoot)
+		if runtimeCommand.Root != "/runtime-data" {
+			t.Fatalf("Root = %s, want /runtime-data", runtimeCommand.Root)
 		}
 		if len(runtimeCommand.GlobalPorts) != 1 || runtimeCommand.GlobalPorts[0].Name != "http" {
 			t.Fatalf("GlobalPorts = %#v", runtimeCommand.GlobalPorts)
@@ -170,6 +170,28 @@ func TestBuildRuntimeProcedureEnvSetsWaitBeforeRouting(t *testing.T) {
 	}
 	if env["DRUID_PORT_GAME_PORT"] != "7777" {
 		t.Fatalf("env = %#v, want normalized port env", env)
+	}
+}
+
+func TestBuildRuntimeProcedureEnvDerivesURLFromPortProtocol(t *testing.T) {
+	command := &domain.CommandInstructionSet{Procedures: []*domain.Procedure{{Image: "alpine:3.20"}}}
+	envs, err := services.BuildRuntimeProcedureEnv(&domain.File{
+		Name:  "test",
+		Ports: []domain.Port{{Name: "http", Port: 8080, Protocol: "http"}},
+	}, "serve", command, services.RuntimeEnvContext{
+		Routing: []domain.RuntimeRouteAssignment{{
+			Name:       "web-http",
+			PortName:   "http",
+			Host:       "localhost",
+			ExternalIP: "127.0.0.1",
+			PublicPort: 18080,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := envs["serve.0"]["DRUID_PORT_HTTP_URL"]; got != "http://localhost:18080" {
+		t.Fatalf("DRUID_PORT_HTTP_URL = %q", got)
 	}
 }
 

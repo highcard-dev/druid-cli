@@ -1,8 +1,8 @@
 package utils
 
 import (
+	"crypto/rand"
 	"encoding/base64"
-	"math/rand"
 )
 
 // GenerateRandomStringURLSafe returns a URL-safe, base64 encoded

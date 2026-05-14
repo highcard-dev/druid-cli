@@ -3,11 +3,11 @@ package kubernetes
 import (
 	"bufio"
 	"context"
-	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"path"
+	"sort"
 	"strings"
 	"time"
 
@@ -18,21 +18,24 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	k8sclient "k8s.io/client-go/kubernetes"
+	k8sscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/remotecommand"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
-	coreservices "github.com/highcard-dev/daemon/internal/core/services"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"go.uber.org/zap"
 )
 
 type Backend struct {
 	client         k8sclient.Interface
+	restConfig     *rest.Config
 	consoleManager ports.ConsoleManagerInterface
 	config         Config
 	hubble         HubbleClient
+	jobLogRunner   func(context.Context, *batchv1.Job) ([]byte, error)
 }
 
 func New(config Config, consoleManager ports.ConsoleManagerInterface) (*Backend, error) {
@@ -54,9 +57,10 @@ func New(config Config, consoleManager ports.ConsoleManagerInterface) (*Backend,
 	if _, err := client.Discovery().ServerVersion(); err != nil {
 		return nil, fmt.Errorf("kubernetes API unavailable: %w", err)
 	}
-	logger.Log().Info("Using Kubernetes runtime config", zap.String("source", source), zap.String("namespace", config.Namespace))
+	logger.Log().Info("Using Kubernetes backend settings", zap.String("source", source), zap.String("namespace", config.Namespace))
 	backend := &Backend{
 		client:         client,
+		restConfig:     restConfig,
 		consoleManager: consoleManager,
 		config:         config,
 		hubble:         NewHubbleRelayClient(config.HubbleRelayAddr),
@@ -131,88 +135,103 @@ func (b *Backend) Name() string {
 	return "kubernetes"
 }
 
-func (b *Backend) MaterializeScroll(ctx context.Context, artifact string, requestedName string) (*ports.RuntimeMaterialization, error) {
+func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorkerAction) error {
 	if err := b.config.ValidateForMaterialization(); err != nil {
-		return nil, err
+		return err
 	}
-	stagePVC := stagingPVCName(artifact + requestedName)
-	if err := b.ensurePVC(ctx, stagePVC); err != nil {
-		return nil, err
+	if action.MountPath == "" {
+		action.MountPath = "/scroll"
 	}
-	pullJob := pullJobSpec(b.config.Namespace, jobName("pull", ref(b.config.Namespace, stagePVC), shortHash(artifact)), stagePVC, b.config.PullImage, artifact, b.config.RegistrySecret, b.config.RegistryPlainHTTP)
-	if err := b.runHelperJob(ctx, pullJob); err != nil {
-		return nil, err
-	}
-	scrollYAML, err := b.ReadScrollFile(ref(b.config.Namespace, stagePVC))
-	if err != nil {
-		return nil, err
-	}
-	scroll, err := domain.NewScrollFromBytes("", scrollYAML)
-	if err != nil {
-		return nil, err
-	}
-	id, err := coreservices.RuntimeScrollID(requestedName, scroll.Name)
-	if err != nil {
-		return nil, err
-	}
-	finalPVC := dataPVCName(id)
-	if err := b.ensurePVC(ctx, finalPVC); err != nil {
-		return nil, err
-	}
-	copyJob := copyPVCJobSpec(b.config.Namespace, jobName("copy", ref(b.config.Namespace, finalPVC), shortHash(stagePVC)), stagePVC, finalPVC, b.config.HelperImage)
-	if err := b.runHelperJob(ctx, copyJob); err != nil {
-		return nil, err
-	}
-	_ = b.client.CoreV1().PersistentVolumeClaims(b.config.Namespace).Delete(ctx, stagePVC, metav1.DeleteOptions{})
-	return &ports.RuntimeMaterialization{
-		Artifact:   artifact,
-		ScrollRoot: ref(b.config.Namespace, finalPVC),
-		DataRoot:   ref(b.config.Namespace, finalPVC),
-		ScrollYAML: scrollYAML,
-	}, nil
-}
-
-func (b *Backend) ReadScrollFile(scrollRoot string) ([]byte, error) {
-	namespace, pvc, err := parseRef(scrollRoot)
-	if err != nil {
-		return nil, err
-	}
-	job := readScrollJobSpec(namespace, jobName("read", scrollRoot, "scroll-yaml"), pvc, b.config.HelperImage)
-	return b.runJobAndLogs(context.Background(), job)
-}
-
-func (b *Backend) ReadDataFile(ctx context.Context, dataRoot string, relativePath string) ([]byte, error) {
-	cleaned, err := cleanDataPath(relativePath)
-	if err != nil {
-		return nil, err
-	}
-	namespace, pvc, err := parseRef(dataRoot)
-	if err != nil {
-		return nil, err
-	}
-	job := readDataFileJobSpec(namespace, jobName("read-file", dataRoot, shortHash(cleaned)), pvc, b.config.HelperImage, cleaned)
-	return b.runJobAndLogs(ctx, job)
-}
-
-func (b *Backend) WriteDataFile(ctx context.Context, dataRoot string, relativePath string, data []byte) error {
-	cleaned, err := cleanDataPath(relativePath)
+	namespace, pvc, err := parseRef(action.RootRef)
 	if err != nil {
 		return err
 	}
-	namespace, pvc, err := parseRef(dataRoot)
+	if action.Mode == ports.RuntimeWorkerModeCreate {
+		if err := b.ensurePVC(ctx, pvc); err != nil {
+			return err
+		}
+	}
+	registryConfigSecret, cleanupRegistryConfig, err := b.createRegistryConfigSecret(ctx, namespace, action.Artifact+action.RuntimeID, action.RegistryCredentials)
 	if err != nil {
 		return err
 	}
-	job := writeDataFileJobSpec(namespace, jobName("write-file", dataRoot, shortHash(cleaned)), pvc, b.config.HelperImage, cleaned, base64.StdEncoding.EncodeToString(data))
+	defer cleanupRegistryConfig()
+	job := workerPullJobSpec(namespace, jobName("worker-pull", action.RootRef, shortHash(string(action.Mode)+action.Artifact)), pvc, b.config.PullImage, action, b.config.RegistrySecret, registryConfigSecret, b.config.RegistryPlainHTTP)
 	return b.runHelperJob(ctx, job)
 }
 
-func cleanDataPath(relativePath string) (string, error) {
-	cleaned := path.Clean(strings.TrimPrefix(relativePath, "/"))
-	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
-		return "", fmt.Errorf("invalid data file path %q", relativePath)
+func (b *Backend) ReadScrollFile(root string) ([]byte, error) {
+	namespace, pvc, err := parseRef(root)
+	if err != nil {
+		return nil, err
 	}
-	return cleaned, nil
+	job := readScrollJobSpec(namespace, jobName("read", root, "scroll-yaml"), pvc, b.config.HelperImage)
+	return b.runJobAndLogs(context.Background(), job)
+}
+
+func (b *Backend) StartDev(ctx context.Context, action ports.RuntimeDevAction) error {
+	if b.config.PullImage == "" {
+		return fmt.Errorf("kubernetes dev requires --k8s-pull-image or DRUID_K8S_PULL_IMAGE")
+	}
+	if action.MountPath == "" {
+		action.MountPath = "/scroll"
+	}
+	if action.Listen == "" {
+		action.Listen = ":8084"
+	}
+	namespace, pvc, err := parseRef(action.RootRef)
+	if err != nil {
+		return err
+	}
+	sts := devStatefulSetSpec(namespace, action.RootRef, pvc, b.config.PullImage, action, b.config.RegistrySecret)
+	existing, err := b.client.AppsV1().StatefulSets(namespace).Get(ctx, sts.Name, metav1.GetOptions{})
+	switch {
+	case apierrors.IsNotFound(err):
+		if _, err := b.client.AppsV1().StatefulSets(namespace).Create(ctx, sts, metav1.CreateOptions{}); err != nil {
+			return err
+		}
+	case err != nil:
+		return err
+	default:
+		sts.ResourceVersion = existing.ResourceVersion
+		if _, err := b.client.AppsV1().StatefulSets(namespace).Update(ctx, sts, metav1.UpdateOptions{}); err != nil {
+			return err
+		}
+	}
+	service := devServiceSpec(namespace, action.RootRef, pvc)
+	if err := b.reconcileService(ctx, service); err != nil {
+		return err
+	}
+	return b.waitForStatefulSet(ctx, sts.Name)
+}
+
+func (b *Backend) StopDev(ctx context.Context, root string) error {
+	namespace, _, err := parseRef(root)
+	if err != nil {
+		return err
+	}
+	propagation := metav1.DeletePropagationBackground
+	_ = b.client.AppsV1().StatefulSets(namespace).Delete(ctx, devStatefulSetName(root), metav1.DeleteOptions{PropagationPolicy: &propagation})
+	_ = b.client.CoreV1().Services(namespace).Delete(ctx, serviceName(root, "dev", "webdav"), metav1.DeleteOptions{})
+	return nil
+}
+
+func (b *Backend) reconcileService(ctx context.Context, service *corev1.Service) error {
+	existing, err := b.client.CoreV1().Services(service.Namespace).Get(ctx, service.Name, metav1.GetOptions{})
+	switch {
+	case apierrors.IsNotFound(err):
+		_, err := b.client.CoreV1().Services(service.Namespace).Create(ctx, service, metav1.CreateOptions{})
+		return err
+	case err != nil:
+		return err
+	}
+	service.ResourceVersion = existing.ResourceVersion
+	service.Spec.ClusterIP = existing.Spec.ClusterIP
+	service.Spec.ClusterIPs = existing.Spec.ClusterIPs
+	service.Spec.IPFamilies = existing.Spec.IPFamilies
+	service.Spec.IPFamilyPolicy = existing.Spec.IPFamilyPolicy
+	_, err = b.client.CoreV1().Services(service.Namespace).Update(ctx, service, metav1.UpdateOptions{})
+	return err
 }
 
 func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
@@ -224,7 +243,7 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 		}
 		if command.Command.Run == domain.RunModePersistent {
 			if procedure.IsSignal() {
-				if err := b.Signal(procedureName, procedure.Target, procedure.Signal, command.DataRoot); err != nil {
+				if err := b.Signal(procedureName, procedure.Target, procedure.Signal, command.Root); err != nil {
 					return nil, err
 				}
 				continue
@@ -232,12 +251,12 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 			if procedure.Image == "" {
 				return nil, fmt.Errorf("kubernetes procedure %s requires image", procedureName)
 			}
-			if err := b.ensurePersistentProcedure(context.Background(), command.ScrollID, command.DataRoot, procedureName, procedure, command.GlobalPorts, env); err != nil {
+			if err := b.ensurePersistentProcedure(context.Background(), command.ScrollID, command.Root, procedureName, procedure, command.GlobalPorts, env); err != nil {
 				return nil, err
 			}
 			continue
 		}
-		exitCode, err := b.runJobProcedure(command.ScrollID, procedureName, procedure, command.DataRoot, command.GlobalPorts, env)
+		exitCode, err := b.runJobProcedure(command.ScrollID, procedureName, procedure, command.Root, command.GlobalPorts, env)
 		if err != nil {
 			return exitCode, err
 		}
@@ -251,18 +270,18 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 	return nil, nil
 }
 
-func (b *Backend) runJobProcedure(scrollID string, procedureName string, procedure *domain.Procedure, dataRoot string, globalPorts []domain.Port, env map[string]string) (*int, error) {
+func (b *Backend) runJobProcedure(scrollID string, procedureName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, env map[string]string) (*int, error) {
 	if procedure.IsSignal() {
-		return nil, b.Signal(procedureName, procedure.Target, procedure.Signal, dataRoot)
+		return nil, b.Signal(procedureName, procedure.Target, procedure.Signal, root)
 	}
 	if procedure.Image == "" {
 		return nil, fmt.Errorf("kubernetes procedure %s requires image", procedureName)
 	}
 	ctx := context.Background()
-	if err := b.ensureExpectedServices(ctx, dataRoot, procedureName, procedure, globalPorts); err != nil {
+	if err := b.ensureExpectedServices(ctx, root, procedureName, procedure, globalPorts); err != nil {
 		return nil, err
 	}
-	job, err := procedureJobSpec(b.config.Namespace, dataRoot, procedureName, procedure, env, b.config.RegistrySecret)
+	job, err := procedureJobSpec(b.config.Namespace, root, procedureName, procedure, env, b.config.RegistrySecret)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +293,7 @@ func (b *Backend) runJobProcedure(scrollID string, procedureName string, procedu
 	consoleID := runtimeConsoleID(scrollID, procedureName)
 	console, doneChan := b.consoleManager.AddConsoleWithChannel(consoleID, domain.ConsoleTypeContainer, "stdin", output)
 	console.WriteInput = func(data string) error {
-		return b.Attach(procedureName, data)
+		return b.attachToProcedure(root, procedureName, data)
 	}
 	streamStarted := false
 	podName, err := b.waitForJobPod(ctx, job.Name, string(createdJob.UID))
@@ -296,11 +315,11 @@ func (b *Backend) runJobProcedure(scrollID string, procedureName string, procedu
 	return exitCode, nil
 }
 
-func (b *Backend) ensurePersistentProcedure(ctx context.Context, scrollID string, dataRoot string, procedureName string, procedure *domain.Procedure, globalPorts []domain.Port, env map[string]string) error {
-	if err := b.ensureExpectedServices(ctx, dataRoot, procedureName, procedure, globalPorts); err != nil {
+func (b *Backend) ensurePersistentProcedure(ctx context.Context, scrollID string, root string, procedureName string, procedure *domain.Procedure, globalPorts []domain.Port, env map[string]string) error {
+	if err := b.ensureExpectedServices(ctx, root, procedureName, procedure, globalPorts); err != nil {
 		return err
 	}
-	statefulSet, err := procedureStatefulSetSpec(b.config.Namespace, dataRoot, procedureName, procedure, env, b.config.RegistrySecret)
+	statefulSet, err := procedureStatefulSetSpec(b.config.Namespace, root, procedureName, procedure, env, b.config.RegistrySecret)
 	if err != nil {
 		return err
 	}
@@ -321,7 +340,7 @@ func (b *Backend) ensurePersistentProcedure(ctx context.Context, scrollID string
 	output := make(chan string, 100)
 	console, _ := b.consoleManager.AddConsoleWithChannel(runtimeConsoleID(scrollID, procedureName), domain.ConsoleTypeContainer, "stdin", output)
 	console.WriteInput = func(data string) error {
-		return b.Attach(procedureName, data)
+		return b.attachToProcedure(root, procedureName, data)
 	}
 	if err := b.waitForStatefulSet(ctx, statefulSet.Name); err != nil {
 		close(output)
@@ -342,8 +361,8 @@ func (b *Backend) ensurePersistentProcedure(ctx context.Context, scrollID string
 	return nil
 }
 
-func (b *Backend) ExpectedPorts(dataRoot string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
-	_, pvc, err := parseRef(dataRoot)
+func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
+	_, pvc, err := parseRef(root)
 	if err != nil {
 		return nil, err
 	}
@@ -379,7 +398,7 @@ func (b *Backend) ExpectedPorts(dataRoot string, commands map[string]*domain.Com
 					KeepAliveTraffic: expectedPort.KeepAliveTraffic,
 					Source:           "kubernetes-service",
 				}
-				serviceReady, hostPort := b.serviceReady(context.Background(), serviceName(dataRoot, procedureName, expectedPort.Name))
+				serviceReady, hostPort := b.serviceReady(context.Background(), serviceName(root, procedureName, expectedPort.Name))
 				status.Bound = serviceReady
 				status.HostPort = hostPort
 				if !hubbleAvailable {
@@ -423,14 +442,36 @@ func (b *Backend) ExpectedPorts(dataRoot string, commands map[string]*domain.Com
 	return statuses, nil
 }
 
-func (b *Backend) RoutingTargets(dataRoot string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error) {
-	namespace, pvc, err := parseRef(dataRoot)
+func (b *Backend) RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error) {
+	namespace, pvc, err := parseRef(root)
 	if err != nil {
 		return nil, err
 	}
 	portsByName := portsByName(globalPorts)
-	targets := []domain.RuntimeRoutingTarget{}
-	for commandName, command := range commands {
+	targets := []domain.RuntimeRoutingTarget{{
+		Name:        "webdav",
+		Procedure:   "dev",
+		PortName:    "webdav",
+		Port:        8084,
+		Protocol:    "https",
+		Namespace:   namespace,
+		ServiceName: serviceName(root, "dev", "webdav"),
+		ServicePort: 8084,
+		Selector: map[string]string{
+			labelManagedBy: "druid",
+			labelComponent: "runtime",
+			labelScrollID:  dnsLabel(pvc),
+			labelProcedure: "dev",
+		},
+	}}
+	seen := map[string]struct{}{"webdav": {}}
+	commandNames := make([]string, 0, len(commands))
+	for commandName := range commands {
+		commandNames = append(commandNames, commandName)
+	}
+	sort.Strings(commandNames)
+	for _, commandName := range commandNames {
+		command := commands[commandName]
 		if command == nil {
 			continue
 		}
@@ -440,25 +481,34 @@ func (b *Backend) RoutingTargets(dataRoot string, commands map[string]*domain.Co
 			}
 			procedureName := domain.ProcedureName(commandName, idx, procedure)
 			for _, expectedPort := range procedure.ExpectedPorts {
+				if _, ok := seen[expectedPort.Name]; ok {
+					continue
+				}
 				port, ok := portsByName[expectedPort.Name]
 				if !ok {
 					return nil, fmt.Errorf("expected port %s is not defined in top-level ports", expectedPort.Name)
 				}
+				seen[expectedPort.Name] = struct{}{}
+				selector := map[string]string{
+					labelManagedBy: "druid",
+					labelComponent: "runtime",
+					labelScrollID:  dnsLabel(pvc),
+				}
+				if len(procedure.ExpectedPorts) == 1 {
+					selector[labelPortName] = dnsLabel(expectedPort.Name)
+				} else {
+					selector[labelProcedure] = dnsLabel(procedureName)
+				}
 				targets = append(targets, domain.RuntimeRoutingTarget{
-					Name:        fmt.Sprintf("%s-%s", procedureName, expectedPort.Name),
+					Name:        expectedPort.Name,
 					Procedure:   procedureName,
 					PortName:    expectedPort.Name,
 					Port:        port.Port,
 					Protocol:    normalizeProtocol(port.Protocol),
 					Namespace:   namespace,
-					ServiceName: serviceName(dataRoot, procedureName, expectedPort.Name),
+					ServiceName: serviceName(root, procedureName, expectedPort.Name),
 					ServicePort: port.Port,
-					Selector: map[string]string{
-						labelManagedBy: "druid",
-						labelComponent: "runtime",
-						labelScrollID:  dnsLabel(pvc),
-						labelProcedure: dnsLabel(procedureName),
-					},
+					Selector:    selector,
 				})
 			}
 		}
@@ -466,29 +516,29 @@ func (b *Backend) RoutingTargets(dataRoot string, commands map[string]*domain.Co
 	return targets, nil
 }
 
-func (b *Backend) StopRuntime(dataRoot string) error {
+func (b *Backend) StopRuntime(root string) error {
 	propagation := metav1.DeletePropagationBackground
 	options := metav1.DeleteOptions{PropagationPolicy: &propagation}
-	if err := b.deleteRuntimeJobs(context.Background(), dataRoot, options); err != nil {
+	if err := b.deleteRuntimeJobs(context.Background(), root, options); err != nil {
 		return err
 	}
-	if err := b.deleteRuntimeStatefulSets(context.Background(), dataRoot, options); err != nil {
+	if err := b.deleteRuntimeStatefulSets(context.Background(), root, options); err != nil {
 		return err
 	}
-	return b.deleteRuntimePodsByScroll(context.Background(), dataRoot, options)
+	return b.deleteRuntimePodsByScroll(context.Background(), root, options)
 }
 
-func (b *Backend) DeleteRuntime(dataRoot string, purgeData bool) error {
+func (b *Backend) DeleteRuntime(root string, purgeData bool) error {
 	propagation := metav1.DeletePropagationBackground
 	options := metav1.DeleteOptions{PropagationPolicy: &propagation}
-	if err := b.StopRuntime(dataRoot); err != nil {
+	if err := b.StopRuntime(root); err != nil {
 		return err
 	}
-	if err := b.deleteRuntimeServices(context.Background(), dataRoot, options); err != nil {
+	if err := b.deleteRuntimeServices(context.Background(), root, options); err != nil {
 		return err
 	}
 	if purgeData {
-		namespace, pvc, err := parseRef(dataRoot)
+		namespace, pvc, err := parseRef(root)
 		if err != nil {
 			return err
 		}
@@ -500,79 +550,136 @@ func (b *Backend) DeleteRuntime(dataRoot string, purgeData bool) error {
 	return nil
 }
 
-func (b *Backend) BackupRuntime(ctx context.Context, dataRoot string, artifact string) error {
+func (b *Backend) BackupRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential) error {
 	if artifact == "" {
 		return fmt.Errorf("backup artifact is required")
 	}
 	if b.config.PullImage == "" {
 		return b.config.ValidateForMaterialization()
 	}
-	namespace, pvc, err := parseRef(dataRoot)
+	namespace, pvc, err := parseRef(root)
 	if err != nil {
 		return err
 	}
-	job := backupJobSpec(namespace, jobName("backup", dataRoot, shortHash(artifact)), pvc, b.config.PullImage, artifact, b.config.RegistrySecret, b.config.RegistryPlainHTTP)
+	registryConfigSecret, cleanupRegistryConfig, err := b.createRegistryConfigSecret(ctx, namespace, artifact+root, registryCredentials)
+	if err != nil {
+		return err
+	}
+	defer cleanupRegistryConfig()
+	job := backupJobSpec(namespace, jobName("backup", root, shortHash(artifact)), pvc, b.config.PullImage, artifact, b.config.RegistrySecret, registryConfigSecret, b.config.RegistryPlainHTTP)
 	return b.runHelperJob(ctx, job)
 }
 
-func (b *Backend) RestoreRuntime(ctx context.Context, dataRoot string, artifact string) error {
+func (b *Backend) RestoreRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential) error {
 	if artifact == "" {
 		return fmt.Errorf("restore artifact is required")
 	}
 	if err := b.config.ValidateForMaterialization(); err != nil {
 		return err
 	}
-	namespace, pvc, err := parseRef(dataRoot)
+	namespace, pvc, err := parseRef(root)
 	if err != nil {
 		return err
 	}
-	stagePVC := stagingPVCName("restore:" + dataRoot + ":" + artifact)
+	stagePVC := stagingPVCName("restore:" + root + ":" + artifact)
 	if err := b.ensurePVC(ctx, stagePVC); err != nil {
 		return err
 	}
 	defer b.client.CoreV1().PersistentVolumeClaims(namespace).Delete(context.Background(), stagePVC, metav1.DeleteOptions{})
-	pullJob := pullJobSpec(namespace, jobName("restore-pull", ref(namespace, stagePVC), shortHash(artifact)), stagePVC, b.config.PullImage, artifact, b.config.RegistrySecret, b.config.RegistryPlainHTTP)
+	registryConfigSecret, cleanupRegistryConfig, err := b.createRegistryConfigSecret(ctx, namespace, artifact+root, registryCredentials)
+	if err != nil {
+		return err
+	}
+	defer cleanupRegistryConfig()
+	pullJob := pullJobSpec(namespace, jobName("restore-pull", ref(namespace, stagePVC), shortHash(artifact)), stagePVC, b.config.PullImage, artifact, b.config.RegistrySecret, registryConfigSecret, b.config.RegistryPlainHTTP)
 	if err := b.runHelperJob(ctx, pullJob); err != nil {
 		return err
 	}
-	if err := b.StopRuntime(dataRoot); err != nil {
+	if err := b.StopRuntime(root); err != nil {
 		return err
 	}
-	restoreJob := replacePVCJobSpec(namespace, jobName("restore-copy", dataRoot, shortHash(artifact)), stagePVC, pvc, b.config.HelperImage)
+	restoreJob := replacePVCJobSpec(namespace, jobName("restore-copy", root, shortHash(artifact)), stagePVC, pvc, b.config.HelperImage)
 	return b.runHelperJob(ctx, restoreJob)
 }
 
 func (b *Backend) Attach(commandName string, data string) error {
-	return fmt.Errorf("kubernetes attach is not implemented for console %s: pod attach/exec support is required", commandName)
+	pods, err := b.client.CoreV1().Pods(b.config.Namespace).List(context.Background(), metav1.ListOptions{
+		LabelSelector: labels.SelectorFromSet(labels.Set{labelProcedure: dnsLabel(commandName)}).String(),
+	})
+	if err != nil {
+		return err
+	}
+	for _, pod := range pods.Items {
+		if pod.Status.Phase == corev1.PodRunning {
+			return b.attachToPod(context.Background(), pod.Name, data)
+		}
+	}
+	return fmt.Errorf("no running pod found for console %s", commandName)
 }
 
-func (b *Backend) Signal(_ string, target string, signal string, dataRoot string) error {
+func (b *Backend) attachToProcedure(root string, procedureName string, data string) error {
+	_, pvc, err := parseRef(root)
+	if err != nil {
+		return err
+	}
+	selector := baseLabels(pvc)
+	selector[labelProcedure] = dnsLabel(procedureName)
+	podName, err := b.waitForPodBySelector(context.Background(), labels.SelectorFromSet(selector).String())
+	if err != nil {
+		return err
+	}
+	return b.attachToPod(context.Background(), podName, data)
+}
+
+func (b *Backend) attachToPod(ctx context.Context, podName string, data string) error {
+	req := b.client.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Namespace(b.config.Namespace).
+		Name(podName).
+		SubResource("attach").
+		VersionedParams(&corev1.PodAttachOptions{
+			Container: "main",
+			Stdin:     true,
+			Stdout:    false,
+			Stderr:    false,
+			TTY:       false,
+		}, k8sscheme.ParameterCodec)
+	exec, err := remotecommand.NewSPDYExecutor(b.restConfig, "POST", req.URL())
+	if err != nil {
+		return err
+	}
+	return exec.StreamWithContext(ctx, remotecommand.StreamOptions{
+		Stdin: strings.NewReader(data),
+	})
+}
+
+func (b *Backend) Signal(_ string, target string, signal string, root string) error {
 	if target == "" {
 		return nil
 	}
 	switch signal {
 	case "", "SIGTERM", "TERM":
 		propagation := metav1.DeletePropagationBackground
-		return b.deleteRuntimeWorkload(context.Background(), dataRoot, target, metav1.DeleteOptions{PropagationPolicy: &propagation})
+		return b.deleteRuntimeWorkload(context.Background(), root, target, metav1.DeleteOptions{PropagationPolicy: &propagation})
 	case "SIGKILL", "KILL":
 		grace := int64(0)
 		propagation := metav1.DeletePropagationBackground
-		return b.deleteRuntimeWorkload(context.Background(), dataRoot, target, metav1.DeleteOptions{GracePeriodSeconds: &grace, PropagationPolicy: &propagation})
+		return b.deleteRuntimeWorkload(context.Background(), root, target, metav1.DeleteOptions{GracePeriodSeconds: &grace, PropagationPolicy: &propagation})
 	default:
 		return fmt.Errorf("kubernetes signal %s is unsupported without pod exec", signal)
 	}
 }
 
-func (b *Backend) deleteRuntimeWorkload(ctx context.Context, dataRoot string, target string, options metav1.DeleteOptions) error {
-	jobErr := b.client.BatchV1().Jobs(b.config.Namespace).Delete(ctx, jobName("proc", dataRoot, target), options)
+func (b *Backend) deleteRuntimeWorkload(ctx context.Context, root string, target string, options metav1.DeleteOptions) error {
+	jobErr := b.client.BatchV1().Jobs(b.config.Namespace).Delete(ctx, jobName("proc", root, target), options)
 	if apierrors.IsNotFound(jobErr) {
 		jobErr = nil
 	}
-	statefulSetErr := b.client.AppsV1().StatefulSets(b.config.Namespace).Delete(ctx, statefulSetName(dataRoot, target), options)
+	statefulSetErr := b.client.AppsV1().StatefulSets(b.config.Namespace).Delete(ctx, statefulSetName(root, target), options)
 	if apierrors.IsNotFound(statefulSetErr) {
 		statefulSetErr = nil
 	}
-	podErr := b.deleteRuntimePods(ctx, dataRoot, target, options)
+	podErr := b.deleteRuntimePods(ctx, root, target, options)
 	if jobErr != nil {
 		return jobErr
 	}
@@ -582,8 +689,8 @@ func (b *Backend) deleteRuntimeWorkload(ctx context.Context, dataRoot string, ta
 	return podErr
 }
 
-func (b *Backend) deleteRuntimePods(ctx context.Context, dataRoot string, target string, options metav1.DeleteOptions) error {
-	_, pvc, err := parseRef(dataRoot)
+func (b *Backend) deleteRuntimePods(ctx context.Context, root string, target string, options metav1.DeleteOptions) error {
+	_, pvc, err := parseRef(root)
 	if err != nil {
 		return err
 	}
@@ -603,8 +710,8 @@ func (b *Backend) deleteRuntimePods(ctx context.Context, dataRoot string, target
 	return nil
 }
 
-func (b *Backend) deleteRuntimeJobs(ctx context.Context, dataRoot string, options metav1.DeleteOptions) error {
-	return b.deleteRuntimeObjects(ctx, dataRoot, func(name string) error {
+func (b *Backend) deleteRuntimeJobs(ctx context.Context, root string, options metav1.DeleteOptions) error {
+	return b.deleteRuntimeObjects(ctx, root, func(name string) error {
 		err := b.client.BatchV1().Jobs(b.config.Namespace).Delete(ctx, name, options)
 		if apierrors.IsNotFound(err) {
 			return nil
@@ -613,8 +720,8 @@ func (b *Backend) deleteRuntimeJobs(ctx context.Context, dataRoot string, option
 	}, "jobs")
 }
 
-func (b *Backend) deleteRuntimeStatefulSets(ctx context.Context, dataRoot string, options metav1.DeleteOptions) error {
-	return b.deleteRuntimeObjects(ctx, dataRoot, func(name string) error {
+func (b *Backend) deleteRuntimeStatefulSets(ctx context.Context, root string, options metav1.DeleteOptions) error {
+	return b.deleteRuntimeObjects(ctx, root, func(name string) error {
 		err := b.client.AppsV1().StatefulSets(b.config.Namespace).Delete(ctx, name, options)
 		if apierrors.IsNotFound(err) {
 			return nil
@@ -623,8 +730,8 @@ func (b *Backend) deleteRuntimeStatefulSets(ctx context.Context, dataRoot string
 	}, "statefulsets")
 }
 
-func (b *Backend) deleteRuntimeServices(ctx context.Context, dataRoot string, options metav1.DeleteOptions) error {
-	return b.deleteRuntimeObjects(ctx, dataRoot, func(name string) error {
+func (b *Backend) deleteRuntimeServices(ctx context.Context, root string, options metav1.DeleteOptions) error {
+	return b.deleteRuntimeObjects(ctx, root, func(name string) error {
 		err := b.client.CoreV1().Services(b.config.Namespace).Delete(ctx, name, options)
 		if apierrors.IsNotFound(err) {
 			return nil
@@ -633,8 +740,8 @@ func (b *Backend) deleteRuntimeServices(ctx context.Context, dataRoot string, op
 	}, "services")
 }
 
-func (b *Backend) deleteRuntimeObjects(ctx context.Context, dataRoot string, deleteOne func(name string) error, kind string) error {
-	_, pvc, err := parseRef(dataRoot)
+func (b *Backend) deleteRuntimeObjects(ctx context.Context, root string, deleteOne func(name string) error, kind string) error {
+	_, pvc, err := parseRef(root)
 	if err != nil {
 		return err
 	}
@@ -676,8 +783,8 @@ func (b *Backend) deleteRuntimeObjects(ctx context.Context, dataRoot string, del
 	return nil
 }
 
-func (b *Backend) deleteRuntimePodsByScroll(ctx context.Context, dataRoot string, options metav1.DeleteOptions) error {
-	_, pvc, err := parseRef(dataRoot)
+func (b *Backend) deleteRuntimePodsByScroll(ctx context.Context, root string, options metav1.DeleteOptions) error {
+	_, pvc, err := parseRef(root)
 	if err != nil {
 		return err
 	}
@@ -705,12 +812,49 @@ func (b *Backend) ensurePVC(ctx context.Context, name string) error {
 	return err
 }
 
+func (b *Backend) createRegistryConfigSecret(ctx context.Context, namespace string, seed string, credentials []domain.RegistryCredential) (string, func(), error) {
+	if len(credentials) == 0 {
+		return "", func() {}, nil
+	}
+	data, err := json.Marshal(struct {
+		Registries []domain.RegistryCredential `json:"registries"`
+	}{Registries: credentials})
+	if err != nil {
+		return "", nil, err
+	}
+	name := dnsLabel("druid-registry-" + shortHash(fmt.Sprintf("%s-%d", seed, time.Now().UnixNano())))
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels: map[string]string{
+				labelManagedBy: "druid",
+				labelComponent: "registry-auth",
+			},
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{registryConfigSecretKey: data},
+	}
+	if _, err := b.client.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{}); err != nil {
+		return "", nil, err
+	}
+	cleanup := func() {
+		deleteCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_ = b.client.CoreV1().Secrets(namespace).Delete(deleteCtx, name, metav1.DeleteOptions{})
+	}
+	return name, cleanup, nil
+}
+
 func (b *Backend) runHelperJob(ctx context.Context, job *batchv1.Job) error {
 	_, err := b.runJobAndLogs(ctx, job)
 	return err
 }
 
 func (b *Backend) runJobAndLogs(ctx context.Context, job *batchv1.Job) ([]byte, error) {
+	if b.jobLogRunner != nil {
+		return b.jobLogRunner(ctx, job)
+	}
 	createdJob, err := b.createFreshJob(ctx, job)
 	if err != nil {
 		return nil, err
@@ -894,14 +1038,14 @@ func (b *Backend) streamPodLogs(ctx context.Context, podName string, output chan
 	}
 }
 
-func (b *Backend) ensureExpectedServices(ctx context.Context, dataRoot string, procedureName string, procedure *domain.Procedure, globalPorts []domain.Port) error {
+func (b *Backend) ensureExpectedServices(ctx context.Context, root string, procedureName string, procedure *domain.Procedure, globalPorts []domain.Port) error {
 	ports := portsByName(globalPorts)
 	for _, expected := range procedure.ExpectedPorts {
 		port, ok := ports[expected.Name]
 		if !ok {
 			return fmt.Errorf("expected port %s is not defined in top-level ports", expected.Name)
 		}
-		service, err := serviceSpec(b.config.Namespace, dataRoot, procedureName, expected.Name, port)
+		service, err := serviceSpec(b.config.Namespace, root, procedureName, expected.Name, port)
 		if err != nil {
 			return err
 		}

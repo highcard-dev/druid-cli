@@ -33,9 +33,16 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
-            - serve
+            - daemon
             - --listen=:{{ .Values.service.managementPort }}
             - --public-listen=:{{ .Values.service.publicPort }}
+            - --worker-callback-listen=:{{ .Values.service.workerCallbackPort }}
+            - --worker-callback-url=http://{{ include "druid-cli.fullname" . }}:{{ .Values.service.workerCallbackPort }}
+            - --worker-daemon-url={{ default (printf "http://%s:%v" (include "druid-cli.fullname" .) .Values.service.managementPort) .Values.runtime.workerDaemonUrl }}
+            - --public-jwks-url={{ default (printf "http://%s:%v/.well-known/jwks.json" (include "druid-cli.fullname" .) .Values.service.publicPort) .Values.auth.publicJwksUrl }}
+            {{- if .Values.auth.jwksUrl }}
+            - --auth-jwks-url={{ .Values.auth.jwksUrl }}
+            {{- end }}
             - --runtime={{ .Values.runtime.backend }}
             - --state-dir={{ .Values.runtime.stateDir }}
           ports:
@@ -44,6 +51,9 @@ spec:
               protocol: TCP
             - name: public
               containerPort: {{ .Values.service.publicPort }}
+              protocol: TCP
+            - name: worker
+              containerPort: {{ .Values.service.workerCallbackPort }}
               protocol: TCP
           env:
             - name: DRUID_K8S_NAMESPACE
@@ -56,7 +66,7 @@ spec:
               value: {{ .Values.runtime.helperImage | quote }}
             - name: DRUID_K8S_REGISTRY_SECRET
               value: {{ .Values.runtime.registrySecret | quote }}
-            - name: DRUID_K8S_REGISTRY_PLAIN_HTTP
+            - name: DRUID_REGISTRY_PLAIN_HTTP
               value: {{ ternary "true" "false" .Values.runtime.registryPlainHTTP | quote }}
             - name: DRUID_HUBBLE_RELAY_ADDR
               value: {{ .Values.hubble.relayAddr | quote }}

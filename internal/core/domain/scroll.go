@@ -25,15 +25,11 @@ const (
 	RunModePersistent RunMode = "persistent" //restarts on failure and on program restart
 )
 
-type Cronjob struct {
-	Name     string `yaml:"name"`
-	Schedule string `yaml:"schedule"`
-	Command  string `yaml:"command"`
-}
 type Chunks struct {
-	Name   string    `yaml:"name"`
-	Path   string    `yaml:"path"`
-	Chunks []*Chunks `yaml:"chunks,omitempty" json:"chunks,omitempty"`
+	Name       string    `yaml:"name"`
+	Path       string    `yaml:"path"`
+	SkipUpdate bool      `yaml:"skip_update,omitempty" json:"skip_update,omitempty"`
+	Chunks     []*Chunks `yaml:"chunks,omitempty" json:"chunks,omitempty"`
 }
 
 type ColdStarterVars struct {
@@ -69,7 +65,6 @@ type File struct {
 	Serve       string                            `yaml:"serve" json:"serve"`
 	Ports       []Port                            `yaml:"ports" json:"ports"`
 	Commands    map[string]*CommandInstructionSet `yaml:"commands" json:"commands"`
-	Cronjobs    []*Cronjob                        `yaml:"cronjobs" json:"cronjobs"`
 	Chunks      []*Chunks                         `yaml:"chunks" json:"chunks"`
 }
 
@@ -303,13 +298,13 @@ func (sc *Scroll) Validate(strict bool) error {
 				return fmt.Errorf("procedure is required")
 			}
 			if p.Mode != "" {
-				return fmt.Errorf("procedure uses legacy mode %q; use type: container or type: signal", p.Mode)
+				return fmt.Errorf("procedure field mode is unsupported; use type: container or type: signal")
 			}
 			if p.Wait != nil {
-				return fmt.Errorf("procedure uses legacy wait; waits are no longer supported")
+				return fmt.Errorf("procedure field wait is unsupported")
 			}
 			if p.Data != nil {
-				return fmt.Errorf("procedure uses legacy data; use container command fields or type: signal")
+				return fmt.Errorf("procedure field data is unsupported; use container command fields or type: signal")
 			}
 			switch p.Kind() {
 			case ProcedureTypeContainer:
@@ -339,7 +334,7 @@ func (sc *Scroll) Validate(strict bool) error {
 					}
 					clean := filepath.Clean(mount.SubPath)
 					if clean == ".." || strings.HasPrefix(clean, "../") {
-						return fmt.Errorf("mount sub_path %s escapes data root", mount.SubPath)
+						return fmt.Errorf("mount sub_path %s escapes runtime root", mount.SubPath)
 					}
 				}
 				for _, expectedPort := range p.ExpectedPorts {
@@ -421,9 +416,12 @@ const ScrollDataDir = "data"
 const DataLoadedMarkerFile = ".data-loaded"
 
 var ScrollFiles = map[string]ArtifactType{
-	"update":      ArtifactTypeScrollFs,
-	"scroll.yaml": ArtifactTypeScrollFs,
-	"public":      ArtifactTypeScrollFs,
-	"private":     ArtifactTypeScrollFs,
-	"data":        ArtifactTypeScrollData,
+	"update":                            ArtifactTypeScrollFs,
+	"scroll.yaml":                       ArtifactTypeScrollFs,
+	"public":                            ArtifactTypeScrollFs,
+	"private":                           ArtifactTypeScrollFs,
+	"packet_handler":                    ArtifactTypeScrollFs,
+	"scroll-config.yml.scroll_template": ArtifactTypeScrollFs,
+	"data":                              ArtifactTypeScrollData,
+	".meta":                             ArtifactTypeScrollFs,
 }

@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"strings"
 
-	clientcli "github.com/highcard-dev/daemon/apps/druid-client/adapters/cli"
 	coldstartercli "github.com/highcard-dev/daemon/apps/druid-coldstarter/adapters/cli"
 	druidcli "github.com/highcard-dev/daemon/apps/druid/adapters/cli"
 	"github.com/spf13/cobra"
@@ -60,7 +59,6 @@ func main() {
 
 	roots := []*cobra.Command{
 		druidcli.RootCmd,
-		clientcli.NewRootCommand(),
 		coldstartercli.NewRootCommand(),
 	}
 	for _, root := range roots {

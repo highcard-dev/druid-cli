@@ -44,6 +44,7 @@ func fakeRegistry(t *testing.T) *httptest.Server {
 			ref := strings.Split(r.URL.Path, "/manifests/")[1]
 			if data, ok := manifests[ref]; ok {
 				w.Header().Set("Content-Type", manifestTypes[ref])
+				w.Header().Set("Docker-Content-Digest", ocidigest.FromBytes(data).String())
 				w.WriteHeader(http.StatusOK)
 				w.Write(data)
 				return
@@ -71,6 +72,7 @@ func fakeRegistry(t *testing.T) *httptest.Server {
 			if data, ok := manifests[ref]; ok {
 				w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
 				w.Header().Set("Content-Type", manifestTypes[ref])
+				w.Header().Set("Docker-Content-Digest", ocidigest.FromBytes(data).String())
 				w.WriteHeader(http.StatusOK)
 				return
 			}
@@ -215,5 +217,42 @@ func TestPushPullExecutableDataChunkPreservesMode(t *testing.T) {
 	}
 	if got := info.Mode().Perm(); got != 0755 {
 		t.Fatalf("data/arkserver mode = %v, want 0755", got)
+	}
+}
+
+func TestFetchFileReadsScrollYAMLDescriptor(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	srv := fakeRegistry(t)
+	registryHost := strings.TrimPrefix(srv.URL, "http://")
+
+	folder := filepath.Join("scrolls", "fetch-file")
+	if err := os.MkdirAll(folder, 0755); err != nil {
+		t.Fatal(err)
+	}
+	scrollYAML := []byte("name: test\nversion: 0.1.0\napp_version: \"1.0\"\n")
+	if err := os.WriteFile(filepath.Join(folder, "scroll.yaml"), scrollYAML, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	client := &OciClient{
+		credentialStore: NewCredentialStore([]domain.RegistryCredential{}),
+		plainHTTP:       true,
+	}
+	repoRef := registryHost + "/test/fetch-file"
+	if _, err := client.Push(folder, repoRef, "1.0", map[string]string{}, false, nil); err != nil {
+		t.Fatalf("Push failed unexpectedly: %v", err)
+	}
+
+	got, err := client.FetchFile(repoRef+":1.0", "./scroll.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(scrollYAML) {
+		t.Fatalf("scroll.yaml = %q, want %q", got, scrollYAML)
+	}
+	if _, err := client.FetchFile(repoRef+":1.0", "missing.txt"); err == nil || !strings.Contains(err.Error(), "missing.txt not found") {
+		t.Fatalf("missing error = %v, want clear not found", err)
 	}
 }

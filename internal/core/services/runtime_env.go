@@ -60,6 +60,7 @@ func runtimeEnv(file *domain.File, context RuntimeEnvContext) (map[string]string
 	}
 
 	seen := map[string]string{}
+	portProtocols := map[string]string{}
 	for _, port := range file.Ports {
 		suffix := envSuffix(port.Name)
 		if suffix == "" {
@@ -73,6 +74,7 @@ func runtimeEnv(file *domain.File, context RuntimeEnvContext) (map[string]string
 		env["DRUID_PORT_"+suffix+"_1"] = strconv.Itoa(port.Port)
 		if port.Protocol != "" {
 			env["DRUID_PORT_"+suffix+"_PROTOCOL"] = port.Protocol
+			portProtocols[suffix] = port.Protocol
 		}
 	}
 
@@ -103,6 +105,14 @@ func runtimeEnv(file *domain.File, context RuntimeEnvContext) (map[string]string
 		}
 		if assignment.URL != "" {
 			env["DRUID_PORT_"+suffix+"_URL"] = assignment.URL
+		} else if assignment.Host != "" && assignment.PublicPort > 0 {
+			protocol := assignment.Protocol
+			if portProtocols[suffix] == "http" || portProtocols[suffix] == "https" {
+				protocol = portProtocols[suffix]
+			}
+			if protocol == "http" || protocol == "https" {
+				env["DRUID_PORT_"+suffix+"_URL"] = fmt.Sprintf("%s://%s:%d", protocol, assignment.Host, assignment.PublicPort)
+			}
 		}
 	}
 	return env, nil

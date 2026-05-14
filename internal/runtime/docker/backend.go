@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"archive/tar"
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
@@ -17,9 +18,11 @@ import (
 	"sync"
 	"time"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/nat"
@@ -30,12 +33,62 @@ import (
 type Backend struct {
 	client         *client.Client
 	consoleManager ports.ConsoleManagerInterface
+	config         Config
 	mu             sync.Mutex
 	containers     map[string]string
 	stdin          map[string]io.Writer
 }
 
+type Config struct {
+	WorkerImage  string
+	Network      string
+	Storage      string
+	BindRoot     string
+	VolumePrefix string
+}
+
+func (c Config) WithDefaults() Config {
+	if c.WorkerImage == "" {
+		c.WorkerImage = os.Getenv("DRUID_DOCKER_WORKER_IMAGE")
+	}
+	if c.Network == "" {
+		c.Network = os.Getenv("DRUID_DOCKER_NETWORK")
+	}
+	if c.Storage == "" {
+		c.Storage = os.Getenv("DRUID_DOCKER_STORAGE")
+	}
+	if c.Storage == "" {
+		c.Storage = StorageVolume
+	}
+	if c.BindRoot == "" {
+		c.BindRoot = os.Getenv("DRUID_DOCKER_BIND_ROOT")
+	}
+	if c.VolumePrefix == "" {
+		c.VolumePrefix = os.Getenv("DRUID_DOCKER_VOLUME_PREFIX")
+	}
+	if c.VolumePrefix == "" {
+		c.VolumePrefix = "druid"
+	}
+	return c
+}
+
 func New(consoleManager ports.ConsoleManagerInterface) (*Backend, error) {
+	return NewWithConfig(Config{}, consoleManager)
+}
+
+func NewWithConfig(config Config, consoleManager ports.ConsoleManagerInterface) (*Backend, error) {
+	config = config.WithDefaults()
+	if config.Storage != StorageVolume && config.Storage != StorageBind {
+		return nil, fmt.Errorf("unknown docker storage %q", config.Storage)
+	}
+	if config.Storage == StorageBind {
+		if config.BindRoot == "" {
+			return nil, fmt.Errorf("docker bind root is required when docker storage is bind")
+		}
+		if !filepath.IsAbs(config.BindRoot) {
+			return nil, fmt.Errorf("docker bind root must be absolute: %s", config.BindRoot)
+		}
+	}
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, err
@@ -43,6 +96,7 @@ func New(consoleManager ports.ConsoleManagerInterface) (*Backend, error) {
 	return &Backend{
 		client:         cli,
 		consoleManager: consoleManager,
+		config:         config,
 		containers:     map[string]string{},
 		stdin:          map[string]io.Writer{},
 	}, nil
@@ -52,38 +106,11 @@ func (b *Backend) Name() string {
 	return "docker"
 }
 
-func (b *Backend) ReadScrollFile(scrollRoot string) ([]byte, error) {
-	if scrollRoot == "" {
-		return nil, fmt.Errorf("scroll root is required")
+func (b *Backend) ReadScrollFile(root string) ([]byte, error) {
+	if root == "" {
+		return nil, fmt.Errorf("runtime root is required")
 	}
-	return os.ReadFile(filepath.Join(scrollRoot, "scroll.yaml"))
-}
-
-func (b *Backend) ReadDataFile(_ context.Context, dataRoot string, relativePath string) ([]byte, error) {
-	filePath, err := dataFilePath(dataRoot, relativePath)
-	if err != nil {
-		return nil, err
-	}
-	return os.ReadFile(filePath)
-}
-
-func (b *Backend) WriteDataFile(_ context.Context, dataRoot string, relativePath string, data []byte) error {
-	filePath, err := dataFilePath(dataRoot, relativePath)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
-		return err
-	}
-	return os.WriteFile(filePath, data, 0644)
-}
-
-func dataFilePath(dataRoot string, relativePath string) (string, error) {
-	cleaned := filepath.Clean(strings.TrimPrefix(relativePath, "/"))
-	if cleaned == "." || cleaned == ".." || filepath.IsAbs(cleaned) || strings.HasPrefix(cleaned, ".."+string(os.PathSeparator)) {
-		return "", fmt.Errorf("invalid data file path %q", relativePath)
-	}
-	return filepath.Join(dataRoot, cleaned), nil
+	return b.readRootFile(context.Background(), root, "scroll.yaml")
 }
 
 func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
@@ -95,7 +122,7 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 		}
 		if command.Command.Run == domain.RunModePersistent {
 			if procedure.IsSignal() {
-				if err := b.Signal(procedureName, procedure.Target, procedure.Signal, command.DataRoot); err != nil {
+				if err := b.Signal(procedureName, procedure.Target, procedure.Signal, command.Root); err != nil {
 					return nil, err
 				}
 				continue
@@ -103,12 +130,12 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 			if procedure.Image == "" {
 				return nil, fmt.Errorf("docker runtime procedure %s requires image", procedureName)
 			}
-			if err := b.startPersistentContainer(runtimeConsoleID(command.ScrollID, procedureName), procedureName, procedure, command.DataRoot, command.GlobalPorts, env); err != nil {
+			if err := b.startPersistentContainer(runtimeConsoleID(command.ScrollID, procedureName), procedureName, procedure, command.Root, command.GlobalPorts, env); err != nil {
 				return nil, err
 			}
 			continue
 		}
-		exitCode, err := b.runProcedure(runtimeConsoleID(command.ScrollID, procedureName), procedureName, procedure, command.DataRoot, command.GlobalPorts, env)
+		exitCode, err := b.runProcedure(runtimeConsoleID(command.ScrollID, procedureName), procedureName, procedure, command.Root, command.GlobalPorts, env)
 		if err != nil {
 			return exitCode, err
 		}
@@ -122,17 +149,17 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 	return nil, nil
 }
 
-func (b *Backend) runProcedure(consoleID string, procedureName string, procedure *domain.Procedure, dataRoot string, globalPorts []domain.Port, env map[string]string) (*int, error) {
+func (b *Backend) runProcedure(consoleID string, procedureName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, env map[string]string) (*int, error) {
 	if procedure.IsSignal() {
-		return nil, b.Signal(procedureName, procedure.Target, procedure.Signal, dataRoot)
+		return nil, b.Signal(procedureName, procedure.Target, procedure.Signal, root)
 	}
 	if procedure.Image == "" {
 		return nil, fmt.Errorf("docker runtime procedure %s requires image", procedureName)
 	}
-	return b.runContainer(consoleID, procedureName, procedure, dataRoot, globalPorts, env)
+	return b.runContainer(consoleID, procedureName, procedure, root, globalPorts, env)
 }
 
-func (b *Backend) ExpectedPorts(dataRoot string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
+func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
 	statuses := []domain.RuntimePortStatus{}
 	portsByName := portsByName(globalPorts)
 	for commandName, command := range commands {
@@ -147,7 +174,7 @@ func (b *Backend) ExpectedPorts(dataRoot string, commands map[string]*domain.Com
 			if procedure.Id != nil {
 				procedureName = *procedure.Id
 			}
-			containerStatuses, err := b.expectedPortsForProcedure(dataRoot, procedureName, procedure, portsByName)
+			containerStatuses, err := b.expectedPortsForProcedure(root, procedureName, procedure, portsByName)
 			if err != nil {
 				return nil, err
 			}
@@ -163,6 +190,153 @@ func (b *Backend) ExpectedPorts(dataRoot string, commands map[string]*domain.Com
 	return statuses, nil
 }
 
+func (b *Backend) RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error) {
+	portsByName := portsByName(globalPorts)
+	targets := []domain.RuntimeRoutingTarget{{
+		Name:        "webdav",
+		Procedure:   "dev",
+		PortName:    "webdav",
+		Port:        8084,
+		Protocol:    "https",
+		ServiceName: ContainerName(root, "dev"),
+		ServicePort: 8084,
+	}}
+	seen := map[string]struct{}{"webdav": {}}
+	commandNames := make([]string, 0, len(commands))
+	for commandName := range commands {
+		commandNames = append(commandNames, commandName)
+	}
+	sort.Strings(commandNames)
+	for _, commandName := range commandNames {
+		command := commands[commandName]
+		if command == nil {
+			continue
+		}
+		for idx, procedure := range command.Procedures {
+			if procedure == nil || len(procedure.ExpectedPorts) == 0 {
+				continue
+			}
+			procedureName := domain.ProcedureName(commandName, idx, procedure)
+			for _, expectedPort := range procedure.ExpectedPorts {
+				if _, ok := seen[expectedPort.Name]; ok {
+					continue
+				}
+				port, ok := portsByName[expectedPort.Name]
+				if !ok {
+					return nil, fmt.Errorf("expected port %s is not defined in top-level ports", expectedPort.Name)
+				}
+				seen[expectedPort.Name] = struct{}{}
+				targets = append(targets, domain.RuntimeRoutingTarget{
+					Name:        expectedPort.Name,
+					Procedure:   procedureName,
+					PortName:    expectedPort.Name,
+					Port:        port.Port,
+					Protocol:    normalizeProtocol(port.Protocol),
+					ServiceName: ContainerName(root, procedureName),
+					ServicePort: port.Port,
+				})
+			}
+		}
+	}
+	sort.Slice(targets, func(i, j int) bool { return targets[i].Name < targets[j].Name })
+	return targets, nil
+}
+
+func (b *Backend) StartDev(ctx context.Context, action ports.RuntimeDevAction) error {
+	if b.config.WorkerImage == "" {
+		return fmt.Errorf("docker dev requires --docker-worker-image or DRUID_DOCKER_WORKER_IMAGE")
+	}
+	if action.RootRef == "" {
+		return fmt.Errorf("dev root ref is required")
+	}
+	if action.MountPath == "" {
+		action.MountPath = "/scroll"
+	}
+	if action.Listen == "" {
+		action.Listen = ":8084"
+	}
+	if err := b.pullImage(ctx, b.config.WorkerImage); err != nil {
+		return err
+	}
+	rootMount, err := DockerMount(action.RootRef, action.MountPath, false, "")
+	if err != nil {
+		return err
+	}
+	args := []string{
+		"dev",
+		"--root", action.MountPath,
+		"--listen", action.Listen,
+		"--runtime-id", action.RuntimeID,
+		"--daemon-url", action.DaemonURL,
+	}
+	if action.DaemonToken != "" {
+		args = append(args, "--daemon-token", action.DaemonToken)
+	}
+	if action.OwnerID != "" {
+		args = append(args, "--owner-id", action.OwnerID)
+	}
+	if action.AuthJWKSURL != "" {
+		args = append(args, "--auth-jwks-url", action.AuthJWKSURL)
+	}
+	if action.RuntimeJWKSURL != "" {
+		args = append(args, "--runtime-jwks-url", action.RuntimeJWKSURL)
+	}
+	for _, path := range action.WatchPaths {
+		args = append(args, "--watch", path)
+	}
+	for _, command := range action.HotReloadCommands {
+		args = append(args, "--command", command)
+	}
+	hostConfig := &container.HostConfig{Mounts: []mount.Mount{rootMount}}
+	for _, assignment := range action.Routing {
+		if assignment.PublicPort == 0 || (assignment.PortName != "webdav" && assignment.Name != "webdav") {
+			continue
+		}
+		hostConfig.PortBindings = nat.PortMap{
+			"8084/tcp": []nat.PortBinding{{
+				HostIP:   assignment.ExternalIP,
+				HostPort: fmt.Sprintf("%d", assignment.PublicPort),
+			}},
+		}
+		break
+	}
+	if b.config.Network != "" {
+		hostConfig.NetworkMode = container.NetworkMode(b.config.Network)
+	}
+	name := ContainerName(action.RootRef, "dev")
+	_ = b.client.ContainerRemove(ctx, name, container.RemoveOptions{Force: true})
+	created, err := b.client.ContainerCreate(ctx, &container.Config{
+		Image:        b.config.WorkerImage,
+		Entrypoint:   []string{"druid"},
+		Cmd:          args,
+		ExposedPorts: nat.PortSet{"8084/tcp": struct{}{}},
+		Labels: map[string]string{
+			"druid.command":    "dev",
+			"druid.runtime-id": action.RuntimeID,
+			"druid.root-hash":  rootHash(action.RootRef),
+		},
+	}, hostConfig, nil, nil, name)
+	if err != nil {
+		return err
+	}
+	if err := b.client.ContainerStart(ctx, created.ID, container.StartOptions{}); err != nil {
+		_ = b.client.ContainerRemove(context.Background(), created.ID, container.RemoveOptions{Force: true})
+		return err
+	}
+	return nil
+}
+
+func (b *Backend) StopDev(ctx context.Context, root string) error {
+	if root == "" {
+		return fmt.Errorf("runtime root is required")
+	}
+	err := b.client.ContainerRemove(ctx, ContainerName(root, "dev"), container.RemoveOptions{Force: true})
+	if err != nil && !cerrdefs.IsNotFound(err) {
+		return err
+	}
+	return nil
+}
+
 func (b *Backend) Attach(commandName string, data string) error {
 	b.mu.Lock()
 	stdin := b.stdin[commandName]
@@ -174,12 +348,12 @@ func (b *Backend) Attach(commandName string, data string) error {
 	return err
 }
 
-func (b *Backend) Signal(_ string, target string, signal string, dataRoot string) error {
+func (b *Backend) Signal(_ string, target string, signal string, root string) error {
 	if target == "" {
 		return nil
 	}
 	ctx := context.Background()
-	containerID := b.containerID(target, dataRoot)
+	containerID := b.containerID(target, root)
 	options := container.StopOptions{}
 	if signal != "" {
 		options.Signal = signal
@@ -187,14 +361,14 @@ func (b *Backend) Signal(_ string, target string, signal string, dataRoot string
 	return b.client.ContainerStop(ctx, containerID, options)
 }
 
-func (b *Backend) StopRuntime(dataRoot string) error {
-	if dataRoot == "" {
-		return fmt.Errorf("data root is required")
+func (b *Backend) StopRuntime(root string) error {
+	if root == "" {
+		return fmt.Errorf("runtime root is required")
 	}
 	ctx := context.Background()
 	items, err := b.client.ContainerList(ctx, container.ListOptions{
 		All:     true,
-		Filters: filters.NewArgs(filters.Arg("label", "druid.data-root-hash="+dataRootHash(dataRoot))),
+		Filters: filters.NewArgs(filters.Arg("label", "druid.root-hash="+rootHash(root))),
 	})
 	if err != nil {
 		return err
@@ -215,34 +389,390 @@ func (b *Backend) StopRuntime(dataRoot string) error {
 	return nil
 }
 
-func (b *Backend) DeleteRuntime(dataRoot string, purgeData bool) error {
-	if err := b.StopRuntime(dataRoot); err != nil {
+func (b *Backend) DeleteRuntime(root string, purgeData bool) error {
+	if err := b.StopRuntime(root); err != nil {
 		return err
 	}
 	if purgeData {
-		return os.RemoveAll(dataRoot)
+		ref, err := ParseRootRef(root)
+		if err != nil {
+			return err
+		}
+		if ref.Kind == StorageVolume {
+			return b.client.VolumeRemove(context.Background(), ref.Source, true)
+		}
+		return b.emptyRoot(context.Background(), root)
 	}
 	return nil
 }
 
-func (b *Backend) runContainer(consoleID string, commandName string, procedure *domain.Procedure, dataRoot string, globalPorts []domain.Port, env map[string]string) (*int, error) {
-	ctx := context.Background()
-	if err := os.MkdirAll(filepath.Join(dataRoot, domain.RuntimeDataDir), 0755); err != nil {
-		return nil, err
+func (b *Backend) BackupRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential) error {
+	if artifact == "" {
+		return fmt.Errorf("backup artifact is required")
 	}
+	return b.runWorkerRootCommand(ctx, root, []string{
+		"worker", "push",
+		"--artifact", artifact,
+		"--root", "/scroll",
+	}, registryCredentials)
+}
+
+func (b *Backend) RestoreRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential) error {
+	if artifact == "" {
+		return fmt.Errorf("restore artifact is required")
+	}
+	if err := b.StopRuntime(root); err != nil {
+		return err
+	}
+	return b.runWorkerRootCommand(ctx, root, []string{
+		"worker", "pull",
+		"--artifact", artifact,
+		"--runtime-id", rootHash(root),
+		"--mode", string(ports.RuntimeWorkerModeCreate),
+		"--root", "/scroll",
+	}, registryCredentials)
+}
+
+func (b *Backend) readRootFile(ctx context.Context, root string, relativePath string) ([]byte, error) {
+	var data []byte
+	err := b.withHelperContainer(ctx, root, func(containerID string) error {
+		reader, _, err := b.client.CopyFromContainer(ctx, containerID, "/scroll/"+relativePath)
+		if err != nil {
+			return err
+		}
+		defer reader.Close()
+		tarReader := tar.NewReader(reader)
+		for {
+			header, err := tarReader.Next()
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					return fmt.Errorf("file %s not found in root", relativePath)
+				}
+				return err
+			}
+			if header.Typeflag == tar.TypeReg {
+				data, err = io.ReadAll(tarReader)
+				return err
+			}
+		}
+	})
+	return data, err
+}
+
+func (b *Backend) emptyRoot(ctx context.Context, root string) error {
+	return b.withHelperContainer(ctx, root, func(containerID string) error {
+		return b.runContainerCommand(ctx, containerID, []string{"sh", "-c", "find /scroll -mindepth 1 -maxdepth 1 -exec rm -rf {} +"})
+	})
+}
+
+func (b *Backend) runWorkerRootCommand(ctx context.Context, root string, command []string, registryCredentials []domain.RegistryCredential) error {
+	if b.config.WorkerImage == "" {
+		return fmt.Errorf("docker worker image is required; set --docker-worker-image or DRUID_DOCKER_WORKER_IMAGE")
+	}
+	rootMount, err := DockerMount(root, "/scroll", false, "")
+	if err != nil {
+		return err
+	}
+	if err := b.pullImage(ctx, b.config.WorkerImage); err != nil {
+		return err
+	}
+	registryConfig, err := json.Marshal(struct {
+		Registries []domain.RegistryCredential `json:"registries"`
+	}{Registries: registryCredentials})
+	if err != nil {
+		return err
+	}
+	hostConfig := &container.HostConfig{Mounts: []mount.Mount{rootMount}}
+	if b.config.Network != "" {
+		hostConfig.NetworkMode = container.NetworkMode(b.config.Network)
+	}
+	name := fmt.Sprintf("druid-worker-%s-%d", rootHash(root), time.Now().UnixNano())
+	created, err := b.client.ContainerCreate(ctx, &container.Config{
+		Image:      b.config.WorkerImage,
+		Entrypoint: []string{"druid"},
+		Cmd:        command,
+		Env: dockerWorkerEnv([]string{
+			"DRUID_RUNTIME_REGISTRY_CONFIG_JSON=" + string(registryConfig),
+		}),
+		Labels: map[string]string{
+			"druid.worker":    "root",
+			"druid.root-hash": rootHash(root),
+		},
+	}, hostConfig, nil, nil, name)
+	if err != nil {
+		return err
+	}
+	defer b.client.ContainerRemove(context.Background(), created.ID, container.RemoveOptions{Force: true})
+	if err := b.client.ContainerStart(ctx, created.ID, container.StartOptions{}); err != nil {
+		return err
+	}
+	statusCh, errCh := b.client.ContainerWait(ctx, created.ID, container.WaitConditionNotRunning)
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return err
+		}
+	case status := <-statusCh:
+		if status.StatusCode != 0 {
+			logs, _ := b.client.ContainerLogs(context.Background(), created.ID, container.LogsOptions{ShowStdout: true, ShowStderr: true})
+			defer func() {
+				if logs != nil {
+					logs.Close()
+				}
+			}()
+			var message strings.Builder
+			if logs != nil {
+				_, _ = io.Copy(&message, logs)
+			}
+			return fmt.Errorf("worker container exited with %d: %s", status.StatusCode, strings.TrimSpace(message.String()))
+		}
+	}
+	return nil
+}
+
+func (b *Backend) ensureProcedureMountPaths(ctx context.Context, root string, mounts []domain.Mount) error {
+	if len(mounts) == 0 {
+		return nil
+	}
+	ref, err := ParseRootRef(root)
+	if err != nil {
+		return err
+	}
+	if ref.Kind == StorageBind {
+		return nil
+	}
+	paths := make([]string, 0, len(mounts))
+	for _, mount := range mounts {
+		cleaned, err := cleanRootSubPath(procedureDataSubPath(mount.SubPath))
+		if err != nil {
+			return err
+		}
+		paths = append(paths, "/scroll/"+cleaned)
+	}
+	return b.withHelperContainer(ctx, root, func(containerID string) error {
+		return b.runContainerCommand(ctx, containerID, append([]string{"mkdir", "-p"}, paths...))
+	})
+}
+
+func (b *Backend) ensureVolumeSubpathSupport(ctx context.Context, root string, mounts []domain.Mount) error {
+	if len(mounts) == 0 {
+		return nil
+	}
+	ref, err := ParseRootRef(root)
+	if err != nil {
+		return err
+	}
+	if ref.Kind != StorageVolume {
+		return nil
+	}
+	version, err := b.client.ServerVersion(ctx)
+	if err != nil {
+		return err
+	}
+	if !dockerAPIVersionAtLeast(version.APIVersion, 1, 45) {
+		return fmt.Errorf("docker volume subpath mounts require Docker API >= 1.45, got %s", version.APIVersion)
+	}
+	return nil
+}
+
+func dockerAPIVersionAtLeast(version string, wantMajor int, wantMinor int) bool {
+	majorText, minorText, ok := strings.Cut(version, ".")
+	if !ok {
+		return false
+	}
+	major, err := strconv.Atoi(majorText)
+	if err != nil {
+		return false
+	}
+	minor, err := strconv.Atoi(minorText)
+	if err != nil {
+		return false
+	}
+	if major != wantMajor {
+		return major > wantMajor
+	}
+	return minor >= wantMinor
+}
+
+func (b *Backend) withHelperContainer(ctx context.Context, root string, fn func(containerID string) error) error {
+	if b.config.WorkerImage == "" {
+		return fmt.Errorf("docker worker image is required; set --docker-worker-image or DRUID_DOCKER_WORKER_IMAGE")
+	}
+	rootMount, err := DockerMount(root, "/scroll", false, "")
+	if err != nil {
+		return err
+	}
+	if err := b.pullImage(ctx, b.config.WorkerImage); err != nil {
+		return err
+	}
+	hostConfig := &container.HostConfig{Mounts: []mount.Mount{rootMount}}
+	if b.config.Network != "" {
+		hostConfig.NetworkMode = container.NetworkMode(b.config.Network)
+	}
+	name := fmt.Sprintf("druid-helper-%s-%d", rootHash(root), time.Now().UnixNano())
+	created, err := b.client.ContainerCreate(ctx, &container.Config{
+		Image:      b.config.WorkerImage,
+		Entrypoint: []string{"/bin/sh", "-c"},
+		Cmd:        []string{"sleep 300"},
+		Labels: map[string]string{
+			"druid.helper":    "root",
+			"druid.root-hash": rootHash(root),
+		},
+	}, hostConfig, nil, nil, name)
+	if err != nil {
+		return err
+	}
+	defer b.client.ContainerRemove(context.Background(), created.ID, container.RemoveOptions{Force: true})
+	if err := b.client.ContainerStart(ctx, created.ID, container.StartOptions{}); err != nil {
+		return err
+	}
+	return fn(created.ID)
+}
+
+func (b *Backend) runContainerCommand(ctx context.Context, containerID string, command []string) error {
+	execID, err := b.client.ContainerExecCreate(ctx, containerID, container.ExecOptions{
+		Cmd:          command,
+		AttachStdout: true,
+		AttachStderr: true,
+	})
+	if err != nil {
+		return err
+	}
+	attach, err := b.client.ContainerExecAttach(ctx, execID.ID, container.ExecAttachOptions{})
+	if err != nil {
+		return err
+	}
+	var output strings.Builder
+	_, _ = io.Copy(&output, attach.Reader)
+	attach.Close()
+	inspect, err := b.client.ContainerExecInspect(ctx, execID.ID)
+	if err != nil {
+		return err
+	}
+	if inspect.ExitCode != 0 {
+		return fmt.Errorf("helper command exited with %d: %s", inspect.ExitCode, strings.TrimSpace(output.String()))
+	}
+	return nil
+}
+
+func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorkerAction) error {
+	if b.config.WorkerImage == "" {
+		return fmt.Errorf("docker worker image is required; set --docker-worker-image or DRUID_DOCKER_WORKER_IMAGE")
+	}
+	root := action.RootRef
+	if root == "" {
+		return fmt.Errorf("worker root ref is required")
+	}
+	if action.MountPath == "" {
+		action.MountPath = "/scroll"
+	}
+	if err := b.pullImage(ctx, b.config.WorkerImage); err != nil {
+		return err
+	}
+	registryConfig, err := json.Marshal(struct {
+		Registries []domain.RegistryCredential `json:"registries"`
+	}{Registries: action.RegistryCredentials})
+	if err != nil {
+		return err
+	}
+	rootMount, err := DockerMount(root, action.MountPath, false, "")
+	if err != nil {
+		return err
+	}
+	artifact := action.Artifact
+	mounts := []mount.Mount{rootMount}
+	if info, statErr := os.Stat(action.Artifact); statErr == nil {
+		abs, err := filepath.Abs(action.Artifact)
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			mounts = append(mounts, mount.Mount{Type: mount.TypeBind, Source: abs, Target: "/artifact-src", ReadOnly: true})
+			artifact = "/artifact-src"
+		} else {
+			mounts = append(mounts, mount.Mount{Type: mount.TypeBind, Source: filepath.Dir(abs), Target: "/artifact-src", ReadOnly: true})
+			artifact = "/artifact-src/" + filepath.Base(abs)
+		}
+	}
+	hostConfig := &container.HostConfig{Mounts: mounts}
+	if b.config.Network != "" {
+		hostConfig.NetworkMode = container.NetworkMode(b.config.Network)
+	}
+	name := fmt.Sprintf("druid-worker-%s-%s", rootHash(root), rootHash(string(action.Mode)+action.Artifact))
+	_ = b.client.ContainerRemove(ctx, name, container.RemoveOptions{Force: true})
+	created, err := b.client.ContainerCreate(ctx, &container.Config{
+		Image:      b.config.WorkerImage,
+		Entrypoint: []string{"druid"},
+		Cmd: []string{
+			"worker", "pull",
+			"--artifact", artifact,
+			"--runtime-id", action.RuntimeID,
+			"--mode", string(action.Mode),
+			"--root", action.MountPath,
+			"--callback-url", action.CallbackURL,
+		},
+		Env: dockerWorkerEnv([]string{
+			"DRUID_WORKER_TOKEN=" + action.CallbackToken,
+			"DRUID_RUNTIME_REGISTRY_CONFIG_JSON=" + string(registryConfig),
+		}),
+		Labels: map[string]string{
+			"druid.worker":     "pull",
+			"druid.runtime-id": action.RuntimeID,
+			"druid.root-hash":  rootHash(root),
+		},
+	}, hostConfig, nil, nil, name)
+	if err != nil {
+		return err
+	}
+	defer b.client.ContainerRemove(context.Background(), created.ID, container.RemoveOptions{Force: true})
+	if err := b.client.ContainerStart(ctx, created.ID, container.StartOptions{}); err != nil {
+		return err
+	}
+	statusCh, errCh := b.client.ContainerWait(ctx, created.ID, container.WaitConditionNotRunning)
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return err
+		}
+	case status := <-statusCh:
+		if status.StatusCode != 0 {
+			logs, _ := b.client.ContainerLogs(context.Background(), created.ID, container.LogsOptions{ShowStdout: true, ShowStderr: true})
+			defer func() {
+				if logs != nil {
+					logs.Close()
+				}
+			}()
+			var message strings.Builder
+			if logs != nil {
+				_, _ = io.Copy(&message, logs)
+			}
+			return fmt.Errorf("worker container exited with %d: %s", status.StatusCode, strings.TrimSpace(message.String()))
+		}
+	}
+	return nil
+}
+
+func (b *Backend) runContainer(consoleID string, commandName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, env map[string]string) (*int, error) {
+	ctx := context.Background()
 	if procedure.Image == "" {
 		return nil, errors.New("docker image is required")
+	}
+	if err := b.ensureVolumeSubpathSupport(ctx, root, procedure.Mounts); err != nil {
+		return nil, err
+	}
+	if err := b.ensureProcedureMountPaths(ctx, root, procedure.Mounts); err != nil {
+		return nil, err
 	}
 
 	if err := b.pullImage(ctx, procedure.Image); err != nil {
 		return nil, err
 	}
 
-	config, hostConfig, err := containerSpec(commandName, procedure, dataRoot, globalPorts, env)
+	config, hostConfig, err := containerSpec(commandName, procedure, root, globalPorts, env)
 	if err != nil {
 		return nil, err
 	}
-	containerName := ContainerName(dataRoot, commandName)
+	containerName := ContainerName(root, commandName)
 	_ = b.client.ContainerRemove(ctx, containerName, container.RemoveOptions{Force: true})
 
 	created, err := b.client.ContainerCreate(ctx, config, hostConfig, nil, nil, containerName)
@@ -312,22 +842,25 @@ func (b *Backend) runContainer(consoleID string, commandName string, procedure *
 	return &exitCode, nil
 }
 
-func (b *Backend) startPersistentContainer(consoleID string, commandName string, procedure *domain.Procedure, dataRoot string, globalPorts []domain.Port, env map[string]string) error {
+func (b *Backend) startPersistentContainer(consoleID string, commandName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, env map[string]string) error {
 	ctx := context.Background()
-	if err := os.MkdirAll(filepath.Join(dataRoot, domain.RuntimeDataDir), 0755); err != nil {
-		return err
-	}
 	if procedure.Image == "" {
 		return errors.New("docker image is required")
+	}
+	if err := b.ensureVolumeSubpathSupport(ctx, root, procedure.Mounts); err != nil {
+		return err
+	}
+	if err := b.ensureProcedureMountPaths(ctx, root, procedure.Mounts); err != nil {
+		return err
 	}
 	if err := b.pullImage(ctx, procedure.Image); err != nil {
 		return err
 	}
-	config, hostConfig, err := containerSpec(commandName, procedure, dataRoot, globalPorts, env)
+	config, hostConfig, err := containerSpec(commandName, procedure, root, globalPorts, env)
 	if err != nil {
 		return err
 	}
-	containerName := ContainerName(dataRoot, commandName)
+	containerName := ContainerName(root, commandName)
 	_ = b.client.ContainerRemove(ctx, containerName, container.RemoveOptions{Force: true})
 	created, err := b.client.ContainerCreate(ctx, config, hostConfig, nil, nil, containerName)
 	if err != nil {
@@ -390,6 +923,11 @@ func (b *Backend) startPersistentContainer(consoleID string, commandName string,
 }
 
 func (b *Backend) pullImage(ctx context.Context, imageRef string) error {
+	if _, err := b.client.ImageInspect(ctx, imageRef); err == nil {
+		return nil
+	} else if !cerrdefs.IsNotFound(err) {
+		return err
+	}
 	reader, err := b.client.ImagePull(ctx, imageRef, image.PullOptions{})
 	if err != nil {
 		return err
@@ -399,13 +937,13 @@ func (b *Backend) pullImage(ctx context.Context, imageRef string) error {
 	return nil
 }
 
-func (b *Backend) containerID(commandName string, dataRoot string) string {
+func (b *Backend) containerID(commandName string, root string) string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if id := b.containers[commandName]; id != "" {
 		return id
 	}
-	return ContainerName(dataRoot, commandName)
+	return ContainerName(root, commandName)
 }
 
 func (b *Backend) setContainer(commandName string, id string) {
@@ -443,13 +981,9 @@ func (w channelWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func containerSpec(commandName string, procedure *domain.Procedure, dataRoot string, globalPorts []domain.Port, env map[string]string) (*container.Config, *container.HostConfig, error) {
+func containerSpec(commandName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, env map[string]string) (*container.Config, *container.HostConfig, error) {
 	if procedure.Image == "" {
 		return nil, nil, errors.New("docker image is required")
-	}
-	runtimeDataRoot := filepath.Join(dataRoot, domain.RuntimeDataDir)
-	if err := os.MkdirAll(runtimeDataRoot, 0755); err != nil {
-		return nil, nil, err
 	}
 
 	exposedPorts := nat.PortSet{}
@@ -468,24 +1002,16 @@ func containerSpec(commandName string, procedure *domain.Procedure, dataRoot str
 		portBindings[dockerPort] = []nat.PortBinding{{HostPort: fmt.Sprintf("%d", port.Port)}}
 	}
 
-	binds := []string{}
+	mounts := []mount.Mount{}
 	for _, mount := range procedure.Mounts {
 		if mount.Path == "" {
 			return nil, nil, fmt.Errorf("mount path is required")
 		}
-		subPath := mount.SubPath
-		if subPath == "" {
-			subPath = "."
-		}
-		hostPath := filepath.Join(runtimeDataRoot, filepath.FromSlash(subPath))
-		if err := os.MkdirAll(hostPath, 0755); err != nil {
+		dockerMount, err := DockerMount(root, mount.Path, mount.ReadOnly, procedureDataSubPath(mount.SubPath))
+		if err != nil {
 			return nil, nil, err
 		}
-		bind := fmt.Sprintf("%s:%s", hostPath, mount.Path)
-		if mount.ReadOnly {
-			bind += ":ro"
-		}
-		binds = append(binds, bind)
+		mounts = append(mounts, dockerMount)
 	}
 
 	return &container.Config{
@@ -500,23 +1026,37 @@ func containerSpec(commandName string, procedure *domain.Procedure, dataRoot str
 			OpenStdin:    true,
 			Tty:          procedure.TTY,
 			Labels: map[string]string{
-				"druid.command":        commandName,
-				"druid.data-root-hash": dataRootHash(dataRoot),
+				"druid.command":   commandName,
+				"druid.root-hash": rootHash(root),
 			},
 		}, &container.HostConfig{
-			Binds:        binds,
+			Mounts:       mounts,
 			PortBindings: portBindings,
 		}, nil
 }
 
-func ContainerName(scrollRoot string, commandName string) string {
-	hash := sha1.Sum([]byte(scrollRoot))
+func procedureDataSubPath(subPath string) string {
+	clean := filepath.ToSlash(filepath.Clean(strings.TrimPrefix(subPath, "/")))
+	if subPath == "" {
+		return domain.RuntimeDataDir
+	}
+	if clean == "." {
+		return "."
+	}
+	if clean == domain.RuntimeDataDir || strings.HasPrefix(clean, domain.RuntimeDataDir+"/") {
+		return clean
+	}
+	return filepath.ToSlash(filepath.Join(domain.RuntimeDataDir, filepath.FromSlash(clean)))
+}
+
+func ContainerName(root string, commandName string) string {
+	hash := sha1.Sum([]byte(root))
 	name := sanitizeContainerName(commandName)
 	return fmt.Sprintf("druid-%s-%s", hex.EncodeToString(hash[:])[:10], name)
 }
 
-func dataRootHash(dataRoot string) string {
-	hash := sha1.Sum([]byte(dataRoot))
+func rootHash(root string) string {
+	hash := sha1.Sum([]byte(root))
 	return hex.EncodeToString(hash[:])[:10]
 }
 
@@ -553,22 +1093,29 @@ func envArgs(env map[string]string) []string {
 	return args
 }
 
+func dockerWorkerEnv(base []string) []string {
+	if plainHTTP := os.Getenv("DRUID_REGISTRY_PLAIN_HTTP"); plainHTTP != "" {
+		base = append(base, "DRUID_REGISTRY_PLAIN_HTTP="+plainHTTP)
+	}
+	return base
+}
+
 type ContainerSpec struct {
 	Image        string
 	Command      []string
 	WorkingDir   string
 	Env          []string
-	Binds        []string
+	Mounts       []mount.Mount
 	PortBindings nat.PortMap
 	TTY          bool
 }
 
-func BuildContainerSpec(commandName string, procedure *domain.Procedure, dataRoot string, globalPorts []domain.Port) (*ContainerSpec, error) {
-	return BuildContainerSpecWithEnv(commandName, procedure, dataRoot, globalPorts, procedure.Env)
+func BuildContainerSpec(commandName string, procedure *domain.Procedure, root string, globalPorts []domain.Port) (*ContainerSpec, error) {
+	return BuildContainerSpecWithEnv(commandName, procedure, root, globalPorts, procedure.Env)
 }
 
-func BuildContainerSpecWithEnv(commandName string, procedure *domain.Procedure, dataRoot string, globalPorts []domain.Port, env map[string]string) (*ContainerSpec, error) {
-	config, hostConfig, err := containerSpec(commandName, procedure, dataRoot, globalPorts, env)
+func BuildContainerSpecWithEnv(commandName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, env map[string]string) (*ContainerSpec, error) {
+	config, hostConfig, err := containerSpec(commandName, procedure, root, globalPorts, env)
 	if err != nil {
 		return nil, err
 	}
@@ -577,7 +1124,7 @@ func BuildContainerSpecWithEnv(commandName string, procedure *domain.Procedure, 
 		Command:      config.Cmd,
 		WorkingDir:   config.WorkingDir,
 		Env:          config.Env,
-		Binds:        hostConfig.Binds,
+		Mounts:       hostConfig.Mounts,
 		PortBindings: hostConfig.PortBindings,
 		TTY:          config.Tty,
 	}, nil
@@ -663,13 +1210,13 @@ func (t containerTraffic) rxDelta(window time.Duration, now time.Time) uint64 {
 	return t.rxBytes - base.rx
 }
 
-func (b *Backend) expectedPortsForProcedure(dataRoot string, procedureName string, procedure *domain.Procedure, ports map[string]domain.Port) ([]domain.RuntimePortStatus, error) {
+func (b *Backend) expectedPortsForProcedure(root string, procedureName string, procedure *domain.Procedure, ports map[string]domain.Port) ([]domain.RuntimePortStatus, error) {
 	statuses := make([]domain.RuntimePortStatus, 0, len(procedure.ExpectedPorts))
-	containerName := ContainerName(dataRoot, procedureName)
+	containerName := ContainerName(root, procedureName)
 	ctx := context.Background()
 	inspected, err := b.client.ContainerInspect(ctx, containerName)
 	containerFound := err == nil
-	if err != nil && !client.IsErrNotFound(err) {
+	if err != nil && !cerrdefs.IsNotFound(err) {
 		return nil, err
 	}
 

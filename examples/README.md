@@ -14,19 +14,19 @@ Each example declares the container paths it needs with `mounts`. Mounts are sou
 - `jobs`: finite job-only pipeline that prepares data, transforms it, reports output, and exits.
 - `container-lab`: container-only integration example with setup jobs, persistent web/cache services, ports, mounts, env, smoke checks, reports, and signal cleanup.
 
-Use `druid serve --runtime docker` for container execution. The daemon listens on a Unix socket, and `druid-client` connects to that socket with `--daemon-socket`. The client owns OCI work: `druid-client pull` downloads artifacts, while `druid-client create <artifact-or-path> [name]` materializes a scroll and registers it with the daemon. For already checked-out examples, use `druid-client register [dir]` and omit `[name]` so ids are derived from each example's `scroll.yaml`. Run commands with `druid-client run <id> <command>` and inspect state with `druid-client describe <id>`.
+Use `druid serve --runtime docker` for container execution. The daemon listens on a Unix socket, and `druid` connects to that socket with `--daemon-socket`. `druid pull` downloads artifacts, while `druid create <artifact-or-path> [name]` materializes a scroll and registers it with the daemon. For already checked-out examples, pass the local directory to `druid create`. Run commands with `druid run <id> <command>` and inspect state with `druid describe <id>`.
 
 Runtime procedures use `image`, `command`, `working_dir`, `env`, `ports`, `mounts`, `signal`, and `tty` directly on each procedure.
 
-The coldstart gate is a normal command that runs the standalone `druid-coldstarter` binary/image. Build the local image with `make build-coldstarter-image` before running the Minecraft example. Custom coldstart handlers belong under `data/coldstart/` inside the canonical scroll volume.
+The coldstart gate is a normal command that runs `druid-coldstarter` from the same runtime image as other Druid workers. It is configured only through env, with `DRUID_ROOT` pointing at the mounted runtime root. Custom coldstart handlers belong in the scroll root, for example `packet_handler/minecraft.lua`.
 
 The `container-lab` example intentionally avoids coldstarter so it can be used as a broad runtime smoke test for Docker and Kubernetes:
 
 ```bash
-druid-client register examples/container-lab
-druid-client describe container-lab
-druid-client ports container-lab
-druid-client run container-lab verify
-druid-client run container-lab report
-druid-client run container-lab stop
+druid create examples/container-lab container-lab
+druid describe container-lab
+druid ports container-lab
+druid run container-lab verify
+druid run container-lab report
+druid run container-lab stop
 ```

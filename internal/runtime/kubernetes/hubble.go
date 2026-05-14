@@ -73,19 +73,14 @@ func (c *HubbleRelayClient) HasFlow(ctx context.Context, query TrafficQuery) (bo
 	if err != nil {
 		return false, err
 	}
-	for {
-		_, err := stream.Recv()
-		if err == nil {
-			return true, nil
-		}
-		if ctx.Err() != nil {
-			return false, nil
-		}
-		if errors.Is(err, io.EOF) {
-			return false, nil
-		}
-		return false, err
+	_, err = stream.Recv()
+	if err == nil {
+		return true, nil
 	}
+	if ctx.Err() != nil || errors.Is(err, io.EOF) {
+		return false, nil
+	}
+	return false, err
 }
 
 func normalizeProtocol(protocol string) string {

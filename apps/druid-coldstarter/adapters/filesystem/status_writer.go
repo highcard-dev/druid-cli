@@ -22,10 +22,10 @@ func NewStatusWriter() *StatusWriter {
 	return &StatusWriter{}
 }
 
-func (w *StatusWriter) Write(scrollRoot string, statusFile string, port *domain.AugmentedPort) error {
+func (w *StatusWriter) Write(root string, statusFile string, port *domain.AugmentedPort) error {
 	path := statusFile
 	if !filepath.IsAbs(path) {
-		path = filepath.Join(scrollRoot, statusFile)
+		path = filepath.Join(root, statusFile)
 	}
 
 	data := status{FinishedAt: time.Now().UTC()}

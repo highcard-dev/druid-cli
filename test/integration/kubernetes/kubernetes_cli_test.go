@@ -5,6 +5,8 @@ package kubernetes_test
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,18 +22,24 @@ func TestKubernetesBackendCLIComplexLifecycle(t *testing.T) {
 	bins := e2e.BuildBinaries(t)
 	port := e2e.FreePort(t)
 	routePort := e2e.FreePort(t)
+	callbackPort := e2e.FreePort(t)
+	managementPort := e2e.FreePort(t)
+	registryPort := e2e.StartRegistry(t)
+	containerHost := e2e.DockerHostAddress(t)
 	suffix := fmt.Sprintf("%x", time.Now().UnixNano())[:10]
 	namespace := "druid-cli-e2e-" + suffix
-	pvc := "druid-e2e-" + suffix
-	ref := fmt.Sprintf("k8s://%s/%s", namespace, pvc)
 	name := "k8s-cli-" + suffix
 	fixture := e2e.WriteFixture(t, filepath.Join(t.TempDir(), "scroll"), name, port, routePort)
+	workerImage := e2e.BuildDockerImage(t, "druid-cli-e2e:"+name)
+	importImageIntoK3DIfCurrentContext(t, workerImage)
+	pushArtifact := fmt.Sprintf("127.0.0.1:%d/druid-e2e/%s:v1", registryPort, name)
+	runtimeArtifact := fmt.Sprintf("%s:%d/druid-e2e/%s:v1", containerHost, registryPort, name)
+	e2e.RunEnv(t, []string{"DRUID_REGISTRY_PLAIN_HTTP=true", "HOME=" + bins.Home}, bins.Druid, "push", pushArtifact, fixture.Dir)
 
 	e2e.Run(t, "kubectl", "create", "namespace", namespace)
 	t.Cleanup(func() {
 		e2e.Run(t, "kubectl", "delete", "namespace", namespace, "--ignore-not-found=true", "--wait=false")
 	})
-	seedPVC(t, namespace, pvc, fixture.Dir)
 	kubeconfig := writeCurrentKubeconfig(t)
 
 	socket := filepath.Join(os.TempDir(), fmt.Sprintf("druid-k8s-%d.sock", time.Now().UnixNano()))
@@ -40,25 +48,34 @@ func TestKubernetesBackendCLIComplexLifecycle(t *testing.T) {
 	logs := e2e.StartDaemon(t, bins, "kubernetes", socket, stateDir, []string{
 		"--k8s-namespace", namespace,
 		"--k8s-kubeconfig", kubeconfig,
+		"--k8s-pull-image", workerImage,
 		"--hubble-relay-addr", "127.0.0.1:9",
-	}, nil)
+		"--worker-callback-listen", fmt.Sprintf(":%d", callbackPort),
+		"--worker-callback-url", fmt.Sprintf("http://%s:%d", containerHost, callbackPort),
+		"--listen", fmt.Sprintf(":%d", managementPort),
+		"--worker-daemon-url", fmt.Sprintf("http://%s:%d", containerHost, managementPort),
+	}, []string{"DRUID_REGISTRY_PLAIN_HTTP=true"})
 	t.Cleanup(func() {
 		if t.Failed() {
 			t.Logf("druid daemon logs:\n%s", logs.String())
 		}
 	})
 
-	created := e2e.RunClientJSON[e2e.RuntimeScroll](t, bins, socket, "create", "--no-start", "--scroll-root", ref, "--data-root", ref, "seeded-artifact", fixture.Name)
+	created := e2e.RunClientJSON[e2e.RuntimeScroll](t, bins, socket, "create", "-p", fmt.Sprintf("%d:http", fixture.RoutePort), runtimeArtifact, fixture.Name)
 	if created.Status != "created" {
 		t.Fatalf("created status = %s, want created", created.Status)
 	}
+	rootPrefix := "k8s://" + namespace + "/"
+	if !strings.HasPrefix(created.Root, rootPrefix) {
+		t.Fatalf("created root = %s, want %s<pvc>", created.Root, rootPrefix)
+	}
+	pvc := strings.TrimPrefix(created.Root, rootPrefix)
 	targets := e2e.RunClientJSON[[]e2e.RuntimeRoutingTarget](t, bins, socket, "routing", "targets", created.ID)
 	target := findTarget(t, targets, fixture)
 	if target.Namespace != namespace || target.ServicePort != fixture.Port {
 		t.Fatalf("target = %#v, want namespace %s service port %d", target, namespace, fixture.Port)
 	}
 
-	e2e.RunClient(t, bins, socket, "routing", "apply", created.ID, "--file", fixture.RoutingFile)
 	started := e2e.RunClientJSON[e2e.RuntimeScroll](t, bins, socket, "start", created.ID)
 	if started.Status != "running" {
 		t.Fatalf("started status = %s, want running", started.Status)
@@ -76,10 +93,21 @@ func TestKubernetesBackendCLIComplexLifecycle(t *testing.T) {
 		t.Fatalf("USER_ENV = %q, want fixture", env["USER_ENV"])
 	}
 
+	e2e.RunClient(t, bins, socket, "dev", created.ID, "--watch", "data", "--command", "record")
+	webdavTarget := findWebDAVTarget(t, e2e.RunClientJSON[[]e2e.RuntimeRoutingTarget](t, bins, socket, "routing", "targets", created.ID))
+	webdavPort := e2e.FreePort(t)
+	waitServiceExists(t, namespace, webdavTarget.ServiceName)
+	webdavForward := startPortForward(t, namespace, webdavTarget.ServiceName, webdavPort, 8084)
+	t.Cleanup(webdavForward)
+	webdavURL := fmt.Sprintf("http://127.0.0.1:%d/webdav/data/dev.txt", webdavPort)
+	httpPut(t, webdavURL, "dev-write\n")
+	if got := e2e.WaitHTTP(t, webdavURL); !strings.Contains(got, "dev-write") {
+		t.Fatalf("webdav file = %q, want dev-write", got)
+	}
+
 	statuses := e2e.RunClientJSON[[]e2e.RuntimePortStatus](t, bins, socket, "ports", created.ID)
 	assertKubernetesPort(t, statuses, fixture)
 
-	e2e.RunClient(t, bins, socket, "run", created.ID, "record")
 	if got := readPVCFile(t, namespace, pvc, "data/finite.txt"); !strings.Contains(got, "finite-ok") {
 		t.Fatalf("finite file = %q, want finite-ok", got)
 	}
@@ -115,44 +143,14 @@ func requireKubernetes(t *testing.T) {
 	}
 }
 
-func seedPVC(t *testing.T, namespace string, pvc string, fixtureDir string) {
+func importImageIntoK3DIfCurrentContext(t *testing.T, image string) {
 	t.Helper()
-	applyManifest(t, fmt.Sprintf(`apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: seed-%s
-  namespace: %s
-spec:
-  restartPolicy: Never
-  containers:
-    - name: seed
-      image: busybox:1.36
-      command: ["sh", "-c", "sleep 3600"]
-      volumeMounts:
-        - name: runtime
-          mountPath: /runtime
-  volumes:
-    - name: runtime
-      persistentVolumeClaim:
-        claimName: %s
-`, pvc, namespace, pvc, namespace, pvc))
-	seedPod := "seed-" + pvc
-	e2e.Run(t, "kubectl", "wait", "-n", namespace, "--for=condition=Ready", "pod/"+seedPod, "--timeout=180s")
-	e2e.Run(t, "kubectl", "cp", filepath.Join(fixtureDir, "scroll.yaml"), namespace+"/"+seedPod+":/runtime/scroll.yaml")
-	e2e.Run(t, "kubectl", "exec", "-n", namespace, seedPod, "--", "sh", "-c", "mkdir -p /runtime/data/public")
-	e2e.Run(t, "kubectl", "delete", "pod", "-n", namespace, seedPod, "--wait=true")
+	contextName := strings.TrimSpace(e2e.Run(t, "kubectl", "config", "current-context"))
+	if !strings.HasPrefix(contextName, "k3d-") {
+		return
+	}
+	cluster := strings.TrimPrefix(contextName, "k3d-")
+	e2e.Run(t, "k3d", "image", "import", image, "--cluster", cluster)
 }
 
 func applyManifest(t *testing.T, manifest string) {
@@ -182,6 +180,17 @@ func findTarget(t *testing.T, targets []e2e.RuntimeRoutingTarget, fixture e2e.Fi
 		}
 	}
 	t.Fatalf("http target for %s not found in %#v", fixture.ServeProc, targets)
+	return e2e.RuntimeRoutingTarget{}
+}
+
+func findWebDAVTarget(t *testing.T, targets []e2e.RuntimeRoutingTarget) e2e.RuntimeRoutingTarget {
+	t.Helper()
+	for _, target := range targets {
+		if target.PortName == "webdav" {
+			return target
+		}
+	}
+	t.Fatalf("webdav target not found in %#v", targets)
 	return e2e.RuntimeRoutingTarget{}
 }
 
@@ -310,6 +319,23 @@ func kubectlOutput(args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "kubectl", args...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+func httpPut(t *testing.T, url string, body string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPut, url, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		data, _ := io.ReadAll(resp.Body)
+		t.Fatalf("PUT %s failed with %d: %s", url, resp.StatusCode, data)
+	}
 }
 
 func waitKubernetesResourcesGone(t *testing.T, namespace string, pvc string, resource string) {

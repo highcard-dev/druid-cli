@@ -12,7 +12,7 @@ import (
 
 type ProcedureLauncher struct {
 	runtimeBackend    ports.RuntimeBackendInterface
-	runtimeDataRoot   string
+	runtimeRoot       string
 	runtimeScrollID   string
 	runtimeScrollName string
 	routingProvider   func() []domain.RuntimeRouteAssignment
@@ -24,24 +24,24 @@ type ProcedureLauncher struct {
 func NewProcedureLauncher(
 	scrollService ports.ScrollServiceInterface,
 	runtimeBackend ports.RuntimeBackendInterface,
-	runtimeDataRoot string,
+	runtimeRoot string,
 ) (*ProcedureLauncher, error) {
-	return NewProcedureLauncherForScroll(scrollService, runtimeBackend, runtimeDataRoot, "")
+	return NewProcedureLauncherForScroll(scrollService, runtimeBackend, runtimeRoot, "")
 }
 
 func NewProcedureLauncherForScroll(
 	scrollService ports.ScrollServiceInterface,
 	runtimeBackend ports.RuntimeBackendInterface,
-	runtimeDataRoot string,
+	runtimeRoot string,
 	runtimeScrollID string,
 ) (*ProcedureLauncher, error) {
-	return NewProcedureLauncherForRuntime(scrollService, runtimeBackend, runtimeDataRoot, runtimeScrollID, "", nil)
+	return NewProcedureLauncherForRuntime(scrollService, runtimeBackend, runtimeRoot, runtimeScrollID, "", nil)
 }
 
 func NewProcedureLauncherForRuntime(
 	scrollService ports.ScrollServiceInterface,
 	runtimeBackend ports.RuntimeBackendInterface,
-	runtimeDataRoot string,
+	runtimeRoot string,
 	runtimeScrollID string,
 	runtimeScrollName string,
 	routingProvider func() []domain.RuntimeRouteAssignment,
@@ -52,7 +52,7 @@ func NewProcedureLauncherForRuntime(
 
 	s := &ProcedureLauncher{
 		runtimeBackend:    runtimeBackend,
-		runtimeDataRoot:   runtimeDataRoot,
+		runtimeRoot:       runtimeRoot,
 		runtimeScrollID:   runtimeScrollID,
 		runtimeScrollName: runtimeScrollName,
 		routingProvider:   routingProvider,
@@ -88,9 +88,9 @@ func (sc *ProcedureLauncher) Run(cmd string) error {
 		zap.String("runMode", string(command.Run)),
 	)
 
-	dataRoot := sc.runtimeDataRoot
-	if dataRoot == "" {
-		dataRoot = sc.scrollService.GetCwd()
+	root := sc.runtimeRoot
+	if root == "" {
+		root = sc.scrollService.GetCwd()
 	}
 	file := sc.scrollService.GetFile()
 	routing := []domain.RuntimeRouteAssignment{}
@@ -112,7 +112,7 @@ func (sc *ProcedureLauncher) Run(cmd string) error {
 		Name:         cmd,
 		ScrollID:     sc.runtimeScrollID,
 		Command:      command,
-		DataRoot:     dataRoot,
+		Root:         root,
 		GlobalPorts:  file.Ports,
 		ProcedureEnv: procedureEnv,
 	})

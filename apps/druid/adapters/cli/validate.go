@@ -36,5 +36,6 @@ var ValidateCmd = &cobra.Command{
 }
 
 func init() {
+	RootCmd.AddCommand(ValidateCmd)
 	ValidateCmd.Flags().BoolVar(&strict, "strict", false, "Enable strict validation mode")
 }

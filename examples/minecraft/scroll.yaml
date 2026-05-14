@@ -32,18 +32,18 @@ commands:
     run: restart
     procedures:
       - id: coldstart
-        image: druid-coldstarter:local
+        image: highcard/druid:stable
         expectedPorts:
           - name: minecraft
             keepAliveTraffic: 10kb/5m
         mounts:
           - path: /runtime
+            sub_path: .
+        env:
+          DRUID_ROOT: "/runtime"
+          DRUID_COLDSTARTER_STATUS_FILE: ".coldstarter-finished.json"
         command:
           - druid-coldstarter
-          - --runtime-config
-          - /runtime/.druid/runtime.json
-          - --status-file
-          - .coldstarter-finished.json
 
       - id: start
         image: eclipse-temurin:21-jre

@@ -1,7 +1,8 @@
-.PHONY: test build build-coldstarter-image test-integration test-integration-docker test-integration-kubernetes kind-integration-up kind-integration-down
+.PHONY: test build k3d-build-pull-image test-integration test-integration-docker test-integration-kubernetes kind-integration-up kind-integration-down
 
 VERSION ?= "dev"
-COLDSTARTER_IMAGE ?= druid-coldstarter:local
+DRUID_K8S_PULL_IMAGE ?= druid:local
+K3D_CLUSTER ?= druid-gs
 INTEGRATION_TIMEOUT ?= 1200s
 KIND_CLUSTER ?= druid-cli-integration
 KIND_VERSION ?= v0.27.0
@@ -11,20 +12,25 @@ generate-api: ## Generate API types from OpenAPI spec
 	@echo "Generating API types from OpenAPI spec..."
 	@which oapi-codegen > /dev/null || (echo "Installing oapi-codegen..." && go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.5.1)
 	@PATH="$(shell go env GOPATH)/bin:$$PATH" oapi-codegen -config api/oapi-codegen.yaml api/openapi.yaml
+	@PATH="$(shell go env GOPATH)/bin:$$PATH" oapi-codegen -config api/dev-oapi-codegen.yaml api/dev.openapi.yaml
+	@PATH="$(shell go env GOPATH)/bin:$$PATH" oapi-codegen -config api/callback-oapi-codegen.yaml api/callback.openapi.yaml
 
 validate-api: ## Validate OpenAPI spec
 	@echo "Validating OpenAPI spec..."
 	@which oapi-codegen > /dev/null || (echo "Installing oapi-codegen..." && go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.5.1)
 	@PATH="$(shell go env GOPATH)/bin:$$PATH" oapi-codegen -config api/oapi-codegen.yaml api/openapi.yaml > /dev/null
+	@PATH="$(shell go env GOPATH)/bin:$$PATH" oapi-codegen -config api/dev-oapi-codegen.yaml api/dev.openapi.yaml > /dev/null
+	@PATH="$(shell go env GOPATH)/bin:$$PATH" oapi-codegen -config api/callback-oapi-codegen.yaml api/callback.openapi.yaml > /dev/null
 	@echo "✓ OpenAPI spec is valid"
 
-build: generate-api ## Build Daemon and helper binaries
+build: generate-api ## Build Druid and helper binaries
 	CGO_ENABLED=0 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/druid ./apps/druid
-	CGO_ENABLED=0 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/druid-client ./apps/druid-client
 	CGO_ENABLED=0 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/druid-coldstarter ./apps/druid-coldstarter
 
-build-coldstarter-image: ## Build local druid-coldstarter Docker image without pushing
-	VERSION=$(VERSION) IMAGE=$(COLDSTARTER_IMAGE) ./scripts/build_coldstarter_image.sh
+k3d-build-pull-image: ## Build the unified Druid runtime image and import it into local k3d.
+	docker build . -f Dockerfile --build-arg "VERSION=$(VERSION)" -t "$(DRUID_K8S_PULL_IMAGE)"
+	@docker rm -f "k3d-$(K3D_CLUSTER)-tools" >/dev/null 2>&1 || true
+	k3d image import "$(DRUID_K8S_PULL_IMAGE)" -c "$(K3D_CLUSTER)"
 
 build-x86-docker:
 	docker run -e GOOS=linux -e GOARCH=amd64 -it --rm -v ./:/app -w /app --entrypoint=/bin/bash docker.elastic.co/beats-dev/golang-crossbuild:1.22.5-main  -c 'CGO_ENABLED=1 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/x86/druid'

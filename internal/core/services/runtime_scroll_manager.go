@@ -24,20 +24,21 @@ func NewRuntimeScrollManager(store RuntimeScrollStore) *RuntimeScrollManager {
 	return &RuntimeScrollManager{store: store}
 }
 
-func (m *RuntimeScrollManager) Create(artifact string, requestedName string, scrollRoot string, dataRoot string, scrollYAML []byte) (*domain.RuntimeScroll, error) {
+func (m *RuntimeScrollManager) Create(artifact string, requestedName string, root string, scrollYAML []byte) (*domain.RuntimeScroll, error) {
+	return m.CreateWithDigest(artifact, "", requestedName, "", root, scrollYAML)
+}
+
+func (m *RuntimeScrollManager) CreateWithDigest(artifact string, artifactDigest string, requestedName string, ownerID string, root string, scrollYAML []byte) (*domain.RuntimeScroll, error) {
 	if artifact == "" {
 		return nil, fmt.Errorf("artifact is required")
 	}
-	if scrollRoot == "" {
-		return nil, fmt.Errorf("scroll root is required")
-	}
-	if dataRoot == "" {
-		return nil, fmt.Errorf("data root is required")
+	if root == "" {
+		return nil, fmt.Errorf("runtime root is required")
 	}
 	if len(scrollYAML) == 0 {
 		return nil, fmt.Errorf("scroll yaml is required")
 	}
-	scroll, err := domain.NewScrollFromBytes(scrollRoot, scrollYAML)
+	scroll, err := domain.NewScrollFromBytes(root, scrollYAML)
 	if err != nil {
 		return nil, err
 	}
@@ -55,14 +56,15 @@ func (m *RuntimeScrollManager) Create(artifact string, requestedName string, scr
 	}
 
 	runtimeScroll := &domain.RuntimeScroll{
-		ID:         id,
-		Artifact:   artifact,
-		ScrollRoot: scrollRoot,
-		DataRoot:   dataRoot,
-		ScrollName: scroll.Name,
-		ScrollYAML: string(scrollYAML),
-		Status:     domain.RuntimeScrollStatusCreated,
-		Commands:   map[string]domain.LockStatus{},
+		ID:             id,
+		OwnerID:        ownerID,
+		Artifact:       artifact,
+		ArtifactDigest: artifactDigest,
+		Root:           root,
+		ScrollName:     scroll.Name,
+		ScrollYAML:     string(scrollYAML),
+		Status:         domain.RuntimeScrollStatusCreated,
+		Commands:       map[string]domain.LockStatus{},
 	}
 	if err := m.store.CreateScroll(runtimeScroll); err != nil {
 		return nil, err
@@ -101,120 +103,56 @@ func RuntimeScrollIDFromName(name string) string {
 	return name
 }
 
-func MaterializeScrollArtifact(artifact string, scrollRoot string, dataRoot string, ociRegistry ports.OciRegistryInterface, includeData bool) error {
+func MaterializeScrollArtifact(artifact string, root string, ociRegistry ports.OciRegistryInterface, includeData bool) error {
 	if artifact == "" {
 		return fmt.Errorf("artifact is required")
 	}
-	if scrollRoot == "" {
-		return fmt.Errorf("scroll root is required")
+	if root == "" {
+		return fmt.Errorf("runtime root is required")
 	}
-	if dataRoot == "" {
-		return fmt.Errorf("data root is required")
-	}
-	if err := os.RemoveAll(scrollRoot); err != nil {
+	if err := os.RemoveAll(root); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(scrollRoot, 0755); err != nil {
+	if err := os.MkdirAll(root, 0755); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Join(dataRoot, domain.RuntimeDataDir), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, domain.RuntimeDataDir), 0755); err != nil {
 		return err
 	}
 	if localPathExists(artifact) {
-		if err := materializeLocalArtifact(artifact, scrollRoot); err != nil {
+		if err := materializeLocalArtifact(artifact, root); err != nil {
 			return err
 		}
-		if scrollRoot == dataRoot {
-			return os.MkdirAll(filepath.Join(dataRoot, domain.RuntimeDataDir), 0755)
-		}
-		return moveRuntimeData(scrollRoot, dataRoot)
+		return os.MkdirAll(filepath.Join(root, domain.RuntimeDataDir), 0755)
 	}
 	if ociRegistry == nil {
 		return fmt.Errorf("OCI registry is required to pull %s", artifact)
 	}
-	if err := ociRegistry.PullSelective(scrollRoot, artifact, includeData, nil); err != nil {
+	if err := ociRegistry.PullSelective(root, artifact, includeData, nil); err != nil {
 		return err
 	}
-	if includeData {
-		if scrollRoot == dataRoot {
-			return os.MkdirAll(filepath.Join(dataRoot, domain.RuntimeDataDir), 0755)
-		}
-		return moveRuntimeData(scrollRoot, dataRoot)
-	}
-	return os.MkdirAll(filepath.Join(dataRoot, domain.RuntimeDataDir), 0755)
+	return os.MkdirAll(filepath.Join(root, domain.RuntimeDataDir), 0755)
 }
 
-func moveRuntimeData(scrollRoot string, dataRoot string) error {
-	src := filepath.Join(scrollRoot, domain.RuntimeDataDir)
-	if !localPathExists(src) {
-		return os.MkdirAll(filepath.Join(dataRoot, domain.RuntimeDataDir), 0755)
+func MoveMaterializedScroll(srcRoot string, dstRoot string) error {
+	if localPathExists(dstRoot) {
+		return fmt.Errorf("target runtime root already exists: %s", dstRoot)
 	}
-	dst := filepath.Join(dataRoot, domain.RuntimeDataDir)
-	if err := os.RemoveAll(dst); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dstRoot), 0755); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-		return err
-	}
-	if err := os.Rename(src, dst); err == nil {
-		return nil
-	}
-	if err := copyDir(src, dst); err != nil {
-		return err
-	}
-	return os.RemoveAll(src)
-}
-
-func MoveMaterializedScroll(srcScrollRoot string, srcDataRoot string, dstScrollRoot string, dstDataRoot string) error {
-	if srcScrollRoot == srcDataRoot && dstScrollRoot == dstDataRoot {
-		if localPathExists(dstScrollRoot) {
-			return fmt.Errorf("target scroll root already exists: %s", dstScrollRoot)
-		}
-		if err := os.MkdirAll(filepath.Dir(dstScrollRoot), 0755); err != nil {
+	if err := os.Rename(srcRoot, dstRoot); err != nil {
+		if err := copyDir(srcRoot, dstRoot); err != nil {
 			return err
 		}
-		if err := os.Rename(srcScrollRoot, dstScrollRoot); err != nil {
-			if err := copyDir(srcScrollRoot, dstScrollRoot); err != nil {
-				return err
-			}
-			if err := os.RemoveAll(srcScrollRoot); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	if localPathExists(dstScrollRoot) {
-		return fmt.Errorf("target scroll root already exists: %s", dstScrollRoot)
-	}
-	if localPathExists(dstDataRoot) {
-		return fmt.Errorf("target data root already exists: %s", dstDataRoot)
-	}
-	if err := os.MkdirAll(filepath.Dir(dstScrollRoot), 0755); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(dstDataRoot), 0755); err != nil {
-		return err
-	}
-	if err := os.Rename(srcScrollRoot, dstScrollRoot); err != nil {
-		if err := copyDir(srcScrollRoot, dstScrollRoot); err != nil {
-			return err
-		}
-		if err := os.RemoveAll(srcScrollRoot); err != nil {
-			return err
-		}
-	}
-	if err := os.Rename(srcDataRoot, dstDataRoot); err != nil {
-		if err := copyDir(srcDataRoot, dstDataRoot); err != nil {
-			return err
-		}
-		if err := os.RemoveAll(srcDataRoot); err != nil {
+		if err := os.RemoveAll(srcRoot); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func materializeLocalArtifact(artifact string, scrollRoot string) error {
+func materializeLocalArtifact(artifact string, root string) error {
 	info, err := os.Stat(artifact)
 	if err != nil {
 		return err
@@ -223,9 +161,9 @@ func materializeLocalArtifact(artifact string, scrollRoot string) error {
 		if filepath.Base(artifact) != "scroll.yaml" {
 			return fmt.Errorf("local file artifact must be scroll.yaml")
 		}
-		return copyFile(artifact, filepath.Join(scrollRoot, "scroll.yaml"))
+		return copyFile(artifact, filepath.Join(root, "scroll.yaml"))
 	}
-	return copyDir(artifact, scrollRoot)
+	return copyDir(artifact, root)
 }
 
 func copyDir(src string, dst string) error {

@@ -116,7 +116,7 @@ func TestExamples(t *testing.T) {
 
 			go queueManager.Work()
 
-			err = queueManager.AddAndRememberItem("start")
+			err = queueManager.AddTempItem("start")
 
 			if err != nil {
 				t.Error(err)
@@ -145,11 +145,12 @@ func TestExamples(t *testing.T) {
 				return
 			}
 
-			err = queueManager.AddShutdownItem("stop")
+			err = queueManager.AddTempItemWithWait("stop")
 			if err != nil {
 				t.Error(err)
 				return
 			}
+			queueManager.Shutdown()
 
 			if config.TestAddress != "" {
 				err = test_utils.ConnectionTest(config.TestAddress, false)

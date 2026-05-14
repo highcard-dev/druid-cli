@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/gofiber/contrib/websocket"
+	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/core/services"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"go.uber.org/zap"
@@ -11,10 +12,20 @@ import (
 
 type WebsocketHandler struct {
 	consoleService *services.ConsoleManager
+	scrolls        *ScrollHandler
+	authorizer     ports.AuthorizerServiceInterface
 }
 
 func NewWebsocketHandler(consoleService *services.ConsoleManager) *WebsocketHandler {
 	return &WebsocketHandler{consoleService: consoleService}
+}
+
+func (h *WebsocketHandler) SetScrollHandler(scrolls *ScrollHandler) {
+	h.scrolls = scrolls
+}
+
+func (h *WebsocketHandler) SetAuthorizer(authorizer ports.AuthorizerServiceInterface) {
+	h.authorizer = authorizer
 }
 
 func (h *WebsocketHandler) AttachConsole(c *websocket.Conn) {
@@ -26,6 +37,10 @@ func (h *WebsocketHandler) AttachConsole(c *websocket.Conn) {
 }
 
 func (h *WebsocketHandler) AttachScrollConsole(c *websocket.Conn) {
+	if !h.PublicQueryAuth(c) {
+		_ = c.Close()
+		return
+	}
 	h.AttachConsole(c)
 }
 

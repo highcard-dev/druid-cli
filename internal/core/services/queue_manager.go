@@ -17,9 +17,8 @@ var ErrCommandNotFound = fmt.Errorf("command not found")
 var ErrCommandDoneOnce = fmt.Errorf("command is already done and has run mode once")
 
 type AddItemOptions struct {
-	Wait              bool
-	RunAfterExecution func()
-	Force             bool
+	Wait  bool
+	Force bool
 }
 
 type QueueStatusObserver func(command string, status domain.ScrollLockStatus, exitCode *int)
@@ -34,7 +33,6 @@ type QueueManager struct {
 	taskDoneChan      chan struct{}
 	shutdownChan      chan struct{}
 	notifierChan      []chan []string
-	callbacksPostRun  map[string]func()
 	statusObserver    QueueStatusObserver
 }
 
@@ -50,7 +48,6 @@ func NewQueueManager(
 		taskDoneChan:      make(chan struct{}, 1), // FIXED: Buffered channel
 		shutdownChan:      make(chan struct{}),
 		notifierChan:      make([]chan []string, 0),
-		callbacksPostRun:  make(map[string]func()),
 	}
 }
 
@@ -98,24 +95,6 @@ func (sc *QueueManager) AddTempItem(cmd string) error {
 
 func (sc *QueueManager) AddForcedItem(cmd string) error {
 	return sc.addQueueItem(cmd, AddItemOptions{Force: true})
-}
-
-func (sc *QueueManager) AddAndRememberItem(cmd string) error {
-	return sc.addQueueItem(cmd, AddItemOptions{})
-}
-
-func (sc *QueueManager) AddShutdownItem(cmd string) error {
-	return sc.addQueueItem(cmd, AddItemOptions{
-		RunAfterExecution: func() {
-			sc.Shutdown()
-		},
-	})
-}
-
-func (sc *QueueManager) AddItemWithCallback(cmd string, cb func()) error {
-	return sc.addQueueItem(cmd, AddItemOptions{
-		RunAfterExecution: cb,
-	})
 }
 
 func (sc *QueueManager) RememberDoneItem(cmd string) {
@@ -172,10 +151,6 @@ func (sc *QueueManager) addQueueItem(cmd string, options AddItemOptions) error {
 		DoneChan: doneChan,
 	}
 
-	if options.RunAfterExecution != nil {
-		item.RunAfterExecution = options.RunAfterExecution
-	}
-
 	sc.commandQueue[cmd] = item
 	sc.observeStatusLocked(cmd, domain.ScrollLockStatusWaiting, nil)
 
@@ -197,15 +172,6 @@ func (sc *QueueManager) addQueueItem(cmd string, options AddItemOptions) error {
 	return nil
 }
 
-func (sc *QueueManager) RegisterCallbacks(callbacks map[string]func()) {
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
-
-	for cmd, cb := range callbacks {
-		sc.callbacksPostRun[cmd] = cb
-	}
-}
-
 func (sc *QueueManager) SetStatusObserver(observer QueueStatusObserver) {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
@@ -220,10 +186,6 @@ func (sc *QueueManager) HydrateCommandStatuses(statuses map[string]domain.LockSt
 		}
 
 		if status.Status == domain.ScrollLockStatusDone {
-			if callback, ok := sc.callbacksPostRun[cmd]; ok && callback != nil {
-				callback()
-			}
-
 			if command.Run != domain.RunModeRestart && command.Run != domain.RunModePersistent {
 				sc.mu.Lock()
 				sc.commandQueue[cmd] = &domain.QueueItem{
@@ -234,9 +196,7 @@ func (sc *QueueManager) HydrateCommandStatuses(statuses map[string]domain.LockSt
 			}
 		}
 
-		sc.addQueueItem(cmd, AddItemOptions{
-			RunAfterExecution: nil,
-		})
+		sc.addQueueItem(cmd, AddItemOptions{})
 	}
 
 	return nil
@@ -336,13 +296,6 @@ func (sc *QueueManager) RunQueue() {
 					// Signal completion if someone is waiting
 					if i.DoneChan != nil {
 						close(i.DoneChan)
-					}
-
-					if i.RunAfterExecution != nil {
-						i.RunAfterExecution()
-					}
-					if callback, ok := sc.callbacksPostRun[c]; ok && callback != nil {
-						callback()
 					}
 
 					// FIXED: Non-blocking send to buffered channel

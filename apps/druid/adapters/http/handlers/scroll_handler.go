@@ -2,16 +2,13 @@ package handlers
 
 import (
 	"errors"
-	"mime"
-	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	appservices "github.com/highcard-dev/daemon/apps/druid/core/services"
 	"github.com/highcard-dev/daemon/internal/api"
 	"github.com/highcard-dev/daemon/internal/core/domain"
+	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/core/services"
 )
 
@@ -19,32 +16,35 @@ type ScrollHandler struct {
 	supervisor     *appservices.RuntimeSupervisor
 	consoleService *services.ConsoleManager
 	logService     *services.LogManager
+	authorizer     ports.AuthorizerServiceInterface
 }
 
-func NewScrollHandler(supervisor *appservices.RuntimeSupervisor, consoleService *services.ConsoleManager, logService *services.LogManager) *ScrollHandler {
+func NewScrollHandler(supervisor *appservices.RuntimeSupervisor, consoleService *services.ConsoleManager, logService *services.LogManager, authorizer ...ports.AuthorizerServiceInterface) *ScrollHandler {
+	var auth ports.AuthorizerServiceInterface
+	if len(authorizer) > 0 {
+		auth = authorizer[0]
+	}
 	return &ScrollHandler{
 		supervisor:     supervisor,
 		consoleService: consoleService,
 		logService:     logService,
+		authorizer:     auth,
 	}
 }
 
-func runtimeRoots(scrollRoot *string, dataRoot *string) (string, string, error) {
-	scroll := ""
-	if scrollRoot != nil {
-		scroll = *scrollRoot
+func registryCredentials(in *[]api.RegistryCredential) []domain.RegistryCredential {
+	if in == nil || len(*in) == 0 {
+		return nil
 	}
-	data := ""
-	if dataRoot != nil {
-		data = *dataRoot
+	out := make([]domain.RegistryCredential, 0, len(*in))
+	for _, credential := range *in {
+		out = append(out, domain.RegistryCredential{
+			Host:     credential.Host,
+			Username: credential.Username,
+			Password: credential.Password,
+		})
 	}
-	if scroll == "" && data == "" {
-		return "", "", nil
-	}
-	if scroll == "" || data == "" || scroll != data {
-		return "", "", errors.New("scroll_root and data_root are legacy fields and must be omitted or equal")
-	}
-	return scroll, scroll, nil
+	return out
 }
 
 func (h *ScrollHandler) ListScrolls(c *fiber.Ctx) error {
@@ -66,15 +66,11 @@ func (h *ScrollHandler) CreateScroll(c *fiber.Ctx) error {
 	} else if request.Id != nil && *request.Id != "" {
 		name = *request.Id
 	}
-	scrollRoot, dataRoot, err := runtimeRoots(request.ScrollRoot, request.DataRoot)
-	if err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	ownerID := ""
+	if request.OwnerId != nil {
+		ownerID = *request.OwnerId
 	}
-	start := true
-	if request.Start != nil {
-		start = *request.Start
-	}
-	runtimeScroll, err := h.supervisor.Create(request.Artifact, name, scrollRoot, dataRoot, start)
+	runtimeScroll, err := h.supervisor.CreateWithOwner(request.Artifact, name, ownerID, registryCredentials(request.RegistryCredentials))
 	if err != nil {
 		if errors.Is(err, services.ErrScrollAlreadyExists) {
 			return fiber.NewError(fiber.StatusConflict, err.Error())
@@ -88,32 +84,21 @@ func (h *ScrollHandler) CreateScroll(c *fiber.Ctx) error {
 }
 
 func (h *ScrollHandler) EnsureScroll(c *fiber.Ctx) error {
-	var request struct {
-		ID         *string `json:"id"`
-		Name       *string `json:"name"`
-		Artifact   string  `json:"artifact"`
-		ScrollRoot *string `json:"scroll_root"`
-		DataRoot   *string `json:"data_root"`
-		Start      *bool   `json:"start"`
-	}
+	var request api.EnsureScrollRequest
 	if err := c.BodyParser(&request); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
 	name := ""
 	if request.Name != nil && *request.Name != "" {
 		name = *request.Name
-	} else if request.ID != nil && *request.ID != "" {
-		name = *request.ID
+	} else if request.Id != nil && *request.Id != "" {
+		name = *request.Id
 	}
-	scrollRoot, dataRoot, err := runtimeRoots(request.ScrollRoot, request.DataRoot)
-	if err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	ownerID := ""
+	if request.OwnerId != nil {
+		ownerID = *request.OwnerId
 	}
-	start := true
-	if request.Start != nil {
-		start = *request.Start
-	}
-	runtimeScroll, err := h.supervisor.Ensure(request.Artifact, name, scrollRoot, dataRoot, start)
+	runtimeScroll, err := h.supervisor.EnsureWithOwner(request.Artifact, name, ownerID, registryCredentials(request.RegistryCredentials))
 	if err != nil {
 		if errors.Is(err, appservices.ErrRuntimeMaterializationUnsupported) {
 			return fiber.NewError(fiber.StatusNotImplemented, err.Error())
@@ -291,45 +276,6 @@ func (h *ScrollHandler) GetDaemonPorts(c *fiber.Ctx) error {
 	return h.GetScrollPorts(c, c.Params("id"))
 }
 
-func (h *ScrollHandler) ServeDaemonWebDAV(c *fiber.Ctx) error {
-	c.Set("DAV", "1")
-	c.Set("Allow", "OPTIONS, GET, HEAD, PUT")
-	if c.Method() == fiber.MethodOptions {
-		return c.SendStatus(fiber.StatusNoContent)
-	}
-	relativePath := strings.TrimPrefix(c.Params("*"), "/")
-	if c.Method() == fiber.MethodPut {
-		if err := h.supervisor.WriteDataFile(c.Params("id"), relativePath, c.Body()); err != nil {
-			if errors.Is(err, appservices.ErrRuntimeOperationUnsupported) {
-				return fiber.NewError(fiber.StatusNotImplemented, err.Error())
-			}
-			return err
-		}
-		return c.SendStatus(fiber.StatusNoContent)
-	}
-	if c.Method() != fiber.MethodGet && c.Method() != fiber.MethodHead {
-		return fiber.NewError(fiber.StatusMethodNotAllowed, "unsupported runtime WebDAV method")
-	}
-	data, err := h.supervisor.DataFile(c.Params("id"), relativePath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) || strings.Contains(err.Error(), "No such file") {
-			return fiber.NewError(fiber.StatusNotFound, err.Error())
-		}
-		if errors.Is(err, appservices.ErrRuntimeOperationUnsupported) {
-			return fiber.NewError(fiber.StatusNotImplemented, err.Error())
-		}
-		return err
-	}
-	if contentType := mime.TypeByExtension(filepath.Ext(relativePath)); contentType != "" {
-		c.Set(fiber.HeaderContentType, contentType)
-	}
-	c.Set(fiber.HeaderContentLength, strconv.Itoa(len(data)))
-	if c.Method() == fiber.MethodHead {
-		return c.SendStatus(fiber.StatusOK)
-	}
-	return c.Send(data)
-}
-
 func (h *ScrollHandler) GetScrollPorts(c *fiber.Ctx, id string) error {
 	runtimeScroll, err := h.getScroll(id)
 	if err != nil {
@@ -348,9 +294,6 @@ func (h *ScrollHandler) GetScrollRoutingTargets(c *fiber.Ctx, id string) error {
 	}
 	targets, err := h.supervisor.RoutingTargets(id)
 	if err != nil {
-		if errors.Is(err, appservices.ErrRuntimeOperationUnsupported) {
-			return fiber.NewError(fiber.StatusNotImplemented, err.Error())
-		}
 		return err
 	}
 	return c.JSON(targets)
@@ -377,17 +320,12 @@ func (h *ScrollHandler) BackupScroll(c *fiber.Ctx, id string) error {
 	if _, err := h.getScroll(id); err != nil {
 		return err
 	}
-	var request struct {
-		Artifact string `json:"artifact"`
-	}
+	var request api.RuntimeArtifactOperationRequest
 	if err := c.BodyParser(&request); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
-	runtimeScroll, err := h.supervisor.Backup(id, request.Artifact)
+	runtimeScroll, err := h.supervisor.Backup(id, request.Artifact, registryCredentials(request.RegistryCredentials))
 	if err != nil {
-		if errors.Is(err, appservices.ErrRuntimeOperationUnsupported) {
-			return fiber.NewError(fiber.StatusNotImplemented, err.Error())
-		}
 		return err
 	}
 	return c.JSON(runtimeScroll)
@@ -397,18 +335,16 @@ func (h *ScrollHandler) RestoreScroll(c *fiber.Ctx, id string) error {
 	if _, err := h.getScroll(id); err != nil {
 		return err
 	}
-	var request struct {
-		Artifact string `json:"artifact"`
-		Restart  bool   `json:"restart"`
-	}
+	var request api.RuntimeArtifactOperationRequest
 	if err := c.BodyParser(&request); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
-	runtimeScroll, err := h.supervisor.Restore(id, request.Artifact, request.Restart)
+	restart := false
+	if request.Restart != nil {
+		restart = *request.Restart
+	}
+	runtimeScroll, err := h.supervisor.Restore(id, request.Artifact, restart, registryCredentials(request.RegistryCredentials))
 	if err != nil {
-		if errors.Is(err, appservices.ErrRuntimeOperationUnsupported) {
-			return fiber.NewError(fiber.StatusNotImplemented, err.Error())
-		}
 		return err
 	}
 	return c.JSON(runtimeScroll)

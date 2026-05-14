@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
+	"github.com/highcard-dev/daemon/internal/core/ports"
 	coreservices "github.com/highcard-dev/daemon/internal/core/services"
 )
 
@@ -104,34 +106,6 @@ func TestProcedureStatefulSetSpecUsesProvidedRuntimeEnv(t *testing.T) {
 	}
 }
 
-func TestReadDataFileJobSpecScopesPathToScrollPVC(t *testing.T) {
-	job := readDataFileJobSpec("druid", "read-file", "druid-scroll-data", "alpine:3.20", "data/private/dist/app.wasm")
-	container := job.Spec.Template.Spec.Containers[0]
-	if job.Namespace != "druid" || job.Labels[labelComponent] != "read-data-file" {
-		t.Fatalf("unexpected job metadata: namespace=%s labels=%#v", job.Namespace, job.Labels)
-	}
-	if got := container.Command; len(got) != 2 || got[0] != "cat" || got[1] != "/scroll/data/private/dist/app.wasm" {
-		t.Fatalf("unexpected command: %#v", got)
-	}
-	if got := job.Spec.Template.Spec.Volumes[0].PersistentVolumeClaim.ClaimName; got != "druid-scroll-data" {
-		t.Fatalf("claim = %s, want druid-scroll-data", got)
-	}
-}
-
-func TestWriteDataFileJobSpecScopesPathToScrollPVC(t *testing.T) {
-	job := writeDataFileJobSpec("druid", "write-file", "druid-scroll-data", "alpine:3.20", "data/private/config.json", "e30=")
-	container := job.Spec.Template.Spec.Containers[0]
-	if job.Namespace != "druid" || job.Labels[labelComponent] != "write-data-file" {
-		t.Fatalf("unexpected job metadata: namespace=%s labels=%#v", job.Namespace, job.Labels)
-	}
-	if got := container.Command; len(got) != 5 || got[4] != "/scroll/data/private/config.json" {
-		t.Fatalf("unexpected command: %#v", got)
-	}
-	if len(container.Env) != 1 || container.Env[0].Name != "DRUID_DATA_FILE_B64" || container.Env[0].Value != "e30=" {
-		t.Fatalf("unexpected env: %#v", container.Env)
-	}
-}
-
 func TestProcedureStatefulSetSpecBuildsPersistentWorkload(t *testing.T) {
 	procedure := &domain.Procedure{
 		Image:         "nginx:1.27",
@@ -174,7 +148,7 @@ func TestProcedureStatefulSetSpecBuildsPersistentWorkload(t *testing.T) {
 }
 
 func TestPullJobSpecPropagatesPlainHTTPRegistryEnv(t *testing.T) {
-	job := pullJobSpec("druid", "pull", "scroll-pvc", "druid-client:test", "registry:5000/lab:1.0", "", true)
+	job := pullJobSpec("druid", "pull", "scroll-pvc", "druid-cli:test", "registry:5000/lab:1.0", "", "", true)
 
 	env := job.Spec.Template.Spec.Containers[0].Env
 	if len(env) != 1 || env[0].Name != "DRUID_REGISTRY_PLAIN_HTTP" || env[0].Value != "true" {
@@ -182,12 +156,122 @@ func TestPullJobSpecPropagatesPlainHTTPRegistryEnv(t *testing.T) {
 	}
 }
 
+func TestPullJobSpecMountsRegistryConfigSecret(t *testing.T) {
+	job := pullJobSpec("druid", "pull", "scroll-pvc", "druid-cli:test", "registry.local/lab:1.0", "", "runtime-registry", false)
+	container := job.Spec.Template.Spec.Containers[0]
+	if !strings.Contains(strings.Join(container.Command, " "), "--config /tmp/druid-registry.json") {
+		t.Fatalf("command = %#v, want generated registry config", container.Command)
+	}
+	if len(container.Env) != 1 || container.Env[0].Name != registryConfigEnvName {
+		t.Fatalf("env = %#v", container.Env)
+	}
+	ref := container.Env[0].ValueFrom.SecretKeyRef
+	if ref == nil || ref.Name != "runtime-registry" || ref.Key != registryConfigSecretKey {
+		t.Fatalf("secret ref = %#v", ref)
+	}
+}
+
+func TestWorkerPullJobSpecRunsDruidWorkerPull(t *testing.T) {
+	action := ports.RuntimeWorkerAction{
+		Mode:          ports.RuntimeWorkerModeUpdate,
+		RuntimeID:     "deployment-123",
+		Artifact:      "registry.local/lab:2.0",
+		MountPath:     "/scroll",
+		CallbackURL:   "http://druid-cli:8083/internal/v1/workers/deployment-123/complete",
+		CallbackToken: "secret-token",
+	}
+	job := workerPullJobSpec("druid", "worker-pull", "runtime-pvc", "druid-cli:test", action, "pull-secret", "runtime-registry", true)
+	container := job.Spec.Template.Spec.Containers[0]
+	command := strings.Join(container.Command, " ")
+	for _, want := range []string{"druid --config /tmp/druid-registry.json", "worker pull", "--mode update", "--runtime-id deployment-123", "--callback-url"} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("command = %#v, want %s", container.Command, want)
+		}
+	}
+	if strings.Contains(command, "--action-id") {
+		t.Fatalf("command = %#v, should not contain --action-id", container.Command)
+	}
+	env := map[string]string{}
+	for _, item := range container.Env {
+		env[item.Name] = item.Value
+	}
+	if env["DRUID_WORKER_TOKEN"] != "secret-token" || env["DRUID_REGISTRY_PLAIN_HTTP"] != "true" {
+		t.Fatalf("env = %#v", container.Env)
+	}
+	if len(job.Spec.Template.Spec.ImagePullSecrets) != 1 || job.Spec.Template.Spec.ImagePullSecrets[0].Name != "pull-secret" {
+		t.Fatalf("image pull secrets = %#v", job.Spec.Template.Spec.ImagePullSecrets)
+	}
+}
+
+func TestSpawnPullWorkerCreateUsesFinalPVCAndWorkerJob(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	backend := NewWithClient(Config{Namespace: "druid", PullImage: "druid-cli:test"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+	var jobs []*batchv1.Job
+	backend.jobLogRunner = func(ctx context.Context, job *batchv1.Job) ([]byte, error) {
+		jobs = append(jobs, job.DeepCopy())
+		return nil, nil
+	}
+	action := ports.RuntimeWorkerAction{
+		Mode:          ports.RuntimeWorkerModeCreate,
+		RuntimeID:     "deployment-123",
+		Artifact:      "registry.local/lab:1.0",
+		RootRef:       ref("druid", dataPVCName("deployment-123")),
+		MountPath:     "/scroll",
+		CallbackURL:   "http://druid-cli:8083/internal/v1/workers/deployment-123/complete",
+		CallbackToken: "secret-token",
+	}
+	if err := backend.SpawnPullWorker(context.Background(), action); err != nil {
+		t.Fatal(err)
+	}
+	pvcs, err := client.CoreV1().PersistentVolumeClaims("druid").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pvcs.Items) != 1 || pvcs.Items[0].Name != dataPVCName("deployment-123") {
+		t.Fatalf("pvcs = %#v, want final PVC", pvcs.Items)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("jobs = %d, want 1", len(jobs))
+	}
+	command := strings.Join(jobs[0].Spec.Template.Spec.Containers[0].Command, " ")
+	if !strings.Contains(command, "worker pull") || strings.Contains(command, "cat /scroll/scroll.yaml") || strings.Contains(command, "--action-id") {
+		t.Fatalf("command = %#v", jobs[0].Spec.Template.Spec.Containers[0].Command)
+	}
+}
+
+func TestRegistryConfigSecretUsesDruidClientConfigShape(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+	secretName, cleanup, err := backend.createRegistryConfigSecret(context.Background(), "druid", "artifact", []domain.RegistryCredential{{
+		Host:     "artifacts.druid.gg/user/scroll",
+		Username: "robot$scroll",
+		Password: "secret",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	secret, err := client.CoreV1().Secrets("druid").Get(context.Background(), secretName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Registries []domain.RegistryCredential `json:"registries"`
+	}
+	if err := json.Unmarshal(secret.Data[registryConfigSecretKey], &config); err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Registries) != 1 || config.Registries[0].Host != "artifacts.druid.gg/user/scroll" || config.Registries[0].Username != "robot$scroll" {
+		t.Fatalf("config = %#v", config)
+	}
+}
+
 func TestExpectedPortsUsesHubbleFlowPresence(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{hasFlow: true})
-	dataRoot := ref("druid", "druid-static-web-data")
+	root := ref("druid", "druid-static-web-data")
 	procedureName := "start"
-	service, err := serviceSpec("druid", dataRoot, procedureName, "http", domain.Port{Name: "http", Port: 80, Protocol: "tcp"})
+	service, err := serviceSpec("druid", root, procedureName, "http", domain.Port{Name: "http", Port: 80, Protocol: "tcp"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +291,7 @@ func TestExpectedPortsUsesHubbleFlowPresence(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	statuses, err := backend.ExpectedPorts(dataRoot, map[string]*domain.CommandInstructionSet{
+	statuses, err := backend.ExpectedPorts(root, map[string]*domain.CommandInstructionSet{
 		"start": {Procedures: []*domain.Procedure{{
 			Id:            &procedureName,
 			ExpectedPorts: []domain.ExpectedPort{{Name: "http", KeepAliveTraffic: "1b/5m"}},
@@ -234,8 +318,8 @@ func TestExpectedPortsUsesHubbleFlowPresence(t *testing.T) {
 func TestExpectedPortsDegradesWhenHubbleUnavailable(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{err: errors.New("relay unavailable")})
-	dataRoot := ref("druid", "druid-static-web-data")
-	service, err := serviceSpec("druid", dataRoot, "start", "http", domain.Port{Name: "http", Port: 80, Protocol: "tcp"})
+	root := ref("druid", "druid-static-web-data")
+	service, err := serviceSpec("druid", root, "start", "http", domain.Port{Name: "http", Port: 80, Protocol: "tcp"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +327,7 @@ func TestExpectedPortsDegradesWhenHubbleUnavailable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	statuses, err := backend.ExpectedPorts(dataRoot, map[string]*domain.CommandInstructionSet{
+	statuses, err := backend.ExpectedPorts(root, map[string]*domain.CommandInstructionSet{
 		"start": {Procedures: []*domain.Procedure{{ExpectedPorts: []domain.ExpectedPort{{Name: "http", KeepAliveTraffic: "1b/5m"}}}}},
 	}, []domain.Port{{Name: "http", Port: 80, Protocol: "tcp"}})
 	if err != nil {
@@ -263,10 +347,10 @@ func TestExpectedPortsDegradesWhenHubbleUnavailable(t *testing.T) {
 
 func TestRoutingTargetsReturnStableBackendServices(t *testing.T) {
 	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset(), fakeHubble{})
-	dataRoot := ref("druid", "druid-static-web-data")
+	root := ref("druid", "druid-static-web-data")
 	procedureID := "web"
 
-	targets, err := backend.RoutingTargets(dataRoot, map[string]*domain.CommandInstructionSet{
+	targets, err := backend.RoutingTargets(root, map[string]*domain.CommandInstructionSet{
 		"serve": {Procedures: []*domain.Procedure{{
 			Id:            &procedureID,
 			ExpectedPorts: []domain.ExpectedPort{{Name: "http"}},
@@ -276,30 +360,75 @@ func TestRoutingTargetsReturnStableBackendServices(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(targets) != 1 {
+	if len(targets) != 2 {
 		t.Fatalf("targets = %#v", targets)
 	}
-	target := targets[0]
-	if target.Namespace != "druid" || target.ServiceName != serviceName(dataRoot, "web", "http") || target.ServicePort != 8080 {
+	var target domain.RuntimeRoutingTarget
+	var webdav domain.RuntimeRoutingTarget
+	for _, item := range targets {
+		if item.Name == "http" {
+			target = item
+		}
+		if item.Name == "webdav" {
+			webdav = item
+		}
+	}
+	if target.Namespace != "druid" || target.ServiceName != serviceName(root, "web", "http") || target.ServicePort != 8080 {
 		t.Fatalf("target = %#v", target)
 	}
 	if target.Protocol != "http" || target.PortName != "http" || target.Procedure != "web" {
 		t.Fatalf("target = %#v", target)
 	}
-	if target.Selector[labelScrollID] != "druid-static-web-data" || target.Selector[labelProcedure] != "web" {
+	if target.Selector[labelScrollID] != "druid-static-web-data" || target.Selector[labelPortName] != "http" {
 		t.Fatalf("selector = %#v", target.Selector)
+	}
+	if webdav.ServiceName != serviceName(root, "dev", "webdav") || webdav.Port != 8084 || webdav.Protocol != "https" {
+		t.Fatalf("webdav target = %#v", webdav)
+	}
+}
+
+func TestRoutingTargetsCollapseColdstarterAndRuntimePort(t *testing.T) {
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset(), fakeHubble{})
+	root := ref("druid", "druid-minecraft-data")
+	coldstart := "coldstart"
+	start := "start"
+
+	targets, err := backend.RoutingTargets(root, map[string]*domain.CommandInstructionSet{
+		"start": {Procedures: []*domain.Procedure{
+			{Id: &coldstart, ExpectedPorts: []domain.ExpectedPort{{Name: "main"}}},
+			{Id: &start, ExpectedPorts: []domain.ExpectedPort{{Name: "main"}}},
+		}},
+	}, []domain.Port{{Name: "main", Port: 25565, Protocol: "tcp"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var mainTargets []domain.RuntimeRoutingTarget
+	for _, target := range targets {
+		if target.PortName == "main" {
+			mainTargets = append(mainTargets, target)
+		}
+	}
+	if len(mainTargets) != 1 {
+		t.Fatalf("main targets = %#v", mainTargets)
+	}
+	if mainTargets[0].Name != "main" || mainTargets[0].Procedure != "coldstart" {
+		t.Fatalf("main target = %#v", mainTargets[0])
+	}
+	if mainTargets[0].Selector[labelPortName] != "main" {
+		t.Fatalf("selector = %#v", mainTargets[0].Selector)
 	}
 }
 
 func TestStopRuntimeDeletesWorkloadsButPreservesDataAndServices(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
-	dataRoot := ref("druid", "druid-static-web-data")
+	root := ref("druid", "druid-static-web-data")
 	labels := baseLabels("druid-static-web-data")
 	labels[labelProcedure] = "web"
-	jobName := jobName("proc", dataRoot, "web")
-	statefulSetName := statefulSetName(dataRoot, "web")
-	service, err := serviceSpec("druid", dataRoot, "web", "http", domain.Port{Name: "http", Port: 8080, Protocol: "tcp"})
+	jobName := jobName("proc", root, "web")
+	statefulSetName := statefulSetName(root, "web")
+	service, err := serviceSpec("druid", root, "web", "http", domain.Port{Name: "http", Port: 8080, Protocol: "tcp"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +459,7 @@ func TestStopRuntimeDeletesWorkloadsButPreservesDataAndServices(t *testing.T) {
 		}
 	}
 
-	if err := backend.StopRuntime(dataRoot); err != nil {
+	if err := backend.StopRuntime(root); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := client.BatchV1().Jobs("druid").Get(context.Background(), jobName, metav1.GetOptions{}); !apierrors.IsNotFound(err) {
@@ -353,8 +482,8 @@ func TestStopRuntimeDeletesWorkloadsButPreservesDataAndServices(t *testing.T) {
 func TestDeleteRuntimePurgesServicesAndDataWhenRequested(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
-	dataRoot := ref("druid", "druid-static-web-data")
-	service, err := serviceSpec("druid", dataRoot, "web", "http", domain.Port{Name: "http", Port: 8080, Protocol: "tcp"})
+	root := ref("druid", "druid-static-web-data")
+	service, err := serviceSpec("druid", root, "web", "http", domain.Port{Name: "http", Port: 8080, Protocol: "tcp"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,7 +494,7 @@ func TestDeleteRuntimePurgesServicesAndDataWhenRequested(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := backend.DeleteRuntime(dataRoot, true); err != nil {
+	if err := backend.DeleteRuntime(root, true); err != nil {
 		t.Fatal(err)
 	}
 
@@ -378,7 +507,7 @@ func TestDeleteRuntimePurgesServicesAndDataWhenRequested(t *testing.T) {
 }
 
 func TestBackupAndRestoreJobSpecsUseRuntimePVCAndRegistryEnv(t *testing.T) {
-	backup := backupJobSpec("druid", "backup", "runtime-pvc", "druid-client:test", "registry.local/scroll:backup", "registry-secret", true)
+	backup := backupJobSpec("druid", "backup", "runtime-pvc", "druid-cli:test", "registry.local/scroll:backup", "registry-secret", "", true)
 	if backup.Spec.Template.Spec.Containers[0].Command[1] != "push" {
 		t.Fatalf("backup command = %#v", backup.Spec.Template.Spec.Containers[0].Command)
 	}
@@ -401,11 +530,16 @@ func TestBackupAndRestoreJobSpecsUseRuntimePVCAndRegistryEnv(t *testing.T) {
 	}
 }
 
-func TestMaterializationRequiresPullImage(t *testing.T) {
+func TestSpawnPullWorkerRequiresPullImage(t *testing.T) {
 	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset(), fakeHubble{})
-	_, err := backend.MaterializeScroll(context.Background(), "ghcr.io/example/scroll:latest", "")
+	err := backend.SpawnPullWorker(context.Background(), ports.RuntimeWorkerAction{
+		Mode:      ports.RuntimeWorkerModeCreate,
+		RuntimeID: "scroll",
+		Artifact:  "ghcr.io/example/scroll:latest",
+		RootRef:   ref("druid", dataPVCName("scroll")),
+	})
 	if err == nil {
-		t.Fatal("MaterializeScroll error = nil, want missing pull image error")
+		t.Fatal("SpawnPullWorker error = nil, want missing pull image error")
 	}
 	if !strings.Contains(err.Error(), "pull image is required") {
 		t.Fatalf("error = %v, want pull image required", err)
@@ -415,8 +549,8 @@ func TestMaterializationRequiresPullImage(t *testing.T) {
 func TestSignalDeletesPersistentStatefulSetAndPods(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
-	dataRoot := ref("druid", "druid-static-web-data")
-	name := statefulSetName(dataRoot, "start")
+	root := ref("druid", "druid-static-web-data")
+	name := statefulSetName(root, "start")
 	labels := baseLabels("druid-static-web-data")
 	labels[labelProcedure] = "start"
 	if _, err := client.AppsV1().StatefulSets("druid").Create(context.Background(), &appsv1.StatefulSet{
@@ -430,7 +564,7 @@ func TestSignalDeletesPersistentStatefulSetAndPods(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := backend.Signal("", "start", "SIGKILL", dataRoot); err != nil {
+	if err := backend.Signal("", "start", "SIGKILL", root); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := client.AppsV1().StatefulSets("druid").Get(context.Background(), name, metav1.GetOptions{}); !apierrors.IsNotFound(err) {

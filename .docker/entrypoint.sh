@@ -17,21 +17,19 @@ fi
 
 echo "Druid Version: $(druid version)"
 
+if [ "$1" = "druid-coldstarter" ] || [ "$1" = "/usr/bin/druid-coldstarter" ]; then
+    exec "$@"
+fi
+
 if [ ! -z "${DRUID_REGISTRY_HOST}" ] && [ ! -z "${DRUID_REGISTRY_USER}" ] && [ ! -z "${DRUID_REGISTRY_PASSWORD}" ];
 then
     echo "Logging into registry ${DRUID_REGISTRY_HOST}"
     druid login --host "${DRUID_REGISTRY_HOST}" -u "${DRUID_REGISTRY_USER}" -p "${DRUID_REGISTRY_PASSWORD}"
 fi
 
-# Serve as default when no command is provided.
+# Daemon is the default container mode when no command is provided.
 if [ -z "$input" ]; then
-    args=(serve)
-
-    if [ ! -z "${DRUID_PORT}" ];
-    then
-        args+=("--tcp")
-        args+=("--port" "${DRUID_PORT}")
-    fi
+    args=(daemon)
 
     # Reuse global args (cwd/config) for serve as well
     args+=("${global_args[@]}")

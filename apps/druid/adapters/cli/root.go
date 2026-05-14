@@ -3,6 +3,10 @@ package cli
 import (
 	"os"
 
+	"github.com/highcard-dev/daemon/apps/druid/adapters/cli/client"
+	"github.com/highcard-dev/daemon/apps/druid/adapters/daemonclient"
+	"github.com/highcard-dev/daemon/internal/api"
+	"github.com/highcard-dev/daemon/internal/utils"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -10,7 +14,9 @@ import (
 var envPath string
 var configFile string
 var runtimeStateDir string
-var runtimeBackend string
+var runtimeBackendName string
+var daemonSocket string
+var daemonURL string
 
 var RootCmd = &cobra.Command{
 	Use:   "druid",
@@ -25,15 +31,19 @@ var RootCmd = &cobra.Command{
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	RootCmd.AddCommand(ServeCommand)
-	RootCmd.AddCommand(UpdateCommand)
-	RootCmd.AddCommand(AppVersionCmd)
-	RootCmd.AddCommand(VersionCmd)
-	RootCmd.AddCommand(ValidateCmd)
-
 	RootCmd.PersistentFlags().StringVarP(&envPath, "env-file", "e", "./.env", "Path to environment file (.env)")
 	RootCmd.PersistentFlags().StringVar(&configFile, "config", "", "Path to config file (default: ~/.druid.yaml)")
+	RootCmd.PersistentFlags().StringVar(&daemonSocket, "daemon-socket", utils.DefaultRuntimeSocketPath(), "Runtime daemon Unix socket path for REST-backed commands")
+	RootCmd.PersistentFlags().StringVar(&daemonURL, "daemon-url", "", "Runtime daemon HTTP URL for REST-backed commands")
 
+	client.Register(RootCmd, client.Config{
+		Daemon: func() (client.RuntimeDaemon, error) {
+			return daemonclient.NewOpenAPIClientForTarget(daemonSocket, daemonURL)
+		},
+		RegistryCredentials: func() []api.RegistryCredential {
+			return client.RegistryCredentials(loadRegistryStore().Credentials())
+		},
+	})
 }
 
 func initConfig() {

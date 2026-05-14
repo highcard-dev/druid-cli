@@ -28,11 +28,10 @@ A Scroll is an OCI Artifact, so it is easy to distribute with registries like Do
 
 ### Binaries
 
-This repository builds three isolated binaries:
+This repository builds two runtime binaries:
 
-- `apps/druid` -> `bin/druid`: daemon plus local validation/update tooling.
-- `apps/druid-client` -> `bin/druid-client`: client-only CLI for daemon API and OCI commands.
-- `apps/druid-coldstarter` -> `bin/druid-coldstarter`: standalone coldstart gate binary/image.
+- `apps/druid` -> `bin/druid`: daemon, REST-backed CLI, OCI commands, and internal worker mode.
+- `apps/druid-coldstarter` -> `bin/druid-coldstarter`: coldstart gate binary included in the runtime image.
 
 Build all binaries with:
 
@@ -43,14 +42,13 @@ make build
 Common local flow:
 
 ```bash
-druid serve --runtime docker
-druid-client login --host <host> -u <user> -p <password>
-druid-client pull <artifact> [dir]
-druid-client push [artifact] [dir]
-druid-client create <artifact-or-path> [name]
-druid-client register [dir] [name]
-druid-client run <id> <command>
-druid-client describe <id>
+druid daemon --runtime docker
+druid login --host <host> -u <user> -p <password>
+druid pull <artifact> [dir]
+druid push [artifact] [dir]
+druid create <artifact-or-path> [name]
+druid run <id> <command>
+druid describe <id>
 ```
 
 For examples, omit `[name]` so each scroll derives its own id from `scroll.yaml`.
@@ -67,9 +65,9 @@ There is also websocket support for stdout. TTY is also supported.
 
 ### Runtime backend
 
-Runtime selection is daemon-only: start the daemon with `druid serve --runtime docker`, then use `druid-client` to create, register, run, and inspect scrolls without passing a runtime. Docker runtime state stays in SQLite under the runtime state directory. Scroll specs and runtime data are materialized separately so containers only receive explicit mounts from runtime `data/`.
+Runtime selection is daemon-only: start the daemon with `druid daemon --runtime docker`, then use `druid` to create, run, and inspect scrolls without passing a runtime. Docker runtime state stays in SQLite under the runtime state directory. Scroll specs and runtime data live together in one runtime root.
 
-Kubernetes runtime support is available with `druid serve --runtime kubernetes` for in-cluster daemons or out-of-cluster daemons using kubeconfig. It stores daemon scroll state in ConfigMaps, materializes OCI artifacts through cluster Jobs, and uses Cilium/Hubble Relay for port traffic presence. See `docs/kubernetes_runtime.md` for kubeconfig, RBAC, PVC, and Hubble setup.
+Kubernetes runtime support is available with `druid daemon --runtime kubernetes` for in-cluster daemons or out-of-cluster daemons using kubeconfig. It stores daemon scroll state in ConfigMaps, materializes OCI artifacts through `druid worker pull` Jobs, and uses Cilium/Hubble Relay for port traffic presence. See `docs/kubernetes_runtime.md` for kubeconfig, RBAC, PVC, and Hubble setup.
 
 ## Documentation
 

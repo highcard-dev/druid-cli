@@ -1,0 +1,112 @@
+openapi: 3.1.0
+info:
+  title: Druid Dev Server
+  version: 0.1.0
+  description: Runtime dev worker API for file access, health, and watch notifications.
+servers:
+  - url: /
+tags:
+  - name: health
+  - name: files
+  - name: watch
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      tags: [health]
+      summary: Check dev server health
+      responses:
+        '200':
+          description: Dev server is healthy
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: ok
+  /api/v1/files:
+    get:
+      operationId: getFile
+      tags: [files]
+      summary: Read a file from the runtime root
+      parameters:
+        - $ref: '#/components/parameters/FilePath'
+      responses:
+        '200':
+          description: File contents
+          content:
+            text/plain:
+              schema:
+                type: string
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    head:
+      operationId: headFile
+      tags: [files]
+      summary: Check if a runtime file exists
+      parameters:
+        - $ref: '#/components/parameters/FilePath'
+      responses:
+        '200':
+          description: File exists
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      operationId: putFile
+      tags: [files]
+      summary: Write a file into the runtime root
+      parameters:
+        - $ref: '#/components/parameters/FilePath'
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema:
+              type: string
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '204':
+          description: File written
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    options:
+      operationId: optionsFile
+      tags: [files]
+      summary: Return CORS/WebDAV file access options
+      parameters:
+        - $ref: '#/components/parameters/FilePath'
+      responses:
+        '204':
+          description: Options returned
+  /ws/v1/watch/notify:
+    get:
+      operationId: watchNotifications
+      tags: [watch]
+      summary: Subscribe to file change and build notifications
+      responses:
+        '101':
+          description: WebSocket upgrade accepted
+components:
+  parameters:
+    FilePath:
+      name: path
+      in: query
+      required: true
+      schema:
+        type: string
+      description: Runtime-root-relative file path, for example data/private/package.json.
+  responses:
+    BadRequest:
+      description: Invalid request
+    NotFound:
+      description: File not found

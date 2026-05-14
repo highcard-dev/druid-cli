@@ -197,7 +197,7 @@ func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (po
 			if handler.progress != nil {
 				l.Push(lua.LString(handler.progress.Mode.Load().(string)))
 			} else {
-				l.Push(lua.LString("noop"))
+				l.Push(lua.LString(domain.SnapshotProgressModeIdle))
 			}
 			return 1
 		},

@@ -48,6 +48,9 @@ func (h *BroadcastChannel) Unsubscribe(client chan *[]byte) {
 
 // Broadcast sends data to all clients, returns false if dropped
 func (h *BroadcastChannel) Broadcast(data []byte) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
 	if h.closed {
 		return false
 	}

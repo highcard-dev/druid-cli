@@ -19,26 +19,25 @@ import (
 )
 
 type Binaries struct {
-	Druid  string
-	Client string
-	Home   string
+	Druid string
+	Home  string
 }
 
 type Fixture struct {
-	Dir         string
-	Name        string
-	ServeProc   string
-	RecordProc  string
-	Port        int
-	RouteHost   string
-	RouteURL    string
-	RoutePort   int
-	RoutingFile string
+	Dir        string
+	Name       string
+	ServeProc  string
+	RecordProc string
+	Port       int
+	RouteHost  string
+	RouteURL   string
+	RoutePort  int
 }
 
 type RuntimeScroll struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
+	Root   string `json:"root"`
 }
 
 type RuntimePortStatus struct {
@@ -94,12 +93,10 @@ func BuildBinaries(t *testing.T) Binaries {
 		t.Fatal(err)
 	}
 	bins := Binaries{
-		Druid:  filepath.Join(binDir, "druid"),
-		Client: filepath.Join(binDir, "druid-client"),
-		Home:   home,
+		Druid: filepath.Join(binDir, "druid"),
+		Home:  home,
 	}
 	build(t, "./apps/druid", bins.Druid)
-	build(t, "./apps/druid-client", bins.Client)
 	return bins
 }
 
@@ -121,7 +118,7 @@ func StartDaemon(t *testing.T, bins Binaries, runtimeName string, socket string,
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	args := []string{"serve", "--runtime", runtimeName, "--socket", socket, "--state-dir", stateDir}
+	args := []string{"daemon", "--runtime", runtimeName, "--socket", socket, "--state-dir", stateDir}
 	args = append(args, extraArgs...)
 	cmd := exec.CommandContext(ctx, bins.Druid, args...)
 	cmd.Dir = RepoRoot(t)
@@ -160,12 +157,12 @@ func RunClient(t *testing.T, bins Binaries, socket string, args ...string) strin
 	config := filepath.Join(bins.Home, "client.yaml")
 	envFile := filepath.Join(bins.Home, ".env")
 	fullArgs := append([]string{"--daemon-socket", socket, "--config", config, "--env-file", envFile}, args...)
-	cmd := exec.CommandContext(ctx, bins.Client, fullArgs...)
+	cmd := exec.CommandContext(ctx, bins.Druid, fullArgs...)
 	cmd.Dir = RepoRoot(t)
 	cmd.Env = append(os.Environ(), "HOME="+bins.Home)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("druid-client %s failed: %v\n%s", strings.Join(args, " "), err, out)
+		t.Fatalf("druid %s failed: %v\n%s", strings.Join(args, " "), err, out)
 	}
 	return string(out)
 }
@@ -175,7 +172,7 @@ func RunClientJSON[T any](t *testing.T, bins Binaries, socket string, args ...st
 	out := RunClient(t, bins, socket, args...)
 	var value T
 	if err := json.Unmarshal([]byte(out), &value); err != nil {
-		t.Fatalf("decode druid-client %s JSON: %v\n%s", strings.Join(args, " "), err, out)
+		t.Fatalf("decode druid %s JSON: %v\n%s", strings.Join(args, " "), err, out)
 	}
 	return value
 }
@@ -195,7 +192,7 @@ func WriteFixture(t *testing.T, dir string, name string, port int, routePort int
 	suffix := strings.ToLower(strings.ReplaceAll(name, "_", "-"))
 	serveProc := "web-" + suffix
 	recordProc := "record-" + suffix
-	routeHost := name + ".runtime.test"
+	routeHost := "localhost"
 	routeURL := fmt.Sprintf("http://%s:%d", routeHost, routePort)
 	yaml := fmt.Sprintf(`name: %s
 desc: CLI integration fixture with persistent data, a finite command, declared ports, and runtime env checks
@@ -255,33 +252,15 @@ commands:
 	if err := os.WriteFile(filepath.Join(dir, "scroll.yaml"), []byte(yaml), 0644); err != nil {
 		t.Fatal(err)
 	}
-	routingFile := filepath.Join(dir, "routing.json")
-	routing := fmt.Sprintf(`{
-  "assignments": [
-    {
-      "name": "%s-http",
-      "port_name": "http",
-      "host": "%s",
-      "external_ip": "127.0.0.1",
-      "public_port": %d,
-      "url": "%s",
-      "protocol": "http"
-    }
-  ]
-}`, serveProc, routeHost, routePort, routeURL)
-	if err := os.WriteFile(routingFile, []byte(routing), 0644); err != nil {
-		t.Fatal(err)
-	}
 	return Fixture{
-		Dir:         dir,
-		Name:        name,
-		ServeProc:   serveProc,
-		RecordProc:  recordProc,
-		Port:        port,
-		RouteHost:   routeHost,
-		RouteURL:    routeURL,
-		RoutePort:   routePort,
-		RoutingFile: routingFile,
+		Dir:        dir,
+		Name:       name,
+		ServeProc:  serveProc,
+		RecordProc: recordProc,
+		Port:       port,
+		RouteHost:  routeHost,
+		RouteURL:   routeURL,
+		RoutePort:  routePort,
 	}
 }
 
@@ -376,13 +355,139 @@ func RequireDocker(t *testing.T) {
 
 func Run(t *testing.T, name string, args ...string) string {
 	t.Helper()
+	return RunEnv(t, nil, name, args...)
+}
+
+func RunEnv(t *testing.T, env []string, name string, args ...string) string {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = RepoRoot(t)
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("%s %s failed: %v\n%s", name, strings.Join(args, " "), err, out)
 	}
 	return string(out)
+}
+
+func BuildDockerImage(t *testing.T, tag string) string {
+	t.Helper()
+	contextDir := t.TempDir()
+	druid := filepath.Join(contextDir, "druid")
+	coldstarter := filepath.Join(contextDir, "druid-coldstarter")
+	buildCtx, buildCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer buildCancel()
+	buildCmd := exec.CommandContext(buildCtx, "go", "build", "-o", druid, "./apps/druid")
+	buildCmd.Dir = RepoRoot(t)
+	buildCmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH="+runtime.GOARCH)
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("linux druid build failed: %v\n%s", err, out)
+	}
+	buildCmd = exec.CommandContext(buildCtx, "go", "build", "-o", coldstarter, "./apps/druid-coldstarter")
+	buildCmd.Dir = RepoRoot(t)
+	buildCmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH="+runtime.GOARCH)
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("linux druid-coldstarter build failed: %v\n%s", err, out)
+	}
+	dockerfile := `FROM alpine:3.20
+RUN apk add --no-cache ca-certificates
+COPY druid druid-coldstarter /usr/bin/
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+`
+	if err := os.WriteFile(filepath.Join(contextDir, "Dockerfile"), []byte(dockerfile), 0644); err != nil {
+		t.Fatal(err)
+	}
+	entrypoint := `#!/bin/sh
+if [ "$1" = "druid-coldstarter" ] || [ "$1" = "/usr/bin/druid-coldstarter" ]; then
+	exec "$@"
+fi
+exec druid "$@"
+`
+	if err := os.WriteFile(filepath.Join(contextDir, "entrypoint.sh"), []byte(entrypoint), 0755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "docker", "build", contextDir, "-t", tag)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("docker build failed: %v\n%s", err, out)
+	}
+	return tag
+}
+
+func StartRegistry(t *testing.T) int {
+	t.Helper()
+	port := FreePort(t)
+	name := fmt.Sprintf("druid-e2e-registry-%d", time.Now().UnixNano())
+	Run(t, "docker", "run", "-d", "--rm", "--name", name, "-p", fmt.Sprintf("127.0.0.1:%d:5000", port), "registry:2")
+	t.Cleanup(func() {
+		_ = exec.Command("docker", "rm", "-f", name).Run()
+	})
+	client := &http.Client{Timeout: 2 * time.Second}
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/v2/", port))
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return port
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Fatalf("registry did not become ready on port %d", port)
+	return 0
+}
+
+func DockerHostAddress(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+		return "host.docker.internal"
+	}
+	gateway := strings.TrimSpace(Run(t, "docker", "network", "inspect", "bridge", "--format", "{{(index .IPAM.Config 0).Gateway}}"))
+	if gateway == "" || gateway == "<no value>" {
+		return "host.docker.internal"
+	}
+	return gateway
+}
+
+func UnixJSONRequest(t *testing.T, socket string, method string, path string, body string) string {
+	t.Helper()
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network string, addr string) (net.Conn, error) {
+			return net.Dial("unix", socket)
+		},
+	}
+	client := &http.Client{Transport: transport, Timeout: 5 * time.Minute}
+	var reader io.Reader
+	if body != "" {
+		reader = strings.NewReader(body)
+	}
+	req, err := http.NewRequest(method, "http://druid"+path, reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode >= 400 {
+		t.Fatalf("%s %s failed with %d: %s", method, path, resp.StatusCode, data)
+	}
+	return string(data)
 }

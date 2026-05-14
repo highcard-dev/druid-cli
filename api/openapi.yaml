@@ -86,15 +86,13 @@ components:
           type: string
           description: OCI artifact reference or local scroll path
           example: artifacts.druid.gg/test/test:test
-        scroll_root:
+        owner_id:
           type: string
-          description: Optional daemon-local path or backend ref containing scroll.yaml and scroll spec files. If omitted, a materializing runtime backend may pull the artifact.
-        data_root:
-          type: string
-          description: Optional daemon-local path or backend ref containing runtime data directory. If omitted, a materializing runtime backend may pull the artifact.
-        start:
-          type: boolean
-          default: true
+          description: Runtime owner id used for customer-facing route authorization.
+        registry_credentials:
+          type: array
+          items:
+            $ref: '#/components/schemas/RegistryCredential'
 
     EnsureScrollRequest:
       type: object
@@ -107,13 +105,29 @@ components:
           type: string
         artifact:
           type: string
-        scroll_root:
+        artifact_digest:
           type: string
-        data_root:
+        owner_id:
           type: string
-        start:
-          type: boolean
-          default: true
+          description: Runtime owner id used for customer-facing route authorization.
+        registry_credentials:
+          type: array
+          items:
+            $ref: '#/components/schemas/RegistryCredential'
+
+    RegistryCredential:
+      type: object
+      required:
+        - host
+        - username
+        - password
+      properties:
+        host:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
 
     RuntimeRoutingTarget:
       type: object
@@ -184,6 +198,10 @@ components:
           type: string
         restart:
           type: boolean
+        registry_credentials:
+          type: array
+          items:
+            $ref: '#/components/schemas/RegistryCredential'
           default: false
 
     CommandStatusMap:
@@ -201,8 +219,7 @@ components:
       required:
         - id
         - artifact
-        - scroll_root
-        - data_root
+        - root
         - scroll_name
         - status
         - created_at
@@ -214,9 +231,7 @@ components:
           type: string
         artifact:
           type: string
-        scroll_root:
-          type: string
-        data_root:
+        root:
           type: string
         scroll_name:
           type: string

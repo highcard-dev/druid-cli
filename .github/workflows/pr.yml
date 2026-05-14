@@ -48,7 +48,6 @@ jobs:
           name: build-artifacts
           path: |
             bin/druid
-            bin/druid-client
             bin/druid-coldstarter
             .docker/entrypoint.sh
             .docker/druid-install-command.sh
@@ -75,7 +74,6 @@ jobs:
           prerelease: true
           files: |
             bin/druid
-            bin/druid-client
             bin/druid-coldstarter
             .docker/entrypoint.sh
             .docker/druid-install-command.sh

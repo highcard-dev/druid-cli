@@ -1,7 +1,7 @@
 package domain
 
 type RegistryCredential struct {
-	Host     string `mapstructure:"host"`
-	Username string `mapstructure:"username"`
-	Password string `mapstructure:"password"`
+	Host     string `json:"host" mapstructure:"host" yaml:"host"`
+	Username string `json:"username" mapstructure:"username" yaml:"username"`
+	Password string `json:"password" mapstructure:"password" yaml:"password"`
 }

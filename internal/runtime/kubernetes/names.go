@@ -47,16 +47,20 @@ func stagingPVCName(artifact string) string {
 	return dnsLabel("druid-stage-" + shortHash(artifact))
 }
 
-func jobName(prefix string, dataRoot string, procedureName string) string {
-	return dnsLabel(fmt.Sprintf("druid-%s-%s-%s", prefix, refPVCName(dataRoot), procedureName))
+func jobName(prefix string, root string, procedureName string) string {
+	return dnsLabel(fmt.Sprintf("druid-%s-%s-%s", prefix, refPVCName(root), procedureName))
 }
 
-func statefulSetName(dataRoot string, procedureName string) string {
-	return dnsLabel(fmt.Sprintf("druid-sts-%s-%s", refPVCName(dataRoot), procedureName))
+func statefulSetName(root string, procedureName string) string {
+	return dnsLabel(fmt.Sprintf("druid-sts-%s-%s", refPVCName(root), procedureName))
 }
 
-func serviceName(dataRoot string, procedureName string, portName string) string {
-	return dnsLabel(fmt.Sprintf("druid-%s-%s-%s", refPVCName(dataRoot), procedureName, portName))
+func devStatefulSetName(root string) string {
+	return dnsLabel(fmt.Sprintf("druid-dev-%s", refPVCName(root)))
+}
+
+func serviceName(root string, procedureName string, portName string) string {
+	return dnsLabel(fmt.Sprintf("druid-%s-%s-%s", refPVCName(root), procedureName, portName))
 }
 
 func ref(namespace string, pvc string) string {
@@ -87,7 +91,11 @@ func mountSubPath(mountSubPath string) string {
 	if mountSubPath == "" {
 		return "data"
 	}
-	return path.Join("data", mountSubPath)
+	clean := path.Clean(strings.TrimPrefix(mountSubPath, "/"))
+	if clean == "." || clean == "data" || strings.HasPrefix(clean, "data/") {
+		return clean
+	}
+	return path.Join("data", clean)
 }
 
 func baseLabels(scrollID string) map[string]string {

@@ -11,9 +11,15 @@ import (
 )
 
 type AuthorizerServiceInterface interface {
-	CheckHeader(r *fiber.Ctx) (*time.Time, error)
-	CheckQuery(token string) (*time.Time, error)
-	GenerateQueryToken() string
+	CheckHeader(r *fiber.Ctx) (*AuthContext, error)
+	CheckQuery(runtimeID string, token string) (*AuthContext, error)
+	GenerateQueryToken(runtimeID string, ownerID string) string
+}
+
+type AuthContext struct {
+	Subject   string
+	RuntimeID string
+	ExpiresAt *time.Time
 }
 
 type ScrollServiceInterface interface {
@@ -36,50 +42,74 @@ type LogManagerInterface interface {
 
 type RuntimeBackendInterface interface {
 	Name() string
-	ReadScrollFile(scrollRoot string) ([]byte, error)
+	ReadScrollFile(root string) ([]byte, error)
+	StartDev(ctx context.Context, action RuntimeDevAction) error
+	StopDev(ctx context.Context, root string) error
 	RunCommand(command RuntimeCommand) (*int, error)
-	ExpectedPorts(dataRoot string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error)
+	ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error)
+	RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error)
+	StopRuntime(root string) error
+	DeleteRuntime(root string, purgeData bool) error
+	BackupRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential) error
+	RestoreRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential) error
+	SpawnPullWorker(ctx context.Context, action RuntimeWorkerAction) error
 	Attach(commandName string, data string) error
-	Signal(commandName string, target string, signal string, dataRoot string) error
-}
-
-type RuntimeLifecycleBackendInterface interface {
-	StopRuntime(dataRoot string) error
-	DeleteRuntime(dataRoot string, purgeData bool) error
-}
-
-type RuntimeRoutingBackendInterface interface {
-	RoutingTargets(dataRoot string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error)
-}
-
-type RuntimeBackupBackendInterface interface {
-	BackupRuntime(ctx context.Context, dataRoot string, artifact string) error
-	RestoreRuntime(ctx context.Context, dataRoot string, artifact string) error
-}
-
-type RuntimeFileBackendInterface interface {
-	ReadDataFile(ctx context.Context, dataRoot string, relativePath string) ([]byte, error)
-	WriteDataFile(ctx context.Context, dataRoot string, relativePath string, data []byte) error
+	Signal(commandName string, target string, signal string, root string) error
 }
 
 type RuntimeCommand struct {
 	Name         string
 	ScrollID     string
 	Command      *domain.CommandInstructionSet
-	DataRoot     string
+	Root         string
 	GlobalPorts  []domain.Port
 	ProcedureEnv map[string]map[string]string
 }
 
 type RuntimeMaterialization struct {
-	Artifact   string
-	ScrollRoot string
-	DataRoot   string
-	ScrollYAML []byte
+	Artifact       string
+	ArtifactDigest string
+	Root           string
+	ScrollYAML     []byte
 }
 
-type RuntimeMaterializerInterface interface {
-	MaterializeScroll(ctx context.Context, artifact string, requestedName string) (*RuntimeMaterialization, error)
+type RuntimeWorkerMode string
+
+const (
+	RuntimeWorkerModeCreate RuntimeWorkerMode = "create"
+	RuntimeWorkerModeUpdate RuntimeWorkerMode = "update"
+)
+
+type RuntimeWorkerAction struct {
+	Mode                RuntimeWorkerMode
+	RuntimeID           string
+	Artifact            string
+	RootRef             string
+	MountPath           string
+	CallbackURL         string
+	CallbackToken       string
+	RegistryCredentials []domain.RegistryCredential
+}
+
+type RuntimeWorkerResult struct {
+	ScrollYAML     string `json:"scroll_yaml,omitempty"`
+	ArtifactDigest string `json:"artifact_digest,omitempty"`
+	Error          string `json:"error,omitempty"`
+}
+
+type RuntimeDevAction struct {
+	RuntimeID         string
+	RootRef           string
+	MountPath         string
+	Listen            string
+	WatchPaths        []string
+	HotReloadCommands []string
+	Routing           []domain.RuntimeRouteAssignment
+	DaemonURL         string
+	DaemonToken       string
+	OwnerID           string
+	AuthJWKSURL       string
+	RuntimeJWKSURL    string
 }
 
 type BroadcastChannelInterface interface {
@@ -95,20 +125,16 @@ type ConsoleManagerInterface interface {
 
 type OciRegistryInterface interface {
 	GetRepo(repoUrl string) (*remote.Repository, error)
+	FetchFile(artifact string, filePath string) ([]byte, error)
+	ResolveDigest(artifact string) (string, error)
 	Pull(dir string, artifact string) error
 	PullSelective(dir string, artifact string, includeData bool, progress *domain.SnapshotProgress) error
 	CanUpdateTag(descriptor v1.Descriptor, folder string, tag string) (bool, error)
 	Push(folder string, repo string, tag string, overrides map[string]string, packMeta bool, scrollFile *domain.File) (v1.Descriptor, error)
 }
 
-type CronManagerInterface interface {
-	Init()
-}
-
 type QueueManagerInterface interface {
-	AddAndRememberItem(cmd string) error
 	AddTempItem(cmd string) error
-	AddShutdownItem(cmd string) error
 	AddTempItemWithWait(cmd string) error
 	GetQueue() map[string]domain.ScrollLockStatus
 }
@@ -129,7 +155,6 @@ type ColdStarterPacketHandlerInterface interface {
 
 type ColdStarterInterface interface {
 	Stop()
-	StopWithDeplay(uint)
 	Finish(*domain.AugmentedPort)
 }
 
@@ -145,6 +170,7 @@ type UiServiceInterface interface {
 type WatchServiceInterface interface {
 	StartWatching(basePath string, paths ...string) error
 	StopWatching() error
+	Trigger()
 	Subscribe() chan *[]byte
 	Unsubscribe(client chan *[]byte)
 	GetWatchedPaths() []string

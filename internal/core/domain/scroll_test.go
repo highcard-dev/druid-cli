@@ -35,7 +35,7 @@ func TestSignalProcedureValidation(t *testing.T) {
 	}
 }
 
-func TestLegacyProcedureFieldsRejected(t *testing.T) {
+func TestUnsupportedProcedureFieldsRejected(t *testing.T) {
 	tests := []struct {
 		name      string
 		procedure *Procedure
@@ -44,17 +44,17 @@ func TestLegacyProcedureFieldsRejected(t *testing.T) {
 		{
 			name:      "mode",
 			procedure: &Procedure{Mode: "scroll-switch"},
-			want:      "legacy mode",
+			want:      "field mode is unsupported",
 		},
 		{
 			name:      "wait",
 			procedure: &Procedure{Image: "alpine:3.20", Wait: false},
-			want:      "legacy wait",
+			want:      "field wait is unsupported",
 		},
 		{
 			name:      "data",
 			procedure: &Procedure{Image: "alpine:3.20", Data: "start"},
-			want:      "legacy data",
+			want:      "field data is unsupported",
 		},
 	}
 

@@ -2,20 +2,36 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "druid: serve",
+            "name": "druid: daemon",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "console": "integratedTerminal",
             "program": "${workspaceFolder}/apps/druid",
+            "preLaunchTask": "k3d: build/import druid-cli pull image",
+            "env": {
+                "DRUID_K8S_PULL_IMAGE": "druid-cli:local"
+            },
             "args": [
-                "serve",
+                "daemon",
                 "--socket",
                 "/tmp/druid-vscode-runtime.sock",
+                "--listen",
+                "127.0.0.1:8081",
+                "--public-listen",
+                "127.0.0.1:8082",
+                "--worker-callback-listen",
+                "0.0.0.0:8083",
+                "--worker-callback-url",
+                "http://host.docker.internal:8083",
                 "--state-dir",
                 "${workspaceFolder}/.runtime-state",
                 "--runtime",
-                "${input:runtimeBackend}"
+                "${input:runtimeBackend}",
+                "--k8s-kubeconfig",
+                "${env:HOME}/.kube/config",
+                "--k8s-namespace",
+                "default"
             ]
         },
         {
@@ -69,12 +85,12 @@
             ]
         },
         {
-            "name": "druid-client: login",
+            "name": "druid: login",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "console": "integratedTerminal",
-            "program": "${workspaceFolder}/apps/druid-client",
+            "program": "${workspaceFolder}/apps/druid",
             "cwd": "${workspaceFolder}",
             "args": [
                 "login",
@@ -87,12 +103,12 @@
             ]
         },
         {
-            "name": "druid-client: pull",
+            "name": "druid: pull",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "console": "integratedTerminal",
-            "program": "${workspaceFolder}/apps/druid-client",
+            "program": "${workspaceFolder}/apps/druid",
             "args": [
                 "pull",
                 "${input:artifactRef}",
@@ -100,12 +116,12 @@
             ]
         },
         {
-            "name": "druid-client: push",
+            "name": "druid: push",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "console": "integratedTerminal",
-            "program": "${workspaceFolder}/apps/druid-client",
+            "program": "${workspaceFolder}/apps/druid",
             "args": [
                 "push",
                 "${input:artifactRef}",
@@ -113,12 +129,12 @@
             ]
         },
         {
-            "name": "druid-client: push category",
+            "name": "druid: push category",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "console": "integratedTerminal",
-            "program": "${workspaceFolder}/apps/druid-client",
+            "program": "${workspaceFolder}/apps/druid",
             "args": [
                 "push",
                 "category",
@@ -128,43 +144,45 @@
             ]
         },
         {
-            "name": "druid-client: create",
+            "name": "druid: create",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "console": "integratedTerminal",
-            "program": "${workspaceFolder}/apps/druid-client",
+            "program": "${workspaceFolder}/apps/druid",
             "cwd": "${workspaceFolder}",
             "args": [
                 "--daemon-socket",
                 "/tmp/druid-vscode-runtime.sock",
                 "create",
-                "--state-dir",
-                "${workspaceFolder}/.runtime-state",
                 "${input:artifactPath}"
             ]
         },
         {
-            "name": "druid-client: register",
+            "name": "druid: dev",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "console": "integratedTerminal",
-            "program": "${workspaceFolder}/apps/druid-client",
+            "program": "${workspaceFolder}/apps/druid",
             "args": [
                 "--daemon-socket",
                 "/tmp/druid-vscode-runtime.sock",
-                "register",
-                "${workspaceFolder}/${input:scrollPath}"
+                "dev",
+                "${input:scrollId}",
+                "--watch",
+                "data/private/dist",
+                "--command",
+                "${input:commandName}"
             ]
         },
         {
-            "name": "druid-client: list",
+            "name": "druid: list",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "console": "integratedTerminal",
-            "program": "${workspaceFolder}/apps/druid-client",
+            "program": "${workspaceFolder}/apps/druid",
             "args": [
                 "--daemon-socket",
                 "/tmp/druid-vscode-runtime.sock",
@@ -172,12 +190,12 @@
             ]
         },
         {
-            "name": "druid-client: describe",
+            "name": "druid: describe",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "console": "integratedTerminal",
-            "program": "${workspaceFolder}/apps/druid-client",
+            "program": "${workspaceFolder}/apps/druid",
             "args": [
                 "--daemon-socket",
                 "/tmp/druid-vscode-runtime.sock",
@@ -186,12 +204,12 @@
             ]
         },
         {
-            "name": "druid-client: ports",
+            "name": "druid: ports",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "console": "integratedTerminal",
-            "program": "${workspaceFolder}/apps/druid-client",
+            "program": "${workspaceFolder}/apps/druid",
             "args": [
                 "--daemon-socket",
                 "/tmp/druid-vscode-runtime.sock",
@@ -200,12 +218,12 @@
             ]
         },
         {
-            "name": "druid-client: run",
+            "name": "druid: run",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "console": "integratedTerminal",
-            "program": "${workspaceFolder}/apps/druid-client",
+            "program": "${workspaceFolder}/apps/druid",
             "args": [
                 "--daemon-socket",
                 "/tmp/druid-vscode-runtime.sock",
@@ -215,12 +233,12 @@
             ]
         },
         {
-            "name": "druid-client: delete",
+            "name": "druid: delete",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "console": "integratedTerminal",
-            "program": "${workspaceFolder}/apps/druid-client",
+            "program": "${workspaceFolder}/apps/druid",
             "args": [
                 "--daemon-socket",
                 "/tmp/druid-vscode-runtime.sock",
@@ -229,12 +247,12 @@
             ]
         },
         {
-            "name": "druid-client: attach",
+            "name": "druid: attach",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "console": "integratedTerminal",
-            "program": "${workspaceFolder}/apps/druid-client",
+            "program": "${workspaceFolder}/apps/druid",
             "args": [
                 "--daemon-socket",
                 "/tmp/druid-vscode-runtime.sock",
@@ -251,8 +269,8 @@
             "console": "integratedTerminal",
             "program": "${workspaceFolder}/apps/druid-coldstarter",
             "args": [
-                "--runtime-config",
-                "${workspaceFolder}/${input:scrollPath}/data/.druid/runtime.json",
+                "--root",
+                "${workspaceFolder}/${input:scrollPath}",
                 "--status-file",
                 "coldstart/status.json"
             ]
@@ -284,9 +302,10 @@
             "type": "pickString",
             "description": "Runtime backend",
             "options": [
+                "kubernetes",
                 "docker"
             ],
-            "default": "docker"
+            "default": "kubernetes"
         },
         {
             "id": "scrollPath",

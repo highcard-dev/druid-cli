@@ -15,5 +15,9 @@ spec:
       targetPort: public
       protocol: TCP
       name: public
+    - port: {{ .Values.service.workerCallbackPort }}
+      targetPort: worker
+      protocol: TCP
+      name: worker
   selector:
     {{- include "druid-cli.selectorLabels" . | nindent 4 }}

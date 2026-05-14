@@ -34,6 +34,7 @@ service:
   type: ClusterIP
   managementPort: 8081
   publicPort: 8082
+  workerCallbackPort: 8083
 
 ingress:
   enabled: false
@@ -49,11 +50,12 @@ ingress:
 runtime:
   backend: kubernetes
   stateDir: /var/lib/druid/runtime
+  workerDaemonUrl: ""
   namespaces:
     mode: single
     single: ""
   storageClass: ""
-  pullImage: ghcr.io/highcard-dev/druid-client:dev
+  pullImage: ghcr.io/highcard-dev/druid:dev
   helperImage: alpine:3.20
   registrySecret: ""
   registryPlainHTTP: false
@@ -66,6 +68,8 @@ hubble:
 
 auth:
   enabled: false
+  jwksUrl: ""
+  publicJwksUrl: ""
   existingSecret: ""
   tokenKey: token
 

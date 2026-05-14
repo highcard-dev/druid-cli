@@ -16,8 +16,7 @@ func TestConfigMapStateStoreRoundTripsRuntimeScroll(t *testing.T) {
 	scroll := &domain.RuntimeScroll{
 		ID:         "container-lab",
 		Artifact:   "registry.local/container-lab:1.0",
-		ScrollRoot: ref("druid", "druid-container-lab-data"),
-		DataRoot:   ref("druid", "druid-container-lab-data"),
+		Root:       ref("druid", "druid-container-lab-data"),
 		ScrollName: "container-lab",
 		ScrollYAML: "name: container-lab\n",
 		Status:     domain.RuntimeScrollStatusCreated,
@@ -34,7 +33,7 @@ func TestConfigMapStateStoreRoundTripsRuntimeScroll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Artifact != scroll.Artifact || got.ScrollRoot != scroll.ScrollRoot || got.ScrollYAML != scroll.ScrollYAML {
+	if got.Artifact != scroll.Artifact || got.Root != scroll.Root || got.ScrollYAML != scroll.ScrollYAML {
 		t.Fatalf("stored scroll mismatch: %#v", got)
 	}
 	if got.Commands["verify"].Status != domain.ScrollLockStatusError {
@@ -79,8 +78,7 @@ func TestConfigMapStateStoreDuplicateCreateReturnsConflict(t *testing.T) {
 	scroll := &domain.RuntimeScroll{
 		ID:         "duplicate",
 		Artifact:   "local",
-		ScrollRoot: ref("druid", "druid-duplicate-data"),
-		DataRoot:   ref("druid", "druid-duplicate-data"),
+		Root:       ref("druid", "druid-duplicate-data"),
 		ScrollName: "duplicate",
 		ScrollYAML: "name: duplicate\n",
 	}
@@ -106,10 +104,7 @@ func TestConfigMapStateStoreMissingScrollReturnsNotFound(t *testing.T) {
 func TestConfigMapStateStoreDerivesKubernetesRoots(t *testing.T) {
 	store := NewConfigMapStateStoreWithClient("druid", fake.NewSimpleClientset())
 	want := "k8s://druid/druid-container-lab-data"
-	if got := store.ScrollRoot("container-lab"); got != want {
-		t.Fatalf("ScrollRoot = %s, want %s", got, want)
-	}
-	if got := store.DataRoot("container-lab"); got != want {
-		t.Fatalf("DataRoot = %s, want %s", got, want)
+	if got := store.Root("container-lab"); got != want {
+		t.Fatalf("Root = %s, want %s", got, want)
 	}
 }

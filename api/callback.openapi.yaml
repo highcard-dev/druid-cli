@@ -1,0 +1,51 @@
+openapi: 3.1.0
+info:
+  title: Druid Internal Callback API
+  version: 0.1.0
+  description: Internal callback API used by workers and dev servers.
+servers:
+  - url: /
+tags:
+  - name: worker
+paths:
+  /internal/v1/workers/{runtime_id}/complete:
+    post:
+      operationId: completeWorker
+      tags: [worker]
+      summary: Complete a pending worker action
+      parameters:
+        - $ref: '#/components/parameters/Runtime'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkerResult'
+      responses:
+        '204':
+          description: Worker result accepted
+        '400':
+          description: Invalid worker result
+        '401':
+          description: Invalid worker token or unknown action
+components:
+  parameters:
+    Runtime:
+      name: runtime_id
+      in: path
+      required: true
+      schema:
+        type: string
+  schemas:
+    WorkerResult:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+        scroll_yaml:
+          type: string
+        artifact_digest:
+          type: string
+        error:
+          type: string
