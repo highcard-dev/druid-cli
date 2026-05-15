@@ -35,8 +35,9 @@ k3d-build-pull-image: ## Build the unified Druid runtime image and import it int
 build-x86-docker:
 	docker run -e GOOS=linux -e GOARCH=amd64 -it --rm -v ./:/app -w /app --entrypoint=/bin/bash docker.elastic.co/beats-dev/golang-crossbuild:1.22.5-main  -c 'CGO_ENABLED=1 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/x86/druid'
 
-install: ## Install Daemon
-	cp ./bin/druid /usr/local/bin/druid
+install: build ## Build and install Druid binaries
+	install -m 0755 ./bin/druid /usr/local/bin/druid
+	install -m 0755 ./bin/druid-coldstarter /usr/local/bin/druid-coldstarter
 
 generate-md-docs:
 	go run ./docs_md/main.go

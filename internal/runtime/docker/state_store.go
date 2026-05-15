@@ -19,6 +19,24 @@ type StateStore struct {
 	dbPath   string
 }
 
+const scrollsTableSQL = `
+	CREATE TABLE IF NOT EXISTS scrolls (
+		id TEXT PRIMARY KEY,
+		owner_id TEXT NOT NULL DEFAULT '',
+		artifact TEXT NOT NULL,
+		artifact_digest TEXT NOT NULL DEFAULT '',
+		root TEXT NOT NULL,
+		scroll_name TEXT NOT NULL,
+		scroll_yaml TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL,
+		last_error TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		commands_json TEXT NOT NULL DEFAULT '{}',
+		routing_json TEXT NOT NULL DEFAULT '[]'
+	)
+`
+
 func NewStateStore(stateDir string) (*StateStore, error) {
 	if stateDir == "" {
 		defaultStateDir, err := utils.DefaultRuntimeStateDir()
@@ -194,23 +212,11 @@ func (s *StateStore) open() (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
-	if _, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS scrolls (
-			id TEXT PRIMARY KEY,
-			owner_id TEXT NOT NULL DEFAULT '',
-			artifact TEXT NOT NULL,
-			artifact_digest TEXT NOT NULL DEFAULT '',
-			root TEXT NOT NULL,
-			scroll_name TEXT NOT NULL,
-			scroll_yaml TEXT NOT NULL DEFAULT '',
-			status TEXT NOT NULL,
-			last_error TEXT NOT NULL DEFAULT '',
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL,
-			commands_json TEXT NOT NULL DEFAULT '{}',
-			routing_json TEXT NOT NULL DEFAULT '[]'
-		)
-	`); err != nil {
+	if _, err := db.Exec(scrollsTableSQL); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := dropLegacyScrollsTable(db); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -237,6 +243,21 @@ func (s *StateStore) open() (*sql.DB, error) {
 	return db, nil
 }
 
+func dropLegacyScrollsTable(db *sql.DB) error {
+	columns, err := tableColumns(db, "scrolls")
+	if err != nil {
+		return err
+	}
+	if !columns["scroll_root"] && !columns["data_root"] {
+		return nil
+	}
+	if _, err := db.Exec(`DROP TABLE scrolls`); err != nil {
+		return err
+	}
+	_, err = db.Exec(scrollsTableSQL)
+	return err
+}
+
 func ensureColumn(db *sql.DB, table string, column string, definition string) error {
 	exists, err := tableHasColumn(db, table, column)
 	if err != nil || exists {
@@ -247,11 +268,20 @@ func ensureColumn(db *sql.DB, table string, column string, definition string) er
 }
 
 func tableHasColumn(db *sql.DB, table string, column string) (bool, error) {
-	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	columns, err := tableColumns(db, table)
 	if err != nil {
 		return false, err
 	}
+	return columns[column], nil
+}
+
+func tableColumns(db *sql.DB, table string) (map[string]bool, error) {
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
+	columns := map[string]bool{}
 	for rows.Next() {
 		var cid int
 		var name string
@@ -260,16 +290,14 @@ func tableHasColumn(db *sql.DB, table string, column string) (bool, error) {
 		var defaultValue sql.NullString
 		var pk int
 		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
-			return false, err
+			return nil, err
 		}
-		if name == column {
-			return true, nil
-		}
+		columns[name] = true
 	}
 	if err := rows.Err(); err != nil {
-		return false, err
+		return nil, err
 	}
-	return false, nil
+	return columns, nil
 }
 
 type runtimeScrollScanner interface {

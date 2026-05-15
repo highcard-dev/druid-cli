@@ -9,23 +9,19 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
-	coreservices "github.com/highcard-dev/daemon/internal/core/services"
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"go.uber.org/zap"
 )
 
-var ErrRuntimeMaterializationUnsupported = errors.New("runtime backend does not support daemon materialization")
-
-func (s *RuntimeSupervisor) materializeNewScroll(ctx context.Context, runtimeService ports.RuntimeBackendInterface, artifact string, name string, namespace string, registryCredentials []domain.RegistryCredential) (*ports.RuntimeMaterialization, error) {
-	id := coreservices.RuntimeScrollIDFromName(name)
-	if id == "" {
-		return nil, ErrRuntimeMaterializationUnsupported
-	}
-	return s.runPullWorker(ctx, runtimeService, ports.RuntimeWorkerModeCreate, id, artifact, runtimeService.RootRef(id, namespace), registryCredentials)
+func (s *RuntimeSupervisor) materializeNewScroll(ctx context.Context, runtimeService ports.RuntimeBackendInterface, artifact string, runtimeID string, namespace string, registryCredentials []domain.RegistryCredential) (*ports.RuntimeMaterialization, error) {
+	return s.runPullWorker(ctx, runtimeService, ports.RuntimeWorkerModeCreate, runtimeID, artifact, runtimeService.RootRef(runtimeID, namespace), registryCredentials)
 }
 
 func (s *RuntimeSupervisor) runPullWorker(ctx context.Context, runtimeService ports.RuntimeBackendInterface, mode ports.RuntimeWorkerMode, runtimeID string, artifact string, root string, registryCredentials []domain.RegistryCredential) (*ports.RuntimeMaterialization, error) {
+	if s.workerCallbacks == nil || s.workerCallbackURL == "" {
+		return nil, fmt.Errorf("daemon materialization requires --worker-callback-url and --worker-callback-listen")
+	}
 	token, resultCh, err := s.workerCallbacks.Register(runtimeID)
 	if err != nil {
 		return nil, err

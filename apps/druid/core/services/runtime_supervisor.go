@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	coreservices "github.com/highcard-dev/daemon/internal/core/services"
@@ -83,35 +84,32 @@ func (s *RuntimeSupervisor) Create(artifact string, name string, registryCredent
 
 func (s *RuntimeSupervisor) CreateWithOwner(artifact string, name string, ownerID string, namespace string, registryCredentials []domain.RegistryCredential) (*domain.RuntimeScroll, error) {
 	id := coreservices.RuntimeScrollIDFromName(name)
-	var placeholder *domain.RuntimeScroll
-	if id != "" {
-		if _, err := s.store.GetScroll(id); err == nil {
-			return nil, fmt.Errorf("%w: %s", domain.ErrRuntimeScrollAlreadyExists, id)
-		} else if !errors.Is(err, domain.ErrRuntimeScrollNotFound) {
-			return nil, err
-		}
-		placeholder = &domain.RuntimeScroll{
-			ID:       id,
-			OwnerID:  ownerID,
-			Artifact: artifact,
-			Root:     s.runtimeBackend.RootRef(id, namespace),
-			Status:   domain.RuntimeScrollStatusCreated,
-			Commands: map[string]domain.LockStatus{},
-		}
-		if err := s.store.CreateScroll(placeholder); err != nil {
-			return nil, err
-		}
+	if id == "" {
+		id = uuid.NewString()
+	}
+	if _, err := s.store.GetScroll(id); err == nil {
+		return nil, fmt.Errorf("%w: %s", domain.ErrRuntimeScrollAlreadyExists, id)
+	} else if !errors.Is(err, domain.ErrRuntimeScrollNotFound) {
+		return nil, err
+	}
+	placeholder := &domain.RuntimeScroll{
+		ID:       id,
+		OwnerID:  ownerID,
+		Artifact: artifact,
+		Root:     s.runtimeBackend.RootRef(id, namespace),
+		Status:   domain.RuntimeScrollStatusCreated,
+		Commands: map[string]domain.LockStatus{},
+	}
+	if err := s.store.CreateScroll(placeholder); err != nil {
+		return nil, err
 	}
 	markPlaceholderError := func(cause error) {
-		if placeholder == nil {
-			return
-		}
 		placeholder.Status = domain.RuntimeScrollStatusError
 		placeholder.LastError = cause.Error()
 		_ = s.store.UpdateScroll(placeholder)
 	}
 
-	materialized, err := s.materializeNewScroll(context.Background(), s.runtimeBackend, artifact, name, namespace, registryCredentials)
+	materialized, err := s.materializeNewScroll(context.Background(), s.runtimeBackend, artifact, id, namespace, registryCredentials)
 	if err != nil {
 		markPlaceholderError(err)
 		return nil, err
@@ -119,18 +117,11 @@ func (s *RuntimeSupervisor) CreateWithOwner(artifact string, name string, ownerI
 	if materialized.Artifact != "" {
 		artifact = materialized.Artifact
 	}
-	if placeholder != nil {
-		placeholder, err = s.applyMaterializedScroll(placeholder, artifact, materialized)
-		if err != nil {
-			return nil, err
-		}
-		return placeholder, nil
-	}
-	runtimeScroll, err := s.manager.CreateWithDigest(artifact, materialized.ArtifactDigest, name, ownerID, materialized.Root, materialized.ScrollYAML)
+	placeholder, err = s.applyMaterializedScroll(placeholder, artifact, materialized)
 	if err != nil {
 		return nil, err
 	}
-	return runtimeScroll, nil
+	return placeholder, nil
 }
 
 func (s *RuntimeSupervisor) Ensure(artifact string, name string, registryCredentials []domain.RegistryCredential) (*domain.RuntimeScroll, error) {
@@ -161,7 +152,7 @@ func (s *RuntimeSupervisor) EnsureWithOwner(artifact string, name string, ownerI
 				if artifact == "" {
 					artifact = runtimeScroll.Artifact
 				}
-				materialized, err := s.materializeNewScroll(context.Background(), s.runtimeBackend, artifact, name, namespace, registryCredentials)
+				materialized, err := s.materializeNewScroll(context.Background(), s.runtimeBackend, artifact, id, namespace, registryCredentials)
 				if err != nil {
 					runtimeScroll.Status = domain.RuntimeScrollStatusError
 					runtimeScroll.LastError = err.Error()

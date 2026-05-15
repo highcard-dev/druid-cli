@@ -474,6 +474,12 @@ func (b *Backend) emptyRoot(ctx context.Context, root string) error {
 	})
 }
 
+func (b *Backend) prepareWritableRoot(ctx context.Context, root string) error {
+	return b.withHelperContainer(ctx, root, func(containerID string) error {
+		return b.runContainerCommand(ctx, containerID, []string{"sh", "-c", "mkdir -p /scroll/data /scroll/.druid && chmod -R a+rwX /scroll"})
+	})
+}
+
 func (b *Backend) runWorkerRootCommand(ctx context.Context, root string, command []string, registryCredentials []domain.RegistryCredential) error {
 	if b.config.WorkerImage == "" {
 		return fmt.Errorf("docker worker image is required; set --docker-worker-image or DRUID_DOCKER_WORKER_IMAGE")
@@ -483,6 +489,9 @@ func (b *Backend) runWorkerRootCommand(ctx context.Context, root string, command
 		return err
 	}
 	if err := b.pullImage(ctx, b.config.WorkerImage); err != nil {
+		return err
+	}
+	if err := b.prepareWritableRoot(ctx, root); err != nil {
 		return err
 	}
 	registryConfig, err := json.Marshal(struct {
@@ -621,6 +630,7 @@ func (b *Backend) withHelperContainer(ctx context.Context, root string, fn func(
 	name := fmt.Sprintf("druid-helper-%s-%d", rootHash(root), time.Now().UnixNano())
 	created, err := b.client.ContainerCreate(ctx, &container.Config{
 		Image:      b.config.WorkerImage,
+		User:       "0",
 		Entrypoint: []string{"/bin/sh", "-c"},
 		Cmd:        []string{"sleep 300"},
 		Labels: map[string]string{
@@ -676,6 +686,9 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 		action.MountPath = "/scroll"
 	}
 	if err := b.pullImage(ctx, b.config.WorkerImage); err != nil {
+		return err
+	}
+	if err := b.prepareWritableRoot(ctx, root); err != nil {
 		return err
 	}
 	registryConfig, err := json.Marshal(struct {

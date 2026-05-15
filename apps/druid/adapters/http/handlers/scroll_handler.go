@@ -79,9 +79,6 @@ func (h *ScrollHandler) CreateScroll(c *fiber.Ctx) error {
 		if errors.Is(err, domain.ErrRuntimeScrollAlreadyExists) {
 			return fiber.NewError(fiber.StatusConflict, err.Error())
 		}
-		if errors.Is(err, appservices.ErrRuntimeMaterializationUnsupported) {
-			return fiber.NewError(fiber.StatusNotImplemented, err.Error())
-		}
 		return err
 	}
 	return c.Status(fiber.StatusCreated).JSON(runtimeScroll)
@@ -108,9 +105,6 @@ func (h *ScrollHandler) EnsureScroll(c *fiber.Ctx) error {
 	}
 	runtimeScroll, err := h.supervisor.EnsureWithOwner(request.Artifact, name, ownerID, namespace, registryCredentials(request.RegistryCredentials))
 	if err != nil {
-		if errors.Is(err, appservices.ErrRuntimeMaterializationUnsupported) {
-			return fiber.NewError(fiber.StatusNotImplemented, err.Error())
-		}
 		return err
 	}
 	return c.JSON(runtimeScroll)

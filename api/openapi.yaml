@@ -76,11 +76,11 @@ components:
       properties:
         id:
           type: string
-          description: Deprecated alias for name. Optional local runtime scroll id/name.
+          description: Deprecated alias for name. Optional stable runtime id/name. If omitted, the daemon generates an id.
           example: jobs
         name:
           type: string
-          description: Optional local runtime scroll id/name. If omitted, the daemon derives it from scroll.yaml name.
+          description: Optional stable runtime id/name. If omitted, the daemon generates an id; the display name still comes from scroll.yaml.
           example: jobs
         artifact:
           type: string

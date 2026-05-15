@@ -9,6 +9,24 @@ import (
 	"github.com/highcard-dev/daemon/internal/api"
 )
 
+func TestOpenAPIClientHasDaemonTimeout(t *testing.T) {
+	socketClient, err := NewOpenAPIClientForTarget("/tmp/druid-test.sock", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if socketClient.httpClient.Timeout != daemonRequestTimeout {
+		t.Fatalf("socket timeout = %s, want %s", socketClient.httpClient.Timeout, daemonRequestTimeout)
+	}
+
+	urlClient, err := NewOpenAPIClientForTarget("", "http://127.0.0.1:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if urlClient.httpClient.Timeout != daemonRequestTimeout {
+		t.Fatalf("url timeout = %s, want %s", urlClient.httpClient.Timeout, daemonRequestTimeout)
+	}
+}
+
 func TestCreateScrollDoesNotSendStart(t *testing.T) {
 	var got map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

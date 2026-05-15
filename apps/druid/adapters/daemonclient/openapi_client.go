@@ -4,19 +4,19 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/highcard-dev/daemon/internal/api"
 	"github.com/highcard-dev/daemon/internal/utils"
 )
 
-var ErrMaterializationUnsupported = errors.New("daemon materialization unsupported")
+const daemonRequestTimeout = 5 * time.Second
 
 type OpenAPIClient struct {
 	client     *api.ClientWithResponses
@@ -31,21 +31,22 @@ func NewOpenAPIClient(daemonSocket string) (*OpenAPIClient, error) {
 func NewOpenAPIClientForTarget(daemonSocket string, daemonURL string) (*OpenAPIClient, error) {
 	if daemonURL != "" {
 		server := strings.TrimRight(daemonURL, "/")
-		client, err := api.NewClientWithResponses(server)
+		httpClient := &http.Client{Timeout: daemonRequestTimeout}
+		client, err := api.NewClientWithResponses(server, api.WithHTTPClient(httpClient))
 		if err != nil {
 			return nil, err
 		}
-		return &OpenAPIClient{client: client, server: server, httpClient: http.DefaultClient}, nil
+		return &OpenAPIClient{client: client, server: server, httpClient: httpClient}, nil
 	}
 	if daemonSocket == "" {
 		daemonSocket = utils.DefaultRuntimeSocketPath()
 	}
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network string, addr string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, "unix", daemonSocket)
+			return (&net.Dialer{Timeout: daemonRequestTimeout}).DialContext(ctx, "unix", daemonSocket)
 		},
 	}
-	httpClient := &http.Client{Transport: transport}
+	httpClient := &http.Client{Transport: transport, Timeout: daemonRequestTimeout}
 	client, err := api.NewClientWithResponses("http://druid", api.WithHTTPClient(httpClient))
 	if err != nil {
 		return nil, err
@@ -68,9 +69,6 @@ func (c *OpenAPIClient) CreateScroll(ctx context.Context, name string, artifact 
 	res, err := c.client.CreateScrollWithResponse(ctx, request)
 	if err != nil {
 		return nil, err
-	}
-	if res.StatusCode() == http.StatusNotImplemented {
-		return nil, ErrMaterializationUnsupported
 	}
 	if err := ensureStatus(res.StatusCode(), res.Body); err != nil {
 		return nil, err

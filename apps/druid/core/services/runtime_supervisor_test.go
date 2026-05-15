@@ -218,6 +218,38 @@ func TestRuntimeSupervisorCreateCanCreate(t *testing.T) {
 	}
 }
 
+func TestRuntimeSupervisorCreateGeneratesIDWhenNameOmitted(t *testing.T) {
+	store := newTestStateStore(t)
+	callbacks := NewWorkerCallbackManager()
+	backend := &fakeWorkerBackend{callbacks: callbacks, scrollYAML: cachedScrollYAML("start"), digest: "sha256:generated"}
+	supervisor := NewRuntimeSupervisor(
+		store,
+		coreservices.NewRuntimeScrollManager(store),
+		backend,
+	)
+	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
+
+	runtimeScroll, err := supervisor.Create("registry.local/lab:1.0", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtimeScroll.ID == "" || runtimeScroll.ID == "cached" {
+		t.Fatalf("id = %q, want generated runtime id independent from scroll.yaml name", runtimeScroll.ID)
+	}
+	if runtimeScroll.ScrollName != "cached" {
+		t.Fatalf("scroll name = %q, want cached", runtimeScroll.ScrollName)
+	}
+	if backend.action.RuntimeID != runtimeScroll.ID || backend.action.RootRef != backend.RootRef(runtimeScroll.ID, "") {
+		t.Fatalf("worker action = %#v scroll = %#v", backend.action, runtimeScroll)
+	}
+	if backend.action.Mode != ports.RuntimeWorkerModeCreate || backend.action.CallbackToken == "" {
+		t.Fatalf("worker action = %#v", backend.action)
+	}
+	if runtimeScroll.ArtifactDigest != "sha256:generated" || runtimeScroll.Status != domain.RuntimeScrollStatusCreated {
+		t.Fatalf("runtime scroll = %#v", runtimeScroll)
+	}
+}
+
 func TestRuntimeSupervisorCreateUsesPullWorkerBeforeStateMutation(t *testing.T) {
 	store := newTestStateStore(t)
 	callbacks := NewWorkerCallbackManager()
@@ -247,6 +279,52 @@ func TestRuntimeSupervisorCreateUsesPullWorkerBeforeStateMutation(t *testing.T) 
 	}
 	if runtimeScroll.Root != backend.RootRef("worker-scroll", "") {
 		t.Fatalf("root = %s, want %s", runtimeScroll.Root, backend.RootRef("worker-scroll", ""))
+	}
+}
+
+func TestRuntimeSupervisorCreateWorkerFailureLeavesGeneratedPlaceholder(t *testing.T) {
+	store := newTestStateStore(t)
+	callbacks := NewWorkerCallbackManager()
+	backend := &fakeWorkerBackend{callbacks: callbacks, workerErr: errors.New("pull image failed")}
+	supervisor := NewRuntimeSupervisor(
+		store,
+		coreservices.NewRuntimeScrollManager(store),
+		backend,
+	)
+	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
+
+	if _, err := supervisor.Create("registry.local/missing:1.0", "", nil); err == nil {
+		t.Fatal("Create error = nil, want worker error")
+	}
+	scrolls, err := store.ListScrolls()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scrolls) != 1 {
+		t.Fatalf("scrolls = %#v, want one failed placeholder", scrolls)
+	}
+	if scrolls[0].Status != domain.RuntimeScrollStatusError || !strings.Contains(scrolls[0].LastError, "pull image failed") {
+		t.Fatalf("placeholder = %#v, want remembered worker failure", scrolls[0])
+	}
+}
+
+func TestRuntimeSupervisorCreateRequiresWorkerCallbackConfig(t *testing.T) {
+	store := newTestStateStore(t)
+	supervisor := NewRuntimeSupervisor(
+		store,
+		coreservices.NewRuntimeScrollManager(store),
+		&fakeWorkerBackend{scrollYAML: cachedScrollYAML("start")},
+	)
+
+	if _, err := supervisor.Create("registry.local/lab:1.0", "missing-callbacks", nil); err == nil || !strings.Contains(err.Error(), "daemon materialization requires --worker-callback-url and --worker-callback-listen") {
+		t.Fatalf("Create error = %v, want explicit callback config error", err)
+	}
+	runtimeScroll, err := store.GetScroll("missing-callbacks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtimeScroll.Status != domain.RuntimeScrollStatusError || !strings.Contains(runtimeScroll.LastError, "--worker-callback-url") {
+		t.Fatalf("runtime scroll = %#v, want callback config error", runtimeScroll)
 	}
 }
 
