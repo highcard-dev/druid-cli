@@ -29,6 +29,43 @@ func TestDaemonCommandExposesRuntimeListeners(t *testing.T) {
 	}
 }
 
+func TestOpenWorkerCallbackListener(t *testing.T) {
+	resetWorkerCallbackFlags(t)
+
+	listener, err := openWorkerCallbackListener("127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	if listener == nil {
+		t.Fatal("listener = nil")
+	}
+}
+
+func TestOpenWorkerCallbackListenerEmpty(t *testing.T) {
+	resetWorkerCallbackFlags(t)
+
+	listener, err := openWorkerCallbackListener("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listener != nil {
+		t.Fatal("listener should be nil")
+	}
+}
+
+func resetWorkerCallbackFlags(t *testing.T) {
+	t.Helper()
+	oldListen := runtimeWorkerCallbackListen
+	oldURL := runtimeWorkerCallbackURL
+	runtimeWorkerCallbackListen = ""
+	runtimeWorkerCallbackURL = ""
+	t.Cleanup(func() {
+		runtimeWorkerCallbackListen = oldListen
+		runtimeWorkerCallbackURL = oldURL
+	})
+}
+
 func TestRootCommandExposesDaemonTargets(t *testing.T) {
 	for _, name := range []string{"daemon-url", "daemon-socket"} {
 		if flag := RootCmd.PersistentFlags().Lookup(name); flag == nil {

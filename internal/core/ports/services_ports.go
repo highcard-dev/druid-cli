@@ -58,6 +58,16 @@ type RuntimeBackendInterface interface {
 	Signal(commandName string, target string, signal string, root string) error
 }
 
+type RuntimeWorkerCallbackConfig struct {
+	Listen string
+	URL    string
+}
+
+type RuntimeWorkerCallbackBackend interface {
+	WorkerCallbackDefaults(config RuntimeWorkerCallbackConfig) RuntimeWorkerCallbackConfig
+	WorkerCallbackAfterListen(config RuntimeWorkerCallbackConfig) (RuntimeWorkerCallbackConfig, error)
+}
+
 type RuntimeScrollStore interface {
 	StateDir() string
 	Root(id string) string

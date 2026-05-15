@@ -10,6 +10,7 @@ import (
 	runtimehandlers "github.com/highcard-dev/daemon/apps/druid/adapters/http/handlers"
 	appservices "github.com/highcard-dev/daemon/apps/druid/core/services"
 	"github.com/highcard-dev/daemon/internal/callbackapi"
+	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/core/services"
 	runtimebackend "github.com/highcard-dev/daemon/internal/runtime"
 	runtimedocker "github.com/highcard-dev/daemon/internal/runtime/docker"
@@ -94,22 +95,32 @@ func runRuntimeDaemon() error {
 	manager := services.NewRuntimeScrollManager(runtime.Store)
 	supervisor := appservices.NewRuntimeSupervisor(runtime.Store, manager, runtime.Backend)
 	callbacks := appservices.NewWorkerCallbackManager()
-	if runtimeWorkerCallbackURL == "" {
-		runtimeWorkerCallbackURL = os.Getenv("DRUID_WORKER_CALLBACK_URL")
+	loadRuntimeDaemonEnv()
+	callbackConfig := ports.RuntimeWorkerCallbackConfig{
+		Listen: runtimeWorkerCallbackListen,
+		URL:    runtimeWorkerCallbackURL,
 	}
+	callbackBackend, _ := runtime.Backend.(ports.RuntimeWorkerCallbackBackend)
+	if callbackBackend != nil {
+		callbackConfig = callbackBackend.WorkerCallbackDefaults(callbackConfig)
+	}
+	callbackListener, err := openWorkerCallbackListener(callbackConfig.Listen)
+	if err != nil {
+		return err
+	}
+	if callbackListener != nil {
+		callbackConfig.Listen = callbackListener.Addr().String()
+		if callbackBackend != nil {
+			callbackConfig, err = callbackBackend.WorkerCallbackAfterListen(callbackConfig)
+			if err != nil {
+				callbackListener.Close()
+				return err
+			}
+		}
+	}
+	runtimeWorkerCallbackListen = callbackConfig.Listen
+	runtimeWorkerCallbackURL = callbackConfig.URL
 	supervisor.SetWorkerCallbacks(callbacks, runtimeWorkerCallbackURL)
-	if runtimeWorkerDaemonURL == "" {
-		runtimeWorkerDaemonURL = os.Getenv("DRUID_WORKER_DAEMON_URL")
-	}
-	if runtimeAuthJWKSURL == "" {
-		runtimeAuthJWKSURL = os.Getenv("DRUID_AUTH_JWKS_URL")
-	}
-	if runtimePublicJWKSURL == "" {
-		runtimePublicJWKSURL = os.Getenv("DRUID_PUBLIC_JWKS_URL")
-	}
-	if runtimeInternalToken == "" {
-		runtimeInternalToken = os.Getenv("DRUID_INTERNAL_TOKEN")
-	}
 	supervisor.SetDevWorkerConfig(runtimeWorkerDaemonURL, runtimeInternalToken, runtimeAuthJWKSURL, runtimePublicJWKSURL)
 	if err := supervisor.Start(); err != nil {
 		return err
@@ -158,18 +169,43 @@ func runRuntimeDaemon() error {
 		runtimehandlers.RegisterPublicRoutes(publicApp, handlers)
 	}
 	var callbackApp *fiber.App
-	if runtimeWorkerCallbackListen == "" {
-		runtimeWorkerCallbackListen = os.Getenv("DRUID_WORKER_CALLBACK_LISTEN")
-	}
-	if runtimeWorkerCallbackListen != "" {
+	if callbackListener != nil {
 		callbackApp = fiber.New(fiber.Config{DisableStartupMessage: true, ErrorHandler: runtimehandlers.ErrorHandler})
 		callbackApp.Use(runtimehandlers.RequestLogger)
 		callbackapi.RegisterHandlers(callbackApp, runtimeCallbackHandler{callbacks: callbacks})
 	}
-	return listenRuntimeHTTP(managementApp, publicApp, callbackApp, runtime.Store.StateDir())
+	return listenRuntimeHTTP(managementApp, publicApp, callbackApp, callbackListener, runtime.Store.StateDir())
 }
 
-func listenRuntimeHTTP(managementApp *fiber.App, publicApp *fiber.App, callbackApp *fiber.App, stateDir string) error {
+func loadRuntimeDaemonEnv() {
+	if runtimeWorkerCallbackURL == "" {
+		runtimeWorkerCallbackURL = os.Getenv("DRUID_WORKER_CALLBACK_URL")
+	}
+	if runtimeWorkerCallbackListen == "" {
+		runtimeWorkerCallbackListen = os.Getenv("DRUID_WORKER_CALLBACK_LISTEN")
+	}
+	if runtimeWorkerDaemonURL == "" {
+		runtimeWorkerDaemonURL = os.Getenv("DRUID_WORKER_DAEMON_URL")
+	}
+	if runtimeAuthJWKSURL == "" {
+		runtimeAuthJWKSURL = os.Getenv("DRUID_AUTH_JWKS_URL")
+	}
+	if runtimePublicJWKSURL == "" {
+		runtimePublicJWKSURL = os.Getenv("DRUID_PUBLIC_JWKS_URL")
+	}
+	if runtimeInternalToken == "" {
+		runtimeInternalToken = os.Getenv("DRUID_INTERNAL_TOKEN")
+	}
+}
+
+func openWorkerCallbackListener(listen string) (net.Listener, error) {
+	if listen == "" {
+		return nil, nil
+	}
+	return net.Listen("tcp", listen)
+}
+
+func listenRuntimeHTTP(managementApp *fiber.App, publicApp *fiber.App, callbackApp *fiber.App, callbackListener net.Listener, stateDir string) error {
 	errCh := make(chan error, 4)
 	go func() {
 		errCh <- listenRuntimeDaemon(managementApp, stateDir)
@@ -188,8 +224,8 @@ func listenRuntimeHTTP(managementApp *fiber.App, publicApp *fiber.App, callbackA
 	}
 	if callbackApp != nil {
 		go func() {
-			logger.Log().Info("Starting runtime worker callback listener", zap.String("listen", runtimeWorkerCallbackListen), zap.String("stateDir", stateDir))
-			errCh <- callbackApp.Listen(runtimeWorkerCallbackListen)
+			logger.Log().Info("Starting runtime worker callback listener", zap.String("listen", runtimeWorkerCallbackListen), zap.String("url", runtimeWorkerCallbackURL), zap.String("stateDir", stateDir))
+			errCh <- callbackApp.Listener(callbackListener)
 		}()
 	}
 	return <-errCh

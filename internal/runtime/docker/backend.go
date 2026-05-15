@@ -47,6 +47,8 @@ type Config struct {
 	VolumePrefix string
 }
 
+const dockerHostGatewayExtraHost = "host.docker.internal:host-gateway"
+
 func (c Config) WithDefaults() Config {
 	if c.WorkerImage == "" {
 		c.WorkerImage = os.Getenv("DRUID_DOCKER_WORKER_IMAGE")
@@ -296,7 +298,7 @@ func (b *Backend) StartDev(ctx context.Context, action ports.RuntimeDevAction) e
 	for _, command := range action.HotReloadCommands {
 		args = append(args, "--command", command)
 	}
-	hostConfig := &container.HostConfig{Mounts: []mount.Mount{rootMount}}
+	hostConfig := &container.HostConfig{Mounts: []mount.Mount{rootMount}, ExtraHosts: []string{dockerHostGatewayExtraHost}}
 	for _, assignment := range action.Routing {
 		if assignment.PublicPort == 0 || (assignment.PortName != "webdav" && assignment.Name != "webdav") {
 			continue
@@ -500,7 +502,7 @@ func (b *Backend) runWorkerRootCommand(ctx context.Context, root string, command
 	if err != nil {
 		return err
 	}
-	hostConfig := &container.HostConfig{Mounts: []mount.Mount{rootMount}}
+	hostConfig := &container.HostConfig{Mounts: []mount.Mount{rootMount}, ExtraHosts: []string{dockerHostGatewayExtraHost}}
 	if b.config.Network != "" {
 		hostConfig.NetworkMode = container.NetworkMode(b.config.Network)
 	}
@@ -623,7 +625,7 @@ func (b *Backend) withHelperContainer(ctx context.Context, root string, fn func(
 	if err := b.pullImage(ctx, b.config.WorkerImage); err != nil {
 		return err
 	}
-	hostConfig := &container.HostConfig{Mounts: []mount.Mount{rootMount}}
+	hostConfig := &container.HostConfig{Mounts: []mount.Mount{rootMount}, ExtraHosts: []string{dockerHostGatewayExtraHost}}
 	if b.config.Network != "" {
 		hostConfig.NetworkMode = container.NetworkMode(b.config.Network)
 	}
@@ -716,7 +718,7 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 			artifact = "/artifact-src/" + filepath.Base(abs)
 		}
 	}
-	hostConfig := &container.HostConfig{Mounts: mounts}
+	hostConfig := &container.HostConfig{Mounts: mounts, ExtraHosts: []string{dockerHostGatewayExtraHost}}
 	if b.config.Network != "" {
 		hostConfig.NetworkMode = container.NetworkMode(b.config.Network)
 	}
@@ -1054,6 +1056,7 @@ func containerSpec(commandName string, procedure *domain.Procedure, root string,
 		}, &container.HostConfig{
 			Mounts:       mounts,
 			PortBindings: portBindings,
+			ExtraHosts:   []string{dockerHostGatewayExtraHost},
 		}, nil
 }
 

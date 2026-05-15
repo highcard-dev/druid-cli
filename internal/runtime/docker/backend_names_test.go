@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
+	"github.com/highcard-dev/daemon/internal/core/ports"
 )
 
 func TestContainerNameUsesDeploymentCommandAndProcedureIndex(t *testing.T) {
@@ -41,4 +42,52 @@ func TestRoutingTargetsUseFirstConcreteProcedureForSharedDockerPort(t *testing.T
 		return
 	}
 	t.Fatalf("main target missing: %#v", targets)
+}
+
+func TestContainerSpecAddsHostGatewayExtraHost(t *testing.T) {
+	_, hostConfig, err := containerSpec("start", &domain.Procedure{Image: "busybox"}, "docker-volume://druid-scroll-data", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, extraHost := range hostConfig.ExtraHosts {
+		if extraHost == dockerHostGatewayExtraHost {
+			return
+		}
+	}
+	t.Fatalf("extra hosts = %#v, want %s", hostConfig.ExtraHosts, dockerHostGatewayExtraHost)
+}
+
+func TestWorkerCallbackDefaultsLiveInDockerBackend(t *testing.T) {
+	backend := &Backend{}
+	config := backend.WorkerCallbackDefaults(ports.RuntimeWorkerCallbackConfig{})
+	if config.Listen != "127.0.0.1:0" || config.URL != "" {
+		t.Fatalf("config = %#v", config)
+	}
+	config.Listen = "127.0.0.1:12345"
+	config, err := backend.WorkerCallbackAfterListen(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.URL != "http://host.docker.internal:12345" {
+		t.Fatalf("config = %#v", config)
+	}
+}
+
+func TestWorkerCallbackDefaultsPreserveExplicitURL(t *testing.T) {
+	backend := &Backend{}
+	config := backend.WorkerCallbackDefaults(ports.RuntimeWorkerCallbackConfig{
+		Listen: "127.0.0.1:0",
+		URL:    "http://callback.example:8083",
+	})
+	if config.Listen != "127.0.0.1:0" || config.URL != "http://callback.example:8083" {
+		t.Fatalf("config = %#v", config)
+	}
+	config.Listen = "127.0.0.1:12345"
+	config, err := backend.WorkerCallbackAfterListen(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.URL != "http://callback.example:8083" {
+		t.Fatalf("config = %#v", config)
+	}
 }
