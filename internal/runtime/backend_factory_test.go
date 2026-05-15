@@ -9,7 +9,6 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
-	coreservices "github.com/highcard-dev/daemon/internal/core/services"
 	"github.com/highcard-dev/daemon/internal/runtime/docker"
 	runtimekubernetes "github.com/highcard-dev/daemon/internal/runtime/kubernetes"
 )
@@ -46,7 +45,7 @@ func TestNewRuntimeKubernetesOwnsStoreSelection(t *testing.T) {
 		}
 		return fakeBackend{name: "kubernetes"}, nil
 	}
-	newKubernetesStateStore = func(config runtimekubernetes.Config) (coreservices.RuntimeScrollStore, error) {
+	newKubernetesStateStore = func(config runtimekubernetes.Config) (ports.RuntimeScrollStore, error) {
 		if config.Namespace != "druid" {
 			t.Fatalf("store namespace = %s, want druid", config.Namespace)
 		}
@@ -85,6 +84,13 @@ type fakeBackend struct {
 
 func (f fakeBackend) Name() string {
 	return f.name
+}
+
+func (f fakeBackend) RootRef(id string, namespace string) string {
+	if namespace != "" {
+		return namespace + "/" + id
+	}
+	return id
 }
 
 func (f fakeBackend) ReadScrollFile(root string) ([]byte, error) {
@@ -158,7 +164,7 @@ func (f fakeStore) ListScrolls() ([]*domain.RuntimeScroll, error) {
 }
 
 func (f fakeStore) GetScroll(id string) (*domain.RuntimeScroll, error) {
-	return nil, coreservices.ErrScrollNotFound
+	return nil, domain.ErrRuntimeScrollNotFound
 }
 
 func (f fakeStore) UpdateScroll(scroll *domain.RuntimeScroll) error {

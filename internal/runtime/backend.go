@@ -4,15 +4,13 @@ import (
 	"fmt"
 
 	"github.com/highcard-dev/daemon/internal/core/ports"
-	coreservices "github.com/highcard-dev/daemon/internal/core/services"
 	"github.com/highcard-dev/daemon/internal/runtime/docker"
 	runtimekubernetes "github.com/highcard-dev/daemon/internal/runtime/kubernetes"
-	"github.com/highcard-dev/daemon/internal/utils"
 )
 
 type Runtime struct {
 	Backend ports.RuntimeBackendInterface
-	Store   coreservices.RuntimeScrollStore
+	Store   ports.RuntimeScrollStore
 }
 
 type Options struct {
@@ -42,7 +40,7 @@ var newKubernetesBackend = func(config runtimekubernetes.Config, consoleManager 
 	return runtimekubernetes.New(config, consoleManager)
 }
 
-var newKubernetesStateStore = func(config runtimekubernetes.Config) (coreservices.RuntimeScrollStore, error) {
+var newKubernetesStateStore = func(config runtimekubernetes.Config) (ports.RuntimeScrollStore, error) {
 	return runtimekubernetes.NewConfigMapStateStore(config)
 }
 
@@ -57,7 +55,7 @@ func NewRuntime(name string, consoleManager ports.ConsoleManagerInterface, state
 		if err != nil {
 			return nil, err
 		}
-		store, err := newSQLiteStore(stateDir)
+		store, err := docker.NewStateStore(stateDir)
 		if err != nil {
 			return nil, err
 		}
@@ -80,19 +78,8 @@ func NewRuntime(name string, consoleManager ports.ConsoleManagerInterface, state
 	}
 }
 
-func newSQLiteStore(stateDir string) (coreservices.RuntimeScrollStore, error) {
-	if stateDir == "" {
-		defaultStateDir, err := utils.DefaultRuntimeStateDir()
-		if err != nil {
-			return nil, err
-		}
-		stateDir = defaultStateDir
-	}
-	return coreservices.NewRuntimeStateStore(stateDir), nil
-}
-
 type dockerRuntimeStore struct {
-	coreservices.RuntimeScrollStore
+	ports.RuntimeScrollStore
 	config docker.Config
 }
 

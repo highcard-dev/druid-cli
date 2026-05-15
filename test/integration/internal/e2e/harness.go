@@ -203,7 +203,6 @@ ports:
   - name: http
     protocol: http
     port: %d
-    mandatory: true
 commands:
   serve:
     run: persistent

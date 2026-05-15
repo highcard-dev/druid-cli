@@ -200,14 +200,14 @@ func helperJobSpec(namespace string, jobName string, pvc string, image string, c
 	}
 }
 
-func procedureJobSpec(namespace string, root string, procedureName string, procedure *domain.Procedure, env map[string]string, registrySecret string) (*batchv1.Job, error) {
+func procedureJobSpec(namespace string, root string, commandName string, procedureName string, resourceName string, procedure *domain.Procedure, env map[string]string, registrySecret string) (*batchv1.Job, error) {
 	_, pvc, err := parseRef(root)
 	if err != nil {
 		return nil, err
 	}
 	labels := baseLabels(pvc)
 	labels[labelProcedure] = dnsLabel(procedureName)
-	labels[labelCommand] = dnsLabel(procedureName)
+	labels[labelCommand] = dnsLabel(commandName)
 	if len(procedure.ExpectedPorts) == 1 {
 		labels[labelPortName] = dnsLabel(procedure.ExpectedPorts[0].Name)
 	}
@@ -233,7 +233,7 @@ func procedureJobSpec(namespace string, root string, procedureName string, proce
 	}
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      jobName("proc", root, procedureName),
+			Name:      resourceName,
 			Namespace: namespace,
 			Labels:    labels,
 		},
@@ -247,14 +247,14 @@ func procedureJobSpec(namespace string, root string, procedureName string, proce
 	}, nil
 }
 
-func procedureStatefulSetSpec(namespace string, root string, procedureName string, procedure *domain.Procedure, env map[string]string, registrySecret string) (*appsv1.StatefulSet, error) {
+func procedureStatefulSetSpec(namespace string, root string, commandName string, procedureName string, resourceName string, procedure *domain.Procedure, env map[string]string, registrySecret string) (*appsv1.StatefulSet, error) {
 	_, pvc, err := parseRef(root)
 	if err != nil {
 		return nil, err
 	}
 	labels := baseLabels(pvc)
 	labels[labelProcedure] = dnsLabel(procedureName)
-	labels[labelCommand] = dnsLabel(procedureName)
+	labels[labelCommand] = dnsLabel(commandName)
 	if len(procedure.ExpectedPorts) == 1 {
 		labels[labelPortName] = dnsLabel(procedure.ExpectedPorts[0].Name)
 	}
@@ -279,13 +279,13 @@ func procedureStatefulSetSpec(namespace string, root string, procedureName strin
 	}
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      statefulSetName(root, procedureName),
+			Name:      resourceName,
 			Namespace: namespace,
 			Labels:    labels,
 		},
 		Spec: appsv1.StatefulSetSpec{
 			Replicas:    &replicas,
-			ServiceName: statefulSetName(root, procedureName),
+			ServiceName: resourceName,
 			Selector:    &metav1.LabelSelector{MatchLabels: labels},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
@@ -365,23 +365,21 @@ func devServiceSpec(namespace string, root string, pvc string) *corev1.Service {
 	}
 }
 
-func serviceSpec(namespace string, root string, procedureName string, portName string, port domain.Port) (*corev1.Service, error) {
+func serviceSpec(namespace string, root string, serviceProcedure string, selector map[string]string, portName string, port domain.Port) (*corev1.Service, error) {
 	_, pvc, err := parseRef(root)
 	if err != nil {
 		return nil, err
 	}
 	labels := baseLabels(pvc)
-	labels[labelProcedure] = dnsLabel(procedureName)
+	labels[labelProcedure] = dnsLabel(serviceProcedure)
 	labels[labelPortName] = dnsLabel(portName)
-	selector := baseLabels(pvc)
-	selector[labelProcedure] = dnsLabel(procedureName)
 	protocol := corev1.ProtocolTCP
 	if normalizeProtocol(port.Protocol) == "udp" {
 		protocol = corev1.ProtocolUDP
 	}
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      serviceName(root, procedureName, portName),
+			Name:      serviceName(root, serviceProcedure, portName),
 			Namespace: namespace,
 			Labels:    labels,
 		},

@@ -106,6 +106,14 @@ func (b *Backend) Name() string {
 	return "docker"
 }
 
+func (b *Backend) RootRef(id string, _ string) string {
+	root, err := b.config.RuntimeRootRef(id)
+	if err != nil {
+		return id
+	}
+	return root
+}
+
 func (b *Backend) ReadScrollFile(root string) ([]byte, error) {
 	if root == "" {
 		return nil, fmt.Errorf("runtime root is required")
@@ -130,12 +138,12 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 			if procedure.Image == "" {
 				return nil, fmt.Errorf("docker runtime procedure %s requires image", procedureName)
 			}
-			if err := b.startPersistentContainer(runtimeConsoleID(command.ScrollID, procedureName), procedureName, procedure, command.Root, command.GlobalPorts, env); err != nil {
+			if err := b.startPersistentContainer(runtimeConsoleID(command.ScrollID, procedureName), procedureName, procedureResourceName(command.Name, idx), procedure, command.Root, command.GlobalPorts, env); err != nil {
 				return nil, err
 			}
 			continue
 		}
-		exitCode, err := b.runProcedure(runtimeConsoleID(command.ScrollID, procedureName), procedureName, procedure, command.Root, command.GlobalPorts, env)
+		exitCode, err := b.runProcedure(runtimeConsoleID(command.ScrollID, procedureName), procedureName, procedureResourceName(command.Name, idx), procedure, command.Root, command.GlobalPorts, env)
 		if err != nil {
 			return exitCode, err
 		}
@@ -149,14 +157,14 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 	return nil, nil
 }
 
-func (b *Backend) runProcedure(consoleID string, procedureName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, env map[string]string) (*int, error) {
+func (b *Backend) runProcedure(consoleID string, procedureName string, resourceName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, env map[string]string) (*int, error) {
 	if procedure.IsSignal() {
 		return nil, b.Signal(procedureName, procedure.Target, procedure.Signal, root)
 	}
 	if procedure.Image == "" {
 		return nil, fmt.Errorf("docker runtime procedure %s requires image", procedureName)
 	}
-	return b.runContainer(consoleID, procedureName, procedure, root, globalPorts, env)
+	return b.runContainer(consoleID, procedureName, resourceName, procedure, root, globalPorts, env)
 }
 
 func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
@@ -217,6 +225,7 @@ func (b *Backend) RoutingTargets(root string, commands map[string]*domain.Comman
 				continue
 			}
 			procedureName := domain.ProcedureName(commandName, idx, procedure)
+			serviceName := ContainerName(root, procedureResourceName(commandName, idx))
 			for _, expectedPort := range procedure.ExpectedPorts {
 				if _, ok := seen[expectedPort.Name]; ok {
 					continue
@@ -232,7 +241,7 @@ func (b *Backend) RoutingTargets(root string, commands map[string]*domain.Comman
 					PortName:    expectedPort.Name,
 					Port:        port.Port,
 					Protocol:    normalizeProtocol(port.Protocol),
-					ServiceName: ContainerName(root, procedureName),
+					ServiceName: serviceName,
 					ServicePort: port.Port,
 				})
 			}
@@ -752,7 +761,7 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 	return nil
 }
 
-func (b *Backend) runContainer(consoleID string, commandName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, env map[string]string) (*int, error) {
+func (b *Backend) runContainer(consoleID string, commandName string, resourceName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, env map[string]string) (*int, error) {
 	ctx := context.Background()
 	if procedure.Image == "" {
 		return nil, errors.New("docker image is required")
@@ -772,7 +781,7 @@ func (b *Backend) runContainer(consoleID string, commandName string, procedure *
 	if err != nil {
 		return nil, err
 	}
-	containerName := ContainerName(root, commandName)
+	containerName := ContainerName(root, resourceName)
 	_ = b.client.ContainerRemove(ctx, containerName, container.RemoveOptions{Force: true})
 
 	created, err := b.client.ContainerCreate(ctx, config, hostConfig, nil, nil, containerName)
@@ -842,7 +851,7 @@ func (b *Backend) runContainer(consoleID string, commandName string, procedure *
 	return &exitCode, nil
 }
 
-func (b *Backend) startPersistentContainer(consoleID string, commandName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, env map[string]string) error {
+func (b *Backend) startPersistentContainer(consoleID string, commandName string, resourceName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, env map[string]string) error {
 	ctx := context.Background()
 	if procedure.Image == "" {
 		return errors.New("docker image is required")
@@ -860,7 +869,7 @@ func (b *Backend) startPersistentContainer(consoleID string, commandName string,
 	if err != nil {
 		return err
 	}
-	containerName := ContainerName(root, commandName)
+	containerName := ContainerName(root, resourceName)
 	_ = b.client.ContainerRemove(ctx, containerName, container.RemoveOptions{Force: true})
 	created, err := b.client.ContainerCreate(ctx, config, hostConfig, nil, nil, containerName)
 	if err != nil {
@@ -1050,9 +1059,26 @@ func procedureDataSubPath(subPath string) string {
 }
 
 func ContainerName(root string, commandName string) string {
-	hash := sha1.Sum([]byte(root))
-	name := sanitizeContainerName(commandName)
-	return fmt.Sprintf("druid-%s-%s", hex.EncodeToString(hash[:])[:10], name)
+	return sanitizeContainerName(fmt.Sprintf("%s-%s", runtimeID(root), commandName))
+}
+
+func runtimeID(root string) string {
+	switch {
+	case strings.HasPrefix(root, "docker-volume://"):
+		name := strings.TrimPrefix(root, "docker-volume://")
+		if strings.HasPrefix(name, "druid-") && strings.HasSuffix(name, "-data") {
+			return strings.TrimSuffix(strings.TrimPrefix(name, "druid-"), "-data")
+		}
+		return name
+	case strings.HasPrefix(root, "docker-bind://"):
+		return strings.TrimSuffix(filepath.Base(strings.TrimPrefix(root, "docker-bind://")), "-data")
+	default:
+		return strings.TrimSuffix(filepath.Base(root), "-data")
+	}
+}
+
+func procedureResourceName(commandName string, procedureIndex int) string {
+	return fmt.Sprintf("%s-%d", commandName, procedureIndex)
 }
 
 func rootHash(root string) string {

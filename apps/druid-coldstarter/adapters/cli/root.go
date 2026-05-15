@@ -7,14 +7,12 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/highcard-dev/daemon/apps/druid-coldstarter/adapters/filesystem"
 	"github.com/highcard-dev/daemon/apps/druid-coldstarter/core/services"
 	"github.com/spf13/cobra"
 )
 
 const (
-	rootEnv       = "DRUID_ROOT"
-	statusFileEnv = "DRUID_COLDSTARTER_STATUS_FILE"
+	rootEnv = "DRUID_ROOT"
 )
 
 func NewRootCommand() *cobra.Command {
@@ -28,7 +26,7 @@ func NewRootCommand() *cobra.Command {
 			}
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 			defer stop()
-			return services.NewColdstarterService(filesystem.NewStatusWriter()).Run(ctx, root, os.Getenv(statusFileEnv))
+			return services.NewColdstarterService().Run(ctx, root)
 		},
 	}
 	cmd.SilenceUsage = true

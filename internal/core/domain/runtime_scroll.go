@@ -1,6 +1,14 @@
 package domain
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+var (
+	ErrRuntimeScrollNotFound      = errors.New("runtime scroll not found")
+	ErrRuntimeScrollAlreadyExists = errors.New("runtime scroll already exists")
+)
 
 type RuntimeScrollStatus string
 

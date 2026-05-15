@@ -7,14 +7,23 @@ func (s *RuntimeSupervisor) Delete(id string) error {
 }
 
 func (s *RuntimeSupervisor) DeleteWithPolicy(id string, purgeData bool) error {
-	session, err := s.detachSession(id)
+	s.mu.Lock()
+	session := s.sessions[id]
+	delete(s.sessions, id)
+	s.mu.Unlock()
+	if session != nil {
+		session.Shutdown()
+	}
+
+	runtimeScroll, err := s.store.GetScroll(id)
 	if err != nil {
 		return err
 	}
-	if err := session.DeleteRuntime(purgeData); err != nil {
-		return err
+	if runtimeScroll.Root != "" {
+		if err := s.runtimeBackend.DeleteRuntime(runtimeScroll.Root, purgeData); err != nil {
+			return err
+		}
 	}
-	session.Shutdown()
 	return s.store.DeleteScroll(id)
 }
 

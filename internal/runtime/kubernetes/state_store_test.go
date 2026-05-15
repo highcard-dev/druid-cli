@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
-	coreservices "github.com/highcard-dev/daemon/internal/core/services"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 )
@@ -68,8 +67,8 @@ func TestConfigMapStateStoreRoundTripsRuntimeScroll(t *testing.T) {
 	if err := store.DeleteScroll("container-lab"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.GetScroll("container-lab"); !errors.Is(err, coreservices.ErrScrollNotFound) {
-		t.Fatalf("GetScroll after delete error = %v, want ErrScrollNotFound", err)
+	if _, err := store.GetScroll("container-lab"); !errors.Is(err, domain.ErrRuntimeScrollNotFound) {
+		t.Fatalf("GetScroll after delete error = %v, want domain.ErrRuntimeScrollNotFound", err)
 	}
 }
 
@@ -86,18 +85,18 @@ func TestConfigMapStateStoreDuplicateCreateReturnsConflict(t *testing.T) {
 	if err := store.CreateScroll(scroll); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateScroll(scroll); !errors.Is(err, coreservices.ErrScrollAlreadyExists) {
-		t.Fatalf("CreateScroll duplicate error = %v, want ErrScrollAlreadyExists", err)
+	if err := store.CreateScroll(scroll); !errors.Is(err, domain.ErrRuntimeScrollAlreadyExists) {
+		t.Fatalf("CreateScroll duplicate error = %v, want domain.ErrRuntimeScrollAlreadyExists", err)
 	}
 }
 
 func TestConfigMapStateStoreMissingScrollReturnsNotFound(t *testing.T) {
 	store := NewConfigMapStateStoreWithClient("druid", fake.NewSimpleClientset())
-	if _, err := store.GetScroll("missing"); !errors.Is(err, coreservices.ErrScrollNotFound) {
-		t.Fatalf("GetScroll error = %v, want ErrScrollNotFound", err)
+	if _, err := store.GetScroll("missing"); !errors.Is(err, domain.ErrRuntimeScrollNotFound) {
+		t.Fatalf("GetScroll error = %v, want domain.ErrRuntimeScrollNotFound", err)
 	}
-	if err := store.DeleteScroll("missing"); !errors.Is(err, coreservices.ErrScrollNotFound) {
-		t.Fatalf("DeleteScroll error = %v, want ErrScrollNotFound", err)
+	if err := store.DeleteScroll("missing"); !errors.Is(err, domain.ErrRuntimeScrollNotFound) {
+		t.Fatalf("DeleteScroll error = %v, want domain.ErrRuntimeScrollNotFound", err)
 	}
 }
 

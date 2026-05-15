@@ -29,6 +29,16 @@ func (f fakeHubble) HasFlow(context.Context, TrafficQuery) (bool, error) {
 	return f.hasFlow, f.err
 }
 
+func TestRootRefUsesRequestedNamespace(t *testing.T) {
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset(), fakeHubble{})
+	if got, want := backend.RootRef("deployment-123", "games"), ref("games", dataPVCName("deployment-123")); got != want {
+		t.Fatalf("RootRef = %s, want %s", got, want)
+	}
+	if got, want := backend.RootRef("deployment-123", ""), ref("druid", dataPVCName("deployment-123")); got != want {
+		t.Fatalf("RootRef default = %s, want %s", got, want)
+	}
+}
+
 func TestProcedureJobSpecBuildsDeterministicMountsAndLabels(t *testing.T) {
 	procedure := &domain.Procedure{
 		Image:      "alpine:3.20",
@@ -41,7 +51,7 @@ func TestProcedureJobSpecBuildsDeterministicMountsAndLabels(t *testing.T) {
 		Mounts: []domain.Mount{{Path: "/work", SubPath: "cache"}},
 	}
 
-	job, err := procedureJobSpec("druid", ref("druid", "druid-static-web-data"), "start", procedure, procedure.Env, "registry-secret")
+	job, err := procedureJobSpec("druid", ref("druid", "druid-static-web-data"), "start", "start", "static-web-start-0", procedure, procedure.Env, "registry-secret")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +85,7 @@ func TestProcedureJobSpecUsesProvidedRuntimeEnv(t *testing.T) {
 			"PROCEDURE_ONLY": "ignored",
 		},
 	}
-	job, err := procedureJobSpec("druid", ref("druid", "druid-static-web-data"), "start", procedure, map[string]string{
+	job, err := procedureJobSpec("druid", ref("druid", "druid-static-web-data"), "start", "start", "static-web-start-0", procedure, map[string]string{
 		"DRUID_PORT_HTTP": "8080",
 	}, "registry-secret")
 	if err != nil {
@@ -94,7 +104,7 @@ func TestProcedureStatefulSetSpecUsesProvidedRuntimeEnv(t *testing.T) {
 			"PROCEDURE_ONLY": "ignored",
 		},
 	}
-	statefulSet, err := procedureStatefulSetSpec("druid", ref("druid", "druid-static-web-data"), "start", procedure, map[string]string{
+	statefulSet, err := procedureStatefulSetSpec("druid", ref("druid", "druid-static-web-data"), "start", "start", "static-web-start-0", procedure, map[string]string{
 		"DRUID_PORT_HTTP": "8080",
 	}, "registry-secret")
 	if err != nil {
@@ -114,7 +124,7 @@ func TestProcedureStatefulSetSpecBuildsPersistentWorkload(t *testing.T) {
 		Mounts:        []domain.Mount{{Path: "/usr/share/nginx/html", SubPath: "site", ReadOnly: true}},
 	}
 
-	statefulSet, err := procedureStatefulSetSpec("druid", ref("druid", "druid-static-web-data"), "start", procedure, procedure.Env, "registry-secret")
+	statefulSet, err := procedureStatefulSetSpec("druid", ref("druid", "druid-static-web-data"), "start", "start", "static-web-start-0", procedure, procedure.Env, "registry-secret")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +132,7 @@ func TestProcedureStatefulSetSpecBuildsPersistentWorkload(t *testing.T) {
 	if statefulSet.Namespace != "druid" {
 		t.Fatalf("namespace = %s, want druid", statefulSet.Namespace)
 	}
-	if statefulSet.Name != statefulSetName(ref("druid", "druid-static-web-data"), "start") {
+	if statefulSet.Name != "static-web-start-0" {
 		t.Fatalf("name = %s", statefulSet.Name)
 	}
 	if statefulSet.Spec.Replicas == nil || *statefulSet.Spec.Replicas != 1 {
@@ -215,7 +225,7 @@ func TestSpawnPullWorkerCreateUsesFinalPVCAndWorkerJob(t *testing.T) {
 		Mode:          ports.RuntimeWorkerModeCreate,
 		RuntimeID:     "deployment-123",
 		Artifact:      "registry.local/lab:1.0",
-		RootRef:       ref("druid", dataPVCName("deployment-123")),
+		RootRef:       ref("games", dataPVCName("deployment-123")),
 		MountPath:     "/scroll",
 		CallbackURL:   "http://druid-cli:8083/internal/v1/workers/deployment-123/complete",
 		CallbackToken: "secret-token",
@@ -223,7 +233,7 @@ func TestSpawnPullWorkerCreateUsesFinalPVCAndWorkerJob(t *testing.T) {
 	if err := backend.SpawnPullWorker(context.Background(), action); err != nil {
 		t.Fatal(err)
 	}
-	pvcs, err := client.CoreV1().PersistentVolumeClaims("druid").List(context.Background(), metav1.ListOptions{})
+	pvcs, err := client.CoreV1().PersistentVolumeClaims("games").List(context.Background(), metav1.ListOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,9 +243,82 @@ func TestSpawnPullWorkerCreateUsesFinalPVCAndWorkerJob(t *testing.T) {
 	if len(jobs) != 1 {
 		t.Fatalf("jobs = %d, want 1", len(jobs))
 	}
+	if jobs[0].Namespace != "games" {
+		t.Fatalf("job namespace = %s, want games", jobs[0].Namespace)
+	}
 	command := strings.Join(jobs[0].Spec.Template.Spec.Containers[0].Command, " ")
 	if !strings.Contains(command, "worker pull") || strings.Contains(command, "cat /scroll/scroll.yaml") || strings.Contains(command, "--action-id") {
 		t.Fatalf("command = %#v", jobs[0].Spec.Template.Spec.Containers[0].Command)
+	}
+}
+
+func TestDeleteFinishedJobRemovesJob(t *testing.T) {
+	client := fake.NewSimpleClientset(&batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{Name: "finished", Namespace: "druid"},
+	})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+
+	backend.deleteFinishedJob(context.Background(), "druid", "finished")
+
+	if _, err := client.BatchV1().Jobs("druid").Get(context.Background(), "finished", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("Job get error = %v, want not found", err)
+	}
+}
+
+func TestCreateFreshJobKeepsFailedJob(t *testing.T) {
+	client := fake.NewSimpleClientset(&batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{Name: "failed", Namespace: "druid"},
+		Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{{
+			Type:   batchv1.JobFailed,
+			Status: corev1.ConditionTrue,
+		}}},
+	})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+
+	created, err := backend.createFreshJob(context.Background(), &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "failed", Namespace: "druid"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Name == "failed" {
+		t.Fatal("retry job reused failed job name")
+	}
+	if _, err := client.BatchV1().Jobs("druid").Get(context.Background(), "failed", metav1.GetOptions{}); err != nil {
+		t.Fatalf("failed Job was not retained: %v", err)
+	}
+	if _, err := client.BatchV1().Jobs("druid").Get(context.Background(), created.Name, metav1.GetOptions{}); err != nil {
+		t.Fatalf("retry Job was not created: %v", err)
+	}
+}
+
+func TestKubernetesJobFailedRequiresTerminalCondition(t *testing.T) {
+	retrying := &batchv1.Job{Status: batchv1.JobStatus{Failed: 1, Active: 1}}
+	if kubernetesJobFailed(retrying) {
+		t.Fatal("job with failed pod but no terminal Failed condition should still be retryable")
+	}
+	failed := &batchv1.Job{Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{{
+		Type:   batchv1.JobFailed,
+		Status: corev1.ConditionTrue,
+	}}}}
+	if !kubernetesJobFailed(failed) {
+		t.Fatal("job with terminal Failed condition should be failed")
+	}
+}
+
+func TestExpectedServicesUseRootNamespace(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	backend := NewWithClient(Config{Namespace: "druid-system"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+	root := ref("games", dataPVCName("deployment-123"))
+	procedure := &domain.Procedure{ExpectedPorts: []domain.ExpectedPort{{Name: "http"}}}
+
+	err := backend.ensureExpectedServices(context.Background(), root, "start", "start", procedure, []domain.Port{{Name: "http", Port: 8080, Protocol: "tcp"}}, map[string]int{"http": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.CoreV1().Services("games").Get(context.Background(), serviceName(root, "start", "http"), metav1.GetOptions{}); err != nil {
+		t.Fatalf("service in runtime namespace: %v", err)
+	}
+	if _, err := client.CoreV1().Services("druid-system").Get(context.Background(), serviceName(root, "start", "http"), metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("service in backend namespace error = %v, want not found", err)
 	}
 }
 
@@ -271,7 +354,7 @@ func TestExpectedPortsUsesHubbleFlowPresence(t *testing.T) {
 	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{hasFlow: true})
 	root := ref("druid", "druid-static-web-data")
 	procedureName := "start"
-	service, err := serviceSpec("druid", root, procedureName, "http", domain.Port{Name: "http", Port: 80, Protocol: "tcp"})
+	service, err := serviceSpec("druid", root, procedureName, serviceSelector(refPVCName(root), procedureName, procedureName, "http", map[string]int{"http": 1}), "http", domain.Port{Name: "http", Port: 80, Protocol: "tcp"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,7 +402,7 @@ func TestExpectedPortsDegradesWhenHubbleUnavailable(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{err: errors.New("relay unavailable")})
 	root := ref("druid", "druid-static-web-data")
-	service, err := serviceSpec("druid", root, "start", "http", domain.Port{Name: "http", Port: 80, Protocol: "tcp"})
+	service, err := serviceSpec("druid", root, "start", serviceSelector(refPVCName(root), "start", "start", "http", map[string]int{"http": 1}), "http", domain.Port{Name: "http", Port: 80, Protocol: "tcp"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -379,7 +462,7 @@ func TestRoutingTargetsReturnStableBackendServices(t *testing.T) {
 	if target.Protocol != "http" || target.PortName != "http" || target.Procedure != "web" {
 		t.Fatalf("target = %#v", target)
 	}
-	if target.Selector[labelScrollID] != "druid-static-web-data" || target.Selector[labelPortName] != "http" {
+	if target.Selector[labelScrollID] != "druid-static-web-data" || target.Selector[labelProcedure] != "web" {
 		t.Fatalf("selector = %#v", target.Selector)
 	}
 	if webdav.ServiceName != serviceName(root, "dev", "webdav") || webdav.Port != 8084 || webdav.Protocol != "https" {
@@ -415,7 +498,7 @@ func TestRoutingTargetsCollapseColdstarterAndRuntimePort(t *testing.T) {
 	if mainTargets[0].Name != "main" || mainTargets[0].Procedure != "coldstart" {
 		t.Fatalf("main target = %#v", mainTargets[0])
 	}
-	if mainTargets[0].Selector[labelPortName] != "main" {
+	if mainTargets[0].Selector[labelCommand] != "start" {
 		t.Fatalf("selector = %#v", mainTargets[0].Selector)
 	}
 }
@@ -426,9 +509,9 @@ func TestStopRuntimeDeletesWorkloadsButPreservesDataAndServices(t *testing.T) {
 	root := ref("druid", "druid-static-web-data")
 	labels := baseLabels("druid-static-web-data")
 	labels[labelProcedure] = "web"
-	jobName := jobName("proc", root, "web")
-	statefulSetName := statefulSetName(root, "web")
-	service, err := serviceSpec("druid", root, "web", "http", domain.Port{Name: "http", Port: 8080, Protocol: "tcp"})
+	jobName := "static-web-web-0"
+	statefulSetName := "static-web-web-0"
+	service, err := serviceSpec("druid", root, "web", serviceSelector(refPVCName(root), "web", "web", "http", map[string]int{"http": 1}), "http", domain.Port{Name: "http", Port: 8080, Protocol: "tcp"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -483,7 +566,7 @@ func TestDeleteRuntimePurgesServicesAndDataWhenRequested(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
 	root := ref("druid", "druid-static-web-data")
-	service, err := serviceSpec("druid", root, "web", "http", domain.Port{Name: "http", Port: 8080, Protocol: "tcp"})
+	service, err := serviceSpec("druid", root, "web", serviceSelector(refPVCName(root), "web", "web", "http", map[string]int{"http": 1}), "http", domain.Port{Name: "http", Port: 8080, Protocol: "tcp"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -550,7 +633,7 @@ func TestSignalDeletesPersistentStatefulSetAndPods(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
 	root := ref("druid", "druid-static-web-data")
-	name := statefulSetName(root, "start")
+	name := "static-web-start-0"
 	labels := baseLabels("druid-static-web-data")
 	labels[labelProcedure] = "start"
 	if _, err := client.AppsV1().StatefulSets("druid").Create(context.Background(), &appsv1.StatefulSet{

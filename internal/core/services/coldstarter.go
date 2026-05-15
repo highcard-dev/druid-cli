@@ -67,27 +67,21 @@ func (c *ColdStarter) Serve(ctx context.Context) {
 
 	for _, port := range augmentedPorts {
 		port := port
-		var sleepHandler string
-		if port.SleepHandler == nil {
-			logger.Log().Warn("Skipping coldstarter port without sleep handler", zap.Int("port", port.Port.Port), zap.String("port_name", port.Name))
+		if port.ColdstarterHandler == "" {
+			logger.Log().Warn("Skipping coldstarter port without handler", zap.Int("port", port.Port.Port), zap.String("port_name", port.Name))
 			continue
 		}
-		sleepHandler = *port.SleepHandler
 
 		var handler ports.ColdStarterHandlerInterface
-		if sleepHandler == "generic" {
+		if port.ColdstarterHandler == "generic" {
 			handler = lua.NewGenericReturnHandler()
 		} else {
-			path := filepath.Join(c.dir, filepath.Clean(sleepHandler))
+			path := filepath.Join(c.dir, filepath.Clean(port.ColdstarterHandler))
 			if rel, err := filepath.Rel(c.dir, path); err != nil || rel == ".." || filepath.IsAbs(rel) || strings.HasPrefix(rel, "../") {
-				logger.Log().Error("Invalid coldstarter handler path", zap.String("sleep_handler", sleepHandler))
+				logger.Log().Error("Invalid coldstarter handler path", zap.String("handler", port.ColdstarterHandler))
 				continue
 			}
-			vars := make(map[string]string, len(port.Vars))
-			for _, v := range port.Vars {
-				vars[v.Name] = v.Value
-			}
-			handler = lua.NewLuaHandler(c.queueManager, path, c.dir, vars, augmentedPortMap, c.progress)
+			handler = lua.NewLuaHandler(c.queueManager, path, c.dir, port.ColdstarterVars, augmentedPortMap, c.progress)
 		}
 
 		c.chandlers = append(c.chandlers, handler)
@@ -99,10 +93,10 @@ func (c *ColdStarter) Serve(ctx context.Context) {
 		var server ports.ColdStarterServerInterface
 		switch port.Protocol {
 		case "udp":
-			logger.Log().Info("Starting UDP coldstarter", zap.Int("port", port.Port.Port), zap.String("sleep_handler", sleepHandler), zap.String("port_name", port.Name))
+			logger.Log().Info("Starting UDP coldstarter", zap.Int("port", port.Port.Port), zap.String("handler", port.ColdstarterHandler), zap.String("port_name", port.Name))
 			server = servers.NewUDP(handler)
 		case "tcp", "http", "https", "":
-			logger.Log().Info("Starting TCP coldstarter", zap.Int("port", port.Port.Port), zap.String("sleep_handler", sleepHandler), zap.String("port_name", port.Name))
+			logger.Log().Info("Starting TCP coldstarter", zap.Int("port", port.Port.Port), zap.String("handler", port.ColdstarterHandler), zap.String("port_name", port.Name))
 			server = servers.NewTCP(handler)
 		default:
 			logger.Log().Warn("Unsupported coldstarter protocol", zap.String("protocol", port.Protocol), zap.String("port_name", port.Name))

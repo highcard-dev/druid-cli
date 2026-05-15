@@ -15,6 +15,7 @@ import (
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
+	runtimehandlers "github.com/highcard-dev/daemon/apps/druid/adapters/http/handlers"
 	"github.com/highcard-dev/daemon/internal/api"
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
@@ -174,7 +175,9 @@ func newDevApp(root string, broadcast *domain.BroadcastChannel, queue *devTrigge
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: true,
 		RequestMethods:        append(fiber.DefaultMethods, "PROPFIND", "MKCOL", "MOVE", "COPY"),
+		ErrorHandler:          runtimehandlers.ErrorHandler,
 	})
+	app.Use(runtimehandlers.RequestLogger)
 	server := devServer{root: root, broadcast: broadcast, queue: queue, auth: auth}
 	app.Use(func(c *fiber.Ctx) error {
 		c.Set("Access-Control-Allow-Origin", "*")

@@ -1,14 +1,17 @@
-package services_test
+package docker
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
-	"github.com/highcard-dev/daemon/internal/core/services"
 )
 
-func TestRuntimeStateStorePersistsCommandStatuses(t *testing.T) {
-	store := services.NewRuntimeStateStore(t.TempDir())
+func TestStateStorePersistsCommandStatuses(t *testing.T) {
+	store, err := NewStateStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	exitCode := 2
 	scroll := &domain.RuntimeScroll{
 		ID:         "test",
@@ -54,5 +57,15 @@ func TestRuntimeStateStorePersistsCommandStatuses(t *testing.T) {
 	}
 	if got.ScrollYAML != "name: test\n" {
 		t.Fatalf("scroll yaml = %q, want cached yaml", got.ScrollYAML)
+	}
+}
+
+func TestStateStoreUsesSingleRuntimeRoot(t *testing.T) {
+	store, err := NewStateStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := store.Root("scroll-a"), filepath.Join(store.StateDir(), "scrolls", "scroll-a"); got != want {
+		t.Fatalf("Root = %s, want %s", got, want)
 	}
 }

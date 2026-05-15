@@ -7,7 +7,6 @@ ports:
   - name: mysql
     protocol: tcp
     port: 3306
-    mandatory: true
 
 serve: "start"
 commands:

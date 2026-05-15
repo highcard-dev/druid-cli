@@ -62,7 +62,7 @@ func (mr *MockAuthorizerServiceInterfaceMockRecorder) CheckHeader(r any) *gomock
 }
 
 // CheckQuery mocks base method.
-func (m *MockAuthorizerServiceInterface) CheckQuery(runtimeID string, token string) (*ports.AuthContext, error) {
+func (m *MockAuthorizerServiceInterface) CheckQuery(runtimeID, token string) (*ports.AuthContext, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CheckQuery", runtimeID, token)
 	ret0, _ := ret[0].(*ports.AuthContext)
@@ -77,7 +77,7 @@ func (mr *MockAuthorizerServiceInterfaceMockRecorder) CheckQuery(runtimeID, toke
 }
 
 // GenerateQueryToken mocks base method.
-func (m *MockAuthorizerServiceInterface) GenerateQueryToken(runtimeID string, ownerID string) string {
+func (m *MockAuthorizerServiceInterface) GenerateQueryToken(runtimeID, ownerID string) string {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GenerateQueryToken", runtimeID, ownerID)
 	ret0, _ := ret[0].(string)
@@ -382,20 +382,6 @@ func (mr *MockRuntimeBackendInterfaceMockRecorder) Name() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Name", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).Name))
 }
 
-// StartDev mocks base method.
-func (m *MockRuntimeBackendInterface) StartDev(ctx context.Context, action ports.RuntimeDevAction) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "StartDev", ctx, action)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// StartDev indicates an expected call of StartDev.
-func (mr *MockRuntimeBackendInterfaceMockRecorder) StartDev(ctx, action any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartDev", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).StartDev), ctx, action)
-}
-
 // ReadScrollFile mocks base method.
 func (m *MockRuntimeBackendInterface) ReadScrollFile(root string) ([]byte, error) {
 	m.ctrl.T.Helper()
@@ -423,6 +409,20 @@ func (m *MockRuntimeBackendInterface) RestoreRuntime(ctx context.Context, root, 
 func (mr *MockRuntimeBackendInterfaceMockRecorder) RestoreRuntime(ctx, root, artifact, registryCredentials any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RestoreRuntime", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).RestoreRuntime), ctx, root, artifact, registryCredentials)
+}
+
+// RootRef mocks base method.
+func (m *MockRuntimeBackendInterface) RootRef(id, namespace string) string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RootRef", id, namespace)
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// RootRef indicates an expected call of RootRef.
+func (mr *MockRuntimeBackendInterfaceMockRecorder) RootRef(id, namespace any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RootRef", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).RootRef), id, namespace)
 }
 
 // RoutingTargets mocks base method.
@@ -483,18 +483,18 @@ func (mr *MockRuntimeBackendInterfaceMockRecorder) SpawnPullWorker(ctx, action a
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SpawnPullWorker", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).SpawnPullWorker), ctx, action)
 }
 
-// StopRuntime mocks base method.
-func (m *MockRuntimeBackendInterface) StopRuntime(root string) error {
+// StartDev mocks base method.
+func (m *MockRuntimeBackendInterface) StartDev(ctx context.Context, action ports.RuntimeDevAction) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "StopRuntime", root)
+	ret := m.ctrl.Call(m, "StartDev", ctx, action)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// StopRuntime indicates an expected call of StopRuntime.
-func (mr *MockRuntimeBackendInterfaceMockRecorder) StopRuntime(root any) *gomock.Call {
+// StartDev indicates an expected call of StartDev.
+func (mr *MockRuntimeBackendInterfaceMockRecorder) StartDev(ctx, action any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopRuntime", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).StopRuntime), root)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartDev", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).StartDev), ctx, action)
 }
 
 // StopDev mocks base method.
@@ -509,6 +509,144 @@ func (m *MockRuntimeBackendInterface) StopDev(ctx context.Context, root string) 
 func (mr *MockRuntimeBackendInterfaceMockRecorder) StopDev(ctx, root any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopDev", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).StopDev), ctx, root)
+}
+
+// StopRuntime mocks base method.
+func (m *MockRuntimeBackendInterface) StopRuntime(root string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StopRuntime", root)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// StopRuntime indicates an expected call of StopRuntime.
+func (mr *MockRuntimeBackendInterfaceMockRecorder) StopRuntime(root any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopRuntime", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).StopRuntime), root)
+}
+
+// MockRuntimeScrollStore is a mock of RuntimeScrollStore interface.
+type MockRuntimeScrollStore struct {
+	ctrl     *gomock.Controller
+	recorder *MockRuntimeScrollStoreMockRecorder
+	isgomock struct{}
+}
+
+// MockRuntimeScrollStoreMockRecorder is the mock recorder for MockRuntimeScrollStore.
+type MockRuntimeScrollStoreMockRecorder struct {
+	mock *MockRuntimeScrollStore
+}
+
+// NewMockRuntimeScrollStore creates a new mock instance.
+func NewMockRuntimeScrollStore(ctrl *gomock.Controller) *MockRuntimeScrollStore {
+	mock := &MockRuntimeScrollStore{ctrl: ctrl}
+	mock.recorder = &MockRuntimeScrollStoreMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockRuntimeScrollStore) EXPECT() *MockRuntimeScrollStoreMockRecorder {
+	return m.recorder
+}
+
+// CreateScroll mocks base method.
+func (m *MockRuntimeScrollStore) CreateScroll(scroll *domain.RuntimeScroll) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateScroll", scroll)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateScroll indicates an expected call of CreateScroll.
+func (mr *MockRuntimeScrollStoreMockRecorder) CreateScroll(scroll any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateScroll", reflect.TypeOf((*MockRuntimeScrollStore)(nil).CreateScroll), scroll)
+}
+
+// DeleteScroll mocks base method.
+func (m *MockRuntimeScrollStore) DeleteScroll(id string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteScroll", id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteScroll indicates an expected call of DeleteScroll.
+func (mr *MockRuntimeScrollStoreMockRecorder) DeleteScroll(id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteScroll", reflect.TypeOf((*MockRuntimeScrollStore)(nil).DeleteScroll), id)
+}
+
+// GetScroll mocks base method.
+func (m *MockRuntimeScrollStore) GetScroll(id string) (*domain.RuntimeScroll, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetScroll", id)
+	ret0, _ := ret[0].(*domain.RuntimeScroll)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetScroll indicates an expected call of GetScroll.
+func (mr *MockRuntimeScrollStoreMockRecorder) GetScroll(id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetScroll", reflect.TypeOf((*MockRuntimeScrollStore)(nil).GetScroll), id)
+}
+
+// ListScrolls mocks base method.
+func (m *MockRuntimeScrollStore) ListScrolls() ([]*domain.RuntimeScroll, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListScrolls")
+	ret0, _ := ret[0].([]*domain.RuntimeScroll)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListScrolls indicates an expected call of ListScrolls.
+func (mr *MockRuntimeScrollStoreMockRecorder) ListScrolls() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListScrolls", reflect.TypeOf((*MockRuntimeScrollStore)(nil).ListScrolls))
+}
+
+// Root mocks base method.
+func (m *MockRuntimeScrollStore) Root(id string) string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Root", id)
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// Root indicates an expected call of Root.
+func (mr *MockRuntimeScrollStoreMockRecorder) Root(id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Root", reflect.TypeOf((*MockRuntimeScrollStore)(nil).Root), id)
+}
+
+// StateDir mocks base method.
+func (m *MockRuntimeScrollStore) StateDir() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StateDir")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// StateDir indicates an expected call of StateDir.
+func (mr *MockRuntimeScrollStoreMockRecorder) StateDir() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StateDir", reflect.TypeOf((*MockRuntimeScrollStore)(nil).StateDir))
+}
+
+// UpdateScroll mocks base method.
+func (m *MockRuntimeScrollStore) UpdateScroll(scroll *domain.RuntimeScroll) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateScroll", scroll)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateScroll indicates an expected call of UpdateScroll.
+func (mr *MockRuntimeScrollStoreMockRecorder) UpdateScroll(scroll any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateScroll", reflect.TypeOf((*MockRuntimeScrollStore)(nil).UpdateScroll), scroll)
 }
 
 // MockBroadcastChannelInterface is a mock of BroadcastChannelInterface interface.

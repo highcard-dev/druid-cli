@@ -42,6 +42,7 @@ type LogManagerInterface interface {
 
 type RuntimeBackendInterface interface {
 	Name() string
+	RootRef(id string, namespace string) string
 	ReadScrollFile(root string) ([]byte, error)
 	StartDev(ctx context.Context, action RuntimeDevAction) error
 	StopDev(ctx context.Context, root string) error
@@ -55,6 +56,16 @@ type RuntimeBackendInterface interface {
 	SpawnPullWorker(ctx context.Context, action RuntimeWorkerAction) error
 	Attach(commandName string, data string) error
 	Signal(commandName string, target string, signal string, root string) error
+}
+
+type RuntimeScrollStore interface {
+	StateDir() string
+	Root(id string) string
+	CreateScroll(scroll *domain.RuntimeScroll) error
+	ListScrolls() ([]*domain.RuntimeScroll, error)
+	GetScroll(id string) (*domain.RuntimeScroll, error)
+	UpdateScroll(scroll *domain.RuntimeScroll) error
+	DeleteScroll(id string) error
 }
 
 type RuntimeCommand struct {

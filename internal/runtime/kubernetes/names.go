@@ -34,6 +34,15 @@ func dnsLabel(value string) string {
 	return strings.Trim(value[:40], "-") + "-" + hash
 }
 
+func objectName(value string) string {
+	name := dnsLabel(value)
+	// Services are stricter than most workload names: they must start with a letter.
+	if name[0] < 'a' || name[0] > 'z' {
+		name = "d-" + name
+	}
+	return name
+}
+
 func shortHash(value string) string {
 	sum := sha1.Sum([]byte(value))
 	return hex.EncodeToString(sum[:])[:10]
@@ -47,12 +56,20 @@ func stagingPVCName(artifact string) string {
 	return dnsLabel("druid-stage-" + shortHash(artifact))
 }
 
-func jobName(prefix string, root string, procedureName string) string {
-	return dnsLabel(fmt.Sprintf("druid-%s-%s-%s", prefix, refPVCName(root), procedureName))
+func runtimeID(root string) string {
+	pvc := refPVCName(root)
+	if strings.HasPrefix(pvc, "druid-") && strings.HasSuffix(pvc, "-data") {
+		return strings.TrimSuffix(strings.TrimPrefix(pvc, "druid-"), "-data")
+	}
+	return pvc
 }
 
-func statefulSetName(root string, procedureName string) string {
-	return dnsLabel(fmt.Sprintf("druid-sts-%s-%s", refPVCName(root), procedureName))
+func procedureResourceName(root string, commandName string, procedureIndex int) string {
+	return objectName(fmt.Sprintf("%s-%s-%d", runtimeID(root), commandName, procedureIndex))
+}
+
+func jobName(prefix string, root string, procedureName string) string {
+	return objectName(fmt.Sprintf("%s-%s-%s", runtimeID(root), prefix, procedureName))
 }
 
 func devStatefulSetName(root string) string {
@@ -60,7 +77,7 @@ func devStatefulSetName(root string) string {
 }
 
 func serviceName(root string, procedureName string, portName string) string {
-	return dnsLabel(fmt.Sprintf("druid-%s-%s-%s", refPVCName(root), procedureName, portName))
+	return objectName(fmt.Sprintf("%s-%s-%s", runtimeID(root), procedureName, portName))
 }
 
 func ref(namespace string, pvc string) string {

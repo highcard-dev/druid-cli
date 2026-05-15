@@ -15,12 +15,10 @@ import (
 )
 
 type RuntimeScrollManager struct {
-	store RuntimeScrollStore
+	store ports.RuntimeScrollStore
 }
 
-var ErrScrollAlreadyExists = errors.New("runtime scroll already exists")
-
-func NewRuntimeScrollManager(store RuntimeScrollStore) *RuntimeScrollManager {
+func NewRuntimeScrollManager(store ports.RuntimeScrollStore) *RuntimeScrollManager {
 	return &RuntimeScrollManager{store: store}
 }
 
@@ -50,8 +48,8 @@ func (m *RuntimeScrollManager) CreateWithDigest(artifact string, artifactDigest 
 		return nil, err
 	}
 	if _, err := m.store.GetScroll(id); err == nil {
-		return nil, fmt.Errorf("%w: %s", ErrScrollAlreadyExists, id)
-	} else if !errors.Is(err, ErrScrollNotFound) {
+		return nil, fmt.Errorf("%w: %s", domain.ErrRuntimeScrollAlreadyExists, id)
+	} else if !errors.Is(err, domain.ErrRuntimeScrollNotFound) {
 		return nil, err
 	}
 

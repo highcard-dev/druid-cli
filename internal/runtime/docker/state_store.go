@@ -1,4 +1,4 @@
-package services
+package docker
 
 import (
 	"database/sql"
@@ -10,42 +10,38 @@ import (
 	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
+	"github.com/highcard-dev/daemon/internal/utils"
 	_ "modernc.org/sqlite"
 )
 
-var ErrScrollNotFound = errors.New("runtime scroll not found")
-
-type RuntimeStateStore struct {
+type StateStore struct {
 	stateDir string
 	dbPath   string
 }
 
-type RuntimeScrollStore interface {
-	StateDir() string
-	Root(id string) string
-	CreateScroll(scroll *domain.RuntimeScroll) error
-	ListScrolls() ([]*domain.RuntimeScroll, error)
-	GetScroll(id string) (*domain.RuntimeScroll, error)
-	UpdateScroll(scroll *domain.RuntimeScroll) error
-	DeleteScroll(id string) error
-}
-
-func NewRuntimeStateStore(stateDir string) *RuntimeStateStore {
-	return &RuntimeStateStore{
+func NewStateStore(stateDir string) (*StateStore, error) {
+	if stateDir == "" {
+		defaultStateDir, err := utils.DefaultRuntimeStateDir()
+		if err != nil {
+			return nil, err
+		}
+		stateDir = defaultStateDir
+	}
+	return &StateStore{
 		stateDir: stateDir,
 		dbPath:   filepath.Join(stateDir, "state.db"),
-	}
+	}, nil
 }
 
-func (s *RuntimeStateStore) StateDir() string {
+func (s *StateStore) StateDir() string {
 	return s.stateDir
 }
 
-func (s *RuntimeStateStore) Root(id string) string {
+func (s *StateStore) Root(id string) string {
 	return filepath.Join(s.stateDir, "scrolls", id)
 }
 
-func (s *RuntimeStateStore) CreateScroll(scroll *domain.RuntimeScroll) error {
+func (s *StateStore) CreateScroll(scroll *domain.RuntimeScroll) error {
 	db, err := s.open()
 	if err != nil {
 		return err
@@ -80,7 +76,7 @@ func (s *RuntimeStateStore) CreateScroll(scroll *domain.RuntimeScroll) error {
 	return nil
 }
 
-func (s *RuntimeStateStore) ListScrolls() ([]*domain.RuntimeScroll, error) {
+func (s *StateStore) ListScrolls() ([]*domain.RuntimeScroll, error) {
 	db, err := s.open()
 	if err != nil {
 		return nil, err
@@ -108,7 +104,7 @@ func (s *RuntimeStateStore) ListScrolls() ([]*domain.RuntimeScroll, error) {
 	return scrolls, rows.Err()
 }
 
-func (s *RuntimeStateStore) GetScroll(id string) (*domain.RuntimeScroll, error) {
+func (s *StateStore) GetScroll(id string) (*domain.RuntimeScroll, error) {
 	db, err := s.open()
 	if err != nil {
 		return nil, err
@@ -122,12 +118,12 @@ func (s *RuntimeStateStore) GetScroll(id string) (*domain.RuntimeScroll, error) 
 	`, id)
 	scroll, err := scanRuntimeScroll(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrScrollNotFound
+		return nil, domain.ErrRuntimeScrollNotFound
 	}
 	return scroll, err
 }
 
-func (s *RuntimeStateStore) UpdateScroll(scroll *domain.RuntimeScroll) error {
+func (s *StateStore) UpdateScroll(scroll *domain.RuntimeScroll) error {
 	db, err := s.open()
 	if err != nil {
 		return err
@@ -156,12 +152,12 @@ func (s *RuntimeStateStore) UpdateScroll(scroll *domain.RuntimeScroll) error {
 		return err
 	}
 	if changed == 0 {
-		return ErrScrollNotFound
+		return domain.ErrRuntimeScrollNotFound
 	}
 	return nil
 }
 
-func (s *RuntimeStateStore) DeleteScroll(id string) error {
+func (s *StateStore) DeleteScroll(id string) error {
 	db, err := s.open()
 	if err != nil {
 		return err
@@ -177,12 +173,12 @@ func (s *RuntimeStateStore) DeleteScroll(id string) error {
 		return err
 	}
 	if changed == 0 {
-		return ErrScrollNotFound
+		return domain.ErrRuntimeScrollNotFound
 	}
 	return nil
 }
 
-func (s *RuntimeStateStore) open() (*sql.DB, error) {
+func (s *StateStore) open() (*sql.DB, error) {
 	if err := os.MkdirAll(s.stateDir, 0755); err != nil {
 		return nil, err
 	}

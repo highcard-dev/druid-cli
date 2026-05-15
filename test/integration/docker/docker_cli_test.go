@@ -231,8 +231,6 @@ ports:
   - name: http
     protocol: http
     port: %d
-    mandatory: true
-    sleep_handler: generic
 commands:
   start:
     run: restart
@@ -245,12 +243,11 @@ commands:
         mounts:
           - path: /runtime
             sub_path: .
+        env:
+          DRUID_ROOT: /runtime
+          DRUID_PORT_HTTP_COLDSTARTER: generic
         command:
           - druid-coldstarter
-          - --root
-          - /runtime
-          - --status-file
-          - .coldstarter-finished.json
       - id: web
         image: busybox:1.36
         expectedPorts:

@@ -89,6 +89,9 @@ components:
         owner_id:
           type: string
           description: Runtime owner id used for customer-facing route authorization.
+        namespace:
+          type: string
+          description: Kubernetes namespace for runtime resources. Ignored by non-Kubernetes backends.
         registry_credentials:
           type: array
           items:
@@ -110,6 +113,9 @@ components:
         owner_id:
           type: string
           description: Runtime owner id used for customer-facing route authorization.
+        namespace:
+          type: string
+          description: Kubernetes namespace for runtime resources. Ignored by non-Kubernetes backends.
         registry_credentials:
           type: array
           items:

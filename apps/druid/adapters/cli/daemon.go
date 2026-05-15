@@ -131,7 +131,8 @@ func runRuntimeDaemon() error {
 		Websocket: websocketHandler,
 	}
 
-	managementApp := fiber.New(fiber.Config{DisableStartupMessage: true})
+	managementApp := fiber.New(fiber.Config{DisableStartupMessage: true, ErrorHandler: runtimehandlers.ErrorHandler})
+	managementApp.Use(runtimehandlers.RequestLogger)
 	if runtimeInternalToken != "" {
 		managementApp.Use(func(c *fiber.Ctx) error {
 			path := c.Path()
@@ -152,7 +153,8 @@ func runRuntimeDaemon() error {
 
 	var publicApp *fiber.App
 	if runtimePublicListen != "" {
-		publicApp = fiber.New(fiber.Config{DisableStartupMessage: true})
+		publicApp = fiber.New(fiber.Config{DisableStartupMessage: true, ErrorHandler: runtimehandlers.ErrorHandler})
+		publicApp.Use(runtimehandlers.RequestLogger)
 		runtimehandlers.RegisterPublicRoutes(publicApp, handlers)
 	}
 	var callbackApp *fiber.App
@@ -160,7 +162,8 @@ func runRuntimeDaemon() error {
 		runtimeWorkerCallbackListen = os.Getenv("DRUID_WORKER_CALLBACK_LISTEN")
 	}
 	if runtimeWorkerCallbackListen != "" {
-		callbackApp = fiber.New(fiber.Config{DisableStartupMessage: true})
+		callbackApp = fiber.New(fiber.Config{DisableStartupMessage: true, ErrorHandler: runtimehandlers.ErrorHandler})
+		callbackApp.Use(runtimehandlers.RequestLogger)
 		callbackapi.RegisterHandlers(callbackApp, runtimeCallbackHandler{callbacks: callbacks})
 	}
 	return listenRuntimeHTTP(managementApp, publicApp, callbackApp, runtime.Store.StateDir())

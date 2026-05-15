@@ -70,9 +70,13 @@ func (h *ScrollHandler) CreateScroll(c *fiber.Ctx) error {
 	if request.OwnerId != nil {
 		ownerID = *request.OwnerId
 	}
-	runtimeScroll, err := h.supervisor.CreateWithOwner(request.Artifact, name, ownerID, registryCredentials(request.RegistryCredentials))
+	namespace := ""
+	if request.Namespace != nil {
+		namespace = *request.Namespace
+	}
+	runtimeScroll, err := h.supervisor.CreateWithOwner(request.Artifact, name, ownerID, namespace, registryCredentials(request.RegistryCredentials))
 	if err != nil {
-		if errors.Is(err, services.ErrScrollAlreadyExists) {
+		if errors.Is(err, domain.ErrRuntimeScrollAlreadyExists) {
 			return fiber.NewError(fiber.StatusConflict, err.Error())
 		}
 		if errors.Is(err, appservices.ErrRuntimeMaterializationUnsupported) {
@@ -98,7 +102,11 @@ func (h *ScrollHandler) EnsureScroll(c *fiber.Ctx) error {
 	if request.OwnerId != nil {
 		ownerID = *request.OwnerId
 	}
-	runtimeScroll, err := h.supervisor.EnsureWithOwner(request.Artifact, name, ownerID, registryCredentials(request.RegistryCredentials))
+	namespace := ""
+	if request.Namespace != nil {
+		namespace = *request.Namespace
+	}
+	runtimeScroll, err := h.supervisor.EnsureWithOwner(request.Artifact, name, ownerID, namespace, registryCredentials(request.RegistryCredentials))
 	if err != nil {
 		if errors.Is(err, appservices.ErrRuntimeMaterializationUnsupported) {
 			return fiber.NewError(fiber.StatusNotImplemented, err.Error())
@@ -352,7 +360,7 @@ func (h *ScrollHandler) RestoreScroll(c *fiber.Ctx, id string) error {
 
 func (h *ScrollHandler) getScroll(id string) (*domain.RuntimeScroll, error) {
 	runtimeScroll, err := h.supervisor.Get(id)
-	if errors.Is(err, services.ErrScrollNotFound) {
+	if errors.Is(err, domain.ErrRuntimeScrollNotFound) {
 		return nil, fiber.NewError(fiber.StatusNotFound, err.Error())
 	}
 	return runtimeScroll, err

@@ -14,7 +14,6 @@ import (
 	k8sclient "k8s.io/client-go/kubernetes"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
-	coreservices "github.com/highcard-dev/daemon/internal/core/services"
 )
 
 const (
@@ -84,7 +83,7 @@ func (s *ConfigMapStateStore) CreateScroll(scroll *domain.RuntimeScroll) error {
 	}
 	_, err = s.client.CoreV1().ConfigMaps(s.namespace).Create(context.Background(), configMap, metav1.CreateOptions{})
 	if apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("%w: %s", coreservices.ErrScrollAlreadyExists, scroll.ID)
+		return fmt.Errorf("%w: %s", domain.ErrRuntimeScrollAlreadyExists, scroll.ID)
 	}
 	return err
 }
@@ -115,7 +114,7 @@ func (s *ConfigMapStateStore) ListScrolls() ([]*domain.RuntimeScroll, error) {
 func (s *ConfigMapStateStore) GetScroll(id string) (*domain.RuntimeScroll, error) {
 	configMap, err := s.client.CoreV1().ConfigMaps(s.namespace).Get(context.Background(), scrollConfigMapName(id), metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		return nil, coreservices.ErrScrollNotFound
+		return nil, domain.ErrRuntimeScrollNotFound
 	}
 	if err != nil {
 		return nil, err
@@ -126,7 +125,7 @@ func (s *ConfigMapStateStore) GetScroll(id string) (*domain.RuntimeScroll, error
 func (s *ConfigMapStateStore) UpdateScroll(scroll *domain.RuntimeScroll) error {
 	current, err := s.client.CoreV1().ConfigMaps(s.namespace).Get(context.Background(), scrollConfigMapName(scroll.ID), metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		return coreservices.ErrScrollNotFound
+		return domain.ErrRuntimeScrollNotFound
 	}
 	if err != nil {
 		return err
@@ -139,7 +138,7 @@ func (s *ConfigMapStateStore) UpdateScroll(scroll *domain.RuntimeScroll) error {
 	next.ResourceVersion = current.ResourceVersion
 	_, err = s.client.CoreV1().ConfigMaps(s.namespace).Update(context.Background(), next, metav1.UpdateOptions{})
 	if apierrors.IsNotFound(err) {
-		return coreservices.ErrScrollNotFound
+		return domain.ErrRuntimeScrollNotFound
 	}
 	return err
 }
@@ -147,7 +146,7 @@ func (s *ConfigMapStateStore) UpdateScroll(scroll *domain.RuntimeScroll) error {
 func (s *ConfigMapStateStore) DeleteScroll(id string) error {
 	err := s.client.CoreV1().ConfigMaps(s.namespace).Delete(context.Background(), scrollConfigMapName(id), metav1.DeleteOptions{})
 	if apierrors.IsNotFound(err) {
-		return coreservices.ErrScrollNotFound
+		return domain.ErrRuntimeScrollNotFound
 	}
 	return err
 }

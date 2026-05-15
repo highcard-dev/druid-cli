@@ -32,28 +32,20 @@ type Chunks struct {
 	Chunks     []*Chunks `yaml:"chunks,omitempty" json:"chunks,omitempty"`
 }
 
-type ColdStarterVars struct {
-	Name  string `yaml:"name"`
-	Value string `yaml:"value"`
-}
-
 type Port struct {
-	Port               int               `yaml:"port" json:"port"`
-	Protocol           string            `yaml:"protocol" json:"protocol"`
-	Name               string            `yaml:"name" json:"name"`
-	SleepHandler       *string           `yaml:"sleep_handler" json:"sleep_handler"`
-	Mandatory          bool              `yaml:"mandatory" json:"mandatory"`
-	Vars               []ColdStarterVars `yaml:"vars" json:"vars"`
-	StartDelay         uint              `yaml:"start_delay" json:"start_delay"`
-	FinishAfterCommand string            `yaml:"finish_after_command" json:"finish_after_command"`
-	Description        string            `yaml:"description,omitempty" json:"description,omitempty"`
+	Port        int    `yaml:"port" json:"port"`
+	Protocol    string `yaml:"protocol" json:"protocol"`
+	Name        string `yaml:"name" json:"name"`
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 }
 
 type AugmentedPort struct {
 	Port
-	InactiveSince    time.Time `json:"inactive_since"`
-	InactiveSinceSec uint      `json:"inactive_since_sec"`
-	Open             bool      `json:"open"`
+	ColdstarterHandler string            `json:"-"`
+	ColdstarterVars    map[string]string `json:"-"`
+	InactiveSince      time.Time         `json:"inactive_since"`
+	InactiveSinceSec   uint              `json:"inactive_since_sec"`
+	Open               bool              `json:"open"`
 }
 
 type File struct {

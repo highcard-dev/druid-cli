@@ -7,8 +7,6 @@ ports:
   - name: minecraft
     protocol: tcp
     port: 25565
-    sleep_handler: generic
-    mandatory: true
 
 serve: "start"
 commands:
@@ -41,7 +39,7 @@ commands:
             sub_path: .
         env:
           DRUID_ROOT: "/runtime"
-          DRUID_COLDSTARTER_STATUS_FILE: ".coldstarter-finished.json"
+          DRUID_PORT_MINECRAFT_COLDSTARTER: generic
         command:
           - druid-coldstarter
 

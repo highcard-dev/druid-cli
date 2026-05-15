@@ -17,12 +17,12 @@ import (
 
 var ErrRuntimeMaterializationUnsupported = errors.New("runtime backend does not support daemon materialization")
 
-func (s *RuntimeSupervisor) materializeNewScroll(ctx context.Context, runtimeService ports.RuntimeBackendInterface, artifact string, name string, registryCredentials []domain.RegistryCredential) (*ports.RuntimeMaterialization, error) {
+func (s *RuntimeSupervisor) materializeNewScroll(ctx context.Context, runtimeService ports.RuntimeBackendInterface, artifact string, name string, namespace string, registryCredentials []domain.RegistryCredential) (*ports.RuntimeMaterialization, error) {
 	id := coreservices.RuntimeScrollIDFromName(name)
 	if id == "" {
 		return nil, ErrRuntimeMaterializationUnsupported
 	}
-	return s.runPullWorker(ctx, runtimeService, ports.RuntimeWorkerModeCreate, id, artifact, s.store.Root(id), registryCredentials)
+	return s.runPullWorker(ctx, runtimeService, ports.RuntimeWorkerModeCreate, id, artifact, runtimeService.RootRef(id, namespace), registryCredentials)
 }
 
 func (s *RuntimeSupervisor) runPullWorker(ctx context.Context, runtimeService ports.RuntimeBackendInterface, mode ports.RuntimeWorkerMode, runtimeID string, artifact string, root string, registryCredentials []domain.RegistryCredential) (*ports.RuntimeMaterialization, error) {

@@ -7,11 +7,9 @@ ports:
   - name: http
     protocol: http
     port: 8080
-    mandatory: true
   - name: redis
     protocol: tcp
     port: 6379
-    mandatory: true
 
 serve: "start"
 commands:
