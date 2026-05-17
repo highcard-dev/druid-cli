@@ -114,6 +114,7 @@ func (sc *ProcedureLauncher) Run(cmd string) error {
 		Command:      command,
 		Root:         root,
 		GlobalPorts:  file.Ports,
+		Routing:      routing,
 		ProcedureEnv: procedureEnv,
 	})
 	if err != nil {

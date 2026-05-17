@@ -31,6 +31,8 @@ k3d-build-pull-image: ## Build the unified Druid runtime image and import it int
 	docker build . -f Dockerfile --build-arg "VERSION=$(VERSION)" -t "$(DRUID_K8S_PULL_IMAGE)"
 	@docker rm -f "k3d-$(K3D_CLUSTER)-tools" >/dev/null 2>&1 || true
 	k3d image import "$(DRUID_K8S_PULL_IMAGE)" -c "$(K3D_CLUSTER)"
+build-docker:
+	docker build . -f Dockerfile --build-arg "VERSION=$(VERSION)" -t "$(DRUID_K8S_PULL_IMAGE)"
 
 build-x86-docker:
 	docker run -e GOOS=linux -e GOARCH=amd64 -it --rm -v ./:/app -w /app --entrypoint=/bin/bash docker.elastic.co/beats-dev/golang-crossbuild:1.22.5-main  -c 'CGO_ENABLED=1 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/x86/druid'

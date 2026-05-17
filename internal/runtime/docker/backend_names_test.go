@@ -1,6 +1,8 @@
 package docker
 
 import (
+	"errors"
+	"runtime"
 	"testing"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -14,6 +16,13 @@ func TestContainerNameUsesDeploymentCommandAndProcedureIndex(t *testing.T) {
 	want := "0636a354-b3f4-4471-8749-3e17ab6c52-start-0"
 	if got != want {
 		t.Fatalf("container name = %q, want %q", got, want)
+	}
+}
+
+func TestDockerSetupErrorMarksPortConflictNonRetryable(t *testing.T) {
+	err := dockerSetupError(errors.New("Error response from daemon: ports are not available: listen tcp 0.0.0.0:25565: bind: address already in use"))
+	if !domain.IsNonRetryableCommandError(err) {
+		t.Fatalf("error = %v, want non-retryable", err)
 	}
 }
 
@@ -45,9 +54,15 @@ func TestRoutingTargetsUseFirstConcreteProcedureForSharedDockerPort(t *testing.T
 }
 
 func TestContainerSpecAddsHostGatewayExtraHost(t *testing.T) {
-	_, hostConfig, err := containerSpec("start", &domain.Procedure{Image: "busybox"}, "docker-volume://druid-scroll-data", nil, nil)
+	_, hostConfig, err := containerSpec("start", &domain.Procedure{Image: "busybox"}, "docker-volume://druid-scroll-data", nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if runtime.GOOS != "linux" {
+		if len(hostConfig.ExtraHosts) != 0 {
+			t.Fatalf("extra hosts = %#v, want none on %s", hostConfig.ExtraHosts, runtime.GOOS)
+		}
+		return
 	}
 	for _, extraHost := range hostConfig.ExtraHosts {
 		if extraHost == dockerHostGatewayExtraHost {

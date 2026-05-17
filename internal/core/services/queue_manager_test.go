@@ -1,6 +1,7 @@
 package services_test
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
@@ -216,6 +217,57 @@ func TestQueueManager(t *testing.T) {
 			t.Errorf("dep2.1 status must be done, got %s", queue["dep2.1"])
 		}
 	})
+}
+
+func TestQueueManagerRestartStopsOnNonRetryableError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
+	procedureLauncher := mock_ports.NewMockProcedureLauchnerInterface(ctrl)
+	queueManager := services.NewQueueManager(scrollService, procedureLauncher)
+
+	scrollService.EXPECT().GetCommand("start").Return(&domain.CommandInstructionSet{Run: domain.RunModeRestart}, nil).AnyTimes()
+	procedureLauncher.EXPECT().Run("start").Return(domain.NonRetryableCommand(errors.New("port already in use"))).Times(1)
+
+	go queueManager.Work()
+	if err := queueManager.AddTempItem("start"); err != nil {
+		t.Fatal(err)
+	}
+	queueManager.WaitUntilEmpty()
+
+	if got := queueManager.GetQueue()["start"]; got != domain.ScrollLockStatusError {
+		t.Fatalf("start = %s, want error", got)
+	}
+}
+
+func TestQueueManagerRestartRetriesRetryableError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
+	procedureLauncher := mock_ports.NewMockProcedureLauchnerInterface(ctrl)
+	queueManager := services.NewQueueManager(scrollService, procedureLauncher)
+
+	scrollService.EXPECT().GetCommand("start").Return(&domain.CommandInstructionSet{Run: domain.RunModeRestart}, nil).AnyTimes()
+	attempt := 0
+	procedureLauncher.EXPECT().Run("start").DoAndReturn(func(string) error {
+		attempt++
+		if attempt == 1 {
+			return errors.New("temporary crash")
+		}
+		return domain.NonRetryableCommand(errors.New("stop test"))
+	}).Times(2)
+
+	go queueManager.Work()
+	if err := queueManager.AddTempItem("start"); err != nil {
+		t.Fatal(err)
+	}
+	queueManager.WaitUntilEmpty()
+
+	if attempt != 2 {
+		t.Fatalf("attempts = %d, want retry", attempt)
+	}
 }
 
 func TestQueueManagerStatusObserver(t *testing.T) {

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -48,6 +49,13 @@ type Config struct {
 }
 
 const dockerHostGatewayExtraHost = "host.docker.internal:host-gateway"
+
+func dockerExtraHosts() []string {
+	if runtime.GOOS == "linux" {
+		return []string{dockerHostGatewayExtraHost}
+	}
+	return nil
+}
 
 func (c Config) WithDefaults() Config {
 	if c.WorkerImage == "" {
@@ -140,12 +148,12 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 			if procedure.Image == "" {
 				return nil, fmt.Errorf("docker runtime procedure %s requires image", procedureName)
 			}
-			if err := b.startPersistentContainer(runtimeConsoleID(command.ScrollID, procedureName), procedureName, procedureResourceName(command.Name, idx), procedure, command.Root, command.GlobalPorts, env); err != nil {
+			if err := b.startPersistentContainer(runtimeConsoleID(command.ScrollID, procedureName), procedureName, procedureResourceName(command.Name, idx), procedure, command.Root, command.GlobalPorts, command.Routing, env); err != nil {
 				return nil, err
 			}
 			continue
 		}
-		exitCode, err := b.runProcedure(runtimeConsoleID(command.ScrollID, procedureName), procedureName, procedureResourceName(command.Name, idx), procedure, command.Root, command.GlobalPorts, env)
+		exitCode, err := b.runProcedure(runtimeConsoleID(command.ScrollID, procedureName), procedureName, procedureResourceName(command.Name, idx), procedure, command.Root, command.GlobalPorts, command.Routing, env)
 		if err != nil {
 			return exitCode, err
 		}
@@ -159,14 +167,14 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 	return nil, nil
 }
 
-func (b *Backend) runProcedure(consoleID string, procedureName string, resourceName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, env map[string]string) (*int, error) {
+func (b *Backend) runProcedure(consoleID string, procedureName string, resourceName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, routing []domain.RuntimeRouteAssignment, env map[string]string) (*int, error) {
 	if procedure.IsSignal() {
 		return nil, b.Signal(procedureName, procedure.Target, procedure.Signal, root)
 	}
 	if procedure.Image == "" {
 		return nil, fmt.Errorf("docker runtime procedure %s requires image", procedureName)
 	}
-	return b.runContainer(consoleID, procedureName, resourceName, procedure, root, globalPorts, env)
+	return b.runContainer(consoleID, procedureName, resourceName, procedure, root, globalPorts, routing, env)
 }
 
 func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
@@ -298,7 +306,7 @@ func (b *Backend) StartDev(ctx context.Context, action ports.RuntimeDevAction) e
 	for _, command := range action.HotReloadCommands {
 		args = append(args, "--command", command)
 	}
-	hostConfig := &container.HostConfig{Mounts: []mount.Mount{rootMount}, ExtraHosts: []string{dockerHostGatewayExtraHost}}
+	hostConfig := &container.HostConfig{Mounts: []mount.Mount{rootMount}, ExtraHosts: dockerExtraHosts()}
 	for _, assignment := range action.Routing {
 		if assignment.PublicPort == 0 || (assignment.PortName != "webdav" && assignment.Name != "webdav") {
 			continue
@@ -502,7 +510,7 @@ func (b *Backend) runWorkerRootCommand(ctx context.Context, root string, command
 	if err != nil {
 		return err
 	}
-	hostConfig := &container.HostConfig{Mounts: []mount.Mount{rootMount}, ExtraHosts: []string{dockerHostGatewayExtraHost}}
+	hostConfig := &container.HostConfig{Mounts: []mount.Mount{rootMount}, ExtraHosts: dockerExtraHosts()}
 	if b.config.Network != "" {
 		hostConfig.NetworkMode = container.NetworkMode(b.config.Network)
 	}
@@ -625,7 +633,7 @@ func (b *Backend) withHelperContainer(ctx context.Context, root string, fn func(
 	if err := b.pullImage(ctx, b.config.WorkerImage); err != nil {
 		return err
 	}
-	hostConfig := &container.HostConfig{Mounts: []mount.Mount{rootMount}, ExtraHosts: []string{dockerHostGatewayExtraHost}}
+	hostConfig := &container.HostConfig{Mounts: []mount.Mount{rootMount}, ExtraHosts: dockerExtraHosts()}
 	if b.config.Network != "" {
 		hostConfig.NetworkMode = container.NetworkMode(b.config.Network)
 	}
@@ -718,7 +726,7 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 			artifact = "/artifact-src/" + filepath.Base(abs)
 		}
 	}
-	hostConfig := &container.HostConfig{Mounts: mounts, ExtraHosts: []string{dockerHostGatewayExtraHost}}
+	hostConfig := &container.HostConfig{Mounts: mounts, ExtraHosts: dockerExtraHosts()}
 	if b.config.Network != "" {
 		hostConfig.NetworkMode = container.NetworkMode(b.config.Network)
 	}
@@ -776,7 +784,7 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 	return nil
 }
 
-func (b *Backend) runContainer(consoleID string, commandName string, resourceName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, env map[string]string) (*int, error) {
+func (b *Backend) runContainer(consoleID string, commandName string, resourceName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, routing []domain.RuntimeRouteAssignment, env map[string]string) (*int, error) {
 	ctx := context.Background()
 	if procedure.Image == "" {
 		return nil, errors.New("docker image is required")
@@ -792,7 +800,7 @@ func (b *Backend) runContainer(consoleID string, commandName string, resourceNam
 		return nil, err
 	}
 
-	config, hostConfig, err := containerSpec(commandName, procedure, root, globalPorts, env)
+	config, hostConfig, err := containerSpec(commandName, procedure, root, globalPorts, routing, env)
 	if err != nil {
 		return nil, err
 	}
@@ -801,7 +809,7 @@ func (b *Backend) runContainer(consoleID string, commandName string, resourceNam
 
 	created, err := b.client.ContainerCreate(ctx, config, hostConfig, nil, nil, containerName)
 	if err != nil {
-		return nil, err
+		return nil, dockerSetupError(err)
 	}
 	b.setContainer(commandName, created.ID)
 	defer func() {
@@ -846,7 +854,7 @@ func (b *Backend) runContainer(consoleID string, commandName string, resourceNam
 	}()
 
 	if err := b.client.ContainerStart(ctx, created.ID, container.StartOptions{}); err != nil {
-		return nil, err
+		return nil, dockerSetupError(err)
 	}
 
 	statusCh, errCh := b.client.ContainerWait(ctx, created.ID, container.WaitConditionNotRunning)
@@ -866,7 +874,7 @@ func (b *Backend) runContainer(consoleID string, commandName string, resourceNam
 	return &exitCode, nil
 }
 
-func (b *Backend) startPersistentContainer(consoleID string, commandName string, resourceName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, env map[string]string) error {
+func (b *Backend) startPersistentContainer(consoleID string, commandName string, resourceName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, routing []domain.RuntimeRouteAssignment, env map[string]string) error {
 	ctx := context.Background()
 	if procedure.Image == "" {
 		return errors.New("docker image is required")
@@ -880,7 +888,7 @@ func (b *Backend) startPersistentContainer(consoleID string, commandName string,
 	if err := b.pullImage(ctx, procedure.Image); err != nil {
 		return err
 	}
-	config, hostConfig, err := containerSpec(commandName, procedure, root, globalPorts, env)
+	config, hostConfig, err := containerSpec(commandName, procedure, root, globalPorts, routing, env)
 	if err != nil {
 		return err
 	}
@@ -888,7 +896,7 @@ func (b *Backend) startPersistentContainer(consoleID string, commandName string,
 	_ = b.client.ContainerRemove(ctx, containerName, container.RemoveOptions{Force: true})
 	created, err := b.client.ContainerCreate(ctx, config, hostConfig, nil, nil, containerName)
 	if err != nil {
-		return err
+		return dockerSetupError(err)
 	}
 	attach, err := b.client.ContainerAttach(ctx, created.ID, container.AttachOptions{
 		Stream: true,
@@ -929,7 +937,7 @@ func (b *Backend) startPersistentContainer(consoleID string, commandName string,
 		b.clearContainer(commandName)
 		b.clearStdin(commandName)
 		_ = b.client.ContainerRemove(context.Background(), created.ID, container.RemoveOptions{Force: true})
-		return err
+		return dockerSetupError(err)
 	}
 
 	go func() {
@@ -1005,25 +1013,29 @@ func (w channelWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func containerSpec(commandName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, env map[string]string) (*container.Config, *container.HostConfig, error) {
+func containerSpec(commandName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, routing []domain.RuntimeRouteAssignment, env map[string]string) (*container.Config, *container.HostConfig, error) {
 	if procedure.Image == "" {
 		return nil, nil, errors.New("docker image is required")
 	}
 
 	exposedPorts := nat.PortSet{}
 	portBindings := nat.PortMap{}
+	globalPortsByName := portsByName(globalPorts)
 	for _, expectedPort := range procedure.ExpectedPorts {
-		port, ok := portsByName(globalPorts)[expectedPort.Name]
+		port, ok := globalPortsByName[expectedPort.Name]
 		if !ok {
 			return nil, nil, fmt.Errorf("expected port %s is not defined in top-level ports", expectedPort.Name)
 		}
-		protocol := port.Protocol
-		if protocol == "" || protocol == "http" || protocol == "https" {
-			protocol = "tcp"
-		}
-		dockerPort := nat.Port(fmt.Sprintf("%d/%s", port.Port, protocol))
+		dockerPort := dockerRuntimePort(port.Port, port.Protocol)
 		exposedPorts[dockerPort] = struct{}{}
-		portBindings[dockerPort] = []nat.PortBinding{{HostPort: fmt.Sprintf("%d", port.Port)}}
+		if assignment, ok := routeAssignmentForPort(expectedPort.Name, routing); ok && assignment.PublicPort > 0 {
+			dockerPort = dockerRuntimePort(port.Port, firstNonEmpty(assignment.Protocol, port.Protocol))
+			exposedPorts[dockerPort] = struct{}{}
+			portBindings[dockerPort] = []nat.PortBinding{{
+				HostIP:   assignment.ExternalIP,
+				HostPort: fmt.Sprintf("%d", assignment.PublicPort),
+			}}
+		}
 	}
 
 	mounts := []mount.Mount{}
@@ -1056,8 +1068,33 @@ func containerSpec(commandName string, procedure *domain.Procedure, root string,
 		}, &container.HostConfig{
 			Mounts:       mounts,
 			PortBindings: portBindings,
-			ExtraHosts:   []string{dockerHostGatewayExtraHost},
+			ExtraHosts:   dockerExtraHosts(),
 		}, nil
+}
+
+func routeAssignmentForPort(portName string, routing []domain.RuntimeRouteAssignment) (domain.RuntimeRouteAssignment, bool) {
+	for _, assignment := range routing {
+		if assignment.PortName == portName || assignment.Name == portName {
+			return assignment, true
+		}
+	}
+	return domain.RuntimeRouteAssignment{}, false
+}
+
+func dockerRuntimePort(port int, protocol string) nat.Port {
+	if protocol == "" || protocol == "http" || protocol == "https" {
+		protocol = "tcp"
+	}
+	return nat.Port(fmt.Sprintf("%d/%s", port, protocol))
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func procedureDataSubPath(subPath string) string {
@@ -1142,6 +1179,17 @@ func dockerWorkerEnv(base []string) []string {
 	return base
 }
 
+func dockerSetupError(err error) error {
+	if err == nil {
+		return nil
+	}
+	message := err.Error()
+	if strings.Contains(message, "ports are not available") || strings.Contains(message, "bind: address already in use") {
+		return domain.NonRetryableCommand(err)
+	}
+	return err
+}
+
 type ContainerSpec struct {
 	Image        string
 	Command      []string
@@ -1157,7 +1205,11 @@ func BuildContainerSpec(commandName string, procedure *domain.Procedure, root st
 }
 
 func BuildContainerSpecWithEnv(commandName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, env map[string]string) (*ContainerSpec, error) {
-	config, hostConfig, err := containerSpec(commandName, procedure, root, globalPorts, env)
+	return BuildContainerSpecWithRouting(commandName, procedure, root, globalPorts, nil, env)
+}
+
+func BuildContainerSpecWithRouting(commandName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, routing []domain.RuntimeRouteAssignment, env map[string]string) (*ContainerSpec, error) {
+	config, hostConfig, err := containerSpec(commandName, procedure, root, globalPorts, routing, env)
 	if err != nil {
 		return nil, err
 	}

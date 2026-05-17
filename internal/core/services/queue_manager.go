@@ -308,7 +308,7 @@ func (sc *QueueManager) RunQueue() {
 
 				if err != nil {
 					logger.Log().Error("Error running command", zap.String("command", c), zap.Error(err))
-					if !isRestartMode {
+					if !isRestartMode || domain.IsNonRetryableCommandError(err) {
 						sc.setError(c, err)
 						return
 					}

@@ -52,6 +52,36 @@ func TestProcedureLauncherPassesCommandContextToRuntimeBackend(t *testing.T) {
 	}
 }
 
+func TestProcedureLauncherPassesRoutingToRuntimeBackend(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
+	runtimeBackend := mock_ports.NewMockRuntimeBackendInterface(ctrl)
+	command := &domain.CommandInstructionSet{Procedures: []*domain.Procedure{{Image: "alpine:3.20"}}}
+	routing := []domain.RuntimeRouteAssignment{{PortName: "http", PublicPort: 18080}}
+
+	scrollService.EXPECT().GetCommand("serve").Return(command, nil)
+	scrollService.EXPECT().GetFile().Return(&domain.File{Ports: []domain.Port{{Name: "http", Port: 80}}})
+	runtimeBackend.EXPECT().Name().Return("docker")
+	runtimeBackend.EXPECT().RunCommand(gomock.Any()).DoAndReturn(func(runtimeCommand ports.RuntimeCommand) (*int, error) {
+		if len(runtimeCommand.Routing) != 1 || runtimeCommand.Routing[0].PublicPort != 18080 {
+			t.Fatalf("Routing = %#v", runtimeCommand.Routing)
+		}
+		return nil, nil
+	})
+
+	launcher, err := services.NewProcedureLauncherForRuntime(scrollService, runtimeBackend, "/runtime-data", "scroll-a", "", func() []domain.RuntimeRouteAssignment {
+		return routing
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := launcher.Run("serve"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestProcedureLauncherPassesScrollIDToRuntimeBackend(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

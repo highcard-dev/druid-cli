@@ -16,7 +16,10 @@ import (
 	"github.com/highcard-dev/daemon/internal/utils"
 )
 
-const daemonRequestTimeout = 5 * time.Second
+const (
+	daemonDialTimeout    = 5 * time.Second
+	daemonRequestTimeout = 30 * time.Minute
+)
 
 type OpenAPIClient struct {
 	client     *api.ClientWithResponses
@@ -43,7 +46,7 @@ func NewOpenAPIClientForTarget(daemonSocket string, daemonURL string) (*OpenAPIC
 	}
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network string, addr string) (net.Conn, error) {
-			return (&net.Dialer{Timeout: daemonRequestTimeout}).DialContext(ctx, "unix", daemonSocket)
+			return (&net.Dialer{Timeout: daemonDialTimeout}).DialContext(ctx, "unix", daemonSocket)
 		},
 	}
 	httpClient := &http.Client{Transport: transport, Timeout: daemonRequestTimeout}

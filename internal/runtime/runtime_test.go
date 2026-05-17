@@ -52,8 +52,28 @@ func TestDockerRunCommandBuildsCanonicalMounts(t *testing.T) {
 	if !reflect.DeepEqual(spec.Mounts, expectedMounts) {
 		t.Fatalf("unexpected mounts:\nexpected: %#v\nactual:   %#v", expectedMounts, spec.Mounts)
 	}
-	if len(spec.PortBindings) != 1 {
-		t.Fatalf("expected one port binding, got %#v", spec.PortBindings)
+	if len(spec.PortBindings) != 0 {
+		t.Fatalf("expected no implicit port bindings, got %#v", spec.PortBindings)
+	}
+}
+
+func TestDockerBuildContainerSpecPublishesOnlyAssignedRouting(t *testing.T) {
+	root := t.TempDir()
+	spec, err := docker.BuildContainerSpecWithRouting("start", &domain.Procedure{
+		Image:         "alpine:3.20",
+		ExpectedPorts: []domain.ExpectedPort{{Name: "http"}},
+	}, root, []domain.Port{{Name: "http", Port: 8080, Protocol: "http"}}, []domain.RuntimeRouteAssignment{{
+		PortName:   "http",
+		ExternalIP: "127.0.0.1",
+		PublicPort: 18080,
+		Protocol:   "https",
+	}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindings := spec.PortBindings["8080/tcp"]
+	if len(bindings) != 1 || bindings[0].HostIP != "127.0.0.1" || bindings[0].HostPort != "18080" {
+		t.Fatalf("bindings = %#v", spec.PortBindings)
 	}
 }
 

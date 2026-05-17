@@ -84,6 +84,7 @@ type RuntimeCommand struct {
 	Command      *domain.CommandInstructionSet
 	Root         string
 	GlobalPorts  []domain.Port
+	Routing      []domain.RuntimeRouteAssignment
 	ProcedureEnv map[string]map[string]string
 }
 
