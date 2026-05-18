@@ -4,11 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"path/filepath"
-	_ "net/http/pprof"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,7 +25,8 @@ import (
 	"go.uber.org/zap"
 )
 
-var jwksUrl, userId string
+var jwksUrls []string
+var userId string
 var ignoreVersionCheck bool
 var port int
 var shutdownWait int
@@ -55,7 +57,8 @@ to interact and monitor the Scroll Application`,
 		}
 
 		logger.Log().Info("Starting Scroll Daemon")
-		authorizer, err := services.NewAuthorizer(jwksUrl, userId)
+		jwksURLs := buildJWKSURLs(jwksUrls)
+		authorizer, err := services.NewAuthorizer(jwksURLs, userId)
 		if err != nil {
 			return err
 		}
@@ -154,7 +157,7 @@ to interact and monitor the Scroll Application`,
 		signalHandler := signals.NewSignalHandler(ctx, queueManager, processManager, nil, shutdownWait)
 		daemonHander := handler.NewDaemonHandler(signalHandler)
 
-		s := web.NewServer(jwksUrl, scrollHandler, scrollLogHandler, scrollMetricHandler, annotationHandler, processHandler, queueHandler, websocketHandler, portHandler, healthHandler, coldstarterHandler, daemonHander, authorizer, uiDevHandler, cwd, scrollService.GetDir())
+		s := web.NewServer(jwksURLs, scrollHandler, scrollLogHandler, scrollMetricHandler, annotationHandler, processHandler, queueHandler, websocketHandler, portHandler, healthHandler, coldstarterHandler, daemonHander, authorizer, uiDevHandler, cwd, scrollService.GetDir())
 
 		a := s.Initialize()
 
@@ -312,6 +315,25 @@ to interact and monitor the Scroll Application`,
 	},
 }
 
+func buildJWKSURLs(values []string) []string {
+	urls := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+
+	for _, url := range values {
+		url = strings.TrimSpace(url)
+		if url == "" {
+			continue
+		}
+		if _, ok := seen[url]; ok {
+			continue
+		}
+		seen[url] = struct{}{}
+		urls = append(urls, url)
+	}
+
+	return urls
+}
+
 func init() {
 	ServeCommand.Flags().StringVarP(&pprofBind, "pprof", "", "", "Enable pprof on the given bind. This is useful for debugging purposes. E.g. --pprof=localhost:6060 or --pprof=:6060")
 
@@ -319,9 +341,9 @@ func init() {
 
 	ServeCommand.Flags().IntVarP(&shutdownWait, "shutdown-wait", "", 10, "Wait interval how long the process is allowed to shutdown. First normal shutdown, then forced shutdown")
 
-	ServeCommand.Flags().StringVarP(&jwksUrl, "jwks-server", "", "", "JWKS Server to authenticate requests against")
+	ServeCommand.Flags().StringSliceVarP(&jwksUrls, "jwks-server", "", nil, "JWKS servers to authenticate requests against. Can be comma-separated or set multiple times")
 
-	ServeCommand.Flags().StringVarP(&userId, "user-id", "u", "", "Allowed user ID, if JWKS is not set. It checks claims.sub of the JWT token")
+	ServeCommand.Flags().StringVarP(&userId, "user-id", "u", "", "Allowed user ID. When JWKS authentication is enabled, checks claims.sub of the JWT token")
 
 	ServeCommand.Flags().BoolVarP(&idleScroll, "idle", "", false, "Don't start the queue manager, just use coldstarter")
 

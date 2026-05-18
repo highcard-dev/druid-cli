@@ -45,7 +45,7 @@ type Server struct {
 }
 
 func NewServer(
-	jwlsUrl string,
+	jwksURLs []string,
 	scrollHandler ports.ScrollHandlerInterface,
 	scrollLogHandler ports.ScrollLogHandlerInterface,
 	scrollMetricHandler ports.ScrollMetricHandlerInterface,
@@ -88,9 +88,9 @@ func NewServer(
 		watchHandler:                  watchHandler,
 	}
 
-	if jwlsUrl != "" {
+	if len(jwksURLs) > 0 {
 		server.jwtMiddleware = jwtware.New(jwtware.Config{
-			KeySetURLs: []string{jwlsUrl},
+			KeySetURLs: jwksURLs,
 		})
 	}
 

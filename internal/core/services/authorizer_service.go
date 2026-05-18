@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -16,13 +17,14 @@ import (
 )
 
 type AuthorizerService struct {
-	jwksUrl string
-	jwks    *keyfunc.JWKS
-	userId  string
-	tokens  map[string]time.Time
+	jwksUrls []string
+	jwks     []*keyfunc.JWKS
+	userId   string
+	tokens   map[string]time.Time
 }
 
-func NewAuthorizer(jwksURL string, userId string) (ports.AuthorizerServiceInterface, error) {
+func NewAuthorizer(jwksURLs []string, userId string) (ports.AuthorizerServiceInterface, error) {
+	jwksURLs = normalizeJWKSURLs(jwksURLs)
 
 	// Create the keyfunc options. Refresh the JWKS every hour and log errors.
 	var refreshInterval = time.Hour
@@ -33,18 +35,22 @@ func NewAuthorizer(jwksURL string, userId string) (ports.AuthorizerServiceInterf
 		},
 	}
 
-	if jwksURL != "" {
-		// Create the JWKS from the resource at the given URL.
-		var jwks, err = keyfunc.Get(jwksURL, options)
-		if err != nil {
-			return nil, err
+	if len(jwksURLs) > 0 {
+		jwksList := make([]*keyfunc.JWKS, 0, len(jwksURLs))
+		for _, jwksURL := range jwksURLs {
+			// Create the JWKS from the resource at the given URL.
+			jwks, err := keyfunc.Get(jwksURL, options)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get JWKS from %q: %w", jwksURL, err)
+			}
+			jwksList = append(jwksList, jwks)
 		}
 
 		return &AuthorizerService{
-			jwks:    jwks,
-			jwksUrl: jwksURL,
-			userId:  userId,
-			tokens:  make(map[string]time.Time),
+			jwks:     jwksList,
+			jwksUrls: jwksURLs,
+			userId:   userId,
+			tokens:   make(map[string]time.Time),
 		}, nil
 
 	} else {
@@ -54,9 +60,26 @@ func NewAuthorizer(jwksURL string, userId string) (ports.AuthorizerServiceInterf
 	}
 }
 
+func normalizeJWKSURLs(jwksURLs []string) []string {
+	normalized := make([]string, 0, len(jwksURLs))
+	seen := make(map[string]struct{}, len(jwksURLs))
+	for _, jwksURL := range jwksURLs {
+		jwksURL = strings.TrimSpace(jwksURL)
+		if jwksURL == "" {
+			continue
+		}
+		if _, ok := seen[jwksURL]; ok {
+			continue
+		}
+		seen[jwksURL] = struct{}{}
+		normalized = append(normalized, jwksURL)
+	}
+	return normalized
+}
+
 func (auth *AuthorizerService) CheckHeader(c *fiber.Ctx) (*time.Time, error) {
 
-	if auth.jwksUrl == "" {
+	if len(auth.jwksUrls) == 0 {
 		return nil, nil
 	}
 
@@ -71,8 +94,7 @@ func (auth *AuthorizerService) CheckHeader(c *fiber.Ctx) (*time.Time, error) {
 	jwtToken := splitToken[1]
 
 	// Parse the JWT.
-	token, err := jwt.Parse(jwtToken, auth.jwks.Keyfunc)
-
+	token, err := auth.parseJWT(jwtToken)
 	if err != nil {
 		return nil, errors.New("Failed to parse the JWT.\nError: " + err.Error())
 	}
@@ -103,6 +125,22 @@ func (auth *AuthorizerService) CheckHeader(c *fiber.Ctx) (*time.Time, error) {
 	}
 
 	return &tm, nil
+}
+
+func (auth *AuthorizerService) parseJWT(jwtToken string) (*jwt.Token, error) {
+	var parseErrors []string
+	for index, jwks := range auth.jwks {
+		token, err := jwt.Parse(jwtToken, jwks.Keyfunc)
+		if err == nil && token.Valid {
+			return token, nil
+		}
+		if err != nil {
+			parseErrors = append(parseErrors, fmt.Sprintf("JWKS %d: %s", index+1, err.Error()))
+			continue
+		}
+		parseErrors = append(parseErrors, fmt.Sprintf("JWKS %d: token is not valid", index+1))
+	}
+	return nil, errors.New(strings.Join(parseErrors, "; "))
 }
 
 func (auth *AuthorizerService) CheckQuery(token string) (*time.Time, error) {
