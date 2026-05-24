@@ -32,6 +32,7 @@ const (
 	configMapKeyUpdatedAt      = "updated_at"
 	configMapKeyCommandsJSON   = "commands_json"
 	configMapKeyRoutingJSON    = "routing_json"
+	configMapKeyUIPackagesJSON = "ui_packages_json"
 )
 
 type ConfigMapStateStore struct {
@@ -160,6 +161,10 @@ func runtimeScrollConfigMap(namespace string, scroll *domain.RuntimeScroll) (*co
 	if err != nil {
 		return nil, err
 	}
+	uiPackages, err := json.Marshal(scroll.UIPackages)
+	if err != nil {
+		return nil, err
+	}
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      scrollConfigMapName(scroll.ID),
@@ -185,6 +190,7 @@ func runtimeScrollConfigMap(namespace string, scroll *domain.RuntimeScroll) (*co
 			configMapKeyUpdatedAt:      formatRuntimeTime(scroll.UpdatedAt),
 			configMapKeyCommandsJSON:   string(commands),
 			configMapKeyRoutingJSON:    string(routing),
+			configMapKeyUIPackagesJSON: string(uiPackages),
 		},
 	}, nil
 }
@@ -207,6 +213,14 @@ func runtimeScrollFromConfigMap(configMap *corev1.ConfigMap) (*domain.RuntimeScr
 	if err := json.Unmarshal([]byte(routingJSON), &routing); err != nil {
 		return nil, err
 	}
+	uiPackagesJSON := data[configMapKeyUIPackagesJSON]
+	if uiPackagesJSON == "" {
+		uiPackagesJSON = "{}"
+	}
+	uiPackages := domain.RuntimeUIPackages{}
+	if err := json.Unmarshal([]byte(uiPackagesJSON), &uiPackages); err != nil {
+		return nil, err
+	}
 	id := data[configMapKeyID]
 	if id == "" {
 		id = configMap.Labels[labelScrollID]
@@ -222,6 +236,7 @@ func runtimeScrollFromConfigMap(configMap *corev1.ConfigMap) (*domain.RuntimeScr
 		Status:         domain.RuntimeScrollStatus(data[configMapKeyStatus]),
 		LastError:      data[configMapKeyLastError],
 		Routing:        routing,
+		UIPackages:     uiPackages,
 		CreatedAt:      parseRuntimeTime(data[configMapKeyCreatedAt]),
 		UpdatedAt:      parseRuntimeTime(data[configMapKeyUpdatedAt]),
 		Commands:       commands,

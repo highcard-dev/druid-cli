@@ -382,33 +382,19 @@ func (mr *MockRuntimeBackendInterfaceMockRecorder) Name() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Name", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).Name))
 }
 
-// ReadScrollFile mocks base method.
-func (m *MockRuntimeBackendInterface) ReadScrollFile(root string) ([]byte, error) {
+// PublishUIPackage mocks base method.
+func (m *MockRuntimeBackendInterface) PublishUIPackage(ctx context.Context, action ports.RuntimeUIPackageAction) (ports.RuntimeUIPackageResult, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ReadScrollFile", root)
-	ret0, _ := ret[0].([]byte)
+	ret := m.ctrl.Call(m, "PublishUIPackage", ctx, action)
+	ret0, _ := ret[0].(ports.RuntimeUIPackageResult)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// ReadScrollFile indicates an expected call of ReadScrollFile.
-func (mr *MockRuntimeBackendInterfaceMockRecorder) ReadScrollFile(root any) *gomock.Call {
+// PublishUIPackage indicates an expected call of PublishUIPackage.
+func (mr *MockRuntimeBackendInterfaceMockRecorder) PublishUIPackage(ctx, action any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadScrollFile", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).ReadScrollFile), root)
-}
-
-// RestoreRuntime mocks base method.
-func (m *MockRuntimeBackendInterface) RestoreRuntime(ctx context.Context, root, artifact string, registryCredentials []domain.RegistryCredential) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RestoreRuntime", ctx, root, artifact, registryCredentials)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// RestoreRuntime indicates an expected call of RestoreRuntime.
-func (mr *MockRuntimeBackendInterfaceMockRecorder) RestoreRuntime(ctx, root, artifact, registryCredentials any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RestoreRuntime", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).RestoreRuntime), ctx, root, artifact, registryCredentials)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishUIPackage", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).PublishUIPackage), ctx, action)
 }
 
 // RootRef mocks base method.
@@ -523,6 +509,59 @@ func (m *MockRuntimeBackendInterface) StopRuntime(root string) error {
 func (mr *MockRuntimeBackendInterfaceMockRecorder) StopRuntime(root any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopRuntime", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).StopRuntime), root)
+}
+
+// MockRuntimeWorkerCallbackBackend is a mock of RuntimeWorkerCallbackBackend interface.
+type MockRuntimeWorkerCallbackBackend struct {
+	ctrl     *gomock.Controller
+	recorder *MockRuntimeWorkerCallbackBackendMockRecorder
+	isgomock struct{}
+}
+
+// MockRuntimeWorkerCallbackBackendMockRecorder is the mock recorder for MockRuntimeWorkerCallbackBackend.
+type MockRuntimeWorkerCallbackBackendMockRecorder struct {
+	mock *MockRuntimeWorkerCallbackBackend
+}
+
+// NewMockRuntimeWorkerCallbackBackend creates a new mock instance.
+func NewMockRuntimeWorkerCallbackBackend(ctrl *gomock.Controller) *MockRuntimeWorkerCallbackBackend {
+	mock := &MockRuntimeWorkerCallbackBackend{ctrl: ctrl}
+	mock.recorder = &MockRuntimeWorkerCallbackBackendMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockRuntimeWorkerCallbackBackend) EXPECT() *MockRuntimeWorkerCallbackBackendMockRecorder {
+	return m.recorder
+}
+
+// WorkerCallbackAfterListen mocks base method.
+func (m *MockRuntimeWorkerCallbackBackend) WorkerCallbackAfterListen(config ports.RuntimeWorkerCallbackConfig) (ports.RuntimeWorkerCallbackConfig, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "WorkerCallbackAfterListen", config)
+	ret0, _ := ret[0].(ports.RuntimeWorkerCallbackConfig)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// WorkerCallbackAfterListen indicates an expected call of WorkerCallbackAfterListen.
+func (mr *MockRuntimeWorkerCallbackBackendMockRecorder) WorkerCallbackAfterListen(config any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WorkerCallbackAfterListen", reflect.TypeOf((*MockRuntimeWorkerCallbackBackend)(nil).WorkerCallbackAfterListen), config)
+}
+
+// WorkerCallbackDefaults mocks base method.
+func (m *MockRuntimeWorkerCallbackBackend) WorkerCallbackDefaults(config ports.RuntimeWorkerCallbackConfig) ports.RuntimeWorkerCallbackConfig {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "WorkerCallbackDefaults", config)
+	ret0, _ := ret[0].(ports.RuntimeWorkerCallbackConfig)
+	return ret0
+}
+
+// WorkerCallbackDefaults indicates an expected call of WorkerCallbackDefaults.
+func (mr *MockRuntimeWorkerCallbackBackendMockRecorder) WorkerCallbackDefaults(config any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WorkerCallbackDefaults", reflect.TypeOf((*MockRuntimeWorkerCallbackBackend)(nil).WorkerCallbackDefaults), config)
 }
 
 // MockRuntimeScrollStore is a mock of RuntimeScrollStore interface.

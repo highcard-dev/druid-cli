@@ -56,6 +56,7 @@ func (c *ColdStarter) Start(ctx context.Context) chan *domain.AugmentedPort {
 
 func (c *ColdStarter) Serve(ctx context.Context) {
 	augmentedPorts := c.portsService.GetPorts()
+	logger.Log().Info("Preparing coldstarter listeners", zap.Int("ports", len(augmentedPorts)))
 
 	augmentedPortMap := make(map[string]int, len(augmentedPorts))
 	for _, p := range augmentedPorts {
@@ -93,10 +94,10 @@ func (c *ColdStarter) Serve(ctx context.Context) {
 		var server ports.ColdStarterServerInterface
 		switch port.Protocol {
 		case "udp":
-			logger.Log().Info("Starting UDP coldstarter", zap.Int("port", port.Port.Port), zap.String("handler", port.ColdstarterHandler), zap.String("port_name", port.Name))
+			logger.Log().Info("Starting UDP coldstarter listener", zap.Int("port", port.Port.Port), zap.String("handler", port.ColdstarterHandler), zap.String("port_name", port.Name))
 			server = servers.NewUDP(handler)
 		case "tcp", "http", "https", "":
-			logger.Log().Info("Starting TCP coldstarter", zap.Int("port", port.Port.Port), zap.String("handler", port.ColdstarterHandler), zap.String("port_name", port.Name))
+			logger.Log().Info("Starting TCP coldstarter listener", zap.Int("port", port.Port.Port), zap.String("handler", port.ColdstarterHandler), zap.String("port_name", port.Name))
 			server = servers.NewTCP(handler)
 		default:
 			logger.Log().Warn("Unsupported coldstarter protocol", zap.String("protocol", port.Protocol), zap.String("port_name", port.Name))
@@ -109,6 +110,7 @@ func (c *ColdStarter) Serve(ctx context.Context) {
 		c.handlerMu.Lock()
 		c.handler[port.Name] = server
 		c.handlerMu.Unlock()
+		logger.Log().Info("Coldstarter listener ready", zap.Int("port", port.Port.Port), zap.String("protocol", port.Protocol), zap.String("port_name", port.Name), zap.String("handler", port.ColdstarterHandler))
 
 		srv := server
 		go func() {
@@ -142,7 +144,7 @@ func (c *ColdStarter) Finish(port *domain.AugmentedPort) {
 		if port == nil {
 			logger.Log().Info("Received coldstarter finish signal")
 		} else {
-			logger.Log().Info("Coldstarter port finished", zap.Int("port", port.Port.Port), zap.String("port_name", port.Name))
+			logger.Log().Info("Coldstarter wake signal accepted", zap.Int("port", port.Port.Port), zap.String("protocol", port.Protocol), zap.String("port_name", port.Name), zap.String("handler", port.ColdstarterHandler))
 		}
 		c.finishChan <- port
 	})

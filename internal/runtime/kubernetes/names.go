@@ -13,9 +13,11 @@ const (
 	labelManagedBy = "app.kubernetes.io/managed-by"
 	labelComponent = "app.kubernetes.io/component"
 	labelScrollID  = "druid.gg/scroll-id"
+	labelRuntimeID = "druid.gg/runtime-id"
 	labelProcedure = "druid.gg/procedure"
 	labelPortName  = "druid.gg/port-name"
 	labelCommand   = "druid.gg/command"
+	labelAttempt   = "druid.gg/attempt"
 )
 
 var dnsLabelRe = regexp.MustCompile(`[^a-z0-9-]+`)
@@ -50,10 +52,6 @@ func shortHash(value string) string {
 
 func dataPVCName(id string) string {
 	return dnsLabel("druid-" + id + "-data")
-}
-
-func stagingPVCName(artifact string) string {
-	return dnsLabel("druid-stage-" + shortHash(artifact))
 }
 
 func runtimeID(root string) string {

@@ -65,7 +65,12 @@ func (s *RuntimeSession) AutoStartServe() error {
 	if serveCommand == "" {
 		return nil
 	}
-	if command := s.scrollService.GetFile().Commands[serveCommand]; command != nil && command.Run == domain.RunModePersistent {
+	command := s.scrollService.GetFile().Commands[serveCommand]
+	if command == nil {
+		return nil
+	}
+	s.rememberDoneDependencies(command, map[string]bool{})
+	if command.Run == domain.RunModePersistent {
 		s.mu.Lock()
 		status, ok := s.runtimeScroll.Commands[serveCommand]
 		runtimeStatus := s.runtimeScroll.Status
@@ -140,7 +145,9 @@ func (s *RuntimeSession) rememberDoneDependencies(command *domain.CommandInstruc
 			continue
 		}
 		seen[dependency] = true
+		s.mu.Lock()
 		status, ok := s.runtimeScroll.Commands[dependency]
+		s.mu.Unlock()
 		if ok && status.Status == domain.ScrollLockStatusDone {
 			s.queueManager.RememberDoneItem(dependency)
 		}

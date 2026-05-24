@@ -25,19 +25,19 @@ type FilePath = string
 
 // GetFileParams defines parameters for GetFile.
 type GetFileParams struct {
-	// Path Runtime-root-relative file path, for example data/private/package.json.
+	// Path Runtime-root-relative file path, for example private/package.json.
 	Path FilePath `form:"path" json:"path"`
 }
 
 // HeadFileParams defines parameters for HeadFile.
 type HeadFileParams struct {
-	// Path Runtime-root-relative file path, for example data/private/package.json.
+	// Path Runtime-root-relative file path, for example private/package.json.
 	Path FilePath `form:"path" json:"path"`
 }
 
 // OptionsFileParams defines parameters for OptionsFile.
 type OptionsFileParams struct {
-	// Path Runtime-root-relative file path, for example data/private/package.json.
+	// Path Runtime-root-relative file path, for example private/package.json.
 	Path FilePath `form:"path" json:"path"`
 }
 
@@ -46,7 +46,7 @@ type PutFileTextBody = string
 
 // PutFileParams defines parameters for PutFile.
 type PutFileParams struct {
-	// Path Runtime-root-relative file path, for example data/private/package.json.
+	// Path Runtime-root-relative file path, for example private/package.json.
 	Path FilePath `form:"path" json:"path"`
 }
 
@@ -1029,19 +1029,19 @@ func RegisterHandlersWithOptions(router fiber.Router, si ServerInterface, option
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

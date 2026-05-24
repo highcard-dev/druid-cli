@@ -1,4 +1,4 @@
-//go:build integration && legacy_examples
+//go:build integration && local_examples
 
 package integration_test
 

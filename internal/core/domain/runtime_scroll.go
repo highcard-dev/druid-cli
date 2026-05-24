@@ -31,6 +31,7 @@ type RuntimeScroll struct {
 	Status         RuntimeScrollStatus      `json:"status"`
 	LastError      string                   `json:"last_error,omitempty"`
 	Routing        []RuntimeRouteAssignment `json:"routing,omitempty"`
+	UIPackages     RuntimeUIPackages        `json:"ui_packages,omitempty"`
 	CreatedAt      time.Time                `json:"created_at"`
 	UpdatedAt      time.Time                `json:"updated_at"`
 	Commands       map[string]LockStatus    `json:"commands,omitempty"`
@@ -60,4 +61,20 @@ type RuntimeRouteAssignment struct {
 	PublicPort int    `json:"public_port,omitempty"`
 	URL        string `json:"url,omitempty"`
 	Protocol   string `json:"protocol,omitempty"`
+}
+
+type RuntimeUIPackageScope string
+
+const (
+	RuntimeUIPackageScopePrivate RuntimeUIPackageScope = "private"
+	RuntimeUIPackageScopePublic  RuntimeUIPackageScope = "public"
+)
+
+type RuntimeUIPackages map[RuntimeUIPackageScope]RuntimeUIPackage
+
+type RuntimeUIPackage struct {
+	URL       string    `json:"url"`
+	Path      string    `json:"path"`
+	SHA256    string    `json:"sha256"`
+	UpdatedAt time.Time `json:"updated_at"`
 }

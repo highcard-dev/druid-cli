@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	gw "github.com/gorilla/websocket"
@@ -16,10 +17,15 @@ import (
 
 type Attacher struct {
 	daemonSocket string
+	daemonURL    string
 }
 
 func NewAttacher(daemonSocket string) *Attacher {
 	return &Attacher{daemonSocket: daemonSocket}
+}
+
+func NewAttacherForTarget(daemonSocket string, daemonURL string) *Attacher {
+	return &Attacher{daemonSocket: daemonSocket, daemonURL: strings.TrimRight(daemonURL, "/")}
 }
 
 func (a *Attacher) Attach(ctx context.Context, scroll string, console string) error {
@@ -27,15 +33,7 @@ func (a *Attacher) Attach(ctx context.Context, scroll string, console string) er
 	if err != nil {
 		return err
 	}
-	daemonSocket := a.daemonSocket
-	if daemonSocket == "" {
-		daemonSocket = utils.DefaultRuntimeSocketPath()
-	}
-	dialer := &gw.Dialer{
-		NetDialContext: func(ctx context.Context, network string, addr string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, "unix", daemonSocket)
-		},
-	}
+	dialer := a.dialer()
 	conn, _, err := dialer.Dial(wsURL, nil)
 	if err != nil {
 		return err
@@ -58,7 +56,31 @@ func (a *Attacher) Attach(ctx context.Context, scroll string, console string) er
 }
 
 func (a *Attacher) websocketURL(scroll string, console string) (string, error) {
-	return fmt.Sprintf("ws://druid/ws/v1/scrolls/%s/consoles/%s", url.PathEscape(scroll), url.PathEscape(console)), nil
+	escapedPath := fmt.Sprintf("/ws/v1/scrolls/%s/consoles/%s", url.PathEscape(scroll), url.PathEscape(console))
+	if a.daemonURL == "" {
+		return "ws://druid" + escapedPath, nil
+	}
+	base := strings.TrimRight(a.daemonURL, "/")
+	base = strings.TrimPrefix(base, "http://")
+	if strings.HasPrefix(base, "https://") {
+		return "wss://" + strings.TrimPrefix(base, "https://") + escapedPath, nil
+	}
+	return "ws://" + base + escapedPath, nil
+}
+
+func (a *Attacher) dialer() *gw.Dialer {
+	if a.daemonURL != "" {
+		return &gw.Dialer{}
+	}
+	daemonSocket := a.daemonSocket
+	if daemonSocket == "" {
+		daemonSocket = utils.DefaultRuntimeSocketPath()
+	}
+	return &gw.Dialer{
+		NetDialContext: func(ctx context.Context, network string, addr string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", daemonSocket)
+		},
+	}
 }
 
 func readOutput(conn *gw.Conn, done chan<- error) {

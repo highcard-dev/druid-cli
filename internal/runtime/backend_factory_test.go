@@ -93,10 +93,6 @@ func (f fakeBackend) RootRef(id string, namespace string) string {
 	return id
 }
 
-func (f fakeBackend) ReadScrollFile(root string) ([]byte, error) {
-	return nil, nil
-}
-
 func (f fakeBackend) StartDev(ctx context.Context, action ports.RuntimeDevAction) error {
 	return nil
 }
@@ -105,6 +101,10 @@ func (f fakeBackend) StopDev(ctx context.Context, root string) error { return ni
 
 func (f fakeBackend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 	return nil, nil
+}
+
+func (f fakeBackend) PublishUIPackage(ctx context.Context, action ports.RuntimeUIPackageAction) (ports.RuntimeUIPackageResult, error) {
+	return ports.RuntimeUIPackageResult{}, nil
 }
 
 func (f fakeBackend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
@@ -124,10 +124,6 @@ func (f fakeBackend) DeleteRuntime(root string, purgeData bool) error {
 }
 
 func (f fakeBackend) BackupRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential) error {
-	return nil
-}
-
-func (f fakeBackend) RestoreRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential) error {
 	return nil
 }
 

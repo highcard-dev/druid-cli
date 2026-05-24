@@ -43,16 +43,15 @@ type LogManagerInterface interface {
 type RuntimeBackendInterface interface {
 	Name() string
 	RootRef(id string, namespace string) string
-	ReadScrollFile(root string) ([]byte, error)
 	StartDev(ctx context.Context, action RuntimeDevAction) error
 	StopDev(ctx context.Context, root string) error
 	RunCommand(command RuntimeCommand) (*int, error)
+	PublishUIPackage(ctx context.Context, action RuntimeUIPackageAction) (RuntimeUIPackageResult, error)
 	ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error)
 	RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error)
 	StopRuntime(root string) error
 	DeleteRuntime(root string, purgeData bool) error
 	BackupRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential) error
-	RestoreRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential) error
 	SpawnPullWorker(ctx context.Context, action RuntimeWorkerAction) error
 	Attach(commandName string, data string) error
 	Signal(commandName string, target string, signal string, root string) error
@@ -88,6 +87,19 @@ type RuntimeCommand struct {
 	ProcedureEnv map[string]map[string]string
 }
 
+type RuntimeUIPackageAction struct {
+	RuntimeID  string
+	RootRef    string
+	Scope      domain.RuntimeUIPackageScope
+	SourcePath string
+}
+
+type RuntimeUIPackageResult struct {
+	URL    string
+	Path   string
+	SHA256 string
+}
+
 type RuntimeMaterialization struct {
 	Artifact       string
 	ArtifactDigest string
@@ -98,8 +110,9 @@ type RuntimeMaterialization struct {
 type RuntimeWorkerMode string
 
 const (
-	RuntimeWorkerModeCreate RuntimeWorkerMode = "create"
-	RuntimeWorkerModeUpdate RuntimeWorkerMode = "update"
+	RuntimeWorkerModeCreate  RuntimeWorkerMode = "create"
+	RuntimeWorkerModeUpdate  RuntimeWorkerMode = "update"
+	RuntimeWorkerModeRestore RuntimeWorkerMode = "restore"
 )
 
 type RuntimeWorkerAction struct {

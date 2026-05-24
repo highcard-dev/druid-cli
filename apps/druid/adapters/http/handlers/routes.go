@@ -75,6 +75,8 @@ func RegisterPublicRoutes(app *fiber.App, handlers RouteHandlers) {
 	app.Get("/:id/api/v1/logs", handlers.Server.GetDaemonLogs)
 	app.Get("/:id/api/v1/logs/:stream", handlers.Server.GetDaemonStreamLogs)
 	app.Get("/:id/api/v1/ports", handlers.Server.GetDaemonPorts)
+	app.Get("/:id/api/v1/ui/packages", handlers.Server.GetDaemonUIPackages)
+	app.Post("/:id/api/v1/ui/packages/:scope/publish", handlers.Server.PublishDaemonUIPackage)
 	app.Get("/:id/api/v1/watch/status", handlers.Server.GetDaemonWatchStatus)
 	app.Post("/:id/api/v1/watch/enable", handlers.Server.EnableDaemonWatch)
 	app.Post("/:id/api/v1/watch/disable", handlers.Server.DisableDaemonWatch)

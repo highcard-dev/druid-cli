@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/highcard-dev/daemon/internal/api"
+	"github.com/highcard-dev/daemon/internal/core/domain"
 )
 
 func TestPublishFlagsAreExposed(t *testing.T) {
@@ -143,6 +144,10 @@ func (f *fakeRoutingDaemon) CreateScroll(ctx context.Context, name string, artif
 	return &api.RuntimeScroll{Id: name, Artifact: artifact, Root: "/root", ScrollName: name, Status: api.Created}, nil
 }
 
+func (f *fakeRoutingDaemon) UpdateScroll(ctx context.Context, id string, artifact string, registryCredentials []api.RegistryCredential) (*api.RuntimeScroll, error) {
+	return &api.RuntimeScroll{Id: id, Artifact: artifact, Root: "/root", ScrollName: id, Status: api.Created}, nil
+}
+
 func (f *fakeRoutingDaemon) ListScrolls(ctx context.Context) ([]api.RuntimeScroll, error) {
 	return nil, nil
 }
@@ -156,6 +161,22 @@ func (f *fakeRoutingDaemon) DeleteScroll(ctx context.Context, id string) (*api.D
 }
 
 func (f *fakeRoutingDaemon) RunScrollCommand(ctx context.Context, id string, command string) (*api.RuntimeScroll, error) {
+	return nil, nil
+}
+
+func (f *fakeRoutingDaemon) GetScrollConfig(ctx context.Context, id string) (*domain.File, error) {
+	return &domain.File{}, nil
+}
+
+func (f *fakeRoutingDaemon) GetScrollProcedures(ctx context.Context, id string) (map[string]domain.ScrollLockStatus, error) {
+	return nil, nil
+}
+
+func (f *fakeRoutingDaemon) GetScrollQueue(ctx context.Context, id string) (map[string]domain.ScrollLockStatus, error) {
+	return nil, nil
+}
+
+func (f *fakeRoutingDaemon) GetScrollConsoles(ctx context.Context, id string) (map[string]domain.Console, error) {
 	return nil, nil
 }
 
@@ -182,6 +203,14 @@ func (f *fakeRoutingDaemon) ApplyScrollRouting(ctx context.Context, id string, a
 	f.applied = assignments
 	routing := append([]api.RuntimeRouteAssignment(nil), assignments...)
 	return &api.RuntimeScroll{Id: id, Status: api.Created, Routing: &routing}, nil
+}
+
+func (f *fakeRoutingDaemon) GetScrollUIPackages(ctx context.Context, id string) (map[string]api.RuntimeUIPackage, error) {
+	return map[string]api.RuntimeUIPackage{}, nil
+}
+
+func (f *fakeRoutingDaemon) PublishScrollUIPackage(ctx context.Context, id string, scope string, path string) (*api.RuntimeScroll, error) {
+	return &api.RuntimeScroll{Id: id, Status: api.Created}, nil
 }
 
 func (f *fakeRoutingDaemon) EnableWatch(ctx context.Context, id string, request api.DevWatchRequest) (*api.DevWatchResponse, error) {

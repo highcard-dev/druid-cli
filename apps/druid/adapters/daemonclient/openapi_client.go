@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/highcard-dev/daemon/internal/api"
+	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/utils"
 )
 
@@ -79,6 +80,24 @@ func (c *OpenAPIClient) CreateScroll(ctx context.Context, name string, artifact 
 	return res.JSON201, nil
 }
 
+func (c *OpenAPIClient) UpdateScroll(ctx context.Context, id string, artifact string, registryCredentials []api.RegistryCredential) (*api.RuntimeScroll, error) {
+	request := api.UpdateScrollJSONRequestBody{}
+	if artifact != "" {
+		request.Artifact = &artifact
+	}
+	if len(registryCredentials) > 0 {
+		request.RegistryCredentials = &registryCredentials
+	}
+	res, err := c.client.UpdateScrollWithResponse(ctx, id, request)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureStatus(res.StatusCode(), res.Body); err != nil {
+		return nil, err
+	}
+	return res.JSON200, nil
+}
+
 func (c *OpenAPIClient) ListScrolls(ctx context.Context) ([]api.RuntimeScroll, error) {
 	res, err := c.client.ListScrollsWithResponse(ctx)
 	if err != nil {
@@ -124,6 +143,84 @@ func (c *OpenAPIClient) RunScrollCommand(ctx context.Context, id string, command
 		return nil, err
 	}
 	return res.JSON200, nil
+}
+
+func (c *OpenAPIClient) GetScrollConfig(ctx context.Context, id string) (*domain.File, error) {
+	res, err := c.client.GetScrollConfigWithResponse(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureStatus(res.StatusCode(), res.Body); err != nil {
+		return nil, err
+	}
+	var file domain.File
+	if res.JSON200 == nil {
+		return &file, nil
+	}
+	data, err := json.Marshal(res.JSON200)
+	if err != nil {
+		return nil, err
+	}
+	return &file, json.Unmarshal(data, &file)
+}
+
+func (c *OpenAPIClient) GetScrollProcedures(ctx context.Context, id string) (map[string]domain.ScrollLockStatus, error) {
+	res, err := c.client.GetScrollProceduresWithResponse(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureStatus(res.StatusCode(), res.Body); err != nil {
+		return nil, err
+	}
+	out := map[string]domain.ScrollLockStatus{}
+	if res.JSON200 == nil {
+		return out, nil
+	}
+	for name, value := range *res.JSON200 {
+		if status, ok := value.(string); ok {
+			out[name] = domain.ScrollLockStatus(status)
+		}
+	}
+	return out, nil
+}
+
+func (c *OpenAPIClient) GetScrollQueue(ctx context.Context, id string) (map[string]domain.ScrollLockStatus, error) {
+	res, err := c.client.GetScrollQueueWithResponse(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureStatus(res.StatusCode(), res.Body); err != nil {
+		return nil, err
+	}
+	out := map[string]domain.ScrollLockStatus{}
+	if res.JSON200 == nil {
+		return out, nil
+	}
+	for name, value := range *res.JSON200 {
+		if status, ok := value.(string); ok {
+			out[name] = domain.ScrollLockStatus(status)
+		}
+	}
+	return out, nil
+}
+
+func (c *OpenAPIClient) GetScrollConsoles(ctx context.Context, id string) (map[string]domain.Console, error) {
+	res, err := c.client.GetScrollConsolesWithResponse(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureStatus(res.StatusCode(), res.Body); err != nil {
+		return nil, err
+	}
+	out := map[string]domain.Console{}
+	if res.JSON200 == nil {
+		return out, nil
+	}
+	data, err := json.Marshal(res.JSON200)
+	if err != nil {
+		return nil, err
+	}
+	return out, json.Unmarshal(data, &out)
 }
 
 func (c *OpenAPIClient) GetScrollPorts(ctx context.Context, id string) ([]api.RuntimePortStatus, error) {
@@ -178,6 +275,35 @@ func (c *OpenAPIClient) GetScrollRoutingTargets(ctx context.Context, id string) 
 
 func (c *OpenAPIClient) ApplyScrollRouting(ctx context.Context, id string, assignments []api.RuntimeRouteAssignment) (*api.RuntimeScroll, error) {
 	res, err := c.client.ApplyScrollRoutingWithResponse(ctx, id, api.ApplyRoutingRequest{Assignments: assignments})
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureStatus(res.StatusCode(), res.Body); err != nil {
+		return nil, err
+	}
+	return res.JSON200, nil
+}
+
+func (c *OpenAPIClient) GetScrollUIPackages(ctx context.Context, id string) (map[string]api.RuntimeUIPackage, error) {
+	res, err := c.client.GetScrollUIPackagesWithResponse(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureStatus(res.StatusCode(), res.Body); err != nil {
+		return nil, err
+	}
+	if res.JSON200 == nil {
+		return map[string]api.RuntimeUIPackage{}, nil
+	}
+	return *res.JSON200, nil
+}
+
+func (c *OpenAPIClient) PublishScrollUIPackage(ctx context.Context, id string, scope string, path string) (*api.RuntimeScroll, error) {
+	request := api.PublishUIPackageRequest{}
+	if path != "" {
+		request.Path = &path
+	}
+	res, err := c.client.PublishScrollUIPackageWithResponse(ctx, id, api.PublishScrollUIPackageParamsScope(scope), request)
 	if err != nil {
 		return nil, err
 	}

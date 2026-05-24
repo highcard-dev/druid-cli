@@ -31,6 +31,12 @@ const (
 	Stopped RuntimeScrollStatus = "stopped"
 )
 
+// Defines values for PublishScrollUIPackageParamsScope.
+const (
+	Private PublishScrollUIPackageParamsScope = "private"
+	Public  PublishScrollUIPackageParamsScope = "public"
+)
+
 // ApplyRoutingRequest defines model for ApplyRoutingRequest.
 type ApplyRoutingRequest struct {
 	Assignments []RuntimeRouteAssignment `json:"assignments"`
@@ -89,6 +95,12 @@ type HealthResponse struct {
 
 	// StartDate When the daemon started
 	StartDate *time.Time `json:"start_date"`
+}
+
+// PublishUIPackageRequest defines model for PublishUIPackageRequest.
+type PublishUIPackageRequest struct {
+	// Path Optional scroll-root-relative .wasm path. Defaults to private/dist/app.wasm or public/dist/app.wasm.
+	Path *string `json:"path,omitempty"`
 }
 
 // RegistryCredential defines model for RegistryCredential.
@@ -161,14 +173,36 @@ type RuntimeScroll struct {
 	Routing    *[]RuntimeRouteAssignment `json:"routing,omitempty"`
 	ScrollName string                    `json:"scroll_name"`
 	Status     RuntimeScrollStatus       `json:"status"`
+	UiPackages *RuntimeUIPackages        `json:"ui_packages,omitempty"`
 	UpdatedAt  time.Time                 `json:"updated_at"`
 }
 
 // RuntimeScrollStatus defines model for RuntimeScroll.Status.
 type RuntimeScrollStatus string
 
+// RuntimeUIPackage defines model for RuntimeUIPackage.
+type RuntimeUIPackage struct {
+	Path      string    `json:"path"`
+	Sha256    string    `json:"sha256"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Url       string    `json:"url"`
+}
+
+// RuntimeUIPackages defines model for RuntimeUIPackages.
+type RuntimeUIPackages map[string]RuntimeUIPackage
+
 // ScrollLogMap defines model for ScrollLogMap.
 type ScrollLogMap map[string][]string
+
+// UpdateScrollRequest defines model for UpdateScrollRequest.
+type UpdateScrollRequest struct {
+	// Artifact Optional target artifact. If omitted, the daemon refreshes the runtime's current artifact.
+	Artifact            *string               `json:"artifact,omitempty"`
+	RegistryCredentials *[]RegistryCredential `json:"registry_credentials,omitempty"`
+}
+
+// PublishScrollUIPackageParamsScope defines parameters for PublishScrollUIPackage.
+type PublishScrollUIPackageParamsScope string
 
 // CreateScrollJSONRequestBody defines body for CreateScroll for application/json ContentType.
 type CreateScrollJSONRequestBody = CreateScrollRequest
@@ -184,6 +218,12 @@ type RestoreScrollJSONRequestBody = RuntimeArtifactOperationRequest
 
 // ApplyScrollRoutingJSONRequestBody defines body for ApplyScrollRouting for application/json ContentType.
 type ApplyScrollRoutingJSONRequestBody = ApplyRoutingRequest
+
+// PublishScrollUIPackageJSONRequestBody defines body for PublishScrollUIPackage for application/json ContentType.
+type PublishScrollUIPackageJSONRequestBody = PublishUIPackageRequest
+
+// UpdateScrollJSONRequestBody defines body for UpdateScroll for application/json ContentType.
+type UpdateScrollJSONRequestBody = UpdateScrollRequest
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -324,6 +364,19 @@ type ClientInterface interface {
 
 	// StopScroll request
 	StopScroll(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetScrollUIPackages request
+	GetScrollUIPackages(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PublishScrollUIPackageWithBody request with any body
+	PublishScrollUIPackageWithBody(ctx context.Context, id string, scope PublishScrollUIPackageParamsScope, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PublishScrollUIPackage(ctx context.Context, id string, scope PublishScrollUIPackageParamsScope, body PublishScrollUIPackageJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateScrollWithBody request with any body
+	UpdateScrollWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateScroll(ctx context.Context, id string, body UpdateScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) GetHealthAuth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -604,6 +657,66 @@ func (c *Client) StartScroll(ctx context.Context, id string, reqEditors ...Reque
 
 func (c *Client) StopScroll(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewStopScrollRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetScrollUIPackages(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetScrollUIPackagesRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PublishScrollUIPackageWithBody(ctx context.Context, id string, scope PublishScrollUIPackageParamsScope, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPublishScrollUIPackageRequestWithBody(c.Server, id, scope, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PublishScrollUIPackage(ctx context.Context, id string, scope PublishScrollUIPackageParamsScope, body PublishScrollUIPackageJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPublishScrollUIPackageRequest(c.Server, id, scope, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateScrollWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateScrollRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateScroll(ctx context.Context, id string, body UpdateScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateScrollRequest(c.Server, id, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1304,6 +1417,141 @@ func NewStopScrollRequest(server string, id string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewGetScrollUIPackagesRequest generates requests for GetScrollUIPackages
+func NewGetScrollUIPackagesRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/ui/packages", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPublishScrollUIPackageRequest calls the generic PublishScrollUIPackage builder with application/json body
+func NewPublishScrollUIPackageRequest(server string, id string, scope PublishScrollUIPackageParamsScope, body PublishScrollUIPackageJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPublishScrollUIPackageRequestWithBody(server, id, scope, "application/json", bodyReader)
+}
+
+// NewPublishScrollUIPackageRequestWithBody generates requests for PublishScrollUIPackage with any type of body
+func NewPublishScrollUIPackageRequestWithBody(server string, id string, scope PublishScrollUIPackageParamsScope, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "scope", runtime.ParamLocationPath, scope)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/ui/packages/%s/publish", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewUpdateScrollRequest calls the generic UpdateScroll builder with application/json body
+func NewUpdateScrollRequest(server string, id string, body UpdateScrollJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateScrollRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewUpdateScrollRequestWithBody generates requests for UpdateScroll with any type of body
+func NewUpdateScrollRequestWithBody(server string, id string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/update", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -1413,6 +1661,19 @@ type ClientWithResponsesInterface interface {
 
 	// StopScrollWithResponse request
 	StopScrollWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*StopScrollResponse, error)
+
+	// GetScrollUIPackagesWithResponse request
+	GetScrollUIPackagesWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollUIPackagesResponse, error)
+
+	// PublishScrollUIPackageWithBodyWithResponse request with any body
+	PublishScrollUIPackageWithBodyWithResponse(ctx context.Context, id string, scope PublishScrollUIPackageParamsScope, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PublishScrollUIPackageResponse, error)
+
+	PublishScrollUIPackageWithResponse(ctx context.Context, id string, scope PublishScrollUIPackageParamsScope, body PublishScrollUIPackageJSONRequestBody, reqEditors ...RequestEditorFn) (*PublishScrollUIPackageResponse, error)
+
+	// UpdateScrollWithBodyWithResponse request with any body
+	UpdateScrollWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateScrollResponse, error)
+
+	UpdateScrollWithResponse(ctx context.Context, id string, body UpdateScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateScrollResponse, error)
 }
 
 type GetHealthAuthResponse struct {
@@ -1834,6 +2095,72 @@ func (r StopScrollResponse) StatusCode() int {
 	return 0
 }
 
+type GetScrollUIPackagesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *RuntimeUIPackages
+}
+
+// Status returns HTTPResponse.Status
+func (r GetScrollUIPackagesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetScrollUIPackagesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PublishScrollUIPackageResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *RuntimeScroll
+}
+
+// Status returns HTTPResponse.Status
+func (r PublishScrollUIPackageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PublishScrollUIPackageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UpdateScrollResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *RuntimeScroll
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateScrollResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateScrollResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 // GetHealthAuthWithResponse request returning *GetHealthAuthResponse
 func (c *ClientWithResponses) GetHealthAuthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHealthAuthResponse, error) {
 	rsp, err := c.GetHealthAuth(ctx, reqEditors...)
@@ -2043,6 +2370,49 @@ func (c *ClientWithResponses) StopScrollWithResponse(ctx context.Context, id str
 		return nil, err
 	}
 	return ParseStopScrollResponse(rsp)
+}
+
+// GetScrollUIPackagesWithResponse request returning *GetScrollUIPackagesResponse
+func (c *ClientWithResponses) GetScrollUIPackagesWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollUIPackagesResponse, error) {
+	rsp, err := c.GetScrollUIPackages(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetScrollUIPackagesResponse(rsp)
+}
+
+// PublishScrollUIPackageWithBodyWithResponse request with arbitrary body returning *PublishScrollUIPackageResponse
+func (c *ClientWithResponses) PublishScrollUIPackageWithBodyWithResponse(ctx context.Context, id string, scope PublishScrollUIPackageParamsScope, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PublishScrollUIPackageResponse, error) {
+	rsp, err := c.PublishScrollUIPackageWithBody(ctx, id, scope, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePublishScrollUIPackageResponse(rsp)
+}
+
+func (c *ClientWithResponses) PublishScrollUIPackageWithResponse(ctx context.Context, id string, scope PublishScrollUIPackageParamsScope, body PublishScrollUIPackageJSONRequestBody, reqEditors ...RequestEditorFn) (*PublishScrollUIPackageResponse, error) {
+	rsp, err := c.PublishScrollUIPackage(ctx, id, scope, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePublishScrollUIPackageResponse(rsp)
+}
+
+// UpdateScrollWithBodyWithResponse request with arbitrary body returning *UpdateScrollResponse
+func (c *ClientWithResponses) UpdateScrollWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateScrollResponse, error) {
+	rsp, err := c.UpdateScrollWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateScrollResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateScrollWithResponse(ctx context.Context, id string, body UpdateScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateScrollResponse, error) {
+	rsp, err := c.UpdateScroll(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateScrollResponse(rsp)
 }
 
 // ParseGetHealthAuthResponse parses an HTTP response from a GetHealthAuthWithResponse call
@@ -2546,6 +2916,84 @@ func ParseStopScrollResponse(rsp *http.Response) (*StopScrollResponse, error) {
 	return response, nil
 }
 
+// ParseGetScrollUIPackagesResponse parses an HTTP response from a GetScrollUIPackagesWithResponse call
+func ParseGetScrollUIPackagesResponse(rsp *http.Response) (*GetScrollUIPackagesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetScrollUIPackagesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RuntimeUIPackages
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePublishScrollUIPackageResponse parses an HTTP response from a PublishScrollUIPackageWithResponse call
+func ParsePublishScrollUIPackageResponse(rsp *http.Response) (*PublishScrollUIPackageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PublishScrollUIPackageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RuntimeScroll
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateScrollResponse parses an HTTP response from a UpdateScrollWithResponse call
+func ParseUpdateScrollResponse(rsp *http.Response) (*UpdateScrollResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateScrollResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RuntimeScroll
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// Get health status
@@ -2605,6 +3053,15 @@ type ServerInterface interface {
 	// Stop runtime scroll workloads while preserving data
 	// (POST /api/v1/scrolls/{id}/stop)
 	StopScroll(c *fiber.Ctx, id string) error
+	// Get published UI package URLs
+	// (GET /api/v1/scrolls/{id}/ui/packages)
+	GetScrollUIPackages(c *fiber.Ctx, id string) error
+	// Publish an already-built Druid UI WASM package
+	// (POST /api/v1/scrolls/{id}/ui/packages/{scope}/publish)
+	PublishScrollUIPackage(c *fiber.Ctx, id string, scope PublishScrollUIPackageParamsScope) error
+	// Update runtime scroll files and state
+	// (POST /api/v1/scrolls/{id}/update)
+	UpdateScroll(c *fiber.Ctx, id string) error
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -2886,6 +3343,62 @@ func (siw *ServerInterfaceWrapper) StopScroll(c *fiber.Ctx) error {
 	return siw.Handler.StopScroll(c, id)
 }
 
+// GetScrollUIPackages operation middleware
+func (siw *ServerInterfaceWrapper) GetScrollUIPackages(c *fiber.Ctx) error {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	return siw.Handler.GetScrollUIPackages(c, id)
+}
+
+// PublishScrollUIPackage operation middleware
+func (siw *ServerInterfaceWrapper) PublishScrollUIPackage(c *fiber.Ctx) error {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	// ------------- Path parameter "scope" -------------
+	var scope PublishScrollUIPackageParamsScope
+
+	err = runtime.BindStyledParameterWithOptions("simple", "scope", c.Params("scope"), &scope, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter scope: %w", err).Error())
+	}
+
+	return siw.Handler.PublishScrollUIPackage(c, id, scope)
+}
+
+// UpdateScroll operation middleware
+func (siw *ServerInterfaceWrapper) UpdateScroll(c *fiber.Ctx) error {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	return siw.Handler.UpdateScroll(c, id)
+}
+
 // FiberServerOptions provides options for the Fiber server.
 type FiberServerOptions struct {
 	BaseURL     string
@@ -2945,52 +3458,63 @@ func RegisterHandlersWithOptions(router fiber.Router, si ServerInterface, option
 
 	router.Post(options.BaseURL+"/api/v1/scrolls/:id/stop", wrapper.StopScroll)
 
+	router.Get(options.BaseURL+"/api/v1/scrolls/:id/ui/packages", wrapper.GetScrollUIPackages)
+
+	router.Post(options.BaseURL+"/api/v1/scrolls/:id/ui/packages/:scope/publish", wrapper.PublishScrollUIPackage)
+
+	router.Post(options.BaseURL+"/api/v1/scrolls/:id/update", wrapper.UpdateScroll)
+
 }
 
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
-	"9Wn13wAAAP//E5YRdaU1AAA=",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

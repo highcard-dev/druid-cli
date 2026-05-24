@@ -44,8 +44,8 @@ func NewQueueManager(
 		scrollService:     scrollService,
 		procedureLauncher: procedureLauncher,
 		commandQueue:      make(map[string]*domain.QueueItem),
-		taskChan:          make(chan string, 100), // FIXED: Buffered channel
-		taskDoneChan:      make(chan struct{}, 1), // FIXED: Buffered channel
+		taskChan:          make(chan string, 100),
+		taskDoneChan:      make(chan struct{}, 1),
 		shutdownChan:      make(chan struct{}),
 		notifierChan:      make([]chan []string, 0),
 	}
@@ -81,10 +81,8 @@ func (sc *QueueManager) notify() {
 	for _, notifier := range notifiers {
 		select {
 		case notifier <- queuedCommands:
-			// Successfully sent queuedCommands to the notifier channel
 		default:
-			// The notifier channel is not ready to receive, handle accordingly
-			// For example, log a warning or skip this notifier
+			logger.Log().Debug("Skipping slow queue notifier")
 		}
 	}
 }
@@ -156,13 +154,10 @@ func (sc *QueueManager) addQueueItem(cmd string, options AddItemOptions) error {
 
 	sc.mu.Unlock()
 
-	// FIXED: Non-blocking send to buffered channel
 	sc.taskChan <- cmd
 
-	// Wait for completion if requested
 	if options.Wait {
 		<-doneChan
-		// Return error if command failed
 		item := sc.GetQueueItem(cmd)
 		if item != nil && item.Error != nil {
 			return item.Error
@@ -217,7 +212,6 @@ func (sc *QueueManager) Work() {
 				sc.notify()
 			})()
 		case <-sc.shutdownChan:
-			//empty queue
 			sc.commandQueue = make(map[string]*domain.QueueItem)
 			return
 		}
@@ -241,7 +235,6 @@ func (sc *QueueManager) RunQueue() {
 
 	for cmd, status := range queueKeys {
 
-		//if already running, skip
 		if status == domain.ScrollLockStatusRunning {
 			continue
 		}
@@ -258,12 +251,10 @@ func (sc *QueueManager) RunQueue() {
 			continue
 		}
 
-		//if in error state and not a restart/persistent mode, skip
 		if status == domain.ScrollLockStatusError {
 			continue
 		}
 
-		//if done and not a restart/persistent mode, skip
 		isRestartMode := command.Run == domain.RunModeRestart
 		if status == domain.ScrollLockStatusDone && !isRestartMode {
 			continue
@@ -273,7 +264,6 @@ func (sc *QueueManager) RunQueue() {
 		dependenciesReady := true
 		for _, dep := range dependencies {
 			_, ok := sc.commandQueue[dep]
-			//if item not in queue, add it and
 			if !ok {
 				dependenciesReady = false
 				sc.AddTempItem(dep)
@@ -293,12 +283,10 @@ func (sc *QueueManager) RunQueue() {
 			logger.Log().Info("Running command", zap.String("command", cmd))
 			go func(c string, i *domain.QueueItem) {
 				defer func() {
-					// Signal completion if someone is waiting
 					if i.DoneChan != nil {
 						close(i.DoneChan)
 					}
 
-					// FIXED: Non-blocking send to buffered channel
 					sc.taskDoneChan <- struct{}{}
 				}()
 
@@ -332,7 +320,7 @@ func (sc *QueueManager) RunQueue() {
 						logger.Log().Info("Restarting with backoff", zap.String("command", c), zap.Duration("backoff", backoff), zap.Uint("restartCount", i.RestartCount))
 						time.Sleep(backoff)
 					} else {
-						logger.Log().Info("Command done, restarting..", zap.String("command", c))
+						logger.Log().Info("Command done, restarting", zap.String("command", c))
 					}
 				} else {
 					logger.Log().Info("Command done", zap.String("command", c))
@@ -351,7 +339,7 @@ func (sc *QueueManager) Shutdown() {
 }
 
 func (sc *QueueManager) WaitUntilEmpty() {
-	notifier := make(chan []string, 10) // FIXED: Buffered channel
+	notifier := make(chan []string, 10)
 
 	sc.mu.Lock()
 	sc.notifierChan = append(sc.notifierChan, notifier)
@@ -366,7 +354,6 @@ func (sc *QueueManager) WaitUntilEmpty() {
 
 		cmds := <-notifier
 		if len(cmds) == 0 {
-			// remove notifier
 			sc.mu.Lock()
 			sc.removeNotifierLocked(notifier)
 			sc.mu.Unlock()

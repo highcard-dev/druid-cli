@@ -164,6 +164,121 @@ func TestRuntimeSessionAutoStartsServeOnCreatePath(t *testing.T) {
 	assertQueued(t, session, "start")
 }
 
+func TestRuntimeSessionAutoStartServeRemembersDoneOnceDependencies(t *testing.T) {
+	session := newRuntimeSessionForTest(t, map[string]domain.LockStatus{
+		"install": {Status: domain.ScrollLockStatusDone},
+	}, installThenStartScrollYAML())
+
+	if err := session.AutoStartServe(); err != nil {
+		t.Fatal(err)
+	}
+
+	queue := session.queueManager.GetQueue()
+	if queue["install"] != domain.ScrollLockStatusDone {
+		t.Fatalf("install = %s, want done; queue=%#v", queue["install"], queue)
+	}
+	if queue["start"] != domain.ScrollLockStatusWaiting {
+		t.Fatalf("start = %s, want waiting; queue=%#v", queue["start"], queue)
+	}
+}
+
+func TestRuntimeSessionStopPreservesDoneOnceCommands(t *testing.T) {
+	session := newRuntimeSessionForTest(t, map[string]domain.LockStatus{
+		"install": {Status: domain.ScrollLockStatusDone},
+		"start":   {Status: domain.ScrollLockStatusRunning},
+		"stop":    {Status: domain.ScrollLockStatusDone},
+	}, installThenStartScrollYAML())
+
+	if err := session.StopRuntime(); err != nil {
+		t.Fatal(err)
+	}
+
+	updated, err := session.store.GetScroll(session.runtimeScroll.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Status != domain.RuntimeScrollStatusStopped {
+		t.Fatalf("status = %s, want stopped", updated.Status)
+	}
+	if len(updated.Commands) != 1 || updated.Commands["install"].Status != domain.ScrollLockStatusDone {
+		t.Fatalf("commands = %#v, want only install done", updated.Commands)
+	}
+}
+
+func TestRuntimeSupervisorStartDoesNotHydrateStoppedScroll(t *testing.T) {
+	store := newTestStateStore(t)
+	runtimeScroll := &domain.RuntimeScroll{
+		ID:         "stopped-scroll",
+		Artifact:   "local",
+		Root:       "runtime://stopped-scroll",
+		ScrollName: "cached",
+		ScrollYAML: installThenStartScrollYAML(),
+		Status:     domain.RuntimeScrollStatusStopped,
+		Commands: map[string]domain.LockStatus{
+			"install": {Status: domain.ScrollLockStatusDone},
+		},
+	}
+	if err := store.CreateScroll(runtimeScroll); err != nil {
+		t.Fatal(err)
+	}
+	supervisor := NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), &fakeWorkerBackend{})
+
+	if err := supervisor.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(supervisor.sessions) != 0 {
+		t.Fatalf("sessions = %#v, want none for stopped scroll", supervisor.sessions)
+	}
+	updated, err := store.GetScroll("stopped-scroll")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Commands["install"].Status != domain.ScrollLockStatusDone {
+		t.Fatalf("commands = %#v, want install still done", updated.Commands)
+	}
+}
+
+func TestRuntimeSupervisorStartHydratesRunningScroll(t *testing.T) {
+	store := newTestStateStore(t)
+	runtimeScroll := &domain.RuntimeScroll{
+		ID:         "running-scroll",
+		Artifact:   "local",
+		Root:       "runtime://running-scroll",
+		ScrollName: "cached",
+		ScrollYAML: installThenStartScrollYAML(),
+		Status:     domain.RuntimeScrollStatusRunning,
+		Commands: map[string]domain.LockStatus{
+			"install": {Status: domain.ScrollLockStatusDone},
+		},
+	}
+	if err := store.CreateScroll(runtimeScroll); err != nil {
+		t.Fatal(err)
+	}
+	supervisor := NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), &fakeWorkerBackend{})
+
+	if err := supervisor.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if session := supervisor.sessions["running-scroll"]; session != nil {
+			session.Shutdown()
+		}
+	}()
+
+	session := supervisor.sessions["running-scroll"]
+	if session == nil {
+		t.Fatal("running scroll was not hydrated")
+	}
+	queue := session.queueManager.GetQueue()
+	if queue["install"] != domain.ScrollLockStatusDone {
+		t.Fatalf("install = %s, want done; queue=%#v", queue["install"], queue)
+	}
+	if _, ok := queue["start"]; !ok {
+		t.Fatalf("start was not queued; queue=%#v", queue)
+	}
+}
+
 func TestRuntimeSupervisorEnsureCanCreate(t *testing.T) {
 	artifact := t.TempDir()
 	if err := os.WriteFile(filepath.Join(artifact, "scroll.yaml"), []byte(cachedScrollYAML("start")), 0644); err != nil {
@@ -453,13 +568,16 @@ func TestRuntimeSupervisorEnsureUpdatesChangedArtifact(t *testing.T) {
 		Commands: map[string]domain.LockStatus{
 			"start": {Status: domain.ScrollLockStatusDone},
 		},
-		Routing: []domain.RuntimeRouteAssignment{{Name: "old-http", Host: "old.example.test"}},
+		Routing: []domain.RuntimeRouteAssignment{
+			{Name: "main-route", PortName: "main", Host: "old.example.test"},
+			{Name: "stale-route", PortName: "removed", Host: "gone.example.test"},
+		},
 	}
 	if err := store.CreateScroll(existing); err != nil {
 		t.Fatal(err)
 	}
 	callbacks := NewWorkerCallbackManager()
-	backend := &fakeWorkerBackend{callbacks: callbacks, scrollYAML: updatedScrollYAML("updated-scroll")}
+	backend := &fakeWorkerBackend{callbacks: callbacks, scrollYAML: updatedScrollYAMLWithPorts("updated-scroll", "main")}
 	supervisor := NewRuntimeSupervisor(
 		store,
 		coreservices.NewRuntimeScrollManager(store),
@@ -487,8 +605,8 @@ func TestRuntimeSupervisorEnsureUpdatesChangedArtifact(t *testing.T) {
 	if len(updated.Commands) != 0 {
 		t.Fatalf("commands = %#v, want cleared", updated.Commands)
 	}
-	if len(updated.Routing) != 0 {
-		t.Fatalf("routing = %#v, want cleared", updated.Routing)
+	if len(updated.Routing) != 1 || updated.Routing[0].PortName != "main" {
+		t.Fatalf("routing = %#v, want matching route preserved", updated.Routing)
 	}
 	if !strings.Contains(updated.ScrollYAML, "updated-scroll") {
 		t.Fatalf("scroll yaml = %q", updated.ScrollYAML)
@@ -528,6 +646,119 @@ func TestRuntimeSupervisorUpdateUsesPullWorkerWhenAvailable(t *testing.T) {
 	}
 	if updated.Artifact != "registry.local/lab:2.0" || updated.ArtifactDigest != "sha256:updated" || updated.ScrollName != "updated-worker" {
 		t.Fatalf("updated scroll = %#v", updated)
+	}
+}
+
+func TestRuntimeSupervisorUpdateRefreshesCurrentArtifactAndRestartsRunningScroll(t *testing.T) {
+	store := newTestStateStore(t)
+	root := "runtime://refresh-worker"
+	existing := &domain.RuntimeScroll{
+		ID:         "refresh-worker",
+		Artifact:   "registry.local/lab:1.0",
+		Root:       root,
+		ScrollName: "old-scroll",
+		ScrollYAML: cachedScrollYAML("start"),
+		Status:     domain.RuntimeScrollStatusRunning,
+		Commands:   map[string]domain.LockStatus{"start": {Status: domain.ScrollLockStatusDone}},
+	}
+	if err := store.CreateScroll(existing); err != nil {
+		t.Fatal(err)
+	}
+	callbacks := NewWorkerCallbackManager()
+	backend := &fakeWorkerBackend{callbacks: callbacks, scrollYAML: updatedScrollYAML("refreshed-worker"), digest: "sha256:refreshed"}
+	supervisor := NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), backend)
+	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
+
+	updated, err := supervisor.Update("refresh-worker", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = supervisor.Stop("refresh-worker")
+	}()
+
+	if backend.stopRoot != root {
+		t.Fatalf("stop root = %s, want %s", backend.stopRoot, root)
+	}
+	if backend.action.Mode != ports.RuntimeWorkerModeUpdate || backend.action.Artifact != "registry.local/lab:1.0" {
+		t.Fatalf("worker action = %#v", backend.action)
+	}
+	if updated.Status != domain.RuntimeScrollStatusRunning {
+		t.Fatalf("status = %s, want running", updated.Status)
+	}
+	if updated.ArtifactDigest != "sha256:refreshed" || updated.ScrollName != "refreshed-worker" {
+		t.Fatalf("updated scroll = %#v", updated)
+	}
+}
+
+func TestRuntimeSupervisorRestoreUsesPullWorkerResult(t *testing.T) {
+	store := newTestStateStore(t)
+	root := "runtime://restore-worker"
+	existing := &domain.RuntimeScroll{
+		ID:         "restore-worker",
+		Artifact:   "registry.local/lab:1.0",
+		Root:       root,
+		ScrollName: "old-scroll",
+		ScrollYAML: cachedScrollYAML("start"),
+		Status:     domain.RuntimeScrollStatusRunning,
+		Commands: map[string]domain.LockStatus{
+			"start":    {Status: domain.ScrollLockStatusDone},
+			"obsolete": {Status: domain.ScrollLockStatusDone},
+		},
+		Routing: []domain.RuntimeRouteAssignment{
+			{Name: "main-route", PortName: "main", Host: "old.example.test"},
+			{Name: "stale-route", PortName: "removed", Host: "gone.example.test"},
+		},
+	}
+	if err := store.CreateScroll(existing); err != nil {
+		t.Fatal(err)
+	}
+	callbacks := NewWorkerCallbackManager()
+	backend := &fakeWorkerBackend{callbacks: callbacks, scrollYAML: updatedScrollYAMLWithPorts("restored-worker", "main"), digest: "sha256:restored"}
+	supervisor := NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), backend)
+	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
+
+	restored, err := supervisor.Restore("restore-worker", "registry.local/backup:1.0", false, []domain.RegistryCredential{{Host: "registry.local", Username: "bot"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if backend.stopRoot != root {
+		t.Fatalf("stop root = %s, want %s", backend.stopRoot, root)
+	}
+	if backend.action.Mode != ports.RuntimeWorkerModeRestore || backend.action.RootRef != root || backend.action.Artifact != "registry.local/backup:1.0" {
+		t.Fatalf("worker action = %#v", backend.action)
+	}
+	if restored.Artifact != "registry.local/backup:1.0" || restored.ArtifactDigest != "sha256:restored" || restored.ScrollName != "restored-worker" {
+		t.Fatalf("restored scroll = %#v", restored)
+	}
+	if restored.Status != domain.RuntimeScrollStatusStopped {
+		t.Fatalf("status = %s, want stopped", restored.Status)
+	}
+	if _, ok := restored.Commands["obsolete"]; ok {
+		t.Fatalf("commands = %#v, want obsolete command removed", restored.Commands)
+	}
+	if len(restored.Routing) != 1 || restored.Routing[0].PortName != "main" {
+		t.Fatalf("routing = %#v, want matching route preserved", restored.Routing)
+	}
+}
+
+func TestNewRuntimeSessionRequiresPersistedScrollYAML(t *testing.T) {
+	store := newTestStateStore(t)
+	runtimeScroll := &domain.RuntimeScroll{
+		ID:       "missing-yaml",
+		Artifact: "local",
+		Root:     "runtime://missing-yaml",
+		Status:   domain.RuntimeScrollStatusCreated,
+		Commands: map[string]domain.LockStatus{},
+	}
+	if err := store.CreateScroll(runtimeScroll); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := NewRuntimeSession(store, runtimeScroll, &fakeWorkerBackend{})
+	if err == nil || !strings.Contains(err.Error(), "has no scroll_yaml") {
+		t.Fatalf("NewRuntimeSession error = %v, want missing scroll_yaml", err)
 	}
 }
 
@@ -596,22 +827,22 @@ func TestDeleteDoesNotParseScrollYAML(t *testing.T) {
 	backend := &fakeWorkerBackend{}
 	supervisor := NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), backend)
 	if err := store.CreateScroll(&domain.RuntimeScroll{
-		ID:         "legacy",
-		Root:       "runtime://legacy",
-		ScrollName: "legacy",
-		ScrollYAML: "name: legacy\ncommands:\n  start:\n    procedures:\n      - mode: container\n",
+		ID:         "delete-only",
+		Root:       "runtime://delete-only",
+		ScrollName: "delete-only",
+		ScrollYAML: "name: delete-only\ncommands:\n  start:\n    procedures:\n      - mode: container\n",
 		Status:     domain.RuntimeScrollStatusCreated,
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := supervisor.DeleteWithPolicy("legacy", false); err != nil {
+	if err := supervisor.DeleteWithPolicy("delete-only", false); err != nil {
 		t.Fatal(err)
 	}
-	if backend.deleteRoot != "runtime://legacy" {
-		t.Fatalf("delete root = %q, want runtime://legacy", backend.deleteRoot)
+	if backend.deleteRoot != "runtime://delete-only" {
+		t.Fatalf("delete root = %q, want runtime://delete-only", backend.deleteRoot)
 	}
-	if _, err := store.GetScroll("legacy"); !errors.Is(err, domain.ErrRuntimeScrollNotFound) {
+	if _, err := store.GetScroll("delete-only"); !errors.Is(err, domain.ErrRuntimeScrollNotFound) {
 		t.Fatalf("GetScroll after delete error = %v, want not found", err)
 	}
 }
@@ -660,12 +891,12 @@ func (f *fakeWorkerBackend) RootRef(id string, namespace string) string {
 	return "runtime://" + id
 }
 
-func (f *fakeWorkerBackend) ReadScrollFile(root string) ([]byte, error) {
-	return []byte(f.scrollYAML), nil
-}
-
 func (f *fakeWorkerBackend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 	return nil, nil
+}
+
+func (f *fakeWorkerBackend) PublishUIPackage(ctx context.Context, action ports.RuntimeUIPackageAction) (ports.RuntimeUIPackageResult, error) {
+	return ports.RuntimeUIPackageResult{URL: "http://packages/" + action.RuntimeID + "/" + string(action.Scope) + "/app.wasm", Path: action.SourcePath, SHA256: "sha256"}, nil
 }
 
 func (f *fakeWorkerBackend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
@@ -704,10 +935,6 @@ func (f *fakeWorkerBackend) BackupRuntime(ctx context.Context, root string, arti
 	return nil
 }
 
-func (f *fakeWorkerBackend) RestoreRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential) error {
-	return nil
-}
-
 func (f *fakeWorkerBackend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorkerAction) error {
 	f.action = action
 	f.spawnCount++
@@ -742,6 +969,34 @@ app_version: "1.0"
 	return yaml
 }
 
+func installThenStartScrollYAML() string {
+	return `name: cached
+desc: Cached scroll
+version: 0.1.0
+app_version: "1.0"
+serve: start
+commands:
+  install:
+    run: once
+    procedures:
+      - image: alpine:3.20
+        command: ["true"]
+  start:
+    needs:
+      - install
+    run: restart
+    procedures:
+      - image: alpine:3.20
+        command: ["true"]
+  stop:
+    run: always
+    procedures:
+      - type: signal
+        target: start
+        signal: SIGTERM
+`
+}
+
 func updatedScrollYAML(name string) string {
 	return `name: ` + name + `
 desc: Updated scroll
@@ -754,6 +1009,29 @@ commands:
       - image: alpine:3.20
         command: ["true"]
 `
+}
+
+func updatedScrollYAMLWithPorts(name string, ports ...string) string {
+	yaml := `name: ` + name + `
+desc: Updated scroll
+version: 0.2.0
+app_version: "2.0"
+ports:
+`
+	for _, port := range ports {
+		yaml += `  - name: ` + port + `
+    protocol: tcp
+    port: 80
+`
+	}
+	yaml += `serve: start
+commands:
+  start:
+    procedures:
+      - image: alpine:3.20
+        command: ["true"]
+`
+	return yaml
 }
 
 func assertQueued(t *testing.T, session *RuntimeSession, command string) {

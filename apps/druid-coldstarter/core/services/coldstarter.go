@@ -31,18 +31,31 @@ func (s *ColdstarterService) Run(ctx context.Context, root string) error {
 		return err
 	}
 
-	logger.Log().Info("Coldstart ports loaded", zap.Any("ports", portService.GetPorts()))
+	logger.Log().Info("Starting druid-coldstarter", zap.String("root", root), zap.Int("ports", len(portService.GetPorts())))
+	for _, port := range portService.GetPorts() {
+		suffix := strings.ToUpper(port.Name)
+		logger.Log().Info("Configured coldstarter port",
+			zap.String("port_name", port.Name),
+			zap.Int("listen_port", port.Port.Port),
+			zap.String("protocol", port.Protocol),
+			zap.String("handler", port.ColdstarterHandler),
+			zap.String("public_host", os.Getenv("DRUID_PORT_"+suffix+"_HOST")),
+			zap.String("public_ip", os.Getenv("DRUID_PORT_"+suffix+"_IP")),
+			zap.String("public_port", os.Getenv("DRUID_PORT_"+suffix+"_PUBLIC")),
+		)
+	}
 
 	coldStarter := services.NewColdStarter(portService, nil, root)
 
 	finish := coldStarter.Start(ctx)
+	logger.Log().Info("Coldstarter ready; waiting for wake traffic")
 	select {
 	case <-ctx.Done():
 		coldStarter.Stop()
 		return ctx.Err()
 	case <-finish:
 		coldStarter.Stop()
-		logger.Log().Info("Coldstarter finished")
+		logger.Log().Info("Coldstarter finished; handing off to next procedure")
 		return nil
 	}
 }

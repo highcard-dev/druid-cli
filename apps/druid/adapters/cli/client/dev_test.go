@@ -25,7 +25,10 @@ func TestDevCommandExposesFlags(t *testing.T) {
 
 func TestDevServerWebDAVReadWriteAndCallback(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "data/private"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "private"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "data"), 0755); err != nil {
 		t.Fatal(err)
 	}
 	runCalls := 0
@@ -53,7 +56,7 @@ func TestDevServerWebDAVReadWriteAndCallback(t *testing.T) {
 	go broadcast.Run()
 	app := newDevApp(root, broadcast, &devTriggerQueue{broadcast: broadcast, commands: []string{"build"}})
 
-	req := httptest.NewRequest(http.MethodPut, "/webdav/data/private/config.json", strings.NewReader(`{"ok":true}`))
+	req := httptest.NewRequest(http.MethodPut, "/webdav/private/config.json", strings.NewReader(`{"ok":true}`))
 	res, err := app.Test(req)
 	if err != nil {
 		t.Fatal(err)
@@ -64,11 +67,11 @@ func TestDevServerWebDAVReadWriteAndCallback(t *testing.T) {
 	if runCalls != 1 {
 		t.Fatalf("runCalls = %d, want 1", runCalls)
 	}
-	if got, err := os.ReadFile(filepath.Join(root, "data/private/config.json")); err != nil || string(got) != `{"ok":true}` {
+	if got, err := os.ReadFile(filepath.Join(root, "private/config.json")); err != nil || string(got) != `{"ok":true}` {
 		t.Fatalf("written file = %q, err = %v", got, err)
 	}
 
-	res, err = app.Test(httptest.NewRequest(http.MethodGet, "/webdav/data/private/config.json", nil))
+	res, err = app.Test(httptest.NewRequest(http.MethodGet, "/webdav/private/config.json", nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +81,7 @@ func TestDevServerWebDAVReadWriteAndCallback(t *testing.T) {
 		t.Fatalf("GET status=%d body=%q", res.StatusCode, body)
 	}
 
-	res, err = app.Test(httptest.NewRequest(http.MethodHead, "/webdav/data/private/config.json", nil))
+	res, err = app.Test(httptest.NewRequest(http.MethodHead, "/webdav/private/config.json", nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +90,7 @@ func TestDevServerWebDAVReadWriteAndCallback(t *testing.T) {
 		t.Fatalf("HEAD status=%d content-length=%q", res.StatusCode, res.Header.Get("Content-Length"))
 	}
 
-	res, err = app.Test(httptest.NewRequest(http.MethodOptions, "/webdav/data/private/config.json", nil))
+	res, err = app.Test(httptest.NewRequest(http.MethodOptions, "/webdav/private/config.json", nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +116,7 @@ func TestDevServerWebDAVReadWriteAndCallback(t *testing.T) {
 		t.Fatalf("MKCOL folder missing: %v", err)
 	}
 
-	req = httptest.NewRequest("PROPFIND", "/webdav/data/private/config.json", strings.NewReader(""))
+	req = httptest.NewRequest("PROPFIND", "/webdav/private/config.json", strings.NewReader(""))
 	req.Header.Set("Depth", "0")
 	res, err = app.Test(req)
 	if err != nil {
@@ -124,7 +127,7 @@ func TestDevServerWebDAVReadWriteAndCallback(t *testing.T) {
 		t.Fatalf("PROPFIND status=%d", res.StatusCode)
 	}
 
-	req = httptest.NewRequest(http.MethodPut, "/api/v1/files?path=data/private/api.txt", strings.NewReader("typed"))
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/files?path=private/api.txt", strings.NewReader("typed"))
 	res, err = app.Test(req)
 	if err != nil {
 		t.Fatal(err)
@@ -133,7 +136,7 @@ func TestDevServerWebDAVReadWriteAndCallback(t *testing.T) {
 	if res.StatusCode != http.StatusNoContent {
 		t.Fatalf("typed PUT status=%d", res.StatusCode)
 	}
-	res, err = app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/files?path=data/private/api.txt", nil))
+	res, err = app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/files?path=private/api.txt", nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +164,7 @@ func TestDevServerFileAuth(t *testing.T) {
 		ownerID:   "owner",
 	})
 
-	res, err := app.Test(httptest.NewRequest(http.MethodPut, "/api/v1/files?path=data/private/api.txt", strings.NewReader("typed")))
+	res, err := app.Test(httptest.NewRequest(http.MethodPut, "/api/v1/files?path=private/api.txt", strings.NewReader("typed")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +173,7 @@ func TestDevServerFileAuth(t *testing.T) {
 		t.Fatalf("unauthenticated PUT status=%d", res.StatusCode)
 	}
 
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/files?path=data/private/api.txt", strings.NewReader("typed"))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/files?path=private/api.txt", strings.NewReader("typed"))
 	req.Header.Set("Authorization", "Bearer user")
 	res, err = app.Test(req)
 	if err != nil {
@@ -181,7 +184,7 @@ func TestDevServerFileAuth(t *testing.T) {
 		t.Fatalf("authenticated PUT status=%d", res.StatusCode)
 	}
 
-	res, err = app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/files?path=data/private/api.txt&token=runtime", nil))
+	res, err = app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/files?path=private/api.txt&token=runtime", nil))
 	if err != nil {
 		t.Fatal(err)
 	}

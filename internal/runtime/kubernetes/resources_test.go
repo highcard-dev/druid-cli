@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -51,7 +52,7 @@ func TestProcedureJobSpecBuildsDeterministicMountsAndLabels(t *testing.T) {
 		Mounts: []domain.Mount{{Path: "/work", SubPath: "cache"}},
 	}
 
-	job, err := procedureJobSpec("druid", ref("druid", "druid-static-web-data"), "start", "start", "static-web-start-0", procedure, procedure.Env, "registry-secret")
+	job, err := procedureJobSpec("druid", ref("druid", "druid-static-web-data"), "start", "start", "static-web-start-0", 1, procedure, procedure.Env, "registry-secret")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +86,7 @@ func TestProcedureJobSpecUsesProvidedRuntimeEnv(t *testing.T) {
 			"PROCEDURE_ONLY": "ignored",
 		},
 	}
-	job, err := procedureJobSpec("druid", ref("druid", "druid-static-web-data"), "start", "start", "static-web-start-0", procedure, map[string]string{
+	job, err := procedureJobSpec("druid", ref("druid", "druid-static-web-data"), "start", "start", "static-web-start-0", 1, procedure, map[string]string{
 		"DRUID_PORT_HTTP": "8080",
 	}, "registry-secret")
 	if err != nil {
@@ -157,30 +158,6 @@ func TestProcedureStatefulSetSpecBuildsPersistentWorkload(t *testing.T) {
 	}
 }
 
-func TestPullJobSpecPropagatesPlainHTTPRegistryEnv(t *testing.T) {
-	job := pullJobSpec("druid", "pull", "scroll-pvc", "druid-cli:test", "registry:5000/lab:1.0", "", "", true)
-
-	env := job.Spec.Template.Spec.Containers[0].Env
-	if len(env) != 1 || env[0].Name != "DRUID_REGISTRY_PLAIN_HTTP" || env[0].Value != "true" {
-		t.Fatalf("env = %#v", env)
-	}
-}
-
-func TestPullJobSpecMountsRegistryConfigSecret(t *testing.T) {
-	job := pullJobSpec("druid", "pull", "scroll-pvc", "druid-cli:test", "registry.local/lab:1.0", "", "runtime-registry", false)
-	container := job.Spec.Template.Spec.Containers[0]
-	if !strings.Contains(strings.Join(container.Command, " "), "--config /tmp/druid-registry.json") {
-		t.Fatalf("command = %#v, want generated registry config", container.Command)
-	}
-	if len(container.Env) != 1 || container.Env[0].Name != registryConfigEnvName {
-		t.Fatalf("env = %#v", container.Env)
-	}
-	ref := container.Env[0].ValueFrom.SecretKeyRef
-	if ref == nil || ref.Name != "runtime-registry" || ref.Key != registryConfigSecretKey {
-		t.Fatalf("secret ref = %#v", ref)
-	}
-}
-
 func TestWorkerPullJobSpecRunsDruidWorkerPull(t *testing.T) {
 	action := ports.RuntimeWorkerAction{
 		Mode:          ports.RuntimeWorkerModeUpdate,
@@ -247,7 +224,7 @@ func TestSpawnPullWorkerCreateUsesFinalPVCAndWorkerJob(t *testing.T) {
 		t.Fatalf("job namespace = %s, want games", jobs[0].Namespace)
 	}
 	command := strings.Join(jobs[0].Spec.Template.Spec.Containers[0].Command, " ")
-	if !strings.Contains(command, "worker pull") || strings.Contains(command, "cat /scroll/scroll.yaml") || strings.Contains(command, "--action-id") {
+	if !strings.Contains(command, "worker pull") || strings.Contains(command, "read-scroll") || strings.Contains(command, "--action-id") {
 		t.Fatalf("command = %#v", jobs[0].Spec.Template.Spec.Containers[0].Command)
 	}
 }
@@ -288,6 +265,159 @@ func TestCreateFreshJobKeepsFailedJob(t *testing.T) {
 	if _, err := client.BatchV1().Jobs("druid").Get(context.Background(), created.Name, metav1.GetOptions{}); err != nil {
 		t.Fatalf("retry Job was not created: %v", err)
 	}
+}
+
+func TestCreateOrReuseProcedureJobRetainsFailedBaseAndCreatesRetry(t *testing.T) {
+	root := ref("druid", dataPVCName("deployment-123"))
+	base := procedureResourceName(root, "start", 1)
+	client := fake.NewSimpleClientset(&batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      base,
+			Namespace: "druid",
+			Labels:    procedureTestLabels(root, "start", "start.1", 1),
+		},
+		Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{{
+			Type:   batchv1.JobFailed,
+			Status: corev1.ConditionTrue,
+		}}},
+	})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+
+	created, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "start", "start.1", base, &domain.Procedure{Image: "alpine"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Name != base+"-r2" {
+		t.Fatalf("retry job name = %s, want %s-r2", created.Name, base)
+	}
+	if _, err := client.BatchV1().Jobs("druid").Get(context.Background(), base, metav1.GetOptions{}); err != nil {
+		t.Fatalf("failed Job was not retained: %v", err)
+	}
+}
+
+func TestCreateOrReuseProcedureJobUsesNextRetryAttempt(t *testing.T) {
+	root := ref("druid", dataPVCName("deployment-123"))
+	base := procedureResourceName(root, "start", 1)
+	client := fake.NewSimpleClientset(
+		failedProcedureJob(root, base, "start", "start.1", 1),
+		failedProcedureJob(root, base+"-r2", "start", "start.1", 2),
+	)
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+
+	created, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "start", "start.1", base, &domain.Procedure{Image: "alpine"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Name != base+"-r3" {
+		t.Fatalf("retry job name = %s, want %s-r3", created.Name, base)
+	}
+}
+
+func TestCreateOrReuseProcedureJobReusesActiveAttempt(t *testing.T) {
+	root := ref("druid", dataPVCName("deployment-123"))
+	base := procedureResourceName(root, "start", 0)
+	active := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      base,
+			Namespace: "druid",
+			Labels:    procedureTestLabels(root, "start", "coldstart", 1),
+		},
+		Status: batchv1.JobStatus{Active: 1},
+	}
+	client := fake.NewSimpleClientset(active)
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+
+	created, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "start", "coldstart", base, &domain.Procedure{Image: "alpine"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Name != base {
+		t.Fatalf("job name = %s, want existing %s", created.Name, base)
+	}
+	jobs, err := client.BatchV1().Jobs("druid").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs.Items) != 1 {
+		t.Fatalf("jobs = %d, want 1", len(jobs.Items))
+	}
+}
+
+func TestCreateOrReuseProcedureJobDeletesSucceededAttempt(t *testing.T) {
+	root := ref("druid", dataPVCName("deployment-123"))
+	base := procedureResourceName(root, "install", 0)
+	client := fake.NewSimpleClientset(&batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      base,
+			Namespace: "druid",
+			Labels:    procedureTestLabels(root, "install", "install", 1),
+		},
+		Status: batchv1.JobStatus{Succeeded: 1},
+	})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+
+	created, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "install", "install", base, &domain.Procedure{Image: "alpine"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Name != base {
+		t.Fatalf("job name = %s, want clean base %s after deleting succeeded attempt", created.Name, base)
+	}
+}
+
+func TestWaitForJobReportsPodFailureReason(t *testing.T) {
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{Name: "failed-start", Namespace: "druid"},
+		Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{{
+			Type:   batchv1.JobFailed,
+			Status: corev1.ConditionTrue,
+		}}},
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "failed-start-pod", Namespace: "druid", Labels: map[string]string{"job-name": "failed-start"}},
+		Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
+			Name: "main",
+			State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+				Reason:   "OOMKilled",
+				ExitCode: 137,
+			}},
+		}}},
+	}
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset(job, pod), fakeHubble{})
+
+	exitCode, err := backend.waitForJob(context.Background(), "druid", "failed-start")
+	if err == nil {
+		t.Fatal("waitForJob error = nil, want failure")
+	}
+	if exitCode == nil || *exitCode != 137 {
+		t.Fatalf("exitCode = %#v, want 137", exitCode)
+	}
+	if !strings.Contains(err.Error(), "OOMKilled") {
+		t.Fatalf("error = %v, want OOMKilled detail", err)
+	}
+}
+
+func failedProcedureJob(root string, name string, command string, procedure string, attempt int) *batchv1.Job {
+	return &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "druid",
+			Labels:    procedureTestLabels(root, command, procedure, attempt),
+		},
+		Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{{
+			Type:   batchv1.JobFailed,
+			Status: corev1.ConditionTrue,
+		}}},
+	}
+}
+
+func procedureTestLabels(root string, command string, procedure string, attempt int) map[string]string {
+	_, pvc, _ := parseRef(root)
+	labels := baseLabels(pvc)
+	labels[labelCommand] = dnsLabel(command)
+	labels[labelProcedure] = dnsLabel(procedure)
+	labels[labelAttempt] = fmt.Sprintf("%d", attempt)
+	return labels
 }
 
 func TestKubernetesJobFailedRequiresTerminalCondition(t *testing.T) {
@@ -589,7 +719,7 @@ func TestDeleteRuntimePurgesServicesAndDataWhenRequested(t *testing.T) {
 	}
 }
 
-func TestBackupAndRestoreJobSpecsUseRuntimePVCAndRegistryEnv(t *testing.T) {
+func TestBackupJobSpecUsesRuntimePVCAndRegistryEnv(t *testing.T) {
 	backup := backupJobSpec("druid", "backup", "runtime-pvc", "druid-cli:test", "registry.local/scroll:backup", "registry-secret", "", true)
 	if backup.Spec.Template.Spec.Containers[0].Command[1] != "push" {
 		t.Fatalf("backup command = %#v", backup.Spec.Template.Spec.Containers[0].Command)
@@ -602,14 +732,6 @@ func TestBackupAndRestoreJobSpecsUseRuntimePVCAndRegistryEnv(t *testing.T) {
 	}
 	if env := backup.Spec.Template.Spec.Containers[0].Env; len(env) != 1 || env[0].Name != "DRUID_REGISTRY_PLAIN_HTTP" || env[0].Value != "true" {
 		t.Fatalf("env = %#v", env)
-	}
-
-	restore := replacePVCJobSpec("druid", "restore", "stage-pvc", "runtime-pvc", "alpine:3.20")
-	if got := restore.Labels[labelComponent]; got != "restore-scroll" {
-		t.Fatalf("restore component = %s", got)
-	}
-	if command := strings.Join(restore.Spec.Template.Spec.Containers[0].Command, " "); !strings.Contains(command, "rm -rf") || !strings.Contains(command, "cp -a") {
-		t.Fatalf("restore command = %#v", restore.Spec.Template.Spec.Containers[0].Command)
 	}
 }
 
@@ -626,6 +748,22 @@ func TestSpawnPullWorkerRequiresPullImage(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "pull image is required") {
 		t.Fatalf("error = %v, want pull image required", err)
+	}
+}
+
+func TestSpawnPullWorkerRejectsLocalArtifactPath(t *testing.T) {
+	backend := NewWithClient(Config{Namespace: "druid", PullImage: "druid-cli:test"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset(), fakeHubble{})
+	err := backend.SpawnPullWorker(context.Background(), ports.RuntimeWorkerAction{
+		Mode:      ports.RuntimeWorkerModeCreate,
+		RuntimeID: "scroll",
+		Artifact:  t.TempDir(),
+		RootRef:   ref("druid", dataPVCName("scroll")),
+	})
+	if err == nil {
+		t.Fatal("SpawnPullWorker error = nil, want local artifact rejection")
+	}
+	if !strings.Contains(err.Error(), "requires an OCI artifact reference") {
+		t.Fatalf("error = %v, want OCI artifact reference error", err)
 	}
 }
 

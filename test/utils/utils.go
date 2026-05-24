@@ -21,7 +21,6 @@ func ConnectionTest(testAddress string, checkOnline bool) error {
 				return
 			case <-tick:
 				conn, err := net.DialTimeout("tcp", testAddress, 1*time.Second)
-				//TODO: UDP support, when we need it
 				if err == nil {
 					conn.Close()
 					if checkOnline {

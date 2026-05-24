@@ -42,8 +42,8 @@ var devRuntimeJWKSURL string
 var DevCommand = &cobra.Command{
 	Use:   "dev [name]",
 	Short: "Control daemon-backed scroll development mode",
-	Example: `  druid dev my-scroll --watch data/private/dist
-  druid dev my-scroll --watch data/private/dist --command build
+	Example: `  druid dev my-scroll --watch private/dist
+  druid dev my-scroll --watch private/dist --command build
 	druid dev --root /scroll --listen :8084 --runtime-id my-scroll
 	druid dev my-scroll --status
   druid dev my-scroll --disable`,

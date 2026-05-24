@@ -3,7 +3,7 @@ package cli
 import "testing"
 
 func TestRootCommandExposesRuntimeAndOCICommands(t *testing.T) {
-	for _, name := range []string{"pull", "push", "login", "dev"} {
+	for _, name := range []string{"pull", "push", "login", "dev", "update"} {
 		if cmd, _, err := RootCmd.Find([]string{name}); err != nil || cmd == nil || cmd.Name() != name {
 			t.Fatalf("druid should expose %q", name)
 		}
@@ -74,6 +74,26 @@ func TestRootCommandExposesDaemonTargets(t *testing.T) {
 	}
 	if flag := RootCmd.PersistentFlags().Lookup("lo" + "cal"); flag != nil {
 		t.Fatal("druid should not expose local direct execution")
+	}
+}
+
+func TestRootCommandExposesLeanProcedureCommands(t *testing.T) {
+	for _, args := range [][]string{
+		{"command", "run"},
+		{"command", "list"},
+		{"procedure", "list"},
+		{"procedure", "attach"},
+	} {
+		cmd, _, err := RootCmd.Find(args)
+		if err != nil || cmd == nil || cmd.Name() != args[len(args)-1] {
+			t.Fatalf("druid should expose %v", args)
+		}
+	}
+	for _, removed := range [][]string{{"run"}, {"attach"}} {
+		cmd, _, err := RootCmd.Find(removed)
+		if err == nil && cmd != nil && cmd.Name() == removed[0] {
+			t.Fatalf("druid should not expose removed top-level %s", removed[0])
+		}
 	}
 }
 

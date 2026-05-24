@@ -7,7 +7,7 @@ import (
 
 func TestRootCommandHasNoRuntimeFlags(t *testing.T) {
 	cmd := NewRootCommand()
-	for _, flag := range []string{"root", "scroll-root", "runtime-config", "status" + "-" + "file"} {
+	for _, flag := range []string{"root", "scroll" + "-" + "root", "runtime" + "-" + "config", "status" + "-" + "file"} {
 		if cmd.Flags().Lookup(flag) != nil {
 			t.Fatalf("did not expect %s flag", flag)
 		}

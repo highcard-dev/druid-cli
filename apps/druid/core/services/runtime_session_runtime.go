@@ -2,8 +2,10 @@ package services
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
+	"github.com/highcard-dev/daemon/internal/core/ports"
 	coreservices "github.com/highcard-dev/daemon/internal/core/services"
 )
 
@@ -46,6 +48,14 @@ func (s *RuntimeSession) StopRuntime() error {
 		return err
 	}
 	s.mu.Lock()
+	commands := s.scrollService.GetFile().Commands
+	for commandName, status := range s.runtimeScroll.Commands {
+		command := commands[commandName]
+		if command != nil && command.Run == domain.RunModeOnce && status.Status == domain.ScrollLockStatusDone {
+			continue
+		}
+		delete(s.runtimeScroll.Commands, commandName)
+	}
 	s.runtimeScroll.Status = domain.RuntimeScrollStatusStopped
 	s.runtimeScroll.LastError = ""
 	err := s.store.UpdateScroll(s.runtimeScroll)
@@ -67,17 +77,18 @@ func (s *RuntimeSession) Backup(ctx context.Context, artifact string, registryCr
 	return s.runtimeBackend.BackupRuntime(ctx, root, artifact, registryCredentials)
 }
 
-func (s *RuntimeSession) Restore(ctx context.Context, artifact string, registryCredentials []domain.RegistryCredential) error {
-	s.mu.Lock()
-	root := s.runtimeScroll.Root
-	s.mu.Unlock()
-	if err := s.runtimeBackend.RestoreRuntime(ctx, root, artifact, registryCredentials); err != nil {
-		return err
+func (s *RuntimeSession) ApplyRestore(materialized *ports.RuntimeMaterialization) error {
+	if materialized == nil {
+		return fmt.Errorf("restore materialization is required")
 	}
-	scrollYAML, err := s.runtimeBackend.ReadScrollFile(root)
-	if err != nil {
-		return err
+	if materialized.Root == "" {
+		return fmt.Errorf("restore materialization has no root")
 	}
+	if len(materialized.ScrollYAML) == 0 {
+		return fmt.Errorf("restore materialization has no scroll_yaml")
+	}
+	root := materialized.Root
+	scrollYAML := materialized.ScrollYAML
 	scrollService, err := coreservices.NewCachedScrollService(root, scrollYAML)
 	if err != nil {
 		return err
@@ -98,14 +109,18 @@ func (s *RuntimeSession) Restore(ctx context.Context, artifact string, registryC
 	s.mu.Lock()
 	oldQueue := s.queueManager
 	commands := scrollService.GetFile().Commands
+	routing := preserveRoutingAssignments(s.runtimeScroll.Routing, scrollService.GetFile().Ports)
 	for commandName := range s.runtimeScroll.Commands {
 		if commands[commandName] == nil {
 			delete(s.runtimeScroll.Commands, commandName)
 		}
 	}
-	s.runtimeScroll.Artifact = artifact
+	s.runtimeScroll.Artifact = materialized.Artifact
+	s.runtimeScroll.ArtifactDigest = materialized.ArtifactDigest
 	s.runtimeScroll.Root = root
+	s.runtimeScroll.ScrollName = scrollService.GetCurrent().Name
 	s.runtimeScroll.ScrollYAML = string(scrollYAML)
+	s.runtimeScroll.Routing = routing
 	s.runtimeScroll.Status = domain.RuntimeScrollStatusStopped
 	s.runtimeScroll.LastError = ""
 	s.scrollService = scrollService

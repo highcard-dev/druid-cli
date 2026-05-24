@@ -1,6 +1,7 @@
 package kubernetes
 
 import (
+	"fmt"
 	"path/filepath"
 	"sort"
 
@@ -74,29 +75,6 @@ func workerPullJobSpec(namespace string, jobName string, pvc string, image strin
 	return job
 }
 
-func pullJobSpec(namespace string, jobName string, pvc string, image string, artifact string, imagePullSecret string, registryConfigSecret string, registryPlainHTTP bool) *batchv1.Job {
-	command := []string{"druid", "pull", artifact, "/scroll"}
-	if registryConfigSecret != "" {
-		command = []string{"sh", "-c", registryConfigScript, "sh", "pull", artifact, "/scroll"}
-	}
-	job := helperJobSpec(namespace, jobName, pvc, image, command, imagePullSecret, map[string]string{
-		labelComponent: "materializer",
-	})
-	if registryConfigSecret != "" {
-		job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{
-			Name: registryConfigEnvName,
-			ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: registryConfigSecret},
-				Key:                  registryConfigSecretKey,
-			}},
-		})
-	}
-	if registryPlainHTTP {
-		job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{Name: "DRUID_REGISTRY_PLAIN_HTTP", Value: "true"})
-	}
-	return job
-}
-
 func backupJobSpec(namespace string, jobName string, pvc string, image string, artifact string, imagePullSecret string, registryConfigSecret string, registryPlainHTTP bool) *batchv1.Job {
 	command := []string{"druid", "push", artifact, "/scroll"}
 	if registryConfigSecret != "" {
@@ -117,53 +95,6 @@ func backupJobSpec(namespace string, jobName string, pvc string, image string, a
 	if registryPlainHTTP {
 		job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{Name: "DRUID_REGISTRY_PLAIN_HTTP", Value: "true"})
 	}
-	return job
-}
-
-func readScrollJobSpec(namespace string, jobName string, pvc string, helperImage string) *batchv1.Job {
-	return helperJobSpec(namespace, jobName, pvc, helperImage, []string{"cat", "/scroll/scroll.yaml"}, "", map[string]string{
-		labelComponent: "read-scroll",
-	})
-}
-
-func copyPVCJobSpec(namespace string, jobName string, sourcePVC string, targetPVC string, helperImage string) *batchv1.Job {
-	labels := map[string]string{
-		labelManagedBy: "druid",
-		labelComponent: "copy-scroll",
-	}
-	backoff := int32(1)
-	return &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{Name: jobName, Namespace: namespace, Labels: labels},
-		Spec: batchv1.JobSpec{
-			BackoffLimit: &backoff,
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: labels},
-				Spec: corev1.PodSpec{
-					RestartPolicy: corev1.RestartPolicyNever,
-					Containers: []corev1.Container{{
-						Name:    "copy",
-						Image:   helperImage,
-						Command: []string{"sh", "-c", "cp -a /stage/. /final/"},
-						VolumeMounts: []corev1.VolumeMount{
-							{Name: "stage", MountPath: "/stage"},
-							{Name: "final", MountPath: "/final"},
-						},
-					}},
-					Volumes: []corev1.Volume{
-						pvcVolume("stage", sourcePVC),
-						pvcVolume("final", targetPVC),
-					},
-				},
-			},
-		},
-	}
-}
-
-func replacePVCJobSpec(namespace string, jobName string, sourcePVC string, targetPVC string, helperImage string) *batchv1.Job {
-	job := copyPVCJobSpec(namespace, jobName, sourcePVC, targetPVC, helperImage)
-	job.Spec.Template.Spec.Containers[0].Command = []string{"sh", "-c", "find /final -mindepth 1 -maxdepth 1 -exec rm -rf {} + && cp -a /stage/. /final/"}
-	job.Labels[labelComponent] = "restore-scroll"
-	job.Spec.Template.Labels[labelComponent] = "restore-scroll"
 	return job
 }
 
@@ -200,14 +131,16 @@ func helperJobSpec(namespace string, jobName string, pvc string, image string, c
 	}
 }
 
-func procedureJobSpec(namespace string, root string, commandName string, procedureName string, resourceName string, procedure *domain.Procedure, env map[string]string, registrySecret string) (*batchv1.Job, error) {
+func procedureJobSpec(namespace string, root string, commandName string, procedureName string, resourceName string, attempt int, procedure *domain.Procedure, env map[string]string, registrySecret string) (*batchv1.Job, error) {
 	_, pvc, err := parseRef(root)
 	if err != nil {
 		return nil, err
 	}
 	labels := baseLabels(pvc)
+	labels[labelRuntimeID] = dnsLabel(runtimeID(root))
 	labels[labelProcedure] = dnsLabel(procedureName)
 	labels[labelCommand] = dnsLabel(commandName)
+	labels[labelAttempt] = fmt.Sprintf("%d", attempt)
 	if len(procedure.ExpectedPorts) == 1 {
 		labels[labelPortName] = dnsLabel(procedure.ExpectedPorts[0].Name)
 	}
@@ -253,6 +186,7 @@ func procedureStatefulSetSpec(namespace string, root string, commandName string,
 		return nil, err
 	}
 	labels := baseLabels(pvc)
+	labels[labelRuntimeID] = dnsLabel(runtimeID(root))
 	labels[labelProcedure] = dnsLabel(procedureName)
 	labels[labelCommand] = dnsLabel(commandName)
 	if len(procedure.ExpectedPorts) == 1 {

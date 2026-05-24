@@ -65,6 +65,9 @@ func (s *RuntimeSupervisor) Start() error {
 		if runtimeScroll.Status == domain.RuntimeScrollStatusDeleted {
 			continue
 		}
+		if runtimeScroll.Status != domain.RuntimeScrollStatusRunning {
+			continue
+		}
 		session, err := s.startSession(runtimeScroll)
 		if err != nil {
 			s.markScrollError(runtimeScroll, err)
@@ -184,7 +187,7 @@ func (s *RuntimeSupervisor) EnsureWithOwner(artifact string, name string, ownerI
 				artifactChanged := artifact != runtimeScroll.Artifact
 				digestChanged := nextDigest != "" && nextDigest != runtimeScroll.ArtifactDigest
 				if artifactChanged || digestChanged {
-					updated, err := s.updateExistingScroll(runtimeScroll, artifact, nextDigest, registryCredentials)
+					updated, err := s.updateExistingScroll(runtimeScroll, artifact, nextDigest, registryCredentials, false)
 					if err != nil {
 						return nil, err
 					}

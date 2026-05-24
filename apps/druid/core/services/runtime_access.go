@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
+	"github.com/highcard-dev/daemon/internal/core/ports"
 )
 
 func (s *RuntimeSupervisor) Run(id string, command string) (*domain.RuntimeScroll, error) {
@@ -55,7 +56,19 @@ func (s *RuntimeSupervisor) Restore(id string, artifact string, restart bool, re
 	if err != nil {
 		return nil, err
 	}
-	if err := session.Restore(context.Background(), artifact, registryCredentials); err != nil {
+	session.mu.Lock()
+	root := session.runtimeScroll.Root
+	session.mu.Unlock()
+	if err := session.StopRuntime(); err != nil {
+		session.markError(err)
+		return nil, err
+	}
+	materialized, err := s.runPullWorker(context.Background(), s.runtimeBackend, ports.RuntimeWorkerModeRestore, id, artifact, root, registryCredentials)
+	if err != nil {
+		session.markError(err)
+		return nil, err
+	}
+	if err := session.ApplyRestore(materialized); err != nil {
 		session.markError(err)
 		return nil, err
 	}

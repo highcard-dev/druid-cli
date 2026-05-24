@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"context"
 	"os"
 
 	"github.com/highcard-dev/daemon/apps/druid/adapters/cli/client"
 	"github.com/highcard-dev/daemon/apps/druid/adapters/daemonclient"
+	"github.com/highcard-dev/daemon/apps/druid/adapters/websocketclient"
 	"github.com/highcard-dev/daemon/internal/api"
 	"github.com/highcard-dev/daemon/internal/utils"
 	"github.com/spf13/cobra"
@@ -39,6 +41,9 @@ func init() {
 	client.Register(RootCmd, client.Config{
 		Daemon: func() (client.RuntimeDaemon, error) {
 			return daemonclient.NewOpenAPIClientForTarget(daemonSocket, daemonURL)
+		},
+		AttachConsole: func(ctx context.Context, scroll string, console string) error {
+			return websocketclient.NewAttacherForTarget(daemonSocket, daemonURL).Attach(ctx, scroll, console)
 		},
 		RegistryCredentials: func() []api.RegistryCredential {
 			return client.RegistryCredentials(loadRegistryStore().Credentials())

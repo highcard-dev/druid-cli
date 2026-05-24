@@ -104,7 +104,7 @@ components:
       required: true
       schema:
         type: string
-      description: Runtime-root-relative file path, for example data/private/package.json.
+      description: Runtime-root-relative file path, for example private/package.json.
   responses:
     BadRequest:
       description: Invalid request

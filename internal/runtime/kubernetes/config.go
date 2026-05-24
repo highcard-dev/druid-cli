@@ -20,6 +20,12 @@ type Config struct {
 	HubbleRelayAddr   string
 	HelperImage       string
 	Kubeconfig        string
+	UIS3Bucket        string
+	UIS3PublicBaseURL string
+	UIS3Region        string
+	UIS3Endpoint      string
+	UIS3Prefix        string
+	UIS3Secret        string
 }
 
 func (c Config) WithDefaults() Config {
@@ -53,6 +59,24 @@ func (c Config) WithDefaults() Config {
 	if c.HelperImage == "" {
 		c.HelperImage = defaultHelperImage
 	}
+	if c.UIS3Bucket == "" {
+		c.UIS3Bucket = os.Getenv("DRUID_K8S_UI_S3_BUCKET")
+	}
+	if c.UIS3PublicBaseURL == "" {
+		c.UIS3PublicBaseURL = os.Getenv("DRUID_K8S_UI_S3_PUBLIC_BASE_URL")
+	}
+	if c.UIS3Region == "" {
+		c.UIS3Region = os.Getenv("DRUID_K8S_UI_S3_REGION")
+	}
+	if c.UIS3Endpoint == "" {
+		c.UIS3Endpoint = os.Getenv("DRUID_K8S_UI_S3_ENDPOINT")
+	}
+	if c.UIS3Prefix == "" {
+		c.UIS3Prefix = os.Getenv("DRUID_K8S_UI_S3_PREFIX")
+	}
+	if c.UIS3Secret == "" {
+		c.UIS3Secret = os.Getenv("DRUID_K8S_UI_S3_CREDENTIALS_SECRET")
+	}
 	return c
 }
 
@@ -71,6 +95,16 @@ func (c Config) ValidateForBackend() error {
 func (c Config) ValidateForMaterialization() error {
 	if c.PullImage == "" {
 		return fmt.Errorf("kubernetes pull image is required for cluster materialization; set --k8s-pull-image or DRUID_K8S_PULL_IMAGE")
+	}
+	return nil
+}
+
+func (c Config) ValidateForUIPublishing() error {
+	if c.PullImage == "" {
+		return fmt.Errorf("kubernetes pull image is required for UI publishing; set --k8s-pull-image or DRUID_K8S_PULL_IMAGE")
+	}
+	if c.UIS3Bucket == "" || c.UIS3PublicBaseURL == "" || c.UIS3Region == "" || c.UIS3Secret == "" {
+		return fmt.Errorf("kubernetes UI publishing requires DRUID_K8S_UI_S3_BUCKET, DRUID_K8S_UI_S3_PUBLIC_BASE_URL, DRUID_K8S_UI_S3_REGION, and DRUID_K8S_UI_S3_CREDENTIALS_SECRET")
 	}
 	return nil
 }

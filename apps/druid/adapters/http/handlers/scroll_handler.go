@@ -154,6 +154,27 @@ func (h *ScrollHandler) StopScroll(c *fiber.Ctx, id string) error {
 	return c.JSON(runtimeScroll)
 }
 
+func (h *ScrollHandler) UpdateScroll(c *fiber.Ctx, id string) error {
+	if _, err := h.getScroll(id); err != nil {
+		return err
+	}
+	var request api.UpdateScrollRequest
+	if len(c.Body()) > 0 {
+		if err := c.BodyParser(&request); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		}
+	}
+	artifact := ""
+	if request.Artifact != nil {
+		artifact = *request.Artifact
+	}
+	runtimeScroll, err := h.supervisor.Update(id, artifact, registryCredentials(request.RegistryCredentials))
+	if err != nil {
+		return err
+	}
+	return c.JSON(runtimeScroll)
+}
+
 func (h *ScrollHandler) RunScrollCommand(c *fiber.Ctx, id string, command string) error {
 	runtimeScroll, err := h.getScroll(id)
 	if err != nil {
@@ -316,6 +337,51 @@ func (h *ScrollHandler) ApplyScrollRouting(c *fiber.Ctx, id string) error {
 		return err
 	}
 	return c.JSON(runtimeScroll)
+}
+
+func (h *ScrollHandler) GetScrollUIPackages(c *fiber.Ctx, id string) error {
+	if _, err := h.getScroll(id); err != nil {
+		return err
+	}
+	packages, err := h.supervisor.UIPackages(id)
+	if err != nil {
+		return err
+	}
+	if packages == nil {
+		packages = domain.RuntimeUIPackages{}
+	}
+	return c.JSON(packages)
+}
+
+func (h *ScrollHandler) PublishScrollUIPackage(c *fiber.Ctx, id string, scope api.PublishScrollUIPackageParamsScope) error {
+	if _, err := h.getScroll(id); err != nil {
+		return err
+	}
+	var request struct {
+		Path *string `json:"path,omitempty"`
+	}
+	if len(c.Body()) > 0 {
+		if err := c.BodyParser(&request); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		}
+	}
+	path := ""
+	if request.Path != nil {
+		path = *request.Path
+	}
+	runtimeScroll, err := h.supervisor.PublishUIPackage(id, string(scope), path)
+	if err != nil {
+		return err
+	}
+	return c.JSON(runtimeScroll)
+}
+
+func (h *ScrollHandler) GetDaemonUIPackages(c *fiber.Ctx) error {
+	return h.GetScrollUIPackages(c, c.Params("id"))
+}
+
+func (h *ScrollHandler) PublishDaemonUIPackage(c *fiber.Ctx) error {
+	return h.PublishScrollUIPackage(c, c.Params("id"), api.PublishScrollUIPackageParamsScope(c.Params("scope")))
 }
 
 func (h *ScrollHandler) BackupScroll(c *fiber.Ctx, id string) error {

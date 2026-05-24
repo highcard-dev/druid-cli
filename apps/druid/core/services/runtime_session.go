@@ -41,15 +41,7 @@ func NewRuntimeSession(
 	}
 	scrollYAML := []byte(runtimeScroll.ScrollYAML)
 	if len(scrollYAML) == 0 {
-		var err error
-		scrollYAML, err = runtimeService.ReadScrollFile(runtimeScroll.Root)
-		if err != nil {
-			return nil, err
-		}
-		runtimeScroll.ScrollYAML = string(scrollYAML)
-		if err := store.UpdateScroll(runtimeScroll); err != nil {
-			return nil, err
-		}
+		return nil, fmt.Errorf("runtime scroll %s has no scroll_yaml", runtimeScroll.ID)
 	}
 	scrollService, err := coreservices.NewCachedScrollService(runtimeScroll.Root, scrollYAML)
 	if err != nil {
