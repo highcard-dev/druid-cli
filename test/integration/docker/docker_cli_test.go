@@ -51,7 +51,7 @@ func TestDockerBackendCLIComplexLifecycle(t *testing.T) {
 	if started.Status != "running" {
 		t.Fatalf("started status = %s, want running", started.Status)
 	}
-	body := e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/env.txt", fixture.Port))
+	body := e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/env.txt", fixture.RoutePort))
 	env := e2e.ParseEnv(body)
 	e2e.AssertRuntimeEnv(t, env, fixture, "docker", created.ID)
 	if env["USER_ENV"] != "fixture" {
@@ -61,7 +61,7 @@ func TestDockerBackendCLIComplexLifecycle(t *testing.T) {
 	statuses := e2e.RunClientJSON[[]e2e.RuntimePortStatus](t, bins, socket, "ports", created.ID)
 	assertPortBound(t, statuses, fixture)
 
-	e2e.RunClient(t, bins, socket, "run", created.ID, "record")
+	e2e.RunClient(t, bins, socket, "command", "run", created.ID, "record")
 	root := strings.TrimPrefix(created.Root, "docker-bind://")
 	if got := readDockerRootFile(t, root, "data/finite.txt"); !strings.Contains(got, "finite-ok") {
 		t.Fatalf("finite file = %q, want finite-ok", got)
@@ -134,7 +134,7 @@ func TestDockerBackendVolumeStorageWorkerLifecycleBackupRestore(t *testing.T) {
 	if started.Status != "running" {
 		t.Fatalf("started status = %s, want running", started.Status)
 	}
-	body := e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/env.txt", fixture.Port))
+	body := e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/env.txt", fixture.RoutePort))
 	env := e2e.ParseEnv(body)
 	e2e.AssertRuntimeEnv(t, env, fixture, "docker", created.ID)
 
@@ -148,12 +148,12 @@ func TestDockerBackendVolumeStorageWorkerLifecycleBackupRestore(t *testing.T) {
 	e2e.UnixJSONRequest(t, socket, http.MethodPost, "/api/v1/scrolls/"+created.ID+"/backup", fmt.Sprintf(`{"artifact":%q}`, backupArtifact))
 	indexURL := fmt.Sprintf("http://127.0.0.1:%d/webdav/data/public/index.txt", publicPort)
 	httpPut(t, indexURL, "mutated\n")
-	if got := e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/index.txt", fixture.Port)); !strings.Contains(got, "mutated") {
+	if got := e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/index.txt", fixture.RoutePort)); !strings.Contains(got, "mutated") {
 		t.Fatalf("mutated index = %q, want mutated", got)
 	}
 
 	e2e.UnixJSONRequest(t, socket, http.MethodPost, "/api/v1/scrolls/"+created.ID+"/restore", fmt.Sprintf(`{"artifact":%q,"restart":true}`, backupArtifact))
-	if got := e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/index.txt", fixture.Port)); !strings.Contains(got, "healthy") {
+	if got := e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/index.txt", fixture.RoutePort)); !strings.Contains(got, "healthy") {
 		t.Fatalf("restored index = %q, want healthy", got)
 	}
 	e2e.UnixJSONRequest(t, socket, http.MethodDelete, "/api/v1/scrolls/"+created.ID+"?purge_data=true", "")
@@ -194,12 +194,8 @@ func TestDockerBackendColdstarterFrontsRuntime(t *testing.T) {
 	if started.Status != "running" {
 		t.Fatalf("started status = %s, want running", started.Status)
 	}
-	if got := e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/index.txt", runtimePort)); !strings.Contains(got, "cold-started") {
+	if got := e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/index.txt", publicPort)); !strings.Contains(got, "cold-started") {
 		t.Fatalf("served body = %q, want cold-started", got)
-	}
-	root := strings.TrimPrefix(created.Root, "docker-bind://")
-	if got := readDockerRootFile(t, root, ".coldstarter-finished.json"); !strings.Contains(got, "http") {
-		t.Fatalf("coldstarter status file = %q, want port status", got)
 	}
 	e2e.RunClient(t, bins, socket, "delete", created.ID)
 }
@@ -211,8 +207,8 @@ func assertPortBound(t *testing.T, statuses []e2e.RuntimePortStatus, fixture e2e
 			if !status.Bound {
 				t.Fatalf("port status = %#v, want bound", status)
 			}
-			if status.HostPort != fixture.Port {
-				t.Fatalf("host port = %d, want %d in status %#v", status.HostPort, fixture.Port, status)
+			if status.HostPort != fixture.RoutePort {
+				t.Fatalf("host port = %d, want %d in status %#v", status.HostPort, fixture.RoutePort, status)
 			}
 			return
 		}

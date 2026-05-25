@@ -425,7 +425,7 @@ func StartRegistry(t *testing.T) int {
 	t.Helper()
 	port := FreePort(t)
 	name := fmt.Sprintf("druid-e2e-registry-%d", time.Now().UnixNano())
-	Run(t, "docker", "run", "-d", "--rm", "--name", name, "-p", fmt.Sprintf("127.0.0.1:%d:5000", port), "registry:2")
+	Run(t, "docker", "run", "-d", "--rm", "--name", name, "-p", fmt.Sprintf("%d:5000", port), "registry:2")
 	t.Cleanup(func() {
 		_ = exec.Command("docker", "rm", "-f", name).Run()
 	})

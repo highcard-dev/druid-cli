@@ -31,7 +31,7 @@ func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.Command
 			if procedure.Id != nil {
 				procedureName = *procedure.Id
 			}
-			containerStatuses, err := b.expectedPortsForProcedure(root, procedureName, procedure, portsByName)
+			containerStatuses, err := b.expectedPortsForProcedure(root, procedureResourceName(commandName, idx), procedureName, procedure, portsByName)
 			if err != nil {
 				return nil, err
 			}
@@ -180,9 +180,9 @@ func (t containerTraffic) rxDelta(window time.Duration, now time.Time) uint64 {
 	return t.rxBytes - base.rx
 }
 
-func (b *Backend) expectedPortsForProcedure(root string, procedureName string, procedure *domain.Procedure, ports map[string]domain.Port) ([]domain.RuntimePortStatus, error) {
+func (b *Backend) expectedPortsForProcedure(root string, resourceName string, procedureName string, procedure *domain.Procedure, ports map[string]domain.Port) ([]domain.RuntimePortStatus, error) {
 	statuses := make([]domain.RuntimePortStatus, 0, len(procedure.ExpectedPorts))
-	containerName := ContainerName(root, procedureName)
+	containerName := ContainerName(root, resourceName)
 	ctx := context.Background()
 	inspected, err := b.client.ContainerInspect(ctx, containerName)
 	containerFound := err == nil
