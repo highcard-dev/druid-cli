@@ -50,6 +50,7 @@ ingress:
 runtime:
   backend: kubernetes
   stateDir: /var/lib/druid/runtime
+  workerCallbackUrl: ""
   workerDaemonUrl: ""
   namespaces:
     mode: single
