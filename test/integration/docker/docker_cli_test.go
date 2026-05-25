@@ -74,8 +74,8 @@ func TestDockerBackendCLIComplexLifecycle(t *testing.T) {
 
 	e2e.RunClient(t, bins, socket, "stop", created.ID)
 	waitDockerContainersGone(t, fixture.ServeProc, fixture.RecordProc)
-	deleted := e2e.RunClient(t, bins, socket, "delete", created.ID)
-	if !strings.Contains(deleted, `"status": "deleted"`) {
+	deleted := e2e.UnixJSONRequest(t, socket, http.MethodDelete, "/api/v1/scrolls/"+created.ID+"?purge_data=true", "")
+	if !strings.Contains(deleted, `"status":"deleted"`) {
 		t.Fatalf("delete response = %s, want deleted status", deleted)
 	}
 }
@@ -109,7 +109,6 @@ func TestDockerBackendVolumeStorageWorkerLifecycleBackupRestore(t *testing.T) {
 		"--worker-callback-url", fmt.Sprintf("http://%s:%d", containerHost, callbackPort),
 		"--listen", fmt.Sprintf(":%d", managementPort),
 		"--worker-daemon-url", fmt.Sprintf("http://%s:%d", containerHost, managementPort),
-		"--public-listen", fmt.Sprintf(":%d", publicPort),
 	}, []string{"DRUID_REGISTRY_PLAIN_HTTP=true"})
 	t.Cleanup(func() {
 		if t.Failed() {
@@ -197,7 +196,7 @@ func TestDockerBackendColdstarterFrontsRuntime(t *testing.T) {
 	if got := e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/index.txt", publicPort)); !strings.Contains(got, "cold-started") {
 		t.Fatalf("served body = %q, want cold-started", got)
 	}
-	e2e.RunClient(t, bins, socket, "delete", created.ID)
+	e2e.UnixJSONRequest(t, socket, http.MethodDelete, "/api/v1/scrolls/"+created.ID+"?purge_data=true", "")
 }
 
 func assertPortBound(t *testing.T, statuses []e2e.RuntimePortStatus, fixture e2e.Fixture) {
