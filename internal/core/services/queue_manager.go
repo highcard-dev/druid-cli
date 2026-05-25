@@ -33,6 +33,8 @@ type QueueManager struct {
 	taskDoneChan      chan struct{}
 	shutdownChan      chan struct{}
 	shutdownDoneChan  chan struct{}
+	shutdownOnce      sync.Once
+	workWg            sync.WaitGroup
 	notifierChan      []chan []string
 	statusObserver    QueueStatusObserver
 }
@@ -205,20 +207,26 @@ func (sc *QueueManager) Work() {
 	for {
 		select {
 		case <-sc.taskChan:
-			go (func() {
-				sc.RunQueue()
-				sc.notify()
-			})()
+			sc.startRunQueue()
 		case <-sc.taskDoneChan:
-			go (func() {
-				sc.RunQueue()
-				sc.notify()
-			})()
+			sc.startRunQueue()
 		case <-sc.shutdownChan:
+			sc.workWg.Wait()
+			sc.mu.Lock()
 			sc.commandQueue = make(map[string]*domain.QueueItem)
+			sc.mu.Unlock()
 			return
 		}
 	}
+}
+
+func (sc *QueueManager) startRunQueue() {
+	sc.workWg.Add(1)
+	go func() {
+		defer sc.workWg.Done()
+		sc.RunQueue()
+		sc.notify()
+	}()
 }
 
 func (sc *QueueManager) RunQueue() {
@@ -284,13 +292,18 @@ func (sc *QueueManager) RunQueue() {
 			// We only run one command at a time to keep dependency resolution deterministic.
 			sc.setStatus(cmd, domain.ScrollLockStatusRunning, nil)
 			logger.Log().Info("Running command", zap.String("command", cmd))
+			sc.workWg.Add(1)
 			go func(c string, i *domain.QueueItem) {
+				defer sc.workWg.Done()
 				defer func() {
 					if i.DoneChan != nil {
 						close(i.DoneChan)
 					}
 
-					sc.taskDoneChan <- struct{}{}
+					select {
+					case sc.taskDoneChan <- struct{}{}:
+					case <-sc.shutdownChan:
+					}
 				}()
 
 				startedAt := time.Now()
@@ -338,16 +351,14 @@ func (sc *QueueManager) RunQueue() {
 }
 
 func (sc *QueueManager) Shutdown() {
+	sc.shutdownOnce.Do(func() {
+		close(sc.shutdownChan)
+	})
+
 	select {
-	case sc.shutdownChan <- struct{}{}:
-		select {
-		case <-sc.shutdownDoneChan:
-		case <-time.After(5 * time.Second):
-			logger.Log().Warn("Timed out waiting for queue manager shutdown")
-		}
 	case <-sc.shutdownDoneChan:
 	case <-time.After(5 * time.Second):
-		logger.Log().Warn("Timed out sending queue manager shutdown signal")
+		logger.Log().Warn("Timed out waiting for queue manager shutdown")
 	}
 }
 

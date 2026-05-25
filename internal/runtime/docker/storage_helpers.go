@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -32,16 +34,22 @@ func (b *Backend) ensureProcedureMountPaths(ctx context.Context, root string, mo
 	if err != nil {
 		return err
 	}
-	if ref.Kind == StorageBind {
-		return nil
-	}
 	paths := make([]string, 0, len(mounts))
 	for _, mount := range mounts {
 		cleaned, err := cleanRootSubPath(procedureDataSubPath(mount.SubPath))
 		if err != nil {
 			return err
 		}
+		if ref.Kind == StorageBind {
+			if err := os.MkdirAll(filepath.Join(ref.Source, filepath.FromSlash(cleaned)), 0755); err != nil {
+				return err
+			}
+			continue
+		}
 		paths = append(paths, "/scroll/"+cleaned)
+	}
+	if ref.Kind == StorageBind {
+		return nil
 	}
 	_, err = b.runRootHelper(ctx, root, append([]string{"mkdir", "-p"}, paths...))
 	return err
@@ -93,6 +101,9 @@ func (b *Backend) runRootHelper(ctx context.Context, root string, command []stri
 	}
 	if len(command) == 0 {
 		return nil, fmt.Errorf("docker root helper command is required")
+	}
+	if err := ensureBindRootSource(root); err != nil {
+		return nil, err
 	}
 	rootMount, err := DockerMount(root, "/scroll", false, "")
 	if err != nil {
@@ -146,4 +157,15 @@ func (b *Backend) runRootHelper(ctx context.Context, root string, command []stri
 		return output.Bytes(), fmt.Errorf("helper container exited with %d: %s", statusCode, strings.TrimSpace(output.String()))
 	}
 	return output.Bytes(), nil
+}
+
+func ensureBindRootSource(root string) error {
+	ref, err := ParseRootRef(root)
+	if err != nil {
+		return err
+	}
+	if ref.Kind != StorageBind {
+		return nil
+	}
+	return os.MkdirAll(ref.Source, 0755)
 }
