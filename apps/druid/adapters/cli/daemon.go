@@ -148,7 +148,7 @@ func runRuntimeDaemon() error {
 		return err
 	}
 
-	authorizer, err := services.NewAuthorizer(runtimeAuthJWKSURL, "")
+	authorizer, err := services.NewAuthorizer(buildJWKSURLs([]string{runtimeAuthJWKSURL}), "")
 	if err != nil {
 		return err
 	}
@@ -268,4 +268,23 @@ func listenRuntimeDaemon(app *fiber.App, stateDir string) error {
 	defer os.Remove(runtimeSocket)
 	logger.Log().Info("Starting runtime daemon", zap.String("socket", runtimeSocket), zap.String("stateDir", stateDir))
 	return app.Listener(listener)
+}
+
+func buildJWKSURLs(values []string) []string {
+	urls := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+
+	for _, url := range values {
+		url = strings.TrimSpace(url)
+		if url == "" {
+			continue
+		}
+		if _, ok := seen[url]; ok {
+			continue
+		}
+		seen[url] = struct{}{}
+		urls = append(urls, url)
+	}
+
+	return urls
 }

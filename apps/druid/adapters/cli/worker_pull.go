@@ -101,6 +101,13 @@ func loadWorkerRegistryStore() *registry.CredentialStore {
 	if len(config.Registries) == 0 {
 		_ = viper.UnmarshalKey("registries", &config.Registries)
 	}
+	if len(config.Registries) == 0 {
+		if path := viper.ConfigFileUsed(); path != "" {
+			if raw, err := os.ReadFile(path); err == nil {
+				_ = json.Unmarshal(raw, &config)
+			}
+		}
+	}
 	return registry.NewCredentialStore(config.Registries)
 }
 

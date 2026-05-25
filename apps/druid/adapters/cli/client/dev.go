@@ -132,7 +132,7 @@ func runDevServer() error {
 	}
 	auth := devAuth{runtimeID: devRuntimeID, ownerID: devOwnerID}
 	if devAuthJWKSURL != "" {
-		auth.user, err = coreservices.NewAuthorizer(devAuthJWKSURL, "")
+		auth.user, err = coreservices.NewAuthorizer([]string{devAuthJWKSURL}, "")
 		if err != nil {
 			return err
 		}

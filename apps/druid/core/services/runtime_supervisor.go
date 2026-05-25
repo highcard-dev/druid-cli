@@ -143,15 +143,6 @@ func (s *RuntimeSupervisor) EnsureWithOwner(artifact string, name string, ownerI
 				}
 			}
 			if runtimeScroll.ScrollYAML == "" {
-				if runtimeScroll.Status == domain.RuntimeScrollStatusError {
-					if ownerID != "" && runtimeScroll.OwnerID != ownerID {
-						runtimeScroll.OwnerID = ownerID
-						if err := s.store.UpdateScroll(runtimeScroll); err != nil {
-							return nil, err
-						}
-					}
-					return runtimeScroll, nil
-				}
 				if artifact == "" {
 					artifact = runtimeScroll.Artifact
 				}

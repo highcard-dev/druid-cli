@@ -28,6 +28,7 @@ app_version: "1.0"
 serve: start
 commands:
   start:
+    run: restart
     procedures:
       - image: alpine:3.20
         command: ["true"]
@@ -459,7 +460,7 @@ func TestRuntimeSupervisorCreateUsesRequestedNamespaceForRoot(t *testing.T) {
 	}
 }
 
-func TestRuntimeSupervisorEnsureMaterializationFailureIsRemembered(t *testing.T) {
+func TestRuntimeSupervisorEnsureRetriesIncompleteMaterializationFailure(t *testing.T) {
 	store := newTestStateStore(t)
 	callbacks := NewWorkerCallbackManager()
 	backend := &fakeWorkerBackend{callbacks: callbacks, workerErr: errors.New("pull image failed")}
@@ -481,12 +482,15 @@ func TestRuntimeSupervisorEnsureMaterializationFailureIsRemembered(t *testing.T)
 		t.Fatalf("failed scroll = %#v", failed)
 	}
 
+	backend.workerErr = nil
+	backend.scrollYAML = cachedScrollYAML("start")
+	backend.digest = "sha256:recovered"
 	runtimeScroll, err := supervisor.Ensure("registry.local/missing:1.0", "broken-scroll", nil)
 	if err != nil {
-		t.Fatalf("second Ensure error = %v, want remembered runtime scroll", err)
+		t.Fatalf("second Ensure error = %v, want recovery", err)
 	}
-	if runtimeScroll.Status != domain.RuntimeScrollStatusError || backend.spawnCount != 1 {
-		t.Fatalf("runtimeScroll=%#v spawnCount=%d, want remembered error and no respawn", runtimeScroll, backend.spawnCount)
+	if runtimeScroll.Status != domain.RuntimeScrollStatusCreated || runtimeScroll.ScrollYAML == "" || runtimeScroll.ArtifactDigest != "sha256:recovered" || backend.spawnCount != 2 {
+		t.Fatalf("runtimeScroll=%#v spawnCount=%d, want recovered materialization", runtimeScroll, backend.spawnCount)
 	}
 }
 
@@ -1005,6 +1009,7 @@ app_version: "2.0"
 serve: start
 commands:
   start:
+    run: restart
     procedures:
       - image: alpine:3.20
         command: ["true"]
