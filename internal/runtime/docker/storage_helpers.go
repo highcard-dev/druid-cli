@@ -15,7 +15,7 @@ import (
 )
 
 func (b *Backend) emptyRoot(ctx context.Context, root string) error {
-	_, err := b.runRootHelper(ctx, root, []string{"sh", "-c", "find /scroll -mindepth 1 -maxdepth 1 -exec rm -rf {} +"})
+	_, err := b.runRootHelper(ctx, root, []string{"sh", "-c", "chmod -R a+rwX /scroll 2>/dev/null || true; find /scroll -mindepth 1 -maxdepth 1 -exec rm -rf {} +; chmod a+rwX /scroll"})
 	return err
 }
 

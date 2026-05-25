@@ -32,6 +32,7 @@ type QueueManager struct {
 	taskChan          chan string
 	taskDoneChan      chan struct{}
 	shutdownChan      chan struct{}
+	shutdownDoneChan  chan struct{}
 	notifierChan      []chan []string
 	statusObserver    QueueStatusObserver
 }
@@ -47,6 +48,7 @@ func NewQueueManager(
 		taskChan:          make(chan string, 100),
 		taskDoneChan:      make(chan struct{}, 1),
 		shutdownChan:      make(chan struct{}),
+		shutdownDoneChan:  make(chan struct{}),
 		notifierChan:      make([]chan []string, 0),
 	}
 }
@@ -198,6 +200,7 @@ func (sc *QueueManager) HydrateCommandStatuses(statuses map[string]domain.LockSt
 }
 
 func (sc *QueueManager) Work() {
+	defer close(sc.shutdownDoneChan)
 
 	for {
 		select {
@@ -335,7 +338,17 @@ func (sc *QueueManager) RunQueue() {
 }
 
 func (sc *QueueManager) Shutdown() {
-	sc.shutdownChan <- struct{}{}
+	select {
+	case sc.shutdownChan <- struct{}{}:
+		select {
+		case <-sc.shutdownDoneChan:
+		case <-time.After(5 * time.Second):
+			logger.Log().Warn("Timed out waiting for queue manager shutdown")
+		}
+	case <-sc.shutdownDoneChan:
+	case <-time.After(5 * time.Second):
+		logger.Log().Warn("Timed out sending queue manager shutdown signal")
+	}
 }
 
 func (sc *QueueManager) WaitUntilEmpty() {
