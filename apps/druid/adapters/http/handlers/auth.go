@@ -10,14 +10,20 @@ const ownerLocal = "druid-owner-id"
 
 func (h *ScrollHandler) PublicAuth(c *fiber.Ctx) error {
 	if h.authorizer == nil {
-		return c.Next()
+		if h.allowUnauthenticatedPublic {
+			return c.Next()
+		}
+		return fiber.NewError(fiber.StatusUnauthorized, "public authentication is not configured")
 	}
 	auth, err := h.authorizer.CheckHeader(c)
 	if err != nil {
 		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
 	}
 	if auth == nil {
-		return c.Next()
+		if h.allowUnauthenticatedPublic {
+			return c.Next()
+		}
+		return fiber.NewError(fiber.StatusUnauthorized, "missing authorization token")
 	}
 	c.Locals(ownerLocal, auth.Subject)
 	id := c.Params("id")
@@ -46,12 +52,13 @@ func (h *ScrollHandler) authorizeRuntimeOwner(id string, subject string) error {
 
 func (h *WebsocketHandler) PublicQueryAuth(c *websocket.Conn) bool {
 	if h.authorizer == nil {
-		return true
+		return h.allowUnauthenticatedPublic
 	}
-	if _, err := h.authorizer.CheckQuery(c.Params("id"), c.Query("token")); err != nil {
+	auth, err := h.authorizer.CheckQuery(c.Params("id"), c.Query("token"))
+	if err != nil {
 		return false
 	}
-	return true
+	return auth != nil || h.allowUnauthenticatedPublic
 }
 
 type jwksProvider interface {

@@ -8,11 +8,15 @@ import (
 )
 
 func (s *RuntimeSupervisor) Run(id string, command string) (*domain.RuntimeScroll, error) {
+	return s.RunWithContext(context.Background(), id, command)
+}
+
+func (s *RuntimeSupervisor) RunWithContext(ctx context.Context, id string, command string) (*domain.RuntimeScroll, error) {
 	session, err := s.sessionFor(id)
 	if err != nil {
 		return nil, err
 	}
-	return session.Run(command)
+	return session.RunWithContext(ctx, command)
 }
 
 func (s *RuntimeSupervisor) Ports(id string) ([]domain.RuntimePortStatus, error) {

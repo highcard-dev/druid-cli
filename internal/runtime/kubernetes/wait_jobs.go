@@ -102,6 +102,12 @@ func (b *Backend) waitForJob(ctx context.Context, namespace string, jobName stri
 			logger.Log().Error("Kubernetes job failed", zap.String("namespace", namespace), zap.String("job", jobName), zap.Int("exit_code", exitCode), zap.String("detail", detail), zap.Int32("succeeded", job.Status.Succeeded), zap.Int32("failed", job.Status.Failed), zap.Int32("active", job.Status.Active))
 			return &exitCode, fmt.Errorf("job %s failed: %s", jobName, detail)
 		}
+		if time.Since(startedAt) > time.Minute {
+			if exitCode, detail, ok := b.jobStartupFailure(ctx, namespace, jobName); ok {
+				logger.Log().Error("Kubernetes job startup failed", zap.String("namespace", namespace), zap.String("job", jobName), zap.Int("exit_code", exitCode), zap.String("detail", detail), zap.Int32("succeeded", job.Status.Succeeded), zap.Int32("failed", job.Status.Failed), zap.Int32("active", job.Status.Active))
+				return &exitCode, fmt.Errorf("job %s failed: %s", jobName, detail)
+			}
+		}
 		if time.Now().After(deadline) {
 			logger.Log().Error("Timed out waiting for Kubernetes job", zap.String("namespace", namespace), zap.String("job", jobName), zap.Int32("succeeded", job.Status.Succeeded), zap.Int32("failed", job.Status.Failed), zap.Int32("active", job.Status.Active))
 			return nil, fmt.Errorf("timed out waiting for job %s", jobName)
@@ -113,6 +119,27 @@ func (b *Backend) waitForJob(ctx context.Context, namespace string, jobName stri
 			return nil, err
 		}
 	}
+}
+
+func (b *Backend) jobStartupFailure(ctx context.Context, namespace string, jobName string) (int, string, bool) {
+	selector := labels.SelectorFromSet(labels.Set{"job-name": jobName}).String()
+	pods, err := b.client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
+	if err != nil || len(pods.Items) == 0 {
+		return 1, "", false
+	}
+	for _, pod := range pods.Items {
+		for _, status := range pod.Status.InitContainerStatuses {
+			if exitCode, detail, ok := startupContainerFailure(pod.Name, status); ok {
+				return exitCode, detail, true
+			}
+		}
+		for _, status := range pod.Status.ContainerStatuses {
+			if exitCode, detail, ok := startupContainerFailure(pod.Name, status); ok {
+				return exitCode, detail, true
+			}
+		}
+	}
+	return 1, "", false
 }
 
 func kubernetesJobFailed(job *batchv1.Job) bool {
@@ -162,6 +189,22 @@ func containerFailure(podName string, status corev1.ContainerStatus) (int, strin
 		return 1, detail, true
 	}
 	return 1, "", false
+}
+
+func startupContainerFailure(podName string, status corev1.ContainerStatus) (int, string, bool) {
+	if status.State.Terminated != nil {
+		return containerFailure(podName, status)
+	}
+	if status.State.Waiting == nil {
+		return 1, "", false
+	}
+	waiting := status.State.Waiting
+	switch waiting.Reason {
+	case "ErrImagePull", "ImagePullBackOff", "InvalidImageName", "CreateContainerConfigError", "CreateContainerError", "RunContainerError", "CrashLoopBackOff":
+		return containerFailure(podName, status)
+	default:
+		return 1, "", false
+	}
 }
 
 func (b *Backend) podLogs(ctx context.Context, namespace string, podName string) ([]byte, error) {

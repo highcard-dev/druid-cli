@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	runtimehandlers "github.com/highcard-dev/daemon/apps/druid/adapters/http/handlers"
@@ -37,6 +40,9 @@ var k8sKubeconfig string
 var runtimeListen string
 var runtimePublicListen string
 var runtimeInternalToken string
+var runtimeAllowUnauthenticatedPublic bool
+var runtimeAllowUnauthenticatedManagement bool
+var runtimeWorkerTimeout time.Duration
 var runtimeWorkerCallbackListen string
 var runtimeWorkerCallbackURL string
 var runtimeWorkerDaemonURL string
@@ -65,6 +71,9 @@ func init() {
 	DaemonCommand.Flags().StringVar(&runtimeListen, "listen", "", "Optional management HTTP listen address, for example :8081")
 	DaemonCommand.Flags().StringVar(&runtimePublicListen, "public-listen", "", "Optional public dashboard HTTP listen address, for example :8082")
 	DaemonCommand.Flags().StringVar(&runtimeInternalToken, "internal-token", "", "Optional bearer token required for management HTTP API requests")
+	DaemonCommand.Flags().BoolVar(&runtimeAllowUnauthenticatedPublic, "unsafe-allow-unauthenticated-public", false, "Allow unauthenticated public HTTP routes without --auth-jwks-url")
+	DaemonCommand.Flags().BoolVar(&runtimeAllowUnauthenticatedManagement, "unsafe-allow-unauthenticated-management", false, "Allow unauthenticated management HTTP routes without --internal-token")
+	DaemonCommand.Flags().DurationVar(&runtimeWorkerTimeout, "worker-timeout", 20*time.Minute, "Maximum time for runtime materialization workers")
 	DaemonCommand.Flags().StringVar(&runtimeWorkerCallbackListen, "worker-callback-listen", "", "Optional internal worker callback listen address, for example :8083")
 	DaemonCommand.Flags().StringVar(&runtimeWorkerCallbackURL, "worker-callback-url", "", "URL workers use to call back to this daemon")
 	DaemonCommand.Flags().StringVar(&runtimeWorkerDaemonURL, "worker-daemon-url", "", "URL dev workers use for daemon management API calls")
@@ -93,6 +102,10 @@ func init() {
 }
 
 func runRuntimeDaemon() error {
+	loadRuntimeDaemonEnv()
+	if err := validateRuntimeDaemonAuthConfig(); err != nil {
+		return err
+	}
 	kubernetesConfig := runtimekubernetes.Config{
 		Namespace:         k8sNamespace,
 		StorageClass:      k8sStorageClass,
@@ -117,7 +130,7 @@ func runRuntimeDaemon() error {
 	manager := services.NewRuntimeScrollManager(runtime.Store)
 	supervisor := appservices.NewRuntimeSupervisor(runtime.Store, manager, runtime.Backend)
 	callbacks := appservices.NewWorkerCallbackManager()
-	loadRuntimeDaemonEnv()
+	supervisor.SetWorkerTimeout(runtimeWorkerTimeout)
 	callbackConfig := ports.RuntimeWorkerCallbackConfig{
 		Listen: runtimeWorkerCallbackListen,
 		URL:    runtimeWorkerCallbackURL,
@@ -153,9 +166,11 @@ func runRuntimeDaemon() error {
 		return err
 	}
 	scrollHandler := runtimehandlers.NewScrollHandler(supervisor, consoleService, logManager, authorizer)
+	scrollHandler.SetAllowUnauthenticatedPublic(runtimeAllowUnauthenticatedPublic)
 	websocketHandler := runtimehandlers.NewWebsocketHandler(consoleService)
 	websocketHandler.SetScrollHandler(scrollHandler)
 	websocketHandler.SetAuthorizer(authorizer)
+	websocketHandler.SetAllowUnauthenticatedPublic(runtimeAllowUnauthenticatedPublic)
 	handlers := runtimehandlers.RouteHandlers{
 		Server: runtimehandlers.NewRuntimeServer(
 			runtimehandlers.NewHealthHandler(),
@@ -218,6 +233,42 @@ func loadRuntimeDaemonEnv() {
 	if runtimeInternalToken == "" {
 		runtimeInternalToken = os.Getenv("DRUID_INTERNAL_TOKEN")
 	}
+	if !runtimeAllowUnauthenticatedPublic {
+		runtimeAllowUnauthenticatedPublic = envBool("DRUID_UNSAFE_ALLOW_UNAUTHENTICATED_PUBLIC")
+	}
+	if !runtimeAllowUnauthenticatedManagement {
+		runtimeAllowUnauthenticatedManagement = envBool("DRUID_UNSAFE_ALLOW_UNAUTHENTICATED_MANAGEMENT")
+	}
+	if runtimeWorkerTimeout == 0 {
+		runtimeWorkerTimeout = 20 * time.Minute
+	}
+	if raw := strings.TrimSpace(os.Getenv("DRUID_WORKER_TIMEOUT")); raw != "" {
+		if parsed, err := time.ParseDuration(raw); err == nil {
+			runtimeWorkerTimeout = parsed
+		}
+	}
+}
+
+func envBool(name string) bool {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return false
+	}
+	parsed, err := strconv.ParseBool(value)
+	return err == nil && parsed
+}
+
+func validateRuntimeDaemonAuthConfig() error {
+	if runtimePublicListen != "" && runtimeAuthJWKSURL == "" && !runtimeAllowUnauthenticatedPublic {
+		return fmt.Errorf("public listener %s requires --auth-jwks-url or --unsafe-allow-unauthenticated-public", runtimePublicListen)
+	}
+	if runtimeListen != "" && runtimeInternalToken == "" && !runtimeAllowUnauthenticatedManagement {
+		return fmt.Errorf("management listener %s requires --internal-token or --unsafe-allow-unauthenticated-management", runtimeListen)
+	}
+	if runtimeWorkerTimeout <= 0 {
+		return fmt.Errorf("worker timeout must be greater than zero")
+	}
+	return nil
 }
 
 func openWorkerCallbackListener(listen string) (net.Listener, error) {

@@ -85,6 +85,10 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 		}
 		exitCode, err := b.runJobProcedure(command.ScrollID, command.Name, procedureName, resourceName, procedure, command.Root, command.GlobalPorts, env, portUse)
 		if err != nil {
+			if exitCode != nil && *exitCode != 0 && procedure.IgnoreFailure {
+				logger.Log().Warn("Kubernetes job procedure failed but failure is ignored", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("procedure", procedureName), zap.Int("exit_code", *exitCode), zap.Error(err))
+				continue
+			}
 			logger.Log().Error("Kubernetes job procedure failed", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("procedure", procedureName), zap.Any("exit_code", exitCode), zap.Error(err))
 			return exitCode, err
 		}

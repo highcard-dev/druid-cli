@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -26,6 +27,7 @@ type RuntimeSupervisor struct {
 	internalToken     string
 	authJWKSURL       string
 	runtimeJWKSURL    string
+	workerTimeout     time.Duration
 
 	mu       sync.Mutex
 	sessions map[string]*RuntimeSession
@@ -40,6 +42,7 @@ func NewRuntimeSupervisor(
 		store:          store,
 		manager:        manager,
 		runtimeBackend: runtimeBackend,
+		workerTimeout:  20 * time.Minute,
 		sessions:       map[string]*RuntimeSession{},
 	}
 }
@@ -47,6 +50,13 @@ func NewRuntimeSupervisor(
 func (s *RuntimeSupervisor) SetWorkerCallbacks(callbacks *WorkerCallbackManager, callbackURL string) {
 	s.workerCallbacks = callbacks
 	s.workerCallbackURL = strings.TrimRight(callbackURL, "/")
+}
+
+func (s *RuntimeSupervisor) SetWorkerTimeout(timeout time.Duration) {
+	if timeout <= 0 {
+		return
+	}
+	s.workerTimeout = timeout
 }
 
 func (s *RuntimeSupervisor) SetDevWorkerConfig(daemonURL string, internalToken string, authJWKSURL string, runtimeJWKSURL string) {

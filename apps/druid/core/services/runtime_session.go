@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -26,6 +27,8 @@ type RuntimeSession struct {
 	devDaemonToken    string
 	devAuthJWKSURL    string
 	devRuntimeJWKSURL string
+	devWatchBridge    *domain.BroadcastChannel
+	devWatchCancel    context.CancelFunc
 
 	mu      sync.Mutex
 	started bool

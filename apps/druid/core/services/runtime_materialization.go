@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
@@ -26,6 +25,8 @@ func (s *RuntimeSupervisor) runPullWorker(ctx context.Context, runtimeService po
 	if err != nil {
 		return nil, err
 	}
+	waitCtx, cancel := context.WithTimeout(ctx, s.workerTimeout)
+	defer cancel()
 	callbackURL := s.workerCallbackURL + "/internal/v1/workers/" + runtimeID + "/complete"
 	action := ports.RuntimeWorkerAction{
 		Mode:                mode,
@@ -37,12 +38,10 @@ func (s *RuntimeSupervisor) runPullWorker(ctx context.Context, runtimeService po
 		CallbackToken:       token,
 		RegistryCredentials: registryCredentials,
 	}
-	if err := runtimeService.SpawnPullWorker(ctx, action); err != nil {
+	if err := runtimeService.SpawnPullWorker(waitCtx, action); err != nil {
 		s.workerCallbacks.Cancel(runtimeID)
 		return nil, err
 	}
-	waitCtx, cancel := context.WithTimeout(ctx, 20*time.Minute)
-	defer cancel()
 	select {
 	case result, ok := <-resultCh:
 		if !ok {

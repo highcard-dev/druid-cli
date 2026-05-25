@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -353,6 +354,7 @@ func (sc *QueueManager) RunQueue() {
 func (sc *QueueManager) Shutdown() {
 	sc.shutdownOnce.Do(func() {
 		close(sc.shutdownChan)
+		sc.notify()
 	})
 
 	select {
@@ -363,6 +365,10 @@ func (sc *QueueManager) Shutdown() {
 }
 
 func (sc *QueueManager) WaitUntilEmpty() {
+	_ = sc.WaitUntilEmptyContext(context.Background())
+}
+
+func (sc *QueueManager) WaitUntilEmptyContext(ctx context.Context) error {
 	notifier := make(chan []string, 10)
 
 	sc.mu.Lock()
@@ -370,21 +376,49 @@ func (sc *QueueManager) WaitUntilEmpty() {
 	if !sc.hasActiveItemsLocked() {
 		sc.removeNotifierLocked(notifier)
 		sc.mu.Unlock()
-		return
+		return nil
 	}
 	sc.mu.Unlock()
+	defer func() {
+		sc.mu.Lock()
+		sc.removeNotifierLocked(notifier)
+		sc.mu.Unlock()
+	}()
 
 	for {
-
-		cmds := <-notifier
-		if len(cmds) == 0 {
-			sc.mu.Lock()
-			sc.removeNotifierLocked(notifier)
-			sc.mu.Unlock()
-			return
+		select {
+		case cmds := <-notifier:
+			if len(cmds) == 0 {
+				return nil
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-sc.shutdownChan:
+			return fmt.Errorf("queue manager shut down while waiting for commands")
 		}
 	}
+}
 
+func (sc *QueueManager) activeCommands() []string {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	cmds := make([]string, 0)
+	for cmd, item := range sc.commandQueue {
+		if item.Status != domain.ScrollLockStatusDone && item.Status != domain.ScrollLockStatusError {
+			cmds = append(cmds, cmd)
+		}
+	}
+	return cmds
+}
+
+func (sc *QueueManager) waitUntilEmptyForTest() {
+	for {
+		cmds := sc.activeCommands()
+		if len(cmds) == 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func (sc *QueueManager) hasActiveItemsLocked() bool {

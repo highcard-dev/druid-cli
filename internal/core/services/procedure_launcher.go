@@ -73,7 +73,11 @@ func (sc *ProcedureLauncher) setProcedureStatus(procedure string, status domain.
 func (sc *ProcedureLauncher) GetProcedureStatuses() map[string]domain.ScrollLockStatus {
 	sc.proceduresMutex.Lock()
 	defer sc.proceduresMutex.Unlock()
-	return sc.procedures
+	statuses := make(map[string]domain.ScrollLockStatus, len(sc.procedures))
+	for name, status := range sc.procedures {
+		statuses[name] = status
+	}
+	return statuses
 }
 
 func (sc *ProcedureLauncher) Run(cmd string) error {

@@ -11,9 +11,10 @@ import (
 )
 
 type WebsocketHandler struct {
-	consoleService *services.ConsoleManager
-	scrolls        *ScrollHandler
-	authorizer     ports.AuthorizerServiceInterface
+	consoleService             *services.ConsoleManager
+	scrolls                    *ScrollHandler
+	authorizer                 ports.AuthorizerServiceInterface
+	allowUnauthenticatedPublic bool
 }
 
 func NewWebsocketHandler(consoleService *services.ConsoleManager) *WebsocketHandler {
@@ -26,6 +27,10 @@ func (h *WebsocketHandler) SetScrollHandler(scrolls *ScrollHandler) {
 
 func (h *WebsocketHandler) SetAuthorizer(authorizer ports.AuthorizerServiceInterface) {
 	h.authorizer = authorizer
+}
+
+func (h *WebsocketHandler) SetAllowUnauthenticatedPublic(allow bool) {
+	h.allowUnauthenticatedPublic = allow
 }
 
 func (h *WebsocketHandler) AttachConsole(c *websocket.Conn) {

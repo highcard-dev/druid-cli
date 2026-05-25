@@ -13,10 +13,11 @@ import (
 )
 
 type ScrollHandler struct {
-	supervisor     *appservices.RuntimeSupervisor
-	consoleService *services.ConsoleManager
-	logService     *services.LogManager
-	authorizer     ports.AuthorizerServiceInterface
+	supervisor                 *appservices.RuntimeSupervisor
+	consoleService             *services.ConsoleManager
+	logService                 *services.LogManager
+	authorizer                 ports.AuthorizerServiceInterface
+	allowUnauthenticatedPublic bool
 }
 
 func NewScrollHandler(supervisor *appservices.RuntimeSupervisor, consoleService *services.ConsoleManager, logService *services.LogManager, authorizer ...ports.AuthorizerServiceInterface) *ScrollHandler {
@@ -30,6 +31,10 @@ func NewScrollHandler(supervisor *appservices.RuntimeSupervisor, consoleService 
 		logService:     logService,
 		authorizer:     auth,
 	}
+}
+
+func (h *ScrollHandler) SetAllowUnauthenticatedPublic(allow bool) {
+	h.allowUnauthenticatedPublic = allow
 }
 
 func registryCredentials(in *[]api.RegistryCredential) []domain.RegistryCredential {
@@ -180,7 +185,7 @@ func (h *ScrollHandler) RunScrollCommand(c *fiber.Ctx, id string, command string
 	if err != nil {
 		return err
 	}
-	updated, err := h.supervisor.Run(runtimeScroll.ID, command)
+	updated, err := h.supervisor.RunWithContext(c.UserContext(), runtimeScroll.ID, command)
 	if err != nil {
 		return err
 	}
@@ -256,7 +261,7 @@ func (h *ScrollHandler) RunDaemonCommand(c *fiber.Ctx) error {
 	if request.Command == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "command is required")
 	}
-	if _, err := h.supervisor.Run(c.Params("id"), request.Command); err != nil {
+	if _, err := h.supervisor.RunWithContext(c.UserContext(), c.Params("id"), request.Command); err != nil {
 		return err
 	}
 	return c.SendStatus(fiber.StatusOK)

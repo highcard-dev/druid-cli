@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -86,6 +87,10 @@ func (s *RuntimeSession) AutoStartServe() error {
 }
 
 func (s *RuntimeSession) Run(command string) (*domain.RuntimeScroll, error) {
+	return s.RunWithContext(context.Background(), command)
+}
+
+func (s *RuntimeSession) RunWithContext(ctx context.Context, command string) (*domain.RuntimeScroll, error) {
 	s.refreshCommandState()
 	targetCommand, err := s.scrollService.GetCommand(command)
 	if err != nil {
@@ -100,7 +105,10 @@ func (s *RuntimeSession) Run(command string) (*domain.RuntimeScroll, error) {
 		return nil, err
 	}
 	if !longRunning {
-		s.queueManager.WaitUntilEmpty()
+		if err := s.queueManager.WaitUntilEmptyContext(ctx); err != nil {
+			s.markError(err)
+			return nil, err
+		}
 	}
 
 	s.mu.Lock()

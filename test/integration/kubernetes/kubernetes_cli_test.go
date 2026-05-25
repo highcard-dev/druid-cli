@@ -54,6 +54,7 @@ func TestKubernetesBackendCLIComplexLifecycle(t *testing.T) {
 		"--worker-callback-url", fmt.Sprintf("http://%s:%d", containerHost, callbackPort),
 		"--listen", fmt.Sprintf(":%d", managementPort),
 		"--worker-daemon-url", fmt.Sprintf("http://%s:%d", containerHost, managementPort),
+		"--unsafe-allow-unauthenticated-management",
 	}, []string{"DRUID_REGISTRY_PLAIN_HTTP=true"})
 	t.Cleanup(func() {
 		if t.Failed() {

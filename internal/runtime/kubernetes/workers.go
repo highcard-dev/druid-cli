@@ -62,6 +62,7 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 	}
 	defer cleanupRegistryConfig()
 	job := workerPullJobSpec(namespace, jobName("worker-pull", action.RootRef, shortHash(string(action.Mode)+action.Artifact)), pvc, b.config.PullImage, action, b.config.RegistrySecret, registryConfigSecret, b.config.RegistryPlainHTTP)
+	setJobDeadlineFromContext(ctx, job)
 	logger.Log().Debug("Kubernetes pull worker job built", zap.String("runtime_id", action.RuntimeID), zap.String("namespace", namespace), zap.String("job", job.Name))
 	if err := b.runHelperJob(ctx, job); err != nil {
 		logger.Log().Error("Kubernetes pull worker failed", zap.String("runtime_id", action.RuntimeID), zap.String("namespace", namespace), zap.String("job", job.Name), zap.Error(err))
@@ -91,12 +92,25 @@ func (b *Backend) BackupRuntime(ctx context.Context, root string, artifact strin
 	}
 	defer cleanupRegistryConfig()
 	job := backupJobSpec(namespace, jobName("backup", root, shortHash(artifact)), pvc, b.config.PullImage, artifact, b.config.RegistrySecret, registryConfigSecret, b.config.RegistryPlainHTTP)
+	setJobDeadlineFromContext(ctx, job)
 	if err := b.runHelperJob(ctx, job); err != nil {
 		logger.Log().Error("Kubernetes runtime backup failed", zap.String("namespace", namespace), zap.String("pvc", pvc), zap.String("artifact", artifact), zap.String("job", job.Name), zap.Error(err))
 		return err
 	}
 	logger.Log().Info("Kubernetes runtime backup completed", zap.String("namespace", namespace), zap.String("pvc", pvc), zap.String("artifact", artifact), zap.String("job", job.Name))
 	return nil
+}
+
+func setJobDeadlineFromContext(ctx context.Context, job *batchv1.Job) {
+	deadline, ok := ctx.Deadline()
+	if !ok || job == nil {
+		return
+	}
+	seconds := int64(time.Until(deadline).Seconds())
+	if seconds < 1 {
+		seconds = 1
+	}
+	job.Spec.ActiveDeadlineSeconds = &seconds
 }
 
 func (b *Backend) ensurePVC(ctx context.Context, namespace string, name string) error {

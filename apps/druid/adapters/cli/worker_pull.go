@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/highcard-dev/daemon/internal/callbackapi"
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -309,7 +310,9 @@ func reportWorkerResult(action ports.RuntimeWorkerAction, result ports.RuntimeWo
 		ScrollYaml:     workerString(result.ScrollYAML),
 		Token:          action.CallbackToken,
 	}
-	res, err := client.CompleteWorkerWithResponse(context.Background(), action.RuntimeID, body)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	res, err := client.CompleteWorkerWithResponse(ctx, action.RuntimeID, body)
 	if err != nil {
 		return err
 	}
