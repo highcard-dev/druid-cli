@@ -31,7 +31,7 @@ func TestKubernetesBackendCLIComplexLifecycle(t *testing.T) {
 	name := "k8s-cli-" + suffix
 	fixture := e2e.WriteFixture(t, filepath.Join(t.TempDir(), "scroll"), name, port, routePort)
 	workerImage := e2e.BuildDockerImage(t, "druid-cli-e2e:"+name)
-	importImageIntoK3DIfCurrentContext(t, workerImage)
+	importImageIntoCurrentCluster(t, workerImage)
 	pushArtifact := fmt.Sprintf("127.0.0.1:%d/druid-e2e/%s:v1", registryPort, name)
 	runtimeArtifact := fmt.Sprintf("%s:%d/druid-e2e/%s:v1", containerHost, registryPort, name)
 	e2e.RunEnv(t, []string{"DRUID_REGISTRY_PLAIN_HTTP=true", "HOME=" + bins.Home}, bins.Druid, "push", pushArtifact, fixture.Dir)
@@ -143,14 +143,33 @@ func requireKubernetes(t *testing.T) {
 	}
 }
 
-func importImageIntoK3DIfCurrentContext(t *testing.T, image string) {
+func importImageIntoCurrentCluster(t *testing.T, image string) {
 	t.Helper()
 	contextName := strings.TrimSpace(e2e.Run(t, "kubectl", "config", "current-context"))
-	if !strings.HasPrefix(contextName, "k3d-") {
-		return
+	switch {
+	case strings.HasPrefix(contextName, "k3d-"):
+		cluster := strings.TrimPrefix(contextName, "k3d-")
+		e2e.Run(t, "k3d", "image", "import", image, "--cluster", cluster)
+	case strings.HasPrefix(contextName, "kind-"):
+		cluster := strings.TrimPrefix(contextName, "kind-")
+		e2e.Run(t, kindBinary(t), "load", "docker-image", image, "--name", cluster)
 	}
-	cluster := strings.TrimPrefix(contextName, "k3d-")
-	e2e.Run(t, "k3d", "image", "import", image, "--cluster", cluster)
+}
+
+func kindBinary(t *testing.T) string {
+	t.Helper()
+	if path, err := exec.LookPath("kind"); err == nil {
+		return path
+	}
+	out, err := exec.Command("go", "env", "GOPATH").Output()
+	if err != nil {
+		t.Fatalf("find kind binary: kind is not in PATH and go env GOPATH failed: %v", err)
+	}
+	path := filepath.Join(strings.TrimSpace(string(out)), "bin", "kind")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("find kind binary: %v", err)
+	}
+	return path
 }
 
 func applyManifest(t *testing.T, manifest string) {
