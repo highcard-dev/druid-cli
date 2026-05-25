@@ -1,4 +1,4 @@
-//go:build integration
+//go:build integration && local_examples
 
 package integration_test
 
@@ -18,26 +18,20 @@ import (
 )
 
 type ServiceConfig struct {
-	ServiceName    string
-	ExamplePath    string
-	TestAddress    string
-	TestName       string
-	LockFileStatus []string
-	UseLogSpy      bool
-	LogSpy         func(string, []byte) bool
+	ServiceName   string
+	ExamplePath   string
+	TestAddress   string
+	TestName      string
+	CommandStatus []string
+	UseLogSpy     bool
+	LogSpy        func(string, []byte) bool
 }
 
-func checkLockFile(scrollService *services.ScrollService, config ServiceConfig) error {
-
-	lock, err := scrollService.GetLock()
-
-	if err != nil {
-		return err
-	}
-
-	for _, status := range config.LockFileStatus {
-		if _, ok := lock.Statuses[status]; !ok {
-			return fmt.Errorf("Lock file status %s not found, expected: %v, got: %v", status, config.LockFileStatus, lock.Statuses)
+func checkQueue(queueManager *services.QueueManager, config ServiceConfig) error {
+	queue := queueManager.GetQueue()
+	for _, status := range config.CommandStatus {
+		if _, ok := queue[status]; !ok {
+			return fmt.Errorf("command status %s not found, expected: %v, got: %v", status, config.CommandStatus, queue)
 		}
 	}
 	return nil
@@ -47,23 +41,23 @@ func TestExamples(t *testing.T) {
 
 	configs := []ServiceConfig{
 		{
-			ServiceName:    "minecraft",
-			ExamplePath:    "../../examples/minecraft/scroll.yaml",
-			TestAddress:    "localhost:25565",
-			TestName:       "Minecraft",
-			LockFileStatus: []string{"start", "install"},
-			UseLogSpy:      true,
+			ServiceName:   "minecraft",
+			ExamplePath:   "../../examples/minecraft/scroll.yaml",
+			TestAddress:   "localhost:25565",
+			TestName:      "Minecraft",
+			CommandStatus: []string{"start", "install"},
+			UseLogSpy:     true,
 			LogSpy: func(stream string, sc []byte) bool {
 				println(string(sc))
 				return strings.Contains(string(sc), `For help, type "help"`)
 			},
 		},
 		{
-			ServiceName:    "nginx",
-			ExamplePath:    "../../examples/nginx/scroll.yaml",
-			TestAddress:    "localhost:80",
-			TestName:       "Nginx",
-			LockFileStatus: []string{"start"},
+			ServiceName:   "nginx",
+			ExamplePath:   "../../examples/nginx/scroll.yaml",
+			TestAddress:   "localhost:80",
+			TestName:      "Nginx",
+			CommandStatus: []string{"start"},
 		},
 		// Add more services here
 	}
@@ -73,11 +67,6 @@ func TestExamples(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 			logManager := mock_ports.NewMockLogManagerInterface(ctrl)
-			ociRegistryMock := mock_ports.NewMockOciRegistryInterface(ctrl)
-			pluginManager := mock_ports.NewMockPluginManagerInterface(ctrl)
-
-			pluginManager.EXPECT().HasMode(gomock.Any()).Return(false).AnyTimes()
-
 			logDoneChan := make(chan struct{}, 1)
 
 			logManager.EXPECT().AddLine(gomock.Any(), gomock.Any()).DoAndReturn(func(stream string, sc []byte) {
@@ -114,10 +103,11 @@ func TestExamples(t *testing.T) {
 				t.Error(err)
 				return
 			}
-			consoleManager := services.NewConsoleManager(logManager)
-			processMonitor := test_utils.GetMockedProcessMonitor(ctrl)
-			processManager := services.NewProcessManager(logManager, consoleManager, processMonitor)
-			procedureLauncher, err := services.NewProcedureLauncher(ociRegistryMock, processManager, pluginManager, consoleManager, logManager, scrollService, "external")
+			runtimeBackend := mock_ports.NewMockRuntimeBackendInterface(ctrl)
+			exitCode := 0
+			runtimeBackend.EXPECT().Name().Return("docker").AnyTimes()
+			runtimeBackend.EXPECT().RunCommand(gomock.Any()).Return(&exitCode, nil).AnyTimes()
+			procedureLauncher, err := services.NewProcedureLauncher(scrollService, runtimeBackend, "/tmp")
 			if err != nil {
 				t.Error(err)
 				return
@@ -126,10 +116,7 @@ func TestExamples(t *testing.T) {
 
 			go queueManager.Work()
 
-			scrollService.WriteNewScrollLock()
-			scrollService.ReloadLock(false)
-
-			err = queueManager.AddAndRememberItem("start")
+			err = queueManager.AddTempItem("start")
 
 			if err != nil {
 				t.Error(err)
@@ -152,17 +139,18 @@ func TestExamples(t *testing.T) {
 				t.Error("Failed to test to server: ", err)
 			}
 
-			err = checkLockFile(scrollService, config)
+			err = checkQueue(queueManager, config)
 			if err != nil {
 				t.Error(err)
 				return
 			}
 
-			err = queueManager.AddShutdownItem("stop")
+			err = queueManager.AddTempItemWithWait("stop")
 			if err != nil {
 				t.Error(err)
 				return
 			}
+			queueManager.Shutdown()
 
 			if config.TestAddress != "" {
 				err = test_utils.ConnectionTest(config.TestAddress, false)
@@ -172,7 +160,7 @@ func TestExamples(t *testing.T) {
 				}
 			}
 
-			err = checkLockFile(scrollService, config)
+			err = checkQueue(queueManager, config)
 			if err != nil {
 				t.Error(err)
 				return

@@ -11,36 +11,28 @@ import (
 )
 
 type AuthorizerServiceInterface interface {
-	CheckHeader(r *fiber.Ctx) (*time.Time, error)
-	CheckQuery(token string) (*time.Time, error)
-	GenerateQueryToken() string
+	CheckHeader(r *fiber.Ctx) (*AuthContext, error)
+	CheckQuery(runtimeID string, token string) (*AuthContext, error)
+	GenerateQueryToken(runtimeID string, ownerID string) string
+}
+
+type AuthContext struct {
+	Subject   string
+	RuntimeID string
+	ExpiresAt *time.Time
 }
 
 type ScrollServiceInterface interface {
 	GetCurrent() *domain.Scroll
 	GetFile() *domain.File
-	GetScrollConfigRawYaml() []byte
 	GetDir() string
 	GetCwd() string
-	WriteNewScrollLock() *domain.ScrollLock
-	GetLock() (*domain.ScrollLock, error)
 	GetCommand(cmd string) (*domain.CommandInstructionSet, error)
-	AddTemporaryCommand(cmd string, instructions *domain.CommandInstructionSet)
 }
 
 type ProcedureLauchnerInterface interface {
-	LaunchPlugins() error
-	RunProcedure(*domain.Procedure, string, []string) (string, *int, error)
-	Run(cmd string, runCommandCb func(cmd string) error) error
+	Run(cmd string) error
 	GetProcedureStatuses() map[string]domain.ScrollLockStatus
-}
-
-type PluginManagerInterface interface {
-	CanRunStandaloneProcedure(mode string) bool
-	GetNotifyConsoleChannel() chan *domain.StreamItem
-	ParseFromScroll(pluginDefinitionMap map[string]map[string]string, config string, cwd string) error
-	HasMode(mode string) bool
-	RunProcedure(mode string, value string) (string, error)
 }
 
 type LogManagerInterface interface {
@@ -48,12 +40,111 @@ type LogManagerInterface interface {
 	AddLine(stream string, sc []byte)
 }
 
-type ProcessManagerInterface interface {
-	GetRunningProcesses() map[string]*domain.Process
-	GetRunningProcess(commandName string) *domain.Process
-	Run(commandName string, command []string, dir string) (*int, error)
-	RunTty(comandName string, command []string, dir string) (*int, error)
-	WriteStdin(process *domain.Process, data string) error
+type RuntimeBackendInterface interface {
+	Name() string
+	RootRef(id string, namespace string) string
+	StartDev(ctx context.Context, action RuntimeDevAction) error
+	StopDev(ctx context.Context, root string) error
+	RunCommand(command RuntimeCommand) (*int, error)
+	PublishUIPackage(ctx context.Context, action RuntimeUIPackageAction) (RuntimeUIPackageResult, error)
+	ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error)
+	RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error)
+	StopRuntime(root string) error
+	DeleteRuntime(root string, purgeData bool) error
+	BackupRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential) error
+	SpawnPullWorker(ctx context.Context, action RuntimeWorkerAction) error
+	Attach(commandName string, data string) error
+	Signal(commandName string, target string, signal string, root string) error
+}
+
+type RuntimeWorkerCallbackConfig struct {
+	Listen string
+	URL    string
+}
+
+type RuntimeWorkerCallbackBackend interface {
+	WorkerCallbackDefaults(config RuntimeWorkerCallbackConfig) RuntimeWorkerCallbackConfig
+	WorkerCallbackAfterListen(config RuntimeWorkerCallbackConfig) (RuntimeWorkerCallbackConfig, error)
+}
+
+type RuntimeScrollStore interface {
+	StateDir() string
+	Root(id string) string
+	CreateScroll(scroll *domain.RuntimeScroll) error
+	ListScrolls() ([]*domain.RuntimeScroll, error)
+	GetScroll(id string) (*domain.RuntimeScroll, error)
+	UpdateScroll(scroll *domain.RuntimeScroll) error
+	DeleteScroll(id string) error
+}
+
+type RuntimeCommand struct {
+	Name         string
+	ScrollID     string
+	Command      *domain.CommandInstructionSet
+	Root         string
+	GlobalPorts  []domain.Port
+	Routing      []domain.RuntimeRouteAssignment
+	ProcedureEnv map[string]map[string]string
+}
+
+type RuntimeUIPackageAction struct {
+	RuntimeID  string
+	RootRef    string
+	Scope      domain.RuntimeUIPackageScope
+	SourcePath string
+}
+
+type RuntimeUIPackageResult struct {
+	URL    string
+	Path   string
+	SHA256 string
+}
+
+type RuntimeMaterialization struct {
+	Artifact       string
+	ArtifactDigest string
+	Root           string
+	ScrollYAML     []byte
+}
+
+type RuntimeWorkerMode string
+
+const (
+	RuntimeWorkerModeCreate  RuntimeWorkerMode = "create"
+	RuntimeWorkerModeUpdate  RuntimeWorkerMode = "update"
+	RuntimeWorkerModeRestore RuntimeWorkerMode = "restore"
+)
+
+type RuntimeWorkerAction struct {
+	Mode                RuntimeWorkerMode
+	RuntimeID           string
+	Artifact            string
+	RootRef             string
+	MountPath           string
+	CallbackURL         string
+	CallbackToken       string
+	RegistryCredentials []domain.RegistryCredential
+}
+
+type RuntimeWorkerResult struct {
+	ScrollYAML     string `json:"scroll_yaml,omitempty"`
+	ArtifactDigest string `json:"artifact_digest,omitempty"`
+	Error          string `json:"error,omitempty"`
+}
+
+type RuntimeDevAction struct {
+	RuntimeID         string
+	RootRef           string
+	MountPath         string
+	Listen            string
+	WatchPaths        []string
+	HotReloadCommands []string
+	Routing           []domain.RuntimeRouteAssignment
+	DaemonURL         string
+	DaemonToken       string
+	OwnerID           string
+	AuthJWKSURL       string
+	RuntimeJWKSURL    string
 }
 
 type BroadcastChannelInterface interface {
@@ -67,46 +158,24 @@ type ConsoleManagerInterface interface {
 	AddConsoleWithChannel(consoleId string, consoleType domain.ConsoleType, inputMode string, channel chan string) (*domain.Console, chan struct{})
 }
 
-type ProcessMonitorInterface interface {
-	GetAllProcessesMetrics() map[string]*domain.ProcessMonitorMetrics
-	GetPsTrees() map[string]*domain.ProcessTreeRoot
-	AddProcess(pid int32, name string)
-	RemoveProcess(name string)
-}
-
-type TemplateRendererInterface interface {
-	RenderTemplate(templatePath string, data interface{}) (string, error)
-	RenderScrollTemplateFiles(templateBase string, templateFiles []string, data interface{}, ouputPath string) error
-}
-
 type OciRegistryInterface interface {
 	GetRepo(repoUrl string) (*remote.Repository, error)
+	FetchFile(artifact string, filePath string) ([]byte, error)
+	ResolveDigest(artifact string) (string, error)
 	Pull(dir string, artifact string) error
 	PullSelective(dir string, artifact string, includeData bool, progress *domain.SnapshotProgress) error
 	CanUpdateTag(descriptor v1.Descriptor, folder string, tag string) (bool, error)
 	Push(folder string, repo string, tag string, overrides map[string]string, packMeta bool, scrollFile *domain.File) (v1.Descriptor, error)
 }
 
-type CronManagerInterface interface {
-	Init()
-}
-
 type QueueManagerInterface interface {
-	AddAndRememberItem(cmd string) error
 	AddTempItem(cmd string) error
-	AddShutdownItem(cmd string) error
 	AddTempItemWithWait(cmd string) error
 	GetQueue() map[string]domain.ScrollLockStatus
 }
 
 type PortServiceInterface interface {
-	StartMonitoring(context.Context, []string, uint)
-	GetLastActivity(port int) uint
-	CheckOpen(prot int) bool
 	GetPorts() []*domain.AugmentedPort
-	MandatoryPortsOpen() bool
-	AddPort(port domain.Port) (*domain.AugmentedPort, error)
-	RemovePort(port int) error
 }
 
 type ColdStarterHandlerInterface interface {
@@ -121,7 +190,6 @@ type ColdStarterPacketHandlerInterface interface {
 
 type ColdStarterInterface interface {
 	Stop()
-	StopWithDeplay(uint)
 	Finish(*domain.AugmentedPort)
 }
 
@@ -137,14 +205,10 @@ type UiServiceInterface interface {
 type WatchServiceInterface interface {
 	StartWatching(basePath string, paths ...string) error
 	StopWatching() error
+	Trigger()
 	Subscribe() chan *[]byte
 	Unsubscribe(client chan *[]byte)
 	GetWatchedPaths() []string
 	IsWatching() bool
 	SetHotReloadCommands(procs []string) error
-}
-
-type NixDependencyServiceInterface interface {
-	GetCommand(cmd []string, deps []string) []string
-	EnsureNixInstalled() error
 }

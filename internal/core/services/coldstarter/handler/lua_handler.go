@@ -2,8 +2,10 @@ package lua
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
@@ -124,8 +126,10 @@ func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (po
 		func(l *lua.LState) int {
 			arg := l.CheckString(1)
 
-			//get external var
 			value, ok := handler.externalVars[arg]
+			if !ok {
+				value, ok = handler.externalVars[coldstarterVarKey(arg)]
+			}
 			if !ok {
 				l.Push(lua.LNil)
 			} else {
@@ -197,7 +201,7 @@ func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (po
 			if handler.progress != nil {
 				l.Push(lua.LString(handler.progress.Mode.Load().(string)))
 			} else {
-				l.Push(lua.LString("noop"))
+				l.Push(lua.LString(domain.SnapshotProgressModeIdle))
 			}
 			return 1
 		},
@@ -215,6 +219,21 @@ func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (po
 	handler.stateWrapper = &LuaWrapper{luaState: l, execWg: handler.execWg, closed: &handler.closed}
 
 	return handler.stateWrapper, nil
+}
+
+func coldstarterVarKey(value string) string {
+	var out strings.Builder
+	for i, r := range value {
+		if i > 0 && unicode.IsUpper(r) {
+			out.WriteByte('_')
+		}
+		if r == '-' || r == ' ' {
+			out.WriteByte('_')
+			continue
+		}
+		out.WriteRune(unicode.ToUpper(r))
+	}
+	return out.String()
 }
 
 func (handler *LuaWrapper) Handle(data []byte, funcs map[string]func(data ...string)) error {

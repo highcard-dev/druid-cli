@@ -1,10 +1,10 @@
 package services_test
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
-	"github.com/Masterminds/semver/v3"
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/services"
 	mock_ports "github.com/highcard-dev/daemon/test/mock"
@@ -53,45 +53,31 @@ func TestQueueManager(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			logManager := mock_ports.NewMockLogManagerInterface(ctrl)
-			processMonitor := mock_ports.NewMockProcessMonitorInterface(ctrl)
-			ociRegistryMock := mock_ports.NewMockOciRegistryInterface(ctrl)
-			pluginManager := mock_ports.NewMockPluginManagerInterface(ctrl)
 			scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
+			runtimeBackend := mock_ports.NewMockRuntimeBackendInterface(ctrl)
 
-			consoleManager := services.NewConsoleManager(logManager)
-			processManager := services.NewProcessManager(logManager, consoleManager, processMonitor)
-			procedureLauncher, err := services.NewProcedureLauncher(ociRegistryMock, processManager, pluginManager, consoleManager, logManager, scrollService, "external")
+			procedureLauncher, err := services.NewProcedureLauncher(scrollService, runtimeBackend, "/tmp")
 			if err != nil {
 				t.Error(err)
 			}
 			queueManager := services.NewQueueManager(scrollService, procedureLauncher)
 
-			processMonitor.EXPECT().AddProcess(gomock.Any(), "test.0").AnyTimes()
-			processMonitor.EXPECT().RemoveProcess("test.0").AnyTimes()
+			exitCode := 0
+			runtimeBackend.EXPECT().Name().Return("docker").AnyTimes()
+			runtimeBackend.EXPECT().RunCommand(gomock.Any()).Return(&exitCode, nil).Times(testCase.AccualExecution)
 
 			scrollService.EXPECT().GetCommand("test").Return(&domain.CommandInstructionSet{
 				Run: testCase.RunMode,
 				Procedures: []*domain.Procedure{
 					{
-						Mode: "exec",
-						Wait: nil,
-						Data: []interface{}{"echo", "hello"},
+						Image:   "alpine:3.20",
+						Command: []string{"echo", "hello"},
 					},
 				},
 			}, nil).AnyTimes()
 
-			pluginManager.EXPECT().HasMode(gomock.Any()).Return(false).AnyTimes()
-
-			logManager.EXPECT().AddLine("test.0", []byte("hello\n")).Times(testCase.AccualExecution)
-
-			scrollService.EXPECT().GetLock().Return(&domain.ScrollLock{
-				Statuses:      map[string]domain.LockStatus{},
-				ScrollVersion: semver.MustParse("1.0.0"),
-				ScrollName:    "test",
-			}, nil).AnyTimes()
-
 			scrollService.EXPECT().GetCwd().Return("/tmp").AnyTimes()
+			scrollService.EXPECT().GetFile().Return(&domain.File{}).AnyTimes()
 
 			go queueManager.Work()
 
@@ -111,30 +97,19 @@ func TestQueueManager(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			processMonitor := mock_ports.NewMockProcessMonitorInterface(ctrl)
 			scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
 
 			procedureLauncher := mock_ports.NewMockProcedureLauchnerInterface(ctrl)
 			queueManager := services.NewQueueManager(scrollService, procedureLauncher)
 
-			processMonitor.EXPECT().AddProcess(gomock.Any(), "test").AnyTimes()
-			processMonitor.EXPECT().RemoveProcess("test").AnyTimes()
-
 			scrollService.EXPECT().GetCommand("test").Return(&domain.CommandInstructionSet{
 				Run: testCase.RunMode,
 				Procedures: []*domain.Procedure{
 					{
-						Mode: "exec",
-						Wait: nil,
-						Data: []interface{}{"echo", "hello"},
+						Image:   "alpine:3.20",
+						Command: []string{"echo", "hello"},
 					},
 				},
-			}, nil).AnyTimes()
-
-			scrollService.EXPECT().GetLock().Return(&domain.ScrollLock{
-				Statuses:      map[string]domain.LockStatus{},
-				ScrollVersion: semver.MustParse("1.0.0"),
-				ScrollName:    "test",
 			}, nil).AnyTimes()
 
 			scrollService.EXPECT().GetCwd().Return("/tmp").AnyTimes()
@@ -145,7 +120,7 @@ func TestQueueManager(t *testing.T) {
 			}
 
 			first := true
-			procedureLauncher.EXPECT().Run(gomock.Any(), gomock.Any()).DoAndReturn(func(cmd string, runCommandCb func(cmd string) error) error {
+			procedureLauncher.EXPECT().Run(gomock.Any()).DoAndReturn(func(cmd string) error {
 				if first {
 					first = false
 					return fmt.Errorf("error")
@@ -169,71 +144,6 @@ func TestQueueManager(t *testing.T) {
 			}
 		})
 
-		t.Run(fmt.Sprintf("AddItem Command  (RunMode: %s, Repeat: %d)", testCase.RunMode, testCase.Repeat), func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			defer ctrl.Finish()
-
-			logManager := mock_ports.NewMockLogManagerInterface(ctrl)
-			processMonitor := mock_ports.NewMockProcessMonitorInterface(ctrl)
-			ociRegistryMock := mock_ports.NewMockOciRegistryInterface(ctrl)
-			pluginManager := mock_ports.NewMockPluginManagerInterface(ctrl)
-			scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
-
-			consoleManager := services.NewConsoleManager(logManager)
-			processManager := services.NewProcessManager(logManager, consoleManager, processMonitor)
-			procedureLauncher, err := services.NewProcedureLauncher(ociRegistryMock, processManager, pluginManager, consoleManager, logManager, scrollService, "external")
-			if err != nil {
-				t.Error(err)
-			}
-			queueManager := services.NewQueueManager(scrollService, procedureLauncher)
-
-			processMonitor.EXPECT().AddProcess(gomock.Any(), "test.0").AnyTimes()
-			processMonitor.EXPECT().RemoveProcess("test.0").AnyTimes()
-
-			scrollService.EXPECT().GetCommand("test").Return(&domain.CommandInstructionSet{
-				Run: testCase.RunMode,
-				Procedures: []*domain.Procedure{
-					{
-						Mode: "exec",
-						Wait: nil,
-						Data: []interface{}{"echo", "hello"},
-					},
-				},
-			}, nil).AnyTimes()
-
-			scrollService.EXPECT().GetCommand("test_command").Return(&domain.CommandInstructionSet{
-				Procedures: []*domain.Procedure{
-					{
-						Mode: "command",
-						Wait: nil,
-						Data: "test",
-					},
-				},
-			}, nil).AnyTimes()
-
-			pluginManager.EXPECT().HasMode(gomock.Any()).Return(false).AnyTimes()
-
-			logManager.EXPECT().AddLine("test.0", []byte("hello\n")).Times(testCase.AccualExecution)
-
-			scrollService.EXPECT().GetLock().Return(&domain.ScrollLock{
-				Statuses:      map[string]domain.LockStatus{},
-				ScrollVersion: semver.MustParse("1.0.0"),
-				ScrollName:    "test",
-			}, nil).AnyTimes()
-
-			scrollService.EXPECT().GetCwd().Return("/tmp").AnyTimes()
-
-			go queueManager.Work()
-
-			for i := 0; i < testCase.Repeat; i++ {
-				err := queueManager.AddTempItem("test_command")
-				if err != nil {
-					t.Error(err)
-				}
-
-				queueManager.WaitUntilEmpty()
-			}
-		})
 	}
 
 	t.Run("AddItem Deep Need Structure", func(t *testing.T) {
@@ -241,39 +151,25 @@ func TestQueueManager(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 
-		logManager := mock_ports.NewMockLogManagerInterface(ctrl)
-		processMonitor := mock_ports.NewMockProcessMonitorInterface(ctrl)
-		ociRegistryMock := mock_ports.NewMockOciRegistryInterface(ctrl)
-		pluginManager := mock_ports.NewMockPluginManagerInterface(ctrl)
 		scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
+		runtimeBackend := mock_ports.NewMockRuntimeBackendInterface(ctrl)
 
-		consoleManager := services.NewConsoleManager(logManager)
-		processManager := services.NewProcessManager(logManager, consoleManager, processMonitor)
-		procedureLauncher, err := services.NewProcedureLauncher(ociRegistryMock, processManager, pluginManager, consoleManager, logManager, scrollService, "external")
+		procedureLauncher, err := services.NewProcedureLauncher(scrollService, runtimeBackend, "/tmp")
 		if err != nil {
 			t.Error(err)
 		}
 		queueManager := services.NewQueueManager(scrollService, procedureLauncher)
 
-		lock := &domain.ScrollLock{
-			Statuses: map[string]domain.LockStatus{},
-		}
-		scrollService.EXPECT().GetLock().Return(lock, nil).AnyTimes()
-		processMonitor.EXPECT().AddProcess(gomock.Any(), gomock.Any()).Times(4)
-		//processMonitor.EXPECT().AddProcess(gomock.Any(), "dep1").Times(1)
-		//processMonitor.EXPECT().AddProcess(gomock.Any(), "test").Times(1)
-
-		processMonitor.EXPECT().RemoveProcess(gomock.Any()).Times(4)
-		//processMonitor.EXPECT().RemoveProcess("dep1").Times(1)
-		//processMonitor.EXPECT().RemoveProcess("test").Times(1)
+		exitCode := 0
+		runtimeBackend.EXPECT().Name().Return("docker").AnyTimes()
+		runtimeBackend.EXPECT().RunCommand(gomock.Any()).Return(&exitCode, nil).Times(4)
 
 		scrollService.EXPECT().GetCommand("test").Return(&domain.CommandInstructionSet{
 			Needs: []string{"dep1"},
 			Procedures: []*domain.Procedure{
 				{
-					Mode: "exec",
-					Wait: nil,
-					Data: []interface{}{"echo", "hello"},
+					Image:   "alpine:3.20",
+					Command: []string{"echo", "hello"},
 				},
 			},
 		}, nil).AnyTimes()
@@ -282,9 +178,8 @@ func TestQueueManager(t *testing.T) {
 			Needs: []string{"dep2.1", "dep2.2"},
 			Procedures: []*domain.Procedure{
 				{
-					Mode: "exec",
-					Wait: nil,
-					Data: []interface{}{"echo", "hello1"},
+					Image:   "alpine:3.20",
+					Command: []string{"echo", "hello1"},
 				},
 			},
 		}, nil).AnyTimes()
@@ -292,35 +187,22 @@ func TestQueueManager(t *testing.T) {
 			Run: domain.RunModeOnce,
 			Procedures: []*domain.Procedure{
 				{
-					Mode: "exec",
-					Wait: nil,
-					Data: []interface{}{"echo", "hello2.1"},
+					Image:   "alpine:3.20",
+					Command: []string{"echo", "hello2.1"},
 				},
 			},
 		}, nil).AnyTimes()
 		scrollService.EXPECT().GetCommand("dep2.2").Return(&domain.CommandInstructionSet{
 			Procedures: []*domain.Procedure{
 				{
-					Mode: "exec",
-					Wait: nil,
-					Data: []interface{}{"echo", "hello2.2"},
+					Image:   "alpine:3.20",
+					Command: []string{"echo", "hello2.2"},
 				},
 			},
 		}, nil).AnyTimes()
 
-		pluginManager.EXPECT().HasMode(gomock.Any()).Return(false).AnyTimes()
-
-		logManager.EXPECT().AddLine(gomock.Any(), gomock.Any()).Times(4)
-		//logManager.EXPECT().AddLine("process.dep1", gomock.Eq([]byte("hello1\n"))).Times(1)
-		//logManager.EXPECT().AddLine("test.0", gomock.Eq([]byte("hello\n"))).Times(1)
-
-		scrollService.EXPECT().GetLock().Return(&domain.ScrollLock{
-			Statuses:      map[string]domain.LockStatus{},
-			ScrollVersion: semver.MustParse("1.0.0"),
-			ScrollName:    "test",
-		}, nil).AnyTimes()
-
 		scrollService.EXPECT().GetCwd().Return("/tmp").AnyTimes()
+		scrollService.EXPECT().GetFile().Return(&domain.File{}).AnyTimes()
 
 		go queueManager.Work()
 		err = queueManager.AddTempItem("test")
@@ -330,8 +212,212 @@ func TestQueueManager(t *testing.T) {
 
 		queueManager.WaitUntilEmpty()
 
-		if len(lock.Statuses) != 1 {
-			t.Errorf("Lock status must be 1 (dep2.1) but got %d", len(lock.Statuses))
+		queue := queueManager.GetQueue()
+		if queue["dep2.1"] != domain.ScrollLockStatusDone {
+			t.Errorf("dep2.1 status must be done, got %s", queue["dep2.1"])
 		}
 	})
+}
+
+func TestQueueManagerRestartStopsOnNonRetryableError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
+	procedureLauncher := mock_ports.NewMockProcedureLauchnerInterface(ctrl)
+	queueManager := services.NewQueueManager(scrollService, procedureLauncher)
+
+	scrollService.EXPECT().GetCommand("start").Return(&domain.CommandInstructionSet{Run: domain.RunModeRestart}, nil).AnyTimes()
+	procedureLauncher.EXPECT().Run("start").Return(domain.NonRetryableCommand(errors.New("port already in use"))).Times(1)
+
+	go queueManager.Work()
+	if err := queueManager.AddTempItem("start"); err != nil {
+		t.Fatal(err)
+	}
+	queueManager.WaitUntilEmpty()
+
+	if got := queueManager.GetQueue()["start"]; got != domain.ScrollLockStatusError {
+		t.Fatalf("start = %s, want error", got)
+	}
+}
+
+func TestQueueManagerRestartRetriesRetryableError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
+	procedureLauncher := mock_ports.NewMockProcedureLauchnerInterface(ctrl)
+	queueManager := services.NewQueueManager(scrollService, procedureLauncher)
+
+	scrollService.EXPECT().GetCommand("start").Return(&domain.CommandInstructionSet{Run: domain.RunModeRestart}, nil).AnyTimes()
+	attempt := 0
+	procedureLauncher.EXPECT().Run("start").DoAndReturn(func(string) error {
+		attempt++
+		if attempt == 1 {
+			return errors.New("temporary crash")
+		}
+		return domain.NonRetryableCommand(errors.New("stop test"))
+	}).Times(2)
+
+	go queueManager.Work()
+	if err := queueManager.AddTempItem("start"); err != nil {
+		t.Fatal(err)
+	}
+	queueManager.WaitUntilEmpty()
+
+	if attempt != 2 {
+		t.Fatalf("attempts = %d, want retry", attempt)
+	}
+}
+
+func TestQueueManagerStatusObserver(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
+	procedureLauncher := mock_ports.NewMockProcedureLauchnerInterface(ctrl)
+	queueManager := services.NewQueueManager(scrollService, procedureLauncher)
+
+	scrollService.EXPECT().GetCommand("test").Return(&domain.CommandInstructionSet{}, nil).AnyTimes()
+	procedureLauncher.EXPECT().Run("test").Return(nil)
+
+	observed := []domain.ScrollLockStatus{}
+	queueManager.SetStatusObserver(func(command string, status domain.ScrollLockStatus, exitCode *int) {
+		if command == "test" {
+			observed = append(observed, status)
+		}
+	})
+
+	go queueManager.Work()
+	if err := queueManager.AddTempItem("test"); err != nil {
+		t.Fatal(err)
+	}
+	queueManager.WaitUntilEmpty()
+
+	want := []domain.ScrollLockStatus{
+		domain.ScrollLockStatusWaiting,
+		domain.ScrollLockStatusRunning,
+		domain.ScrollLockStatusDone,
+	}
+	if len(observed) != len(want) {
+		t.Fatalf("expected %d observed statuses, got %d: %v", len(want), len(observed), observed)
+	}
+	for i := range want {
+		if observed[i] != want[i] {
+			t.Fatalf("status %d = %s, want %s", i, observed[i], want[i])
+		}
+	}
+}
+
+func TestQueueManagerPersistentCommandCompletesWithoutLooping(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
+	procedureLauncher := mock_ports.NewMockProcedureLauchnerInterface(ctrl)
+	queueManager := services.NewQueueManager(scrollService, procedureLauncher)
+
+	scrollService.EXPECT().GetCommand("serve").Return(&domain.CommandInstructionSet{Run: domain.RunModePersistent}, nil).AnyTimes()
+	procedureLauncher.EXPECT().Run("serve").Return(nil).Times(1)
+
+	go queueManager.Work()
+	if err := queueManager.AddTempItem("serve"); err != nil {
+		t.Fatal(err)
+	}
+	queueManager.WaitUntilEmpty()
+
+	if got := queueManager.GetQueue()["serve"]; got != domain.ScrollLockStatusDone {
+		t.Fatalf("serve = %s, want done", got)
+	}
+}
+
+func TestQueueManagerRememberDoneItemSatisfiesDependency(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
+	procedureLauncher := mock_ports.NewMockProcedureLauchnerInterface(ctrl)
+	queueManager := services.NewQueueManager(scrollService, procedureLauncher)
+	queueManager.RememberDoneItem("verify")
+
+	scrollService.EXPECT().GetCommand("report").Return(&domain.CommandInstructionSet{Needs: []string{"verify"}}, nil).AnyTimes()
+	scrollService.EXPECT().GetCommand("verify").Return(&domain.CommandInstructionSet{}, nil).AnyTimes()
+	procedureLauncher.EXPECT().Run("report").Return(nil)
+
+	go queueManager.Work()
+	if err := queueManager.AddTempItem("report"); err != nil {
+		t.Fatal(err)
+	}
+	queueManager.WaitUntilEmpty()
+
+	queue := queueManager.GetQueue()
+	if queue["report"] != domain.ScrollLockStatusDone {
+		t.Fatalf("report = %s, want done; queue=%#v", queue["report"], queue)
+	}
+	if queue["verify"] != domain.ScrollLockStatusDone {
+		t.Fatalf("verify = %s, want done; queue=%#v", queue["verify"], queue)
+	}
+}
+
+func TestQueueManagerHydrateCommandStatuses(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
+	procedureLauncher := mock_ports.NewMockProcedureLauchnerInterface(ctrl)
+	queueManager := services.NewQueueManager(scrollService, procedureLauncher)
+
+	scrollService.EXPECT().GetCommand("install").Return(&domain.CommandInstructionSet{Run: domain.RunModeOnce}, nil).AnyTimes()
+	scrollService.EXPECT().GetCommand("start").Return(&domain.CommandInstructionSet{Run: domain.RunModeRestart}, nil).AnyTimes()
+	scrollService.EXPECT().GetCommand("serve").Return(&domain.CommandInstructionSet{Run: domain.RunModePersistent}, nil).AnyTimes()
+	scrollService.EXPECT().GetCommand("repair").Return(&domain.CommandInstructionSet{}, nil).AnyTimes()
+
+	if err := queueManager.HydrateCommandStatuses(map[string]domain.LockStatus{
+		"install": {Status: domain.ScrollLockStatusDone},
+		"start":   {Status: domain.ScrollLockStatusDone},
+		"serve":   {Status: domain.ScrollLockStatusDone},
+		"repair":  {Status: domain.ScrollLockStatusError},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	queue := queueManager.GetQueue()
+	if queue["install"] != domain.ScrollLockStatusDone {
+		t.Fatalf("install = %s, want done", queue["install"])
+	}
+	if queue["start"] != domain.ScrollLockStatusWaiting {
+		t.Fatalf("start = %s, want waiting", queue["start"])
+	}
+	if queue["serve"] != domain.ScrollLockStatusWaiting {
+		t.Fatalf("serve = %s, want waiting", queue["serve"])
+	}
+	if queue["repair"] != domain.ScrollLockStatusWaiting {
+		t.Fatalf("repair = %s, want waiting", queue["repair"])
+	}
+}
+
+func TestQueueManagerAddForcedItemRerunsDoneOnceCommand(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
+	procedureLauncher := mock_ports.NewMockProcedureLauchnerInterface(ctrl)
+	queueManager := services.NewQueueManager(scrollService, procedureLauncher)
+
+	scrollService.EXPECT().GetCommand("start").Return(&domain.CommandInstructionSet{Run: domain.RunModeOnce}, nil).AnyTimes()
+	procedureLauncher.EXPECT().Run("start").Return(nil).Times(2)
+
+	go queueManager.Work()
+
+	if err := queueManager.AddTempItem("start"); err != nil {
+		t.Fatal(err)
+	}
+	queueManager.WaitUntilEmpty()
+	if err := queueManager.AddTempItem("start"); err != services.ErrCommandDoneOnce {
+		t.Fatalf("AddTempItem error = %v, want ErrCommandDoneOnce", err)
+	}
+	if err := queueManager.AddForcedItem("start"); err != nil {
+		t.Fatal(err)
+	}
+	queueManager.WaitUntilEmpty()
 }

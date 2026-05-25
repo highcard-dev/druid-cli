@@ -1,0 +1,7 @@
+package: devapi
+output: internal/devapi/generated.go
+generate:
+  client: true
+  fiber-server: true
+  models: true
+  embedded-spec: true

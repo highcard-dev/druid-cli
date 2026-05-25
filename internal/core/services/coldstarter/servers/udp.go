@@ -51,6 +51,7 @@ func (u *UDP) Start(port int, onFinish func()) error {
 				continue
 			}
 
+			logger.Log().Info("UDP coldstarter packet received", zap.Int("bytes", n), zap.String("address", remoteAddr.String()))
 			go u.handleConnection(buf[:n], remoteAddr)
 		}
 	}()
@@ -68,8 +69,7 @@ func (u *UDP) handleConnection(data []byte, remoteAddr *net.UDPAddr) {
 
 	handler, err := u.handler.GetHandler(map[string]func(data ...string){
 		"finish": func(data ...string) {
-			fmt.Println("Connection closed")
-			logger.Log().Info("Finish received", zap.Strings("data", data), zap.String("type", "udp"), zap.String("address", remoteAddr.String()))
+			logger.Log().Info("UDP coldstarter finish requested", zap.Strings("data", data), zap.String("address", remoteAddr.String()))
 			<-time.After(time.Second)
 			u.onFinish()
 			//closing connection here is not smart most likely

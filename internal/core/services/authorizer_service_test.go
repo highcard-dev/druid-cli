@@ -13,6 +13,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/highcard-dev/daemon/internal/core/ports"
 )
 
 func TestAuthorizerService_CheckHeaderAcceptsMultipleJWKS(t *testing.T) {
@@ -76,7 +77,7 @@ func TestAuthorizerService_CheckHeaderRejectsWrongSub(t *testing.T) {
 }
 
 func checkAuthorizationHeader(authorizer interface {
-	CheckHeader(*fiber.Ctx) (*time.Time, error)
+	CheckHeader(*fiber.Ctx) (*ports.AuthContext, error)
 }, token string) error {
 	app := fiber.New()
 	var authErr error

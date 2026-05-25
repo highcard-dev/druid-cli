@@ -3,9 +3,11 @@ package services
 import (
 	"context"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/highcard-dev/daemon/internal/core/domain"
 	mock_ports "github.com/highcard-dev/daemon/test/mock"
 	"go.uber.org/mock/gomock"
 )
@@ -17,8 +19,7 @@ func TestWatchService_BasicFunctionality(t *testing.T) {
 	queueManager := mock_ports.NewMockQueueManagerInterface(ctrl)
 	scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
 
-	// Create the UI dev service
-	uiDevService := NewUiDevService(queueManager, scrollService)
+	uiDevService := NewDevService(queueManager, scrollService)
 
 	// Check initial state
 	if uiDevService.IsWatching() {
@@ -75,8 +76,7 @@ func TestWatchService_MultipleSubscribers(t *testing.T) {
 	queueManager := mock_ports.NewMockQueueManagerInterface(ctrl)
 	scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
 
-	// Create the UI dev service
-	uiDevService := NewUiDevService(queueManager, scrollService)
+	uiDevService := NewDevService(queueManager, scrollService)
 
 	// Start watching first
 	err := uiDevService.StartWatching("/tmp/test", "/tmp/test/ui")
@@ -109,8 +109,7 @@ func TestWatchService_ContinuousStartStop(t *testing.T) {
 	queueManager := mock_ports.NewMockQueueManagerInterface(ctrl)
 	scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
 
-	// Create the UI dev service
-	uiDevService := NewUiDevService(queueManager, scrollService)
+	uiDevService := NewDevService(queueManager, scrollService)
 
 	// Test multiple start/stop cycles
 	for i := 0; i < 5; i++ {
@@ -181,8 +180,7 @@ func TestWatchService_SubscribeBeforeStart(t *testing.T) {
 	queueManager := mock_ports.NewMockQueueManagerInterface(ctrl)
 	scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
 
-	// Create the UI dev service
-	uiDevService := NewUiDevService(queueManager, scrollService)
+	uiDevService := NewDevService(queueManager, scrollService)
 
 	// Try to subscribe before starting
 	sub := uiDevService.Subscribe()
@@ -215,8 +213,7 @@ func TestWatchService_RelativePathsJoinedWithBasePath(t *testing.T) {
 		t.Fatalf("Failed to create config directory: %v", err)
 	}
 
-	// Create the UI dev service
-	uiDevService := NewUiDevService(queueManager, scrollService)
+	uiDevService := NewDevService(queueManager, scrollService)
 
 	// Start watching with relative paths (simulating what the handler does)
 	err := uiDevService.StartWatching(tempDir, "src", "config")
@@ -269,11 +266,71 @@ func TestWatchService_RelativePathsJoinedWithBasePath(t *testing.T) {
 	case event := <-sub:
 		if event == nil {
 			t.Error("Received nil event")
+		} else {
+			t.Logf("Received file change event: %s", string(*event))
 		}
-		// Successfully received a file change event, which proves the watcher
-		// is correctly watching the joined path (basePath + relative path)
-		t.Logf("Received file change event: %s", string(*event))
 	case <-ctx.Done():
 		t.Error("Timeout waiting for file change event - relative path was likely not joined with base path")
+	}
+}
+
+func TestWatchService_RunsHotReloadCommandOnStartAndFileChange(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	tempDir := t.TempDir()
+	watchDir := tempDir + "/dist"
+	if err := os.MkdirAll(watchDir, 0755); err != nil {
+		t.Fatalf("Failed to create watch directory: %v", err)
+	}
+
+	var mu sync.Mutex
+	runCount := 0
+	ran := make(chan struct{}, 10)
+	queueManager := mock_ports.NewMockQueueManagerInterface(ctrl)
+	queueManager.EXPECT().AddTempItemWithWait("build").DoAndReturn(func(string) error {
+		mu.Lock()
+		runCount++
+		mu.Unlock()
+		ran <- struct{}{}
+		return nil
+	}).AnyTimes()
+
+	scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
+	scrollService.EXPECT().GetCommand("build").Return(&domain.CommandInstructionSet{}, nil).AnyTimes()
+
+	uiDevService := NewDevService(queueManager, scrollService)
+	if err := uiDevService.SetHotReloadCommands([]string{"build"}); err != nil {
+		t.Fatalf("SetHotReloadCommands failed: %v", err)
+	}
+	if err := uiDevService.StartWatching(tempDir, "dist"); err != nil {
+		t.Fatalf("StartWatching failed: %v", err)
+	}
+	defer uiDevService.StopWatching()
+
+	waitForRunCount(t, ran, &mu, &runCount, 1)
+
+	if err := os.WriteFile(watchDir+"/app.wasm", []byte("changed"), 0644); err != nil {
+		t.Fatalf("Failed to write watched file: %v", err)
+	}
+
+	waitForRunCount(t, ran, &mu, &runCount, 2)
+}
+
+func waitForRunCount(t *testing.T, ran <-chan struct{}, mu *sync.Mutex, runCount *int, want int) {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		mu.Lock()
+		got := *runCount
+		mu.Unlock()
+		if got >= want {
+			return
+		}
+		select {
+		case <-ran:
+		case <-deadline:
+			t.Fatalf("Timed out waiting for %d hot reload runs, got %d", want, got)
+		}
 	}
 }

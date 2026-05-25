@@ -5,7 +5,7 @@ WORKDIR /app
 RUN apt update && apt install -y ca-certificates wget jq moreutils htop procps nano net-tools gcc make openjdk-17-jdk ant netcat-traditional
 
 
-RUN wget https://go.dev/dl/go1.21.6.linux-$(dpkg --print-architecture).tar.gz -O go.tar.gz
+RUN wget https://go.dev/dl/go1.24.7.linux-$(dpkg --print-architecture).tar.gz -O go.tar.gz
 RUN tar -C /usr/local -xzf go.tar.gz && rm go.tar.gz
 
 #/root/go/bin is not in the path
@@ -18,4 +18,4 @@ RUN go install github.com/go-delve/delve/cmd/dlv@latest
 COPY go.mod go.sum ./
 
 # Download all dependencies. Dependencies will be cached if the go.mod and go.sum files are not changed 
-RUN go mod download 
+RUN go mod download

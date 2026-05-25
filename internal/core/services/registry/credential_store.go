@@ -43,3 +43,9 @@ func (s *CredentialStore) CredentialForRepo(repoURL string) (auth.Credential, er
 func (s *CredentialStore) HasCredentials() bool {
 	return len(s.registries) > 0
 }
+
+func (s *CredentialStore) Credentials() []domain.RegistryCredential {
+	out := make([]domain.RegistryCredential, len(s.registries))
+	copy(out, s.registries)
+	return out
+}

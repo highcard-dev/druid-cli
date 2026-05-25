@@ -1,0 +1,17 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "k3d: build/import druid-cli pull image",
+            "type": "shell",
+            "command": "make",
+            "args": [
+                "k3d-build-pull-image"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        }
+    ]
+}

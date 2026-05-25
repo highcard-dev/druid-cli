@@ -1,11 +1,10 @@
 # Druid CLI
 
-This CLI is a process management tool.
-It gives users the ability to launch and observe long running processes.
+This repository contains the Druid runtime tools for packaging Scrolls as OCI artifacts, serving the local runtime daemon, and controlling daemon-managed Scrolls.
 
 A good use case is to let it run inside of a docker container. It will give additional insights and management abilities.
 
-This CLI is currently deployed within every deployment at [druid.gg](https://druid.gg).
+The current runtime backends are Docker for local development and Kubernetes for in-cluster or kubeconfig-backed cluster operation.
 
 ## Installation
 
@@ -21,29 +20,54 @@ Also consider our installation documentation: [https://docs.druid.gg/cli/introdu
 
 ## Scroll OCI manifest
 
-The Druid CLI uses a **so called Scroll** to get instructions on how to launch and handle the process.
+The Druid CLI uses a **so called Scroll** to describe container-backed commands.
 A scroll can also include files.
 A Scroll is an OCI Artifact, so it is easy to distribute with registries like Dockerhub.
 
 ## Features
 
-### Dependency based process runner
+### Binaries
 
-The way processes are handled is described in the `scroll.yaml` and is similar to, how Github Actions work, just with the ability to run indefinetly.
-Processes can also depend on each other.
+This repository builds two runtime binaries:
+
+- `apps/druid` -> `bin/druid`: daemon, REST-backed CLI, OCI commands, and internal worker mode.
+- `apps/druid-coldstarter` -> `bin/druid-coldstarter`: coldstart gate binary included in the runtime image.
+
+Build all binaries with:
+
+```bash
+make build
+```
+
+Common local flow:
+
+```bash
+druid daemon --runtime docker
+druid login --host <host> -u <user> -p <password>
+druid pull <artifact> [dir]
+druid push [artifact] [dir]
+druid create <artifact-or-path> [name]
+druid run <id> <command>
+druid describe <id>
+```
+
+For examples, omit `[name]` so each scroll derives its own id from `scroll.yaml`.
+
+### Dependency based command runner
+
+The way commands are handled is described in the `scroll.yaml` and is similar to how Github Actions work, with support for long-running container commands.
+Commands can also depend on each other.
 
 ### Web Server
 
-The is a web server included, easily have remote control over the process.
+There is a web server included, so you can control daemon-managed containers remotely.
 There is also websocket support for stdout. TTY is also supported.
 
-### Plugin support
+### Runtime backend
 
-There is the ability to extend the druid CLI with Plugins based on [Go-Plugins](https://github.com/hashicorp/go-plugin).
+Runtime selection is daemon-only: start the daemon with `druid daemon --runtime docker`, then use `druid` to create, run, and inspect scrolls without passing a runtime. Docker runtime state stays in SQLite under the runtime state directory. Scroll specs and runtime data live together in one runtime root.
 
-Example Plugins:
-
-https://github.com/highcard-dev/druid-cli/tree/master/plugin
+Kubernetes runtime support is available with `druid daemon --runtime kubernetes` for in-cluster daemons or out-of-cluster daemons using kubeconfig. It stores daemon scroll state in ConfigMaps, materializes OCI artifacts through `druid worker pull` Jobs, and uses Cilium/Hubble Relay for port traffic presence. See `docs/kubernetes_runtime.md` for kubeconfig, RBAC, PVC, and Hubble setup.
 
 ## Documentation
 

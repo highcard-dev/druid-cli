@@ -4,6 +4,10 @@
 *.tar.gz
 
 druid**
+!apps/
+!apps/**
+!config/
+!config/**
 dlv.log
 
 .DS_Store
@@ -16,3 +20,4 @@ druid-cli-test
 !.docker/**
 
 .env
+.runtime-state

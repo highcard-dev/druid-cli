@@ -1,0 +1,45 @@
+name: ghcr.io/druid-examples/jobs
+desc: Finite job pipeline using commands as runtime units
+version: 0.1.0
+app_version: "1.0"
+
+serve: report
+commands:
+  prepare:
+    run: once
+    procedures:
+      - image: alpine:3.20
+        mounts:
+          - path: /work
+        command:
+          - sh
+          - -c
+          - >-
+            mkdir -p /work/jobs
+            && printf 'hello from druid jobs\n' > /work/jobs/input.txt
+
+  transform:
+    needs: [prepare]
+    run: always
+    procedures:
+      - image: alpine:3.20
+        mounts:
+          - path: /work
+        command:
+          - sh
+          - -c
+          - >-
+            tr '[:lower:]' '[:upper:]' < /work/jobs/input.txt
+            > /work/jobs/output.txt
+
+  report:
+    needs: [transform]
+    run: always
+    procedures:
+      - image: alpine:3.20
+        mounts:
+          - path: /work
+        command:
+          - sh
+          - -c
+          - cat /work/jobs/output.txt

@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "druid-cli.fullname" . }}
+  labels:
+    {{- include "druid-cli.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "druid-cli.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "druid-cli.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "druid-cli.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+      containers:
+        - name: druid-cli
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - daemon
+            - --listen=:{{ .Values.service.managementPort }}
+            - --public-listen=:{{ .Values.service.publicPort }}
+            - --worker-callback-listen=:{{ .Values.service.workerCallbackPort }}
+            - --worker-callback-url=http://{{ include "druid-cli.fullname" . }}:{{ .Values.service.workerCallbackPort }}
+            - --worker-daemon-url={{ default (printf "http://%s:%v" (include "druid-cli.fullname" .) .Values.service.managementPort) .Values.runtime.workerDaemonUrl }}
+            - --public-jwks-url={{ default (printf "http://%s:%v/.well-known/jwks.json" (include "druid-cli.fullname" .) .Values.service.publicPort) .Values.auth.publicJwksUrl }}
+            {{- if .Values.auth.jwksUrl }}
+            - --auth-jwks-url={{ .Values.auth.jwksUrl }}
+            {{- end }}
+            - --runtime={{ .Values.runtime.backend }}
+            - --state-dir={{ .Values.runtime.stateDir }}
+          ports:
+            - name: management
+              containerPort: {{ .Values.service.managementPort }}
+              protocol: TCP
+            - name: public
+              containerPort: {{ .Values.service.publicPort }}
+              protocol: TCP
+            - name: worker
+              containerPort: {{ .Values.service.workerCallbackPort }}
+              protocol: TCP
+          env:
+            - name: DRUID_K8S_NAMESPACE
+              value: {{ default .Release.Namespace .Values.runtime.namespaces.single | quote }}
+            - name: DRUID_K8S_STORAGE_CLASS
+              value: {{ .Values.runtime.storageClass | quote }}
+            - name: DRUID_K8S_PULL_IMAGE
+              value: {{ .Values.runtime.pullImage | quote }}
+            - name: DRUID_K8S_HELPER_IMAGE
+              value: {{ .Values.runtime.helperImage | quote }}
+            - name: DRUID_K8S_REGISTRY_SECRET
+              value: {{ .Values.runtime.registrySecret | quote }}
+            - name: DRUID_REGISTRY_PLAIN_HTTP
+              value: {{ ternary "true" "false" .Values.runtime.registryPlainHTTP | quote }}
+            - name: DRUID_HUBBLE_RELAY_ADDR
+              value: {{ .Values.hubble.relayAddr | quote }}
+            {{- if .Values.runtime.kubeconfigSecret.name }}
+            - name: DRUID_K8S_KUBECONFIG
+              value: /etc/druid/kubeconfig
+            {{- end }}
+            {{- if and .Values.auth.enabled .Values.auth.existingSecret }}
+            - name: DRUID_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.existingSecret | quote }}
+                  key: {{ .Values.auth.tokenKey | quote }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: management
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: management
+          volumeMounts:
+            - name: runtime-state
+              mountPath: {{ .Values.runtime.stateDir }}
+            {{- if .Values.runtime.kubeconfigSecret.name }}
+            - name: kubeconfig
+              mountPath: /etc/druid/kubeconfig
+              subPath: {{ .Values.runtime.kubeconfigSecret.key }}
+              readOnly: true
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: runtime-state
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "druid-cli.fullname" . }}-state
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- if .Values.runtime.kubeconfigSecret.name }}
+        - name: kubeconfig
+          secret:
+            secretName: {{ .Values.runtime.kubeconfigSecret.name | quote }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

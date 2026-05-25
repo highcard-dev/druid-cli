@@ -6,9 +6,12 @@ package api
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"path"
 	"strings"
@@ -19,145 +22,67 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+// Defines values for RuntimeScrollStatus.
 const (
-	BearerAuthScopes = "bearerAuth.Scopes"
+	Created RuntimeScrollStatus = "created"
+	Deleted RuntimeScrollStatus = "deleted"
+	Error   RuntimeScrollStatus = "error"
+	Running RuntimeScrollStatus = "running"
+	Stopped RuntimeScrollStatus = "stopped"
 )
 
-// Defines values for AddPortRequestProtocol.
+// Defines values for PublishScrollUIPackageParamsScope.
 const (
-	Tcp AddPortRequestProtocol = "tcp"
-	Udp AddPortRequestProtocol = "udp"
+	Private PublishScrollUIPackageParamsScope = "private"
+	Public  PublishScrollUIPackageParamsScope = "public"
 )
 
-// Defines values for CommandInstructionSetRun.
-const (
-	Always     CommandInstructionSetRun = "always"
-	Once       CommandInstructionSetRun = "once"
-	Persistent CommandInstructionSetRun = "persistent"
-	Restart    CommandInstructionSetRun = "restart"
-)
-
-// Defines values for ConsoleType.
-const (
-	ConsoleTypePlugin  ConsoleType = "plugin"
-	ConsoleTypeProcess ConsoleType = "process"
-	ConsoleTypeTty     ConsoleType = "tty"
-)
-
-// Defines values for ScrollLockStatus.
-const (
-	Done    ScrollLockStatus = "done"
-	Error   ScrollLockStatus = "error"
-	Running ScrollLockStatus = "running"
-	Waiting ScrollLockStatus = "waiting"
-)
-
-// AddPortRequest defines model for AddPortRequest.
-type AddPortRequest struct {
-	// CheckActivity Whether to monitor port activity
-	CheckActivity *bool `json:"check_activity,omitempty"`
-
-	// Description Optional port description
-	Description *string `json:"description,omitempty"`
-
-	// Mandatory Whether this port must be open for health check
-	Mandatory *bool `json:"mandatory,omitempty"`
-
-	// Name Port name/identifier
-	Name string `json:"name"`
-
-	// Port Port number (1-65535)
-	Port int `json:"port"`
-
-	// Protocol Network protocol (tcp or udp)
-	Protocol AddPortRequestProtocol `json:"protocol"`
+// ApplyRoutingRequest defines model for ApplyRoutingRequest.
+type ApplyRoutingRequest struct {
+	Assignments []RuntimeRouteAssignment `json:"assignments"`
 }
 
-// AddPortRequestProtocol Network protocol (tcp or udp)
-type AddPortRequestProtocol string
+// CommandStatusMap defines model for CommandStatusMap.
+type CommandStatusMap map[string]interface{}
 
-// AugmentedPort defines model for AugmentedPort.
-type AugmentedPort struct {
-	CheckActivity      *bool   `json:"check_activity,omitempty"`
-	Description        *string `json:"description,omitempty"`
-	FinishAfterCommand *string `json:"finish_after_command,omitempty"`
+// CreateScrollRequest defines model for CreateScrollRequest.
+type CreateScrollRequest struct {
+	// Artifact OCI artifact reference or local scroll path
+	Artifact string `json:"artifact"`
 
-	// InactiveSince When the port became inactive
-	InactiveSince time.Time `json:"inactive_since"`
+	// Id Deprecated alias for name. Optional stable runtime id/name. If omitted, the daemon generates an id.
+	Id *string `json:"id,omitempty"`
 
-	// InactiveSinceSec Seconds since port became inactive
-	InactiveSinceSec int   `json:"inactive_since_sec"`
-	Mandatory        *bool `json:"mandatory,omitempty"`
+	// Name Optional stable runtime id/name. If omitted, the daemon generates an id; the display name still comes from scroll.yaml.
+	Name *string `json:"name,omitempty"`
 
-	// Name Port name/identifier
-	Name string `json:"name"`
+	// Namespace Kubernetes namespace for runtime resources. Ignored by non-Kubernetes backends.
+	Namespace *string `json:"namespace,omitempty"`
 
-	// Open Whether the port is currently open
-	Open bool `json:"open"`
-
-	// Port Port number
-	Port int `json:"port"`
-
-	// Protocol Network protocol
-	Protocol     string             `json:"protocol"`
-	SleepHandler *string            `json:"sleep_handler"`
-	StartDelay   *int               `json:"start_delay,omitempty"`
-	Vars         *[]ColdStarterVars `json:"vars,omitempty"`
+	// OwnerId Runtime owner id used for customer-facing route authorization.
+	OwnerId             *string               `json:"owner_id,omitempty"`
+	RegistryCredentials *[]RegistryCredential `json:"registry_credentials,omitempty"`
 }
 
-// ColdStarterVars defines model for ColdStarterVars.
-type ColdStarterVars struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
-}
-
-// CommandInstructionSet defines model for CommandInstructionSet.
-type CommandInstructionSet struct {
-	Dependencies *[]string   `json:"dependencies,omitempty"`
-	Needs        *[]string   `json:"needs,omitempty"`
-	Procedures   []Procedure `json:"procedures"`
-
-	// Run Run mode for the command
-	Run *CommandInstructionSetRun `json:"run,omitempty"`
-}
-
-// CommandInstructionSetRun Run mode for the command
-type CommandInstructionSetRun string
-
-// Console defines model for Console.
-type Console struct {
-	// Exit Exit code if console has exited
-	Exit *int `json:"exit"`
-
-	// InputMode Input mode for the console
-	InputMode string `json:"inputMode"`
-
-	// Type Console type
-	Type ConsoleType `json:"type"`
-}
-
-// ConsoleType Console type
-type ConsoleType string
-
-// ConsolesResponse defines model for ConsolesResponse.
-type ConsolesResponse struct {
-	Consoles map[string]Console `json:"consoles"`
-}
-
-// Cronjob defines model for Cronjob.
-type Cronjob struct {
-	Command string `json:"command"`
-	Name    string `json:"name"`
-
-	// Schedule Cron schedule expression
-	Schedule string `json:"schedule"`
-}
-
-// ErrorResponse defines model for ErrorResponse.
-type ErrorResponse struct {
-	// Error Error message
-	Error  string `json:"error"`
+// DeletedScroll defines model for DeletedScroll.
+type DeletedScroll struct {
+	Id     string `json:"id"`
 	Status string `json:"status"`
+}
+
+// EnsureScrollRequest defines model for EnsureScrollRequest.
+type EnsureScrollRequest struct {
+	Artifact       string  `json:"artifact"`
+	ArtifactDigest *string `json:"artifact_digest,omitempty"`
+	Id             *string `json:"id,omitempty"`
+	Name           *string `json:"name,omitempty"`
+
+	// Namespace Kubernetes namespace for runtime resources. Ignored by non-Kubernetes backends.
+	Namespace *string `json:"namespace,omitempty"`
+
+	// OwnerId Runtime owner id used for customer-facing route authorization.
+	OwnerId             *string               `json:"owner_id,omitempty"`
+	RegistryCredentials *[]RegistryCredential `json:"registry_credentials,omitempty"`
 }
 
 // HealthResponse defines model for HealthResponse.
@@ -172,407 +97,2971 @@ type HealthResponse struct {
 	StartDate *time.Time `json:"start_date"`
 }
 
-// Port defines model for Port.
-type Port struct {
-	// CheckActivity Whether to monitor port activity
-	CheckActivity *bool `json:"check_activity,omitempty"`
-
-	// Description Port description
-	Description *string `json:"description,omitempty"`
-
-	// FinishAfterCommand Command to run after port is available
-	FinishAfterCommand *string `json:"finish_after_command,omitempty"`
-
-	// Mandatory Whether this port must be open for health check
-	Mandatory *bool `json:"mandatory,omitempty"`
-
-	// Name Port name/identifier
-	Name string `json:"name"`
-
-	// Port Port number
-	Port int `json:"port"`
-
-	// Protocol Network protocol
-	Protocol string `json:"protocol"`
-
-	// SleepHandler Handler to call when port becomes inactive
-	SleepHandler *string `json:"sleep_handler"`
-
-	// StartDelay Delay in seconds before starting port check
-	StartDelay *int               `json:"start_delay,omitempty"`
-	Vars       *[]ColdStarterVars `json:"vars,omitempty"`
+// PublishUIPackageRequest defines model for PublishUIPackageRequest.
+type PublishUIPackageRequest struct {
+	// Path Optional scroll-root-relative .wasm path. Defaults to private/dist/app.wasm or public/dist/app.wasm.
+	Path *string `json:"path,omitempty"`
 }
 
-// Procedure defines model for Procedure.
-type Procedure struct {
-	// Data Procedure data payload
-	Data interface{} `json:"data,omitempty"`
-
-	// Id Unique procedure identifier
-	Id *string `json:"id"`
-
-	// IgnoreFailure Whether to continue on failure
-	IgnoreFailure *bool `json:"ignore_failure,omitempty"`
-
-	// Mode Procedure execution mode
-	Mode string `json:"mode"`
-
-	// Wait Wait condition
-	Wait *Procedure_Wait `json:"wait,omitempty"`
+// RegistryCredential defines model for RegistryCredential.
+type RegistryCredential struct {
+	Host     string `json:"host"`
+	Password string `json:"password"`
+	Username string `json:"username"`
 }
 
-// ProcedureWait0 defines model for .
-type ProcedureWait0 = string
-
-// ProcedureWait1 defines model for .
-type ProcedureWait1 = int
-
-// ProcedureWait2 defines model for .
-type ProcedureWait2 = bool
-
-// Procedure_Wait Wait condition
-type Procedure_Wait struct {
-	union json.RawMessage
+// RuntimeArtifactOperationRequest defines model for RuntimeArtifactOperationRequest.
+type RuntimeArtifactOperationRequest struct {
+	Artifact            string                `json:"artifact"`
+	RegistryCredentials *[]RegistryCredential `json:"registry_credentials,omitempty"`
+	Restart             *bool                 `json:"restart,omitempty"`
 }
 
-// Process defines model for Process.
-type Process struct {
-	// Name Process name/identifier
-	Name string `json:"name"`
-
-	// Type Process type
-	Type string `json:"type"`
+// RuntimePortStatus defines model for RuntimePortStatus.
+type RuntimePortStatus struct {
+	Bound            bool       `json:"bound"`
+	HostIp           *string    `json:"host_ip,omitempty"`
+	HostPort         *int       `json:"host_port,omitempty"`
+	KeepAliveTraffic *string    `json:"keepAliveTraffic,omitempty"`
+	LastActivityAt   *time.Time `json:"last_activity_at,omitempty"`
+	Name             string     `json:"name"`
+	Port             int        `json:"port"`
+	Procedure        string     `json:"procedure"`
+	Protocol         string     `json:"protocol"`
+	RxBytes          *int64     `json:"rx_bytes,omitempty"`
+	Source           string     `json:"source"`
+	Traffic          bool       `json:"traffic"`
+	TrafficBytes     *int64     `json:"traffic_bytes,omitempty"`
+	TrafficOk        *bool      `json:"traffic_ok,omitempty"`
+	TrafficWindow    *string    `json:"traffic_window,omitempty"`
+	TxBytes          *int64     `json:"tx_bytes,omitempty"`
 }
 
-// ProcessMonitorMetrics defines model for ProcessMonitorMetrics.
-type ProcessMonitorMetrics struct {
-	// Connections Active network connections
-	Connections []string `json:"connections"`
-
-	// Cpu CPU usage percentage
-	Cpu float64 `json:"cpu"`
-
-	// Memory Memory usage in bytes
-	Memory int `json:"memory"`
-
-	// Pid Process ID
-	Pid int `json:"pid"`
+// RuntimeRouteAssignment defines model for RuntimeRouteAssignment.
+type RuntimeRouteAssignment struct {
+	ExternalIp *string `json:"external_ip,omitempty"`
+	Host       *string `json:"host,omitempty"`
+	Name       *string `json:"name,omitempty"`
+	PortName   *string `json:"port_name,omitempty"`
+	Protocol   *string `json:"protocol,omitempty"`
+	PublicPort *int    `json:"public_port,omitempty"`
+	Url        *string `json:"url,omitempty"`
 }
 
-// ProcessTreeNode defines model for ProcessTreeNode.
-type ProcessTreeNode struct {
-	Children   *[]ProcessTreeNode `json:"children,omitempty"`
-	Cmdline    *string            `json:"cmdline,omitempty"`
-	CpuPercent *float64           `json:"cpu_percent,omitempty"`
-	Gids       *[]int             `json:"gids,omitempty"`
-
-	// IoCounters I/O counters
-	IoCounters *string `json:"io_counters,omitempty"`
-
-	// Memory Memory statistics
-	Memory *string `json:"memory,omitempty"`
-
-	// MemoryEx Extended memory statistics
-	MemoryEx *string `json:"memory_ex,omitempty"`
-	Name     *string `json:"name,omitempty"`
-
-	// Process Process information (simplified from gopsutil)
-	Process  *string `json:"process,omitempty"`
-	Username *string `json:"username,omitempty"`
+// RuntimeRoutingTarget defines model for RuntimeRoutingTarget.
+type RuntimeRoutingTarget struct {
+	Name        string             `json:"name"`
+	Namespace   *string            `json:"namespace,omitempty"`
+	Port        int                `json:"port"`
+	PortName    string             `json:"port_name"`
+	Procedure   string             `json:"procedure"`
+	Protocol    string             `json:"protocol"`
+	Selector    *map[string]string `json:"selector,omitempty"`
+	ServiceName string             `json:"service_name"`
+	ServicePort int                `json:"service_port"`
 }
 
-// ProcessTreeRoot defines model for ProcessTreeRoot.
-type ProcessTreeRoot struct {
-	Root                 ProcessTreeNode `json:"root"`
-	TotalCpuPercent      float64         `json:"total_cpu_percent"`
-	TotalIoCountersRead  int64           `json:"total_io_counters_read"`
-	TotalIoCountersWrite int64           `json:"total_io_counters_write"`
-	TotalMemoryRss       int64           `json:"total_memory_rss"`
-	TotalMemorySwap      int64           `json:"total_memory_swap"`
-	TotalMemoryVms       int64           `json:"total_memory_vms"`
-	TotalProcessCount    int             `json:"total_process_count"`
+// RuntimeScroll defines model for RuntimeScroll.
+type RuntimeScroll struct {
+	Artifact   string                    `json:"artifact"`
+	Commands   *map[string]interface{}   `json:"commands,omitempty"`
+	CreatedAt  time.Time                 `json:"created_at"`
+	Id         string                    `json:"id"`
+	LastError  *string                   `json:"last_error,omitempty"`
+	OwnerId    *string                   `json:"owner_id,omitempty"`
+	Root       string                    `json:"root"`
+	Routing    *[]RuntimeRouteAssignment `json:"routing,omitempty"`
+	ScrollName string                    `json:"scroll_name"`
+	Status     RuntimeScrollStatus       `json:"status"`
+	UiPackages *RuntimeUIPackages        `json:"ui_packages,omitempty"`
+	UpdatedAt  time.Time                 `json:"updated_at"`
 }
 
-// ProcessesResponse defines model for ProcessesResponse.
-type ProcessesResponse struct {
-	Processes map[string]Process `json:"processes"`
+// RuntimeScrollStatus defines model for RuntimeScroll.Status.
+type RuntimeScrollStatus string
+
+// RuntimeUIPackage defines model for RuntimeUIPackage.
+type RuntimeUIPackage struct {
+	Path      string    `json:"path"`
+	Sha256    string    `json:"sha256"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Url       string    `json:"url"`
 }
 
-// QueueResponse Map of command IDs to their execution status
-type QueueResponse map[string]ScrollLockStatus
+// RuntimeUIPackages defines model for RuntimeUIPackages.
+type RuntimeUIPackages map[string]RuntimeUIPackage
 
-// ScrollFile Scroll configuration file structure
-type ScrollFile struct {
-	// AppVersion Application version (not necessarily semver)
-	AppVersion *string                           `json:"app_version,omitempty"`
-	Commands   *map[string]CommandInstructionSet `json:"commands,omitempty"`
-	Cronjobs   *[]Cronjob                        `json:"cronjobs,omitempty"`
+// ScrollLogMap defines model for ScrollLogMap.
+type ScrollLogMap map[string][]string
 
-	// Desc Scroll description
-	Desc *string `json:"desc,omitempty"`
-
-	// Init Initialization command (deprecated, use serve)
-	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
-	Init *string `json:"init,omitempty"`
-
-	// KeepAlivePPM Keep alive packets per minute
-	KeepAlivePPM *int `json:"keepAlivePPM,omitempty"`
-
-	// Name Scroll name
-	Name    *string                       `json:"name,omitempty"`
-	Plugins *map[string]map[string]string `json:"plugins,omitempty"`
-	Ports   *[]Port                       `json:"ports,omitempty"`
-
-	// Serve Serve command
-	Serve *string `json:"serve,omitempty"`
-
-	// Version Scroll version (semver)
-	Version *string `json:"version,omitempty"`
+// UpdateScrollRequest defines model for UpdateScrollRequest.
+type UpdateScrollRequest struct {
+	// Artifact Optional target artifact. If omitted, the daemon refreshes the runtime's current artifact.
+	Artifact            *string               `json:"artifact,omitempty"`
+	RegistryCredentials *[]RegistryCredential `json:"registry_credentials,omitempty"`
 }
 
-// ScrollLockStatus Status of a command in the queue
-type ScrollLockStatus string
+// PublishScrollUIPackageParamsScope defines parameters for PublishScrollUIPackage.
+type PublishScrollUIPackageParamsScope string
 
-// ScrollLogStream defines model for ScrollLogStream.
-type ScrollLogStream struct {
-	// Key The log stream identifier
-	Key string `json:"key"`
+// CreateScrollJSONRequestBody defines body for CreateScroll for application/json ContentType.
+type CreateScrollJSONRequestBody = CreateScrollRequest
 
-	// Log Array of log lines
-	Log []string `json:"log"`
+// EnsureScrollJSONRequestBody defines body for EnsureScroll for application/json ContentType.
+type EnsureScrollJSONRequestBody = EnsureScrollRequest
+
+// BackupScrollJSONRequestBody defines body for BackupScroll for application/json ContentType.
+type BackupScrollJSONRequestBody = RuntimeArtifactOperationRequest
+
+// RestoreScrollJSONRequestBody defines body for RestoreScroll for application/json ContentType.
+type RestoreScrollJSONRequestBody = RuntimeArtifactOperationRequest
+
+// ApplyScrollRoutingJSONRequestBody defines body for ApplyScrollRouting for application/json ContentType.
+type ApplyScrollRoutingJSONRequestBody = ApplyRoutingRequest
+
+// PublishScrollUIPackageJSONRequestBody defines body for PublishScrollUIPackage for application/json ContentType.
+type PublishScrollUIPackageJSONRequestBody = PublishUIPackageRequest
+
+// UpdateScrollJSONRequestBody defines body for UpdateScroll for application/json ContentType.
+type UpdateScrollJSONRequestBody = UpdateScrollRequest
+
+// RequestEditorFn  is the function signature for the RequestEditor callback function
+type RequestEditorFn func(ctx context.Context, req *http.Request) error
+
+// Doer performs HTTP requests.
+//
+// The standard http.Client implements this interface.
+type HttpRequestDoer interface {
+	Do(req *http.Request) (*http.Response, error)
 }
 
-// StartCommandRequest defines model for StartCommandRequest.
-type StartCommandRequest struct {
-	// Command The command ID to execute
-	Command string `json:"command"`
+// Client which conforms to the OpenAPI3 specification for this service.
+type Client struct {
+	// The endpoint of the server conforming to this interface, with scheme,
+	// https://api.deepmap.com for example. This can contain a path relative
+	// to the server, such as https://api.deepmap.com/dev-test, and all the
+	// paths in the swagger spec will be appended to the server.
+	Server string
 
-	// Sync Whether to run synchronously (wait for completion)
-	Sync *bool `json:"sync,omitempty"`
+	// Doer for performing requests, typically a *http.Client with any
+	// customized settings, such as certificate chains.
+	Client HttpRequestDoer
+
+	// A list of callbacks for modifying requests which are generated before sending over
+	// the network.
+	RequestEditors []RequestEditorFn
 }
 
-// StartProcedureRequest defines model for StartProcedureRequest.
-type StartProcedureRequest struct {
-	// Data The data payload for the procedure
-	Data string `json:"data"`
+// ClientOption allows setting custom parameters during construction
+type ClientOption func(*Client) error
 
-	// Dependencies List of dependency IDs this procedure depends on
-	Dependencies *[]string `json:"dependencies,omitempty"`
-
-	// Mode The procedure mode (e.g., "stdin", or plugin mode)
-	Mode string `json:"mode"`
-
-	// Process The process name to run the procedure against
-	Process string `json:"process"`
-
-	// Sync Whether to run synchronously
-	Sync *bool `json:"sync,omitempty"`
+// Creates a new Client, with reasonable defaults
+func NewClient(server string, opts ...ClientOption) (*Client, error) {
+	// create a client with sane default values
+	client := Client{
+		Server: server,
+	}
+	// mutate client and add all optional params
+	for _, o := range opts {
+		if err := o(&client); err != nil {
+			return nil, err
+		}
+	}
+	// ensure the server URL always has a trailing slash
+	if !strings.HasSuffix(client.Server, "/") {
+		client.Server += "/"
+	}
+	// create httpClient, if not already present
+	if client.Client == nil {
+		client.Client = &http.Client{}
+	}
+	return &client, nil
 }
 
-// TokenResponse defines model for TokenResponse.
-type TokenResponse struct {
-	// Token The generated authentication token
-	Token string `json:"token"`
+// WithHTTPClient allows overriding the default Doer, which is
+// automatically created using http.Client. This is useful for tests.
+func WithHTTPClient(doer HttpRequestDoer) ClientOption {
+	return func(c *Client) error {
+		c.Client = doer
+		return nil
+	}
 }
 
-// WatchModeRequest defines model for WatchModeRequest.
-type WatchModeRequest struct {
-	// HotReloadCommands Commands to run when files change
-	HotReloadCommands *[]string `json:"hotReloadCommands,omitempty"`
-
-	// WatchPaths Directories to watch
-	WatchPaths []string `json:"watchPaths"`
+// WithRequestEditorFn allows setting up a callback function, which will be
+// called right before sending the request. This can be used to mutate the request.
+func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
+	return func(c *Client) error {
+		c.RequestEditors = append(c.RequestEditors, fn)
+		return nil
+	}
 }
 
-// WatchModeResponse defines model for WatchModeResponse.
-type WatchModeResponse struct {
-	// Enabled Current watch mode state
-	Enabled bool `json:"enabled"`
+// The interface specification for the client above.
+type ClientInterface interface {
+	// GetHealthAuth request
+	GetHealthAuth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// Status Result status of the operation
-	Status string `json:"status"`
+	// ListScrolls request
+	ListScrolls(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateScrollWithBody request with any body
+	CreateScrollWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateScroll(ctx context.Context, body CreateScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EnsureScrollWithBody request with any body
+	EnsureScrollWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	EnsureScroll(ctx context.Context, body EnsureScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteScroll request
+	DeleteScroll(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetScroll request
+	GetScroll(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// BackupScrollWithBody request with any body
+	BackupScrollWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	BackupScroll(ctx context.Context, id string, body BackupScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RunScrollCommand request
+	RunScrollCommand(ctx context.Context, id string, command string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetScrollConfig request
+	GetScrollConfig(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetScrollConsoles request
+	GetScrollConsoles(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetScrollLogs request
+	GetScrollLogs(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetScrollPorts request
+	GetScrollPorts(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetScrollProcedures request
+	GetScrollProcedures(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetScrollQueue request
+	GetScrollQueue(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RestoreScrollWithBody request with any body
+	RestoreScrollWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	RestoreScroll(ctx context.Context, id string, body RestoreScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ApplyScrollRoutingWithBody request with any body
+	ApplyScrollRoutingWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ApplyScrollRouting(ctx context.Context, id string, body ApplyScrollRoutingJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetScrollRoutingTargets request
+	GetScrollRoutingTargets(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StartScroll request
+	StartScroll(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StopScroll request
+	StopScroll(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetScrollUIPackages request
+	GetScrollUIPackages(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PublishScrollUIPackageWithBody request with any body
+	PublishScrollUIPackageWithBody(ctx context.Context, id string, scope PublishScrollUIPackageParamsScope, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PublishScrollUIPackage(ctx context.Context, id string, scope PublishScrollUIPackageParamsScope, body PublishScrollUIPackageJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateScrollWithBody request with any body
+	UpdateScrollWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateScroll(ctx context.Context, id string, body UpdateScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
-// WatchStatusResponse defines model for WatchStatusResponse.
-type WatchStatusResponse struct {
-	// Enabled Whether watch mode is currently enabled
-	Enabled bool `json:"enabled"`
-
-	// WatchedPaths List of currently watched file paths
-	WatchedPaths []string `json:"watchedPaths"`
-}
-
-// RunCommandJSONRequestBody defines body for RunCommand for application/json ContentType.
-type RunCommandJSONRequestBody = StartCommandRequest
-
-// AddPortJSONRequestBody defines body for AddPort for application/json ContentType.
-type AddPortJSONRequestBody = AddPortRequest
-
-// RunProcedureJSONRequestBody defines body for RunProcedure for application/json ContentType.
-type RunProcedureJSONRequestBody = StartProcedureRequest
-
-// AddCommandJSONRequestBody defines body for AddCommand for application/json ContentType.
-type AddCommandJSONRequestBody = CommandInstructionSet
-
-// EnableWatchJSONRequestBody defines body for EnableWatch for application/json ContentType.
-type EnableWatchJSONRequestBody = WatchModeRequest
-
-// AsProcedureWait0 returns the union data inside the Procedure_Wait as a ProcedureWait0
-func (t Procedure_Wait) AsProcedureWait0() (ProcedureWait0, error) {
-	var body ProcedureWait0
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromProcedureWait0 overwrites any union data inside the Procedure_Wait as the provided ProcedureWait0
-func (t *Procedure_Wait) FromProcedureWait0(v ProcedureWait0) error {
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeProcedureWait0 performs a merge with any union data inside the Procedure_Wait, using the provided ProcedureWait0
-func (t *Procedure_Wait) MergeProcedureWait0(v ProcedureWait0) error {
-	b, err := json.Marshal(v)
+func (c *Client) GetHealthAuth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetHealthAuthRequest(c.Server)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListScrolls(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListScrollsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateScrollWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateScrollRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateScroll(ctx context.Context, body CreateScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateScrollRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EnsureScrollWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEnsureScrollRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EnsureScroll(ctx context.Context, body EnsureScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEnsureScrollRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteScroll(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteScrollRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetScroll(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetScrollRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) BackupScrollWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBackupScrollRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) BackupScroll(ctx context.Context, id string, body BackupScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBackupScrollRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RunScrollCommand(ctx context.Context, id string, command string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRunScrollCommandRequest(c.Server, id, command)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetScrollConfig(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetScrollConfigRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetScrollConsoles(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetScrollConsolesRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetScrollLogs(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetScrollLogsRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetScrollPorts(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetScrollPortsRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetScrollProcedures(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetScrollProceduresRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetScrollQueue(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetScrollQueueRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RestoreScrollWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRestoreScrollRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RestoreScroll(ctx context.Context, id string, body RestoreScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRestoreScrollRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ApplyScrollRoutingWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewApplyScrollRoutingRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ApplyScrollRouting(ctx context.Context, id string, body ApplyScrollRoutingJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewApplyScrollRoutingRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetScrollRoutingTargets(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetScrollRoutingTargetsRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) StartScroll(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStartScrollRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) StopScroll(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStopScrollRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetScrollUIPackages(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetScrollUIPackagesRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PublishScrollUIPackageWithBody(ctx context.Context, id string, scope PublishScrollUIPackageParamsScope, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPublishScrollUIPackageRequestWithBody(c.Server, id, scope, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PublishScrollUIPackage(ctx context.Context, id string, scope PublishScrollUIPackageParamsScope, body PublishScrollUIPackageJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPublishScrollUIPackageRequest(c.Server, id, scope, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateScrollWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateScrollRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateScroll(ctx context.Context, id string, body UpdateScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateScrollRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// NewGetHealthAuthRequest generates requests for GetHealthAuth
+func NewGetHealthAuthRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
 	}
 
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
-// AsProcedureWait1 returns the union data inside the Procedure_Wait as a ProcedureWait1
-func (t Procedure_Wait) AsProcedureWait1() (ProcedureWait1, error) {
-	var body ProcedureWait1
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromProcedureWait1 overwrites any union data inside the Procedure_Wait as the provided ProcedureWait1
-func (t *Procedure_Wait) FromProcedureWait1(v ProcedureWait1) error {
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeProcedureWait1 performs a merge with any union data inside the Procedure_Wait, using the provided ProcedureWait1
-func (t *Procedure_Wait) MergeProcedureWait1(v ProcedureWait1) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
+	operationPath := fmt.Sprintf("/api/v1/health")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
 	}
 
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
-// AsProcedureWait2 returns the union data inside the Procedure_Wait as a ProcedureWait2
-func (t Procedure_Wait) AsProcedureWait2() (ProcedureWait2, error) {
-	var body ProcedureWait2
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromProcedureWait2 overwrites any union data inside the Procedure_Wait as the provided ProcedureWait2
-func (t *Procedure_Wait) FromProcedureWait2(v ProcedureWait2) error {
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeProcedureWait2 performs a merge with any union data inside the Procedure_Wait, using the provided ProcedureWait2
-func (t *Procedure_Wait) MergeProcedureWait2(v ProcedureWait2) error {
-	b, err := json.Marshal(v)
+	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
 }
 
-func (t Procedure_Wait) MarshalJSON() ([]byte, error) {
-	b, err := t.union.MarshalJSON()
-	return b, err
+// NewListScrollsRequest generates requests for ListScrolls
+func NewListScrollsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
 }
 
-func (t *Procedure_Wait) UnmarshalJSON(b []byte) error {
-	err := t.union.UnmarshalJSON(b)
-	return err
+// NewCreateScrollRequest calls the generic CreateScroll builder with application/json body
+func NewCreateScrollRequest(server string, body CreateScrollJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateScrollRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateScrollRequestWithBody generates requests for CreateScroll with any type of body
+func NewCreateScrollRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewEnsureScrollRequest calls the generic EnsureScroll builder with application/json body
+func NewEnsureScrollRequest(server string, body EnsureScrollJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewEnsureScrollRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewEnsureScrollRequestWithBody generates requests for EnsureScroll with any type of body
+func NewEnsureScrollRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/ensure")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteScrollRequest generates requests for DeleteScroll
+func NewDeleteScrollRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetScrollRequest generates requests for GetScroll
+func NewGetScrollRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewBackupScrollRequest calls the generic BackupScroll builder with application/json body
+func NewBackupScrollRequest(server string, id string, body BackupScrollJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewBackupScrollRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewBackupScrollRequestWithBody generates requests for BackupScroll with any type of body
+func NewBackupScrollRequestWithBody(server string, id string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/backup", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRunScrollCommandRequest generates requests for RunScrollCommand
+func NewRunScrollCommandRequest(server string, id string, command string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "command", runtime.ParamLocationPath, command)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/commands/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetScrollConfigRequest generates requests for GetScrollConfig
+func NewGetScrollConfigRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/config", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetScrollConsolesRequest generates requests for GetScrollConsoles
+func NewGetScrollConsolesRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/consoles", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetScrollLogsRequest generates requests for GetScrollLogs
+func NewGetScrollLogsRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/logs", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetScrollPortsRequest generates requests for GetScrollPorts
+func NewGetScrollPortsRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/ports", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetScrollProceduresRequest generates requests for GetScrollProcedures
+func NewGetScrollProceduresRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/procedures", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetScrollQueueRequest generates requests for GetScrollQueue
+func NewGetScrollQueueRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/queue", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRestoreScrollRequest calls the generic RestoreScroll builder with application/json body
+func NewRestoreScrollRequest(server string, id string, body RestoreScrollJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRestoreScrollRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewRestoreScrollRequestWithBody generates requests for RestoreScroll with any type of body
+func NewRestoreScrollRequestWithBody(server string, id string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/restore", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewApplyScrollRoutingRequest calls the generic ApplyScrollRouting builder with application/json body
+func NewApplyScrollRoutingRequest(server string, id string, body ApplyScrollRoutingJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewApplyScrollRoutingRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewApplyScrollRoutingRequestWithBody generates requests for ApplyScrollRouting with any type of body
+func NewApplyScrollRoutingRequestWithBody(server string, id string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/routing", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetScrollRoutingTargetsRequest generates requests for GetScrollRoutingTargets
+func NewGetScrollRoutingTargetsRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/routing/targets", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewStartScrollRequest generates requests for StartScroll
+func NewStartScrollRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/start", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewStopScrollRequest generates requests for StopScroll
+func NewStopScrollRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/stop", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetScrollUIPackagesRequest generates requests for GetScrollUIPackages
+func NewGetScrollUIPackagesRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/ui/packages", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPublishScrollUIPackageRequest calls the generic PublishScrollUIPackage builder with application/json body
+func NewPublishScrollUIPackageRequest(server string, id string, scope PublishScrollUIPackageParamsScope, body PublishScrollUIPackageJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPublishScrollUIPackageRequestWithBody(server, id, scope, "application/json", bodyReader)
+}
+
+// NewPublishScrollUIPackageRequestWithBody generates requests for PublishScrollUIPackage with any type of body
+func NewPublishScrollUIPackageRequestWithBody(server string, id string, scope PublishScrollUIPackageParamsScope, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "scope", runtime.ParamLocationPath, scope)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/ui/packages/%s/publish", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewUpdateScrollRequest calls the generic UpdateScroll builder with application/json body
+func NewUpdateScrollRequest(server string, id string, body UpdateScrollJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateScrollRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewUpdateScrollRequestWithBody generates requests for UpdateScroll with any type of body
+func NewUpdateScrollRequestWithBody(server string, id string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/update", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
+	for _, r := range c.RequestEditors {
+		if err := r(ctx, req); err != nil {
+			return err
+		}
+	}
+	for _, r := range additionalEditors {
+		if err := r(ctx, req); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ClientWithResponses builds on ClientInterface to offer response payloads
+type ClientWithResponses struct {
+	ClientInterface
+}
+
+// NewClientWithResponses creates a new ClientWithResponses, which wraps
+// Client with return type handling
+func NewClientWithResponses(server string, opts ...ClientOption) (*ClientWithResponses, error) {
+	client, err := NewClient(server, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &ClientWithResponses{client}, nil
+}
+
+// WithBaseURL overrides the baseURL.
+func WithBaseURL(baseURL string) ClientOption {
+	return func(c *Client) error {
+		newBaseURL, err := url.Parse(baseURL)
+		if err != nil {
+			return err
+		}
+		c.Server = newBaseURL.String()
+		return nil
+	}
+}
+
+// ClientWithResponsesInterface is the interface specification for the client with responses above.
+type ClientWithResponsesInterface interface {
+	// GetHealthAuthWithResponse request
+	GetHealthAuthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHealthAuthResponse, error)
+
+	// ListScrollsWithResponse request
+	ListScrollsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListScrollsResponse, error)
+
+	// CreateScrollWithBodyWithResponse request with any body
+	CreateScrollWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateScrollResponse, error)
+
+	CreateScrollWithResponse(ctx context.Context, body CreateScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateScrollResponse, error)
+
+	// EnsureScrollWithBodyWithResponse request with any body
+	EnsureScrollWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EnsureScrollResponse, error)
+
+	EnsureScrollWithResponse(ctx context.Context, body EnsureScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*EnsureScrollResponse, error)
+
+	// DeleteScrollWithResponse request
+	DeleteScrollWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*DeleteScrollResponse, error)
+
+	// GetScrollWithResponse request
+	GetScrollWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollResponse, error)
+
+	// BackupScrollWithBodyWithResponse request with any body
+	BackupScrollWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BackupScrollResponse, error)
+
+	BackupScrollWithResponse(ctx context.Context, id string, body BackupScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*BackupScrollResponse, error)
+
+	// RunScrollCommandWithResponse request
+	RunScrollCommandWithResponse(ctx context.Context, id string, command string, reqEditors ...RequestEditorFn) (*RunScrollCommandResponse, error)
+
+	// GetScrollConfigWithResponse request
+	GetScrollConfigWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollConfigResponse, error)
+
+	// GetScrollConsolesWithResponse request
+	GetScrollConsolesWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollConsolesResponse, error)
+
+	// GetScrollLogsWithResponse request
+	GetScrollLogsWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollLogsResponse, error)
+
+	// GetScrollPortsWithResponse request
+	GetScrollPortsWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollPortsResponse, error)
+
+	// GetScrollProceduresWithResponse request
+	GetScrollProceduresWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollProceduresResponse, error)
+
+	// GetScrollQueueWithResponse request
+	GetScrollQueueWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollQueueResponse, error)
+
+	// RestoreScrollWithBodyWithResponse request with any body
+	RestoreScrollWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RestoreScrollResponse, error)
+
+	RestoreScrollWithResponse(ctx context.Context, id string, body RestoreScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*RestoreScrollResponse, error)
+
+	// ApplyScrollRoutingWithBodyWithResponse request with any body
+	ApplyScrollRoutingWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ApplyScrollRoutingResponse, error)
+
+	ApplyScrollRoutingWithResponse(ctx context.Context, id string, body ApplyScrollRoutingJSONRequestBody, reqEditors ...RequestEditorFn) (*ApplyScrollRoutingResponse, error)
+
+	// GetScrollRoutingTargetsWithResponse request
+	GetScrollRoutingTargetsWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollRoutingTargetsResponse, error)
+
+	// StartScrollWithResponse request
+	StartScrollWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*StartScrollResponse, error)
+
+	// StopScrollWithResponse request
+	StopScrollWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*StopScrollResponse, error)
+
+	// GetScrollUIPackagesWithResponse request
+	GetScrollUIPackagesWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollUIPackagesResponse, error)
+
+	// PublishScrollUIPackageWithBodyWithResponse request with any body
+	PublishScrollUIPackageWithBodyWithResponse(ctx context.Context, id string, scope PublishScrollUIPackageParamsScope, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PublishScrollUIPackageResponse, error)
+
+	PublishScrollUIPackageWithResponse(ctx context.Context, id string, scope PublishScrollUIPackageParamsScope, body PublishScrollUIPackageJSONRequestBody, reqEditors ...RequestEditorFn) (*PublishScrollUIPackageResponse, error)
+
+	// UpdateScrollWithBodyWithResponse request with any body
+	UpdateScrollWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateScrollResponse, error)
+
+	UpdateScrollWithResponse(ctx context.Context, id string, body UpdateScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateScrollResponse, error)
+}
+
+type GetHealthAuthResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *HealthResponse
+	JSON503      *HealthResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetHealthAuthResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetHealthAuthResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListScrollsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *[]RuntimeScroll
+}
+
+// Status returns HTTPResponse.Status
+func (r ListScrollsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListScrollsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateScrollResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *RuntimeScroll
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateScrollResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateScrollResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EnsureScrollResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *RuntimeScroll
+}
+
+// Status returns HTTPResponse.Status
+func (r EnsureScrollResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EnsureScrollResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteScrollResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *DeletedScroll
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteScrollResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteScrollResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetScrollResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *RuntimeScroll
+}
+
+// Status returns HTTPResponse.Status
+func (r GetScrollResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetScrollResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type BackupScrollResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *RuntimeScroll
+}
+
+// Status returns HTTPResponse.Status
+func (r BackupScrollResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r BackupScrollResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RunScrollCommandResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *RuntimeScroll
+}
+
+// Status returns HTTPResponse.Status
+func (r RunScrollCommandResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RunScrollCommandResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetScrollConfigResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *map[string]interface{}
+}
+
+// Status returns HTTPResponse.Status
+func (r GetScrollConfigResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetScrollConfigResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetScrollConsolesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *map[string]interface{}
+}
+
+// Status returns HTTPResponse.Status
+func (r GetScrollConsolesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetScrollConsolesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetScrollLogsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ScrollLogMap
+}
+
+// Status returns HTTPResponse.Status
+func (r GetScrollLogsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetScrollLogsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetScrollPortsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *[]RuntimePortStatus
+}
+
+// Status returns HTTPResponse.Status
+func (r GetScrollPortsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetScrollPortsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetScrollProceduresResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *CommandStatusMap
+}
+
+// Status returns HTTPResponse.Status
+func (r GetScrollProceduresResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetScrollProceduresResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetScrollQueueResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *CommandStatusMap
+}
+
+// Status returns HTTPResponse.Status
+func (r GetScrollQueueResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetScrollQueueResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RestoreScrollResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *RuntimeScroll
+}
+
+// Status returns HTTPResponse.Status
+func (r RestoreScrollResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RestoreScrollResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ApplyScrollRoutingResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *RuntimeScroll
+}
+
+// Status returns HTTPResponse.Status
+func (r ApplyScrollRoutingResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ApplyScrollRoutingResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetScrollRoutingTargetsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *[]RuntimeRoutingTarget
+}
+
+// Status returns HTTPResponse.Status
+func (r GetScrollRoutingTargetsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetScrollRoutingTargetsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type StartScrollResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *RuntimeScroll
+}
+
+// Status returns HTTPResponse.Status
+func (r StartScrollResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StartScrollResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type StopScrollResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *RuntimeScroll
+}
+
+// Status returns HTTPResponse.Status
+func (r StopScrollResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StopScrollResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetScrollUIPackagesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *RuntimeUIPackages
+}
+
+// Status returns HTTPResponse.Status
+func (r GetScrollUIPackagesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetScrollUIPackagesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PublishScrollUIPackageResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *RuntimeScroll
+}
+
+// Status returns HTTPResponse.Status
+func (r PublishScrollUIPackageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PublishScrollUIPackageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UpdateScrollResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *RuntimeScroll
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateScrollResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateScrollResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// GetHealthAuthWithResponse request returning *GetHealthAuthResponse
+func (c *ClientWithResponses) GetHealthAuthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHealthAuthResponse, error) {
+	rsp, err := c.GetHealthAuth(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetHealthAuthResponse(rsp)
+}
+
+// ListScrollsWithResponse request returning *ListScrollsResponse
+func (c *ClientWithResponses) ListScrollsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListScrollsResponse, error) {
+	rsp, err := c.ListScrolls(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListScrollsResponse(rsp)
+}
+
+// CreateScrollWithBodyWithResponse request with arbitrary body returning *CreateScrollResponse
+func (c *ClientWithResponses) CreateScrollWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateScrollResponse, error) {
+	rsp, err := c.CreateScrollWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateScrollResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateScrollWithResponse(ctx context.Context, body CreateScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateScrollResponse, error) {
+	rsp, err := c.CreateScroll(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateScrollResponse(rsp)
+}
+
+// EnsureScrollWithBodyWithResponse request with arbitrary body returning *EnsureScrollResponse
+func (c *ClientWithResponses) EnsureScrollWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EnsureScrollResponse, error) {
+	rsp, err := c.EnsureScrollWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEnsureScrollResponse(rsp)
+}
+
+func (c *ClientWithResponses) EnsureScrollWithResponse(ctx context.Context, body EnsureScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*EnsureScrollResponse, error) {
+	rsp, err := c.EnsureScroll(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEnsureScrollResponse(rsp)
+}
+
+// DeleteScrollWithResponse request returning *DeleteScrollResponse
+func (c *ClientWithResponses) DeleteScrollWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*DeleteScrollResponse, error) {
+	rsp, err := c.DeleteScroll(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteScrollResponse(rsp)
+}
+
+// GetScrollWithResponse request returning *GetScrollResponse
+func (c *ClientWithResponses) GetScrollWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollResponse, error) {
+	rsp, err := c.GetScroll(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetScrollResponse(rsp)
+}
+
+// BackupScrollWithBodyWithResponse request with arbitrary body returning *BackupScrollResponse
+func (c *ClientWithResponses) BackupScrollWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BackupScrollResponse, error) {
+	rsp, err := c.BackupScrollWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBackupScrollResponse(rsp)
+}
+
+func (c *ClientWithResponses) BackupScrollWithResponse(ctx context.Context, id string, body BackupScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*BackupScrollResponse, error) {
+	rsp, err := c.BackupScroll(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBackupScrollResponse(rsp)
+}
+
+// RunScrollCommandWithResponse request returning *RunScrollCommandResponse
+func (c *ClientWithResponses) RunScrollCommandWithResponse(ctx context.Context, id string, command string, reqEditors ...RequestEditorFn) (*RunScrollCommandResponse, error) {
+	rsp, err := c.RunScrollCommand(ctx, id, command, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRunScrollCommandResponse(rsp)
+}
+
+// GetScrollConfigWithResponse request returning *GetScrollConfigResponse
+func (c *ClientWithResponses) GetScrollConfigWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollConfigResponse, error) {
+	rsp, err := c.GetScrollConfig(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetScrollConfigResponse(rsp)
+}
+
+// GetScrollConsolesWithResponse request returning *GetScrollConsolesResponse
+func (c *ClientWithResponses) GetScrollConsolesWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollConsolesResponse, error) {
+	rsp, err := c.GetScrollConsoles(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetScrollConsolesResponse(rsp)
+}
+
+// GetScrollLogsWithResponse request returning *GetScrollLogsResponse
+func (c *ClientWithResponses) GetScrollLogsWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollLogsResponse, error) {
+	rsp, err := c.GetScrollLogs(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetScrollLogsResponse(rsp)
+}
+
+// GetScrollPortsWithResponse request returning *GetScrollPortsResponse
+func (c *ClientWithResponses) GetScrollPortsWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollPortsResponse, error) {
+	rsp, err := c.GetScrollPorts(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetScrollPortsResponse(rsp)
+}
+
+// GetScrollProceduresWithResponse request returning *GetScrollProceduresResponse
+func (c *ClientWithResponses) GetScrollProceduresWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollProceduresResponse, error) {
+	rsp, err := c.GetScrollProcedures(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetScrollProceduresResponse(rsp)
+}
+
+// GetScrollQueueWithResponse request returning *GetScrollQueueResponse
+func (c *ClientWithResponses) GetScrollQueueWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollQueueResponse, error) {
+	rsp, err := c.GetScrollQueue(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetScrollQueueResponse(rsp)
+}
+
+// RestoreScrollWithBodyWithResponse request with arbitrary body returning *RestoreScrollResponse
+func (c *ClientWithResponses) RestoreScrollWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RestoreScrollResponse, error) {
+	rsp, err := c.RestoreScrollWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRestoreScrollResponse(rsp)
+}
+
+func (c *ClientWithResponses) RestoreScrollWithResponse(ctx context.Context, id string, body RestoreScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*RestoreScrollResponse, error) {
+	rsp, err := c.RestoreScroll(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRestoreScrollResponse(rsp)
+}
+
+// ApplyScrollRoutingWithBodyWithResponse request with arbitrary body returning *ApplyScrollRoutingResponse
+func (c *ClientWithResponses) ApplyScrollRoutingWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ApplyScrollRoutingResponse, error) {
+	rsp, err := c.ApplyScrollRoutingWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseApplyScrollRoutingResponse(rsp)
+}
+
+func (c *ClientWithResponses) ApplyScrollRoutingWithResponse(ctx context.Context, id string, body ApplyScrollRoutingJSONRequestBody, reqEditors ...RequestEditorFn) (*ApplyScrollRoutingResponse, error) {
+	rsp, err := c.ApplyScrollRouting(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseApplyScrollRoutingResponse(rsp)
+}
+
+// GetScrollRoutingTargetsWithResponse request returning *GetScrollRoutingTargetsResponse
+func (c *ClientWithResponses) GetScrollRoutingTargetsWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollRoutingTargetsResponse, error) {
+	rsp, err := c.GetScrollRoutingTargets(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetScrollRoutingTargetsResponse(rsp)
+}
+
+// StartScrollWithResponse request returning *StartScrollResponse
+func (c *ClientWithResponses) StartScrollWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*StartScrollResponse, error) {
+	rsp, err := c.StartScroll(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStartScrollResponse(rsp)
+}
+
+// StopScrollWithResponse request returning *StopScrollResponse
+func (c *ClientWithResponses) StopScrollWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*StopScrollResponse, error) {
+	rsp, err := c.StopScroll(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStopScrollResponse(rsp)
+}
+
+// GetScrollUIPackagesWithResponse request returning *GetScrollUIPackagesResponse
+func (c *ClientWithResponses) GetScrollUIPackagesWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollUIPackagesResponse, error) {
+	rsp, err := c.GetScrollUIPackages(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetScrollUIPackagesResponse(rsp)
+}
+
+// PublishScrollUIPackageWithBodyWithResponse request with arbitrary body returning *PublishScrollUIPackageResponse
+func (c *ClientWithResponses) PublishScrollUIPackageWithBodyWithResponse(ctx context.Context, id string, scope PublishScrollUIPackageParamsScope, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PublishScrollUIPackageResponse, error) {
+	rsp, err := c.PublishScrollUIPackageWithBody(ctx, id, scope, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePublishScrollUIPackageResponse(rsp)
+}
+
+func (c *ClientWithResponses) PublishScrollUIPackageWithResponse(ctx context.Context, id string, scope PublishScrollUIPackageParamsScope, body PublishScrollUIPackageJSONRequestBody, reqEditors ...RequestEditorFn) (*PublishScrollUIPackageResponse, error) {
+	rsp, err := c.PublishScrollUIPackage(ctx, id, scope, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePublishScrollUIPackageResponse(rsp)
+}
+
+// UpdateScrollWithBodyWithResponse request with arbitrary body returning *UpdateScrollResponse
+func (c *ClientWithResponses) UpdateScrollWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateScrollResponse, error) {
+	rsp, err := c.UpdateScrollWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateScrollResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateScrollWithResponse(ctx context.Context, id string, body UpdateScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateScrollResponse, error) {
+	rsp, err := c.UpdateScroll(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateScrollResponse(rsp)
+}
+
+// ParseGetHealthAuthResponse parses an HTTP response from a GetHealthAuthWithResponse call
+func ParseGetHealthAuthResponse(rsp *http.Response) (*GetHealthAuthResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetHealthAuthResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest HealthResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest HealthResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListScrollsResponse parses an HTTP response from a ListScrollsWithResponse call
+func ParseListScrollsResponse(rsp *http.Response) (*ListScrollsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListScrollsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []RuntimeScroll
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateScrollResponse parses an HTTP response from a CreateScrollWithResponse call
+func ParseCreateScrollResponse(rsp *http.Response) (*CreateScrollResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateScrollResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest RuntimeScroll
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEnsureScrollResponse parses an HTTP response from a EnsureScrollWithResponse call
+func ParseEnsureScrollResponse(rsp *http.Response) (*EnsureScrollResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EnsureScrollResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RuntimeScroll
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteScrollResponse parses an HTTP response from a DeleteScrollWithResponse call
+func ParseDeleteScrollResponse(rsp *http.Response) (*DeleteScrollResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteScrollResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DeletedScroll
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetScrollResponse parses an HTTP response from a GetScrollWithResponse call
+func ParseGetScrollResponse(rsp *http.Response) (*GetScrollResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetScrollResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RuntimeScroll
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseBackupScrollResponse parses an HTTP response from a BackupScrollWithResponse call
+func ParseBackupScrollResponse(rsp *http.Response) (*BackupScrollResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &BackupScrollResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RuntimeScroll
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRunScrollCommandResponse parses an HTTP response from a RunScrollCommandWithResponse call
+func ParseRunScrollCommandResponse(rsp *http.Response) (*RunScrollCommandResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RunScrollCommandResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RuntimeScroll
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetScrollConfigResponse parses an HTTP response from a GetScrollConfigWithResponse call
+func ParseGetScrollConfigResponse(rsp *http.Response) (*GetScrollConfigResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetScrollConfigResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetScrollConsolesResponse parses an HTTP response from a GetScrollConsolesWithResponse call
+func ParseGetScrollConsolesResponse(rsp *http.Response) (*GetScrollConsolesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetScrollConsolesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetScrollLogsResponse parses an HTTP response from a GetScrollLogsWithResponse call
+func ParseGetScrollLogsResponse(rsp *http.Response) (*GetScrollLogsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetScrollLogsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ScrollLogMap
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetScrollPortsResponse parses an HTTP response from a GetScrollPortsWithResponse call
+func ParseGetScrollPortsResponse(rsp *http.Response) (*GetScrollPortsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetScrollPortsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []RuntimePortStatus
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetScrollProceduresResponse parses an HTTP response from a GetScrollProceduresWithResponse call
+func ParseGetScrollProceduresResponse(rsp *http.Response) (*GetScrollProceduresResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetScrollProceduresResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CommandStatusMap
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetScrollQueueResponse parses an HTTP response from a GetScrollQueueWithResponse call
+func ParseGetScrollQueueResponse(rsp *http.Response) (*GetScrollQueueResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetScrollQueueResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CommandStatusMap
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRestoreScrollResponse parses an HTTP response from a RestoreScrollWithResponse call
+func ParseRestoreScrollResponse(rsp *http.Response) (*RestoreScrollResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RestoreScrollResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RuntimeScroll
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseApplyScrollRoutingResponse parses an HTTP response from a ApplyScrollRoutingWithResponse call
+func ParseApplyScrollRoutingResponse(rsp *http.Response) (*ApplyScrollRoutingResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ApplyScrollRoutingResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RuntimeScroll
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetScrollRoutingTargetsResponse parses an HTTP response from a GetScrollRoutingTargetsWithResponse call
+func ParseGetScrollRoutingTargetsResponse(rsp *http.Response) (*GetScrollRoutingTargetsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetScrollRoutingTargetsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []RuntimeRoutingTarget
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseStartScrollResponse parses an HTTP response from a StartScrollWithResponse call
+func ParseStartScrollResponse(rsp *http.Response) (*StartScrollResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StartScrollResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RuntimeScroll
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseStopScrollResponse parses an HTTP response from a StopScrollWithResponse call
+func ParseStopScrollResponse(rsp *http.Response) (*StopScrollResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StopScrollResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RuntimeScroll
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetScrollUIPackagesResponse parses an HTTP response from a GetScrollUIPackagesWithResponse call
+func ParseGetScrollUIPackagesResponse(rsp *http.Response) (*GetScrollUIPackagesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetScrollUIPackagesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RuntimeUIPackages
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePublishScrollUIPackageResponse parses an HTTP response from a PublishScrollUIPackageWithResponse call
+func ParsePublishScrollUIPackageResponse(rsp *http.Response) (*PublishScrollUIPackageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PublishScrollUIPackageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RuntimeScroll
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateScrollResponse parses an HTTP response from a UpdateScrollWithResponse call
+func ParseUpdateScrollResponse(rsp *http.Response) (*UpdateScrollResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateScrollResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RuntimeScroll
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
 }
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
-	// Finish cold start
-	// (POST /api/v1/coldstarter/finish)
-	FinishColdstarter(c *fiber.Ctx) error
-	// Run a command
-	// (POST /api/v1/command)
-	RunCommand(c *fiber.Ctx) error
-	// List all consoles
-	// (GET /api/v1/consoles)
-	GetConsoles(c *fiber.Ctx) error
-	// Stop daemon
-	// (POST /api/v1/daemon/stop)
-	StopDaemon(c *fiber.Ctx) error
 	// Get health status
 	// (GET /api/v1/health)
 	GetHealthAuth(c *fiber.Ctx) error
-	// List all log streams
-	// (GET /api/v1/logs)
-	ListAllLogs(c *fiber.Ctx) error
-	// List logs for a specific stream
-	// (GET /api/v1/logs/{stream})
-	ListStreamLogs(c *fiber.Ctx, stream string) error
-	// Get process metrics
-	// (GET /api/v1/metrics)
-	GetMetrics(c *fiber.Ctx) error
-	// Get port information
-	// (GET /api/v1/ports)
-	GetPorts(c *fiber.Ctx) error
-	// Add a port to watch
-	// (POST /api/v1/ports)
-	AddPort(c *fiber.Ctx) error
-	// Remove a watched port
-	// (DELETE /api/v1/ports/{port})
-	DeletePort(c *fiber.Ctx, port int) error
-	// Run a procedure
-	// (POST /api/v1/procedure)
-	RunProcedure(c *fiber.Ctx) error
-	// Get procedure statuses
-	// (GET /api/v1/procedures)
-	GetProcedures(c *fiber.Ctx) error
-	// List running processes
-	// (GET /api/v1/processes)
-	GetProcesses(c *fiber.Ctx) error
-	// Get process tree
-	// (GET /api/v1/pstree)
-	GetPsTree(c *fiber.Ctx) error
-	// Get command queue
-	// (GET /api/v1/queue)
-	GetQueue(c *fiber.Ctx) error
-	// Get current scroll
-	// (GET /api/v1/scroll)
-	GetScroll(c *fiber.Ctx) error
-	// Add command to current scroll
-	// (PUT /api/v1/scroll/commands/{command})
-	AddCommand(c *fiber.Ctx, command string) error
-	// Create WebSocket token
-	// (GET /api/v1/token)
-	CreateToken(c *fiber.Ctx) error
-	// Disable development mode
-	// (POST /api/v1/watch/disable)
-	DisableWatch(c *fiber.Ctx) error
-	// Enable development mode
-	// (POST /api/v1/watch/enable)
-	EnableWatch(c *fiber.Ctx) error
-	// Get watch mode status
-	// (GET /api/v1/watch/status)
-	GetWatchStatus(c *fiber.Ctx) error
+	// List runtime scrolls
+	// (GET /api/v1/scrolls)
+	ListScrolls(c *fiber.Ctx) error
+	// Create runtime scroll
+	// (POST /api/v1/scrolls)
+	CreateScroll(c *fiber.Ctx) error
+	// Ensure runtime scroll exists and optionally starts
+	// (POST /api/v1/scrolls/ensure)
+	EnsureScroll(c *fiber.Ctx) error
+	// Delete runtime scroll
+	// (DELETE /api/v1/scrolls/{id})
+	DeleteScroll(c *fiber.Ctx, id string) error
+	// Get runtime scroll
+	// (GET /api/v1/scrolls/{id})
+	GetScroll(c *fiber.Ctx, id string) error
+	// Execute runtime backup
+	// (POST /api/v1/scrolls/{id}/backup)
+	BackupScroll(c *fiber.Ctx, id string) error
+	// Run runtime scroll command
+	// (POST /api/v1/scrolls/{id}/commands/{command})
+	RunScrollCommand(c *fiber.Ctx, id string, command string) error
+	// Get parsed scroll config
+	// (GET /api/v1/scrolls/{id}/config)
+	GetScrollConfig(c *fiber.Ctx, id string) error
+	// Get scroll-scoped consoles
+	// (GET /api/v1/scrolls/{id}/consoles)
+	GetScrollConsoles(c *fiber.Ctx, id string) error
+	// Get scroll-scoped logs
+	// (GET /api/v1/scrolls/{id}/logs)
+	GetScrollLogs(c *fiber.Ctx, id string) error
+	// Get runtime scroll port status
+	// (GET /api/v1/scrolls/{id}/ports)
+	GetScrollPorts(c *fiber.Ctx, id string) error
+	// Get procedure state
+	// (GET /api/v1/scrolls/{id}/procedures)
+	GetScrollProcedures(c *fiber.Ctx, id string) error
+	// Get runtime queue state
+	// (GET /api/v1/scrolls/{id}/queue)
+	GetScrollQueue(c *fiber.Ctx, id string) error
+	// Execute runtime restore
+	// (POST /api/v1/scrolls/{id}/restore)
+	RestoreScroll(c *fiber.Ctx, id string) error
+	// Persist operator-assigned public routing
+	// (POST /api/v1/scrolls/{id}/routing)
+	ApplyScrollRouting(c *fiber.Ctx, id string) error
+	// Get stable backend routing targets
+	// (GET /api/v1/scrolls/{id}/routing/targets)
+	GetScrollRoutingTargets(c *fiber.Ctx, id string) error
+	// Start runtime scroll
+	// (POST /api/v1/scrolls/{id}/start)
+	StartScroll(c *fiber.Ctx, id string) error
+	// Stop runtime scroll workloads while preserving data
+	// (POST /api/v1/scrolls/{id}/stop)
+	StopScroll(c *fiber.Ctx, id string) error
+	// Get published UI package URLs
+	// (GET /api/v1/scrolls/{id}/ui/packages)
+	GetScrollUIPackages(c *fiber.Ctx, id string) error
+	// Publish an already-built Druid UI WASM package
+	// (POST /api/v1/scrolls/{id}/ui/packages/{scope}/publish)
+	PublishScrollUIPackage(c *fiber.Ctx, id string, scope PublishScrollUIPackageParamsScope) error
+	// Update runtime scroll files and state
+	// (POST /api/v1/scrolls/{id}/update)
+	UpdateScroll(c *fiber.Ctx, id string) error
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -582,166 +3071,90 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc fiber.Handler
 
-// FinishColdstarter operation middleware
-func (siw *ServerInterfaceWrapper) FinishColdstarter(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.FinishColdstarter(c)
-}
-
-// RunCommand operation middleware
-func (siw *ServerInterfaceWrapper) RunCommand(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.RunCommand(c)
-}
-
-// GetConsoles operation middleware
-func (siw *ServerInterfaceWrapper) GetConsoles(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.GetConsoles(c)
-}
-
-// StopDaemon operation middleware
-func (siw *ServerInterfaceWrapper) StopDaemon(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.StopDaemon(c)
-}
-
 // GetHealthAuth operation middleware
 func (siw *ServerInterfaceWrapper) GetHealthAuth(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
 
 	return siw.Handler.GetHealthAuth(c)
 }
 
-// ListAllLogs operation middleware
-func (siw *ServerInterfaceWrapper) ListAllLogs(c *fiber.Ctx) error {
+// ListScrolls operation middleware
+func (siw *ServerInterfaceWrapper) ListScrolls(c *fiber.Ctx) error {
 
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.ListAllLogs(c)
+	return siw.Handler.ListScrolls(c)
 }
 
-// ListStreamLogs operation middleware
-func (siw *ServerInterfaceWrapper) ListStreamLogs(c *fiber.Ctx) error {
+// CreateScroll operation middleware
+func (siw *ServerInterfaceWrapper) CreateScroll(c *fiber.Ctx) error {
+
+	return siw.Handler.CreateScroll(c)
+}
+
+// EnsureScroll operation middleware
+func (siw *ServerInterfaceWrapper) EnsureScroll(c *fiber.Ctx) error {
+
+	return siw.Handler.EnsureScroll(c)
+}
+
+// DeleteScroll operation middleware
+func (siw *ServerInterfaceWrapper) DeleteScroll(c *fiber.Ctx) error {
 
 	var err error
 
-	// ------------- Path parameter "stream" -------------
-	var stream string
+	// ------------- Path parameter "id" -------------
+	var id string
 
-	err = runtime.BindStyledParameterWithOptions("simple", "stream", c.Params("stream"), &stream, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
 	if err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter stream: %w", err).Error())
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
 	}
 
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.ListStreamLogs(c, stream)
-}
-
-// GetMetrics operation middleware
-func (siw *ServerInterfaceWrapper) GetMetrics(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.GetMetrics(c)
-}
-
-// GetPorts operation middleware
-func (siw *ServerInterfaceWrapper) GetPorts(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.GetPorts(c)
-}
-
-// AddPort operation middleware
-func (siw *ServerInterfaceWrapper) AddPort(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.AddPort(c)
-}
-
-// DeletePort operation middleware
-func (siw *ServerInterfaceWrapper) DeletePort(c *fiber.Ctx) error {
-
-	var err error
-
-	// ------------- Path parameter "port" -------------
-	var port int
-
-	err = runtime.BindStyledParameterWithOptions("simple", "port", c.Params("port"), &port, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter port: %w", err).Error())
-	}
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.DeletePort(c, port)
-}
-
-// RunProcedure operation middleware
-func (siw *ServerInterfaceWrapper) RunProcedure(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.RunProcedure(c)
-}
-
-// GetProcedures operation middleware
-func (siw *ServerInterfaceWrapper) GetProcedures(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.GetProcedures(c)
-}
-
-// GetProcesses operation middleware
-func (siw *ServerInterfaceWrapper) GetProcesses(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.GetProcesses(c)
-}
-
-// GetPsTree operation middleware
-func (siw *ServerInterfaceWrapper) GetPsTree(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.GetPsTree(c)
-}
-
-// GetQueue operation middleware
-func (siw *ServerInterfaceWrapper) GetQueue(c *fiber.Ctx) error {
-
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.GetQueue(c)
+	return siw.Handler.DeleteScroll(c, id)
 }
 
 // GetScroll operation middleware
 func (siw *ServerInterfaceWrapper) GetScroll(c *fiber.Ctx) error {
 
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
+	var err error
 
-	return siw.Handler.GetScroll(c)
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	return siw.Handler.GetScroll(c, id)
 }
 
-// AddCommand operation middleware
-func (siw *ServerInterfaceWrapper) AddCommand(c *fiber.Ctx) error {
+// BackupScroll operation middleware
+func (siw *ServerInterfaceWrapper) BackupScroll(c *fiber.Ctx) error {
 
 	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	return siw.Handler.BackupScroll(c, id)
+}
+
+// RunScrollCommand operation middleware
+func (siw *ServerInterfaceWrapper) RunScrollCommand(c *fiber.Ctx) error {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
 
 	// ------------- Path parameter "command" -------------
 	var command string
@@ -751,41 +3164,239 @@ func (siw *ServerInterfaceWrapper) AddCommand(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter command: %w", err).Error())
 	}
 
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
-
-	return siw.Handler.AddCommand(c, command)
+	return siw.Handler.RunScrollCommand(c, id, command)
 }
 
-// CreateToken operation middleware
-func (siw *ServerInterfaceWrapper) CreateToken(c *fiber.Ctx) error {
+// GetScrollConfig operation middleware
+func (siw *ServerInterfaceWrapper) GetScrollConfig(c *fiber.Ctx) error {
 
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
+	var err error
 
-	return siw.Handler.CreateToken(c)
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	return siw.Handler.GetScrollConfig(c, id)
 }
 
-// DisableWatch operation middleware
-func (siw *ServerInterfaceWrapper) DisableWatch(c *fiber.Ctx) error {
+// GetScrollConsoles operation middleware
+func (siw *ServerInterfaceWrapper) GetScrollConsoles(c *fiber.Ctx) error {
 
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
+	var err error
 
-	return siw.Handler.DisableWatch(c)
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	return siw.Handler.GetScrollConsoles(c, id)
 }
 
-// EnableWatch operation middleware
-func (siw *ServerInterfaceWrapper) EnableWatch(c *fiber.Ctx) error {
+// GetScrollLogs operation middleware
+func (siw *ServerInterfaceWrapper) GetScrollLogs(c *fiber.Ctx) error {
 
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
+	var err error
 
-	return siw.Handler.EnableWatch(c)
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	return siw.Handler.GetScrollLogs(c, id)
 }
 
-// GetWatchStatus operation middleware
-func (siw *ServerInterfaceWrapper) GetWatchStatus(c *fiber.Ctx) error {
+// GetScrollPorts operation middleware
+func (siw *ServerInterfaceWrapper) GetScrollPorts(c *fiber.Ctx) error {
 
-	c.Context().SetUserValue(BearerAuthScopes, []string{})
+	var err error
 
-	return siw.Handler.GetWatchStatus(c)
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	return siw.Handler.GetScrollPorts(c, id)
+}
+
+// GetScrollProcedures operation middleware
+func (siw *ServerInterfaceWrapper) GetScrollProcedures(c *fiber.Ctx) error {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	return siw.Handler.GetScrollProcedures(c, id)
+}
+
+// GetScrollQueue operation middleware
+func (siw *ServerInterfaceWrapper) GetScrollQueue(c *fiber.Ctx) error {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	return siw.Handler.GetScrollQueue(c, id)
+}
+
+// RestoreScroll operation middleware
+func (siw *ServerInterfaceWrapper) RestoreScroll(c *fiber.Ctx) error {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	return siw.Handler.RestoreScroll(c, id)
+}
+
+// ApplyScrollRouting operation middleware
+func (siw *ServerInterfaceWrapper) ApplyScrollRouting(c *fiber.Ctx) error {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	return siw.Handler.ApplyScrollRouting(c, id)
+}
+
+// GetScrollRoutingTargets operation middleware
+func (siw *ServerInterfaceWrapper) GetScrollRoutingTargets(c *fiber.Ctx) error {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	return siw.Handler.GetScrollRoutingTargets(c, id)
+}
+
+// StartScroll operation middleware
+func (siw *ServerInterfaceWrapper) StartScroll(c *fiber.Ctx) error {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	return siw.Handler.StartScroll(c, id)
+}
+
+// StopScroll operation middleware
+func (siw *ServerInterfaceWrapper) StopScroll(c *fiber.Ctx) error {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	return siw.Handler.StopScroll(c, id)
+}
+
+// GetScrollUIPackages operation middleware
+func (siw *ServerInterfaceWrapper) GetScrollUIPackages(c *fiber.Ctx) error {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	return siw.Handler.GetScrollUIPackages(c, id)
+}
+
+// PublishScrollUIPackage operation middleware
+func (siw *ServerInterfaceWrapper) PublishScrollUIPackage(c *fiber.Ctx) error {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	// ------------- Path parameter "scope" -------------
+	var scope PublishScrollUIPackageParamsScope
+
+	err = runtime.BindStyledParameterWithOptions("simple", "scope", c.Params("scope"), &scope, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter scope: %w", err).Error())
+	}
+
+	return siw.Handler.PublishScrollUIPackage(c, id, scope)
+}
+
+// UpdateScroll operation middleware
+func (siw *ServerInterfaceWrapper) UpdateScroll(c *fiber.Ctx) error {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	return siw.Handler.UpdateScroll(c, id)
 }
 
 // FiberServerOptions provides options for the Fiber server.
@@ -809,126 +3420,101 @@ func RegisterHandlersWithOptions(router fiber.Router, si ServerInterface, option
 		router.Use(fiber.Handler(m))
 	}
 
-	router.Post(options.BaseURL+"/api/v1/coldstarter/finish", wrapper.FinishColdstarter)
-
-	router.Post(options.BaseURL+"/api/v1/command", wrapper.RunCommand)
-
-	router.Get(options.BaseURL+"/api/v1/consoles", wrapper.GetConsoles)
-
-	router.Post(options.BaseURL+"/api/v1/daemon/stop", wrapper.StopDaemon)
-
 	router.Get(options.BaseURL+"/api/v1/health", wrapper.GetHealthAuth)
 
-	router.Get(options.BaseURL+"/api/v1/logs", wrapper.ListAllLogs)
+	router.Get(options.BaseURL+"/api/v1/scrolls", wrapper.ListScrolls)
 
-	router.Get(options.BaseURL+"/api/v1/logs/:stream", wrapper.ListStreamLogs)
+	router.Post(options.BaseURL+"/api/v1/scrolls", wrapper.CreateScroll)
 
-	router.Get(options.BaseURL+"/api/v1/metrics", wrapper.GetMetrics)
+	router.Post(options.BaseURL+"/api/v1/scrolls/ensure", wrapper.EnsureScroll)
 
-	router.Get(options.BaseURL+"/api/v1/ports", wrapper.GetPorts)
+	router.Delete(options.BaseURL+"/api/v1/scrolls/:id", wrapper.DeleteScroll)
 
-	router.Post(options.BaseURL+"/api/v1/ports", wrapper.AddPort)
+	router.Get(options.BaseURL+"/api/v1/scrolls/:id", wrapper.GetScroll)
 
-	router.Delete(options.BaseURL+"/api/v1/ports/:port", wrapper.DeletePort)
+	router.Post(options.BaseURL+"/api/v1/scrolls/:id/backup", wrapper.BackupScroll)
 
-	router.Post(options.BaseURL+"/api/v1/procedure", wrapper.RunProcedure)
+	router.Post(options.BaseURL+"/api/v1/scrolls/:id/commands/:command", wrapper.RunScrollCommand)
 
-	router.Get(options.BaseURL+"/api/v1/procedures", wrapper.GetProcedures)
+	router.Get(options.BaseURL+"/api/v1/scrolls/:id/config", wrapper.GetScrollConfig)
 
-	router.Get(options.BaseURL+"/api/v1/processes", wrapper.GetProcesses)
+	router.Get(options.BaseURL+"/api/v1/scrolls/:id/consoles", wrapper.GetScrollConsoles)
 
-	router.Get(options.BaseURL+"/api/v1/pstree", wrapper.GetPsTree)
+	router.Get(options.BaseURL+"/api/v1/scrolls/:id/logs", wrapper.GetScrollLogs)
 
-	router.Get(options.BaseURL+"/api/v1/queue", wrapper.GetQueue)
+	router.Get(options.BaseURL+"/api/v1/scrolls/:id/ports", wrapper.GetScrollPorts)
 
-	router.Get(options.BaseURL+"/api/v1/scroll", wrapper.GetScroll)
+	router.Get(options.BaseURL+"/api/v1/scrolls/:id/procedures", wrapper.GetScrollProcedures)
 
-	router.Put(options.BaseURL+"/api/v1/scroll/commands/:command", wrapper.AddCommand)
+	router.Get(options.BaseURL+"/api/v1/scrolls/:id/queue", wrapper.GetScrollQueue)
 
-	router.Get(options.BaseURL+"/api/v1/token", wrapper.CreateToken)
+	router.Post(options.BaseURL+"/api/v1/scrolls/:id/restore", wrapper.RestoreScroll)
 
-	router.Post(options.BaseURL+"/api/v1/watch/disable", wrapper.DisableWatch)
+	router.Post(options.BaseURL+"/api/v1/scrolls/:id/routing", wrapper.ApplyScrollRouting)
 
-	router.Post(options.BaseURL+"/api/v1/watch/enable", wrapper.EnableWatch)
+	router.Get(options.BaseURL+"/api/v1/scrolls/:id/routing/targets", wrapper.GetScrollRoutingTargets)
 
-	router.Get(options.BaseURL+"/api/v1/watch/status", wrapper.GetWatchStatus)
+	router.Post(options.BaseURL+"/api/v1/scrolls/:id/start", wrapper.StartScroll)
+
+	router.Post(options.BaseURL+"/api/v1/scrolls/:id/stop", wrapper.StopScroll)
+
+	router.Get(options.BaseURL+"/api/v1/scrolls/:id/ui/packages", wrapper.GetScrollUIPackages)
+
+	router.Post(options.BaseURL+"/api/v1/scrolls/:id/ui/packages/:scope/publish", wrapper.PublishScrollUIPackage)
+
+	router.Post(options.BaseURL+"/api/v1/scrolls/:id/update", wrapper.UpdateScroll)
 
 }
 
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
-	"dbQZ19nT3dP/BgAA//8Nu8Jt11IAAA==",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

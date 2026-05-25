@@ -10,7 +10,6 @@ WORKDIR /go
 ENV VERSION=${VERSION}
 
 RUN make build
-RUN make build-plugins
 
 # The binaries are in ./bin/ directory after build
 
@@ -21,7 +20,10 @@ FROM ubuntu:24.04
 RUN touch /var/mail/ubuntu && chown ubuntu /var/mail/ubuntu && userdel -r ubuntu
 
 RUN apt-get update && apt-get install -y \
-    ca-certificates wget\
+    ca-certificates \
+    jq \
+    moreutils \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
 RUN ARCH=$(uname -m) && \

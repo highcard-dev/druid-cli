@@ -29,7 +29,7 @@ type CommandDoneEvent struct {
 	Timestamp  time.Time `json:"timestamp"`
 }
 
-// WatchService handles file watching and change notifications for UI development
+// WatchService handles local dev file watching and command triggers.
 type WatchService struct {
 	watcher           *fsnotify.Watcher
 	broadcastChannel  *domain.BroadcastChannel
@@ -46,8 +46,7 @@ type WatchService struct {
 	changeAfterBuild  bool
 }
 
-// NewUiDevService creates a new instance of UiDevService
-func NewUiDevService(
+func NewDevService(
 	queueManager ports.QueueManagerInterface, scrollService ports.ScrollServiceInterface,
 ) ports.WatchServiceInterface {
 	return &WatchService{
@@ -132,7 +131,7 @@ func (uds *WatchService) StartWatching(basePath string, paths ...string) error {
 	// run hot reload commands initially
 	go uds.runHotReloadCommand()
 
-	logger.Log().Info("UI dev file watcher started")
+	logger.Log().Info("Dev file watcher started")
 	return nil
 }
 
@@ -171,8 +170,12 @@ func (uds *WatchService) StopWatching() error {
 	uds.ctx = nil
 	uds.cancel = nil
 
-	logger.Log().Info("UI dev file watcher stopped")
+	logger.Log().Info("Dev file watcher stopped")
 	return nil
+}
+
+func (uds *WatchService) Trigger() {
+	go uds.runHotReloadCommand()
 }
 
 // Subscribe returns a channel for receiving file change notifications
@@ -333,28 +336,19 @@ func (uds *WatchService) handleFileEvent(event fsnotify.Event) {
 	go uds.runHotReloadCommand()
 }
 
-// runHotReloadCommand is a unified method for executing both build and hot reload commands
 func (uds *WatchService) runHotReloadCommand() {
-	commands := uds.hotReloadCommands
-
 	uds.mu.Lock()
-
-	// Prevent overlapping builds - if build is active, mark that a change occurred
 	if uds.buildActive {
 		uds.changeAfterBuild = true
 		uds.mu.Unlock()
 		return
 	}
-
-	// Check if there are commands to execute
-	if len(commands) == 0 {
+	if len(uds.hotReloadCommands) == 0 {
 		uds.mu.Unlock()
 		return
 	}
-
-	// Mark build as active and get snapshot of commands
 	uds.buildActive = true
-
+	commands := append([]string(nil), uds.hotReloadCommands...)
 	broadcastChannel := uds.broadcastChannel
 	uds.mu.Unlock()
 
@@ -374,26 +368,20 @@ func (uds *WatchService) runHotReloadCommand() {
 		broadcastChannel.Broadcast(eventCmdData)
 	}
 
-	for _, key := range commands {
-		broadcastEvent("build-started")
-		uds.queueManager.AddTempItemWithWait(key)
-		broadcastEvent("build-ended")
-
-		// Check if changes occurred during build
-		uds.mu.Lock()
-		for uds.changeAfterBuild {
-			uds.changeAfterBuild = false
-			uds.mu.Unlock()
+	for {
+		for _, key := range commands {
 			broadcastEvent("build-started")
 			uds.queueManager.AddTempItemWithWait(key)
 			broadcastEvent("build-ended")
-
-			uds.mu.Lock()
 		}
+
+		uds.mu.Lock()
+		if !uds.changeAfterBuild {
+			uds.buildActive = false
+			uds.mu.Unlock()
+			return
+		}
+		uds.changeAfterBuild = false
 		uds.mu.Unlock()
 	}
-
-	uds.mu.Lock()
-	uds.buildActive = false
-	uds.mu.Unlock()
 }

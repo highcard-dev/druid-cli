@@ -1,0 +1,43 @@
+name: ghcr.io/druid-examples/static-web
+desc: Static web server using commands as runtime units
+version: 0.1.0
+app_version: "1.0"
+
+ports:
+  - name: http
+    protocol: http
+    port: 80
+
+serve: "start"
+commands:
+  build:
+    run: once
+    procedures:
+      - image: alpine:3.20
+        mounts:
+          - path: /site
+        command:
+          - sh
+          - -c
+          - >-
+            mkdir -p /site/public
+            && printf '<h1>Druid static web example</h1>\n' > /site/public/index.html
+
+  start:
+    needs: [build]
+    run: restart
+    procedures:
+      - image: nginx:1.27-alpine
+        expectedPorts:
+          - name: http
+            keepAliveTraffic: 1b/5m
+        mounts:
+          - path: /usr/share/nginx/html
+            sub_path: public
+
+  stop:
+    run: always
+    procedures:
+      - type: signal
+        target: start
+        signal: SIGTERM

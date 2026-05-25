@@ -28,7 +28,6 @@ const (
 	LogContextScroll       = "scroll"
 	LogContextProcedure    = "scroll-procedure"
 	LogContextMonitor      = "monitor"
-	LogContextProcess      = "scroll-process"
 	LogContextWebSocket    = "web-socket"
 	LogContextUpdate       = "update"
 	LogContextView         = "view"

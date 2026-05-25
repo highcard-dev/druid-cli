@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -44,7 +45,13 @@ type OciClient struct {
 func NewOciClient(credentialStore *CredentialStore) *OciClient {
 	return &OciClient{
 		credentialStore: credentialStore,
+		plainHTTP:       plainHTTPFromEnv(),
 	}
+}
+
+func plainHTTPFromEnv() bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("DRUID_REGISTRY_PLAIN_HTTP")))
+	return value == "1" || value == "true" || value == "yes"
 }
 
 func (c *OciClient) GetRepo(repoUrl string) (*remote.Repository, error) {
@@ -173,7 +180,7 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 	var bytesDownloaded atomic.Int64
 
 	if progress != nil {
-		progress.Mode.Store("restore")
+		progress.Mode.Store(domain.SnapshotProgressModeRestore)
 		progress.Percentage.Store(0)
 	}
 
@@ -278,14 +285,14 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 	stopProgress()
 	if err != nil {
 		if progress != nil {
-			progress.Mode.Store("noop")
+			progress.Mode.Store(domain.SnapshotProgressModeIdle)
 		}
 		return err
 	}
 
 	if progress != nil {
 		progress.Percentage.Store(100)
-		progress.Mode.Store("noop")
+		progress.Mode.Store(domain.SnapshotProgressModeIdle)
 	}
 
 	logger.Log().Info("Manifest pulled", zap.String("digest", manifestDescriptor.Digest.String()), zap.String("mediaType", manifestDescriptor.MediaType))
@@ -326,13 +333,114 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 	return nil
 }
 
+func (c *OciClient) FetchFile(artifact string, filePath string) ([]byte, error) {
+	repo, ref, _ := utils.ParseArtifactRef(artifact)
+	if repo == "" || ref == "" {
+		return nil, fmt.Errorf("reference (tag or digest) must be set")
+	}
+	filePath = cleanOCIFilePath(filePath)
+	if filePath == "" {
+		return nil, fmt.Errorf("file path is required")
+	}
+
+	ctx := context.Background()
+	repoInstance, err := c.GetRepo(repo)
+	if err != nil {
+		return nil, err
+	}
+	rootDesc, err := oras.Resolve(ctx, repoInstance, ref, oras.DefaultResolveOptions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve %s: %w", ref, err)
+	}
+	data, err := fetchFileFromOCI(ctx, repoInstance, rootDesc, filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch %s from %s: %w", filePath, artifact, err)
+	}
+	return data, nil
+}
+
+func (c *OciClient) ResolveDigest(artifact string) (string, error) {
+	repo, ref, _ := utils.ParseArtifactRef(artifact)
+	if repo == "" || ref == "" {
+		return "", fmt.Errorf("reference (tag or digest) must be set")
+	}
+	repoInstance, err := c.GetRepo(repo)
+	if err != nil {
+		return "", err
+	}
+	desc, err := oras.Resolve(context.Background(), repoInstance, ref, oras.DefaultResolveOptions)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve %s: %w", ref, err)
+	}
+	return desc.Digest.String(), nil
+}
+
+func fetchFileFromOCI(ctx context.Context, fetcher content.Fetcher, rootDesc v1.Descriptor, filePath string) ([]byte, error) {
+	seen := map[string]bool{}
+	queue := []v1.Descriptor{rootDesc}
+	if rootDesc.Digest.String() != "" {
+		seen[rootDesc.Digest.String()] = true
+	}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		if !descriptorCanHaveChildren(current) {
+			continue
+		}
+		successors, err := content.Successors(ctx, fetcher, current)
+		if err != nil {
+			return nil, err
+		}
+		for _, desc := range successors {
+			if descriptorMatchesPath(desc, filePath) {
+				return content.FetchAll(ctx, fetcher, desc)
+			}
+			key := desc.Digest.String()
+			if key == "" || seen[key] || !descriptorCanHaveChildren(desc) {
+				continue
+			}
+			seen[key] = true
+			queue = append(queue, desc)
+		}
+	}
+	return nil, fmt.Errorf("%s not found in artifact", filePath)
+}
+
+func descriptorMatchesPath(desc v1.Descriptor, want string) bool {
+	for _, key := range []string{"org.opencontainers.image.path", "org.opencontainers.image.title"} {
+		if cleanOCIFilePath(desc.Annotations[key]) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func descriptorCanHaveChildren(desc v1.Descriptor) bool {
+	mediaType := strings.TrimSuffix(desc.MediaType, "+gzip")
+	return mediaType == v1.MediaTypeImageManifest ||
+		mediaType == v1.MediaTypeImageIndex ||
+		strings.Contains(mediaType, "manifest") ||
+		strings.Contains(mediaType, "index")
+}
+
+func cleanOCIFilePath(filePath string) string {
+	filePath = filepath.ToSlash(strings.TrimSpace(filePath))
+	filePath = strings.TrimLeft(filePath, "/")
+	filePath = strings.TrimPrefix(filePath, "./")
+	filePath = path.Clean(filePath)
+	if filePath == "." {
+		return ""
+	}
+	return filePath
+}
+
 func (c *OciClient) CanUpdateTag(current v1.Descriptor, r string, tag string) (bool, error) {
 	repo, err := c.GetRepo(r)
 	if err != nil {
 		return false, err
 	}
 
-	disc, err := oras.Resolve(context.TODO(), repo, tag, oras.DefaultResolveOptions)
+	disc, err := oras.Resolve(context.Background(), repo, tag, oras.DefaultResolveOptions)
 	if err != nil {
 		return false, err
 	}
@@ -709,7 +817,7 @@ func (c *OciClient) Push(folder string, repo string, tag string, overrides map[s
 		annotations[k] = v
 	}
 
-	rootManifestDescriptor, err := oras.PackManifest(ctx, fs, oras.PackManifestVersion1_1, string(domain.ArtifactTypeScrollRoot), oras.PackManifestOptions{
+	rootManifestDescriptor, err := oras.PackManifest(ctx, fs, oras.PackManifestVersion1_1, string(domain.ArtifactTypeRuntimeRoot), oras.PackManifestOptions{
 		Layers:              descriptorsForRoot,
 		ManifestAnnotations: annotations,
 	})
@@ -757,7 +865,7 @@ func (c *OciClient) PushCategory(dir string, repo string, category string) (v1.D
 		return v1.Descriptor{}, err
 	}
 
-	rootManifestDescriptor, err := oras.PackManifest(ctx, fs, oras.PackManifestVersion1_1, string(domain.ArtifactTypeScrollRoot), oras.PackManifestOptions{
+	rootManifestDescriptor, err := oras.PackManifest(ctx, fs, oras.PackManifestVersion1_1, string(domain.ArtifactTypeRuntimeRoot), oras.PackManifestOptions{
 		Layers: manifestDescriptors,
 	})
 	if err != nil {

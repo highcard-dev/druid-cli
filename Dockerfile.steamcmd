@@ -8,11 +8,18 @@ COPY --from=base /usr/bin/druid* /usr/bin/
 COPY --from=base /entrypoint.sh /entrypoint.sh
 
 RUN apt-get update && apt-get install -y \
-    ca-certificates wget\
+    ca-certificates \
+    jq \
+    moreutils \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
-RUN wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq
-RUN chmod +x /usr/bin/yq
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then YQ_ARCH="amd64"; \
+    elif [ "$ARCH" = "aarch64" ]; then YQ_ARCH="arm64"; \
+    else YQ_ARCH="$ARCH"; fi && \
+    wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${YQ_ARCH} -O /usr/bin/yq && \
+    chmod +x /usr/bin/yq
 
 # Set up user with the same UID/GID
 ARG UID=1000
