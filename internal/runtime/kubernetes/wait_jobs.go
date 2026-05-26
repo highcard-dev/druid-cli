@@ -192,7 +192,10 @@ func containerFailure(podName string, status corev1.ContainerStatus) (int, strin
 }
 
 func startupContainerFailure(podName string, status corev1.ContainerStatus) (int, string, bool) {
-	if status.State.Terminated != nil {
+	if terminated := status.State.Terminated; terminated != nil {
+		if terminated.ExitCode == 0 {
+			return 0, "", false
+		}
 		return containerFailure(podName, status)
 	}
 	if status.State.Waiting == nil {
