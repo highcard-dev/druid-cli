@@ -23,6 +23,11 @@ type Backend struct {
 	jobLogRunner   func(context.Context, *batchv1.Job) ([]byte, error)
 }
 
+const (
+	defaultKubernetesClientQPS   float32 = 50
+	defaultKubernetesClientBurst int     = 100
+)
+
 func New(config Config, consoleManager ports.ConsoleManagerInterface) (*Backend, error) {
 	config = config.WithDefaults()
 
@@ -65,6 +70,7 @@ func New(config Config, consoleManager ports.ConsoleManagerInterface) (*Backend,
 func runtimeRESTConfig(config Config) (*rest.Config, string, string, bool, error) {
 	restConfig, inClusterErr := rest.InClusterConfig()
 	if inClusterErr == nil {
+		tuneRESTConfig(restConfig)
 		namespace := config.Namespace
 		if namespace == "" {
 			namespace = namespaceFromServiceAccount()
@@ -79,7 +85,20 @@ func runtimeRESTConfig(config Config) (*rest.Config, string, string, bool, error
 	if kubeconfigErr != nil {
 		return nil, "", "", false, fmt.Errorf("kubernetes runtime could not load auth: in-cluster config unavailable (%v); kubeconfig unavailable (%w)", inClusterErr, kubeconfigErr)
 	}
+	tuneRESTConfig(restConfig)
 	return restConfig, namespace, source, false, nil
+}
+
+func tuneRESTConfig(config *rest.Config) {
+	if config == nil {
+		return
+	}
+	if config.QPS == 0 {
+		config.QPS = defaultKubernetesClientQPS
+	}
+	if config.Burst == 0 {
+		config.Burst = defaultKubernetesClientBurst
+	}
 }
 
 func kubeconfigRESTConfig(config Config) (*rest.Config, string, string, error) {
