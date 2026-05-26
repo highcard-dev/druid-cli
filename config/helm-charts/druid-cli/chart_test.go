@@ -28,6 +28,8 @@ func TestChartRendersDefaultAndCustomValues(t *testing.T) {
 		"name: worker",
 		"DRUID_K8S_PULL_IMAGE",
 		`resources: ["secrets"]`,
+		`resources: ["pods/attach"]`,
+		`verbs: ["create"]`,
 		"hubble-relay.kube-system.svc.cluster.local:80",
 	} {
 		if !strings.Contains(defaultManifest, want) {
