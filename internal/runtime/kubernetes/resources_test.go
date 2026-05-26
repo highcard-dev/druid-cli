@@ -660,8 +660,76 @@ func TestRoutingTargetsCollapseColdstarterAndRuntimePort(t *testing.T) {
 	if mainTargets[0].Name != "main" || mainTargets[0].Procedure != "coldstart" {
 		t.Fatalf("main target = %#v", mainTargets[0])
 	}
-	if mainTargets[0].Selector[labelCommand] != "start" {
+	if mainTargets[0].Selector[labelCommand] != "start" || mainTargets[0].Selector[labelProcedure] != "coldstart" {
 		t.Fatalf("selector = %#v", mainTargets[0].Selector)
+	}
+}
+
+func TestExpectedServiceForSharedPortMovesToActiveProcedure(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+	root := ref("druid", "druid-minecraft-data")
+	coldstart := &domain.Procedure{ExpectedPorts: []domain.ExpectedPort{{Name: "main"}}}
+	start := &domain.Procedure{ExpectedPorts: []domain.ExpectedPort{{Name: "main"}}}
+	ports := []domain.Port{{Name: "main", Port: 25565, Protocol: "tcp"}}
+	portUse := map[string]int{"main": 2}
+
+	if err := backend.ensureExpectedServices(context.Background(), root, "start", "coldstart", coldstart, ports, portUse); err != nil {
+		t.Fatal(err)
+	}
+	service, err := client.CoreV1().Services("druid").Get(context.Background(), serviceName(root, "start", "main"), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if service.Spec.Selector[labelProcedure] != "coldstart" {
+		t.Fatalf("coldstart selector = %#v", service.Spec.Selector)
+	}
+
+	if err := backend.ensureExpectedServices(context.Background(), root, "start", "start", start, ports, portUse); err != nil {
+		t.Fatal(err)
+	}
+	service, err = client.CoreV1().Services("druid").Get(context.Background(), serviceName(root, "start", "main"), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if service.Spec.Selector[labelProcedure] != "start" {
+		t.Fatalf("start selector = %#v", service.Spec.Selector)
+	}
+}
+
+func TestRoutingTargetsUseCurrentServiceSelector(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+	root := ref("druid", "druid-minecraft-data")
+	coldstart := "coldstart"
+	start := "start"
+	ports := []domain.Port{{Name: "main", Port: 25565, Protocol: "tcp"}}
+	portUse := map[string]int{"main": 2}
+	if err := backend.ensureExpectedServices(context.Background(), root, "start", "start", &domain.Procedure{ExpectedPorts: []domain.ExpectedPort{{Name: "main"}}}, ports, portUse); err != nil {
+		t.Fatal(err)
+	}
+
+	targets, err := backend.RoutingTargets(root, map[string]*domain.CommandInstructionSet{
+		"start": {Procedures: []*domain.Procedure{
+			{Id: &coldstart, ExpectedPorts: []domain.ExpectedPort{{Name: "main"}}},
+			{Id: &start, ExpectedPorts: []domain.ExpectedPort{{Name: "main"}}},
+		}},
+	}, ports)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var main *domain.RuntimeRoutingTarget
+	for idx := range targets {
+		if targets[idx].PortName == "main" {
+			main = &targets[idx]
+		}
+	}
+	if main == nil {
+		t.Fatalf("targets = %#v", targets)
+	}
+	if main.Procedure != "start" || main.Selector[labelProcedure] != "start" {
+		t.Fatalf("main target = %#v", main)
 	}
 }
 

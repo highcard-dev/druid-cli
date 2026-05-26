@@ -150,6 +150,14 @@ func (b *Backend) RoutingTargets(root string, commands map[string]*domain.Comman
 				}
 				seen[expectedPort.Name] = struct{}{}
 				serviceProcedure := serviceProcedureName(commandName, procedureName, expectedPort.Name, portUse)
+				svcName := serviceName(root, serviceProcedure, expectedPort.Name)
+				selector := serviceSelector(pvc, commandName, procedureName, expectedPort.Name, portUse)
+				if currentSelector, ok := b.currentServiceSelector(context.Background(), namespace, svcName); ok {
+					selector = currentSelector
+					if currentProcedure := currentSelector[labelProcedure]; currentProcedure != "" {
+						procedureName = currentProcedure
+					}
+				}
 				targets = append(targets, domain.RuntimeRoutingTarget{
 					Name:        expectedPort.Name,
 					Procedure:   procedureName,
@@ -157,9 +165,9 @@ func (b *Backend) RoutingTargets(root string, commands map[string]*domain.Comman
 					Port:        port.Port,
 					Protocol:    normalizeProtocol(port.Protocol),
 					Namespace:   namespace,
-					ServiceName: serviceName(root, serviceProcedure, expectedPort.Name),
+					ServiceName: svcName,
 					ServicePort: port.Port,
-					Selector:    serviceSelector(pvc, commandName, procedureName, expectedPort.Name, portUse),
+					Selector:    selector,
 				})
 			}
 		}
@@ -250,12 +258,21 @@ func serviceProcedureName(commandName string, procedureName string, portName str
 
 func serviceSelector(pvc string, commandName string, procedureName string, portName string, portUse map[string]int) map[string]string {
 	selector := baseLabels(pvc)
-	if portUse[portName] > 1 {
-		selector[labelCommand] = dnsLabel(commandName)
-		return selector
-	}
+	selector[labelCommand] = dnsLabel(commandName)
 	selector[labelProcedure] = dnsLabel(procedureName)
 	return selector
+}
+
+func (b *Backend) currentServiceSelector(ctx context.Context, namespace string, name string) (map[string]string, bool) {
+	service, err := b.client.CoreV1().Services(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil || len(service.Spec.Selector) == 0 {
+		return nil, false
+	}
+	selector := make(map[string]string, len(service.Spec.Selector))
+	for key, value := range service.Spec.Selector {
+		selector[key] = value
+	}
+	return selector, true
 }
 
 func (b *Backend) serviceReady(ctx context.Context, namespace string, name string) (bool, int) {
