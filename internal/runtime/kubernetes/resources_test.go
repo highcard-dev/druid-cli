@@ -434,6 +434,38 @@ func TestKubernetesJobFailedRequiresTerminalCondition(t *testing.T) {
 	}
 }
 
+func TestStartupContainerFailureIgnoresSuccessfulTermination(t *testing.T) {
+	exitCode, detail, ok := startupContainerFailure("coldstart-pod", corev1.ContainerStatus{
+		Name: "main",
+		State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+			Reason:   "Completed",
+			ExitCode: 0,
+		}},
+	})
+	if ok {
+		t.Fatalf("startupContainerFailure = (%d, %q, true), want no failure", exitCode, detail)
+	}
+}
+
+func TestStartupContainerFailureReportsNonzeroTermination(t *testing.T) {
+	exitCode, detail, ok := startupContainerFailure("coldstart-pod", corev1.ContainerStatus{
+		Name: "main",
+		State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+			Reason:   "Error",
+			ExitCode: 42,
+		}},
+	})
+	if !ok {
+		t.Fatal("startupContainerFailure ok = false, want failure")
+	}
+	if exitCode != 42 {
+		t.Fatalf("exitCode = %d, want 42", exitCode)
+	}
+	if !strings.Contains(detail, "Error") || !strings.Contains(detail, "exit_code=42") {
+		t.Fatalf("detail = %q, want termination reason and exit code", detail)
+	}
+}
+
 func TestExpectedServicesUseRootNamespace(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	backend := NewWithClient(Config{Namespace: "druid-system"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
