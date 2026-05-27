@@ -56,17 +56,10 @@ func NewRuntimeSession(
 		scrollService:  scrollService,
 		runtimeBackend: runtimeService,
 	}
-	processLauncher, err := coreservices.NewProcedureLauncherForRuntime(scrollService, runtimeService, runtimeScroll.Root, runtimeScroll.ID, runtimeScroll.ScrollName, func() []domain.RuntimeRouteAssignment {
-		session.mu.Lock()
-		defer session.mu.Unlock()
-		routing := make([]domain.RuntimeRouteAssignment, len(session.runtimeScroll.Routing))
-		copy(routing, session.runtimeScroll.Routing)
-		return routing
-	})
+	queueManager, processLauncher, err := session.newQueue(scrollService, runtimeScroll.Root, runtimeScroll.ScrollName)
 	if err != nil {
 		return nil, err
 	}
-	queueManager := coreservices.NewQueueManager(scrollService, processLauncher)
 	session.queueManager = queueManager
 	session.procedures = processLauncher
 	queueManager.SetStatusObserver(session.persistCommandStatus)
@@ -85,4 +78,51 @@ func (s *RuntimeSession) Start() {
 
 func (s *RuntimeSession) Shutdown() {
 	s.queueManager.Shutdown()
+}
+
+func (s *RuntimeSession) startQueue() {
+	s.mu.Lock()
+	queueManager := s.queueManager
+	s.mu.Unlock()
+	go queueManager.Work()
+}
+
+func (s *RuntimeSession) newQueue(scrollService *coreservices.ScrollService, root string, scrollName string) (*coreservices.QueueManager, *coreservices.ProcedureLauncher, error) {
+	processLauncher, err := coreservices.NewProcedureLauncherForRuntime(scrollService, s.runtimeBackend, root, s.runtimeScroll.ID, scrollName, func() []domain.RuntimeRouteAssignment {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		routing := make([]domain.RuntimeRouteAssignment, len(s.runtimeScroll.Routing))
+		copy(routing, s.runtimeScroll.Routing)
+		return routing
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	queueManager := coreservices.NewQueueManager(scrollService, processLauncher)
+	queueManager.SetStatusObserver(s.persistCommandStatus)
+	return queueManager, processLauncher, nil
+}
+
+func (s *RuntimeSession) replaceQueue(start bool) (*coreservices.QueueManager, error) {
+	s.mu.Lock()
+	scrollService := s.scrollService
+	root := s.runtimeScroll.Root
+	scrollName := s.runtimeScroll.ScrollName
+	oldQueue := s.queueManager
+	s.mu.Unlock()
+
+	queueManager, processLauncher, err := s.newQueue(scrollService, root, scrollName)
+	if err != nil {
+		return nil, err
+	}
+
+	s.mu.Lock()
+	s.queueManager = queueManager
+	s.procedures = processLauncher
+	s.mu.Unlock()
+
+	if start {
+		go queueManager.Work()
+	}
+	return oldQueue, nil
 }

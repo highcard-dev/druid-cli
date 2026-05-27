@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
@@ -203,6 +205,65 @@ func TestRuntimeSessionStopPreservesDoneOnceCommands(t *testing.T) {
 	}
 	if len(updated.Commands) != 1 || updated.Commands["install"].Status != domain.ScrollLockStatusDone {
 		t.Fatalf("commands = %#v, want only install done", updated.Commands)
+	}
+}
+
+func TestRuntimeSessionStopQuiescesRestartQueueBeforeBackendStop(t *testing.T) {
+	store := newTestStateStore(t)
+	var runs atomic.Int32
+	backend := &fakeWorkerBackend{
+		runCommand: func(command ports.RuntimeCommand) (*int, error) {
+			runs.Add(1)
+			return nil, errors.New("job deleted")
+		},
+	}
+	runtimeScroll := &domain.RuntimeScroll{
+		ID:         "restart-stop",
+		Artifact:   "local",
+		Root:       t.TempDir(),
+		ScrollName: "restart-stop",
+		ScrollYAML: `name: restart-stop
+desc: Restart stop test
+version: 0.1.0
+app_version: "1.0"
+serve: start
+commands:
+  start:
+    run: restart
+    procedures:
+      - image: alpine:3.20
+        command: ["false"]
+`,
+		Commands: map[string]domain.LockStatus{},
+		Status:   domain.RuntimeScrollStatusRunning,
+	}
+	if err := store.CreateScroll(runtimeScroll); err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewRuntimeSession(store, runtimeScroll, backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.Start()
+	if err := session.AutoStartServe(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(2 * time.Second)
+	for runs.Load() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("start command did not run")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	if err := session.StopRuntime(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if got := runs.Load(); got != 1 {
+		t.Fatalf("restart queue ran %d times, want 1", got)
 	}
 }
 
@@ -874,14 +935,16 @@ func newRuntimeSessionForTest(t *testing.T, commands map[string]domain.LockStatu
 }
 
 type fakeWorkerBackend struct {
-	callbacks  *WorkerCallbackManager
-	scrollYAML string
-	digest     string
-	workerErr  error
-	action     ports.RuntimeWorkerAction
-	stopRoot   string
-	deleteRoot string
-	spawnCount int
+	callbacks   *WorkerCallbackManager
+	scrollYAML  string
+	digest      string
+	workerErr   error
+	action      ports.RuntimeWorkerAction
+	stopRoot    string
+	deleteRoot  string
+	spawnCount  int
+	runCommand  func(ports.RuntimeCommand) (*int, error)
+	stopRuntime func(string) error
 }
 
 func (f *fakeWorkerBackend) Name() string {
@@ -896,6 +959,9 @@ func (f *fakeWorkerBackend) RootRef(id string, namespace string) string {
 }
 
 func (f *fakeWorkerBackend) RunCommand(command ports.RuntimeCommand) (*int, error) {
+	if f.runCommand != nil {
+		return f.runCommand(command)
+	}
 	return nil, nil
 }
 
@@ -926,6 +992,9 @@ func (f *fakeWorkerBackend) Signal(commandName string, target string, signal str
 }
 
 func (f *fakeWorkerBackend) StopRuntime(root string) error {
+	if f.stopRuntime != nil {
+		return f.stopRuntime(root)
+	}
 	f.stopRoot = root
 	return nil
 }

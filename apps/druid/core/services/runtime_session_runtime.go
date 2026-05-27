@@ -43,8 +43,17 @@ func (s *RuntimeSession) ApplyRouting(assignments []domain.RuntimeRouteAssignmen
 func (s *RuntimeSession) StopRuntime() error {
 	s.mu.Lock()
 	root := s.runtimeScroll.Root
+	started := s.started
 	s.mu.Unlock()
+	oldQueue, err := s.replaceQueue(false)
+	if err != nil {
+		return err
+	}
+	oldQueue.Shutdown()
 	if err := s.runtimeBackend.StopRuntime(root); err != nil {
+		if started {
+			s.startQueue()
+		}
 		return err
 	}
 	s.mu.Lock()
@@ -58,8 +67,11 @@ func (s *RuntimeSession) StopRuntime() error {
 	}
 	s.runtimeScroll.Status = domain.RuntimeScrollStatusStopped
 	s.runtimeScroll.LastError = ""
-	err := s.store.UpdateScroll(s.runtimeScroll)
+	err = s.store.UpdateScroll(s.runtimeScroll)
 	s.mu.Unlock()
+	if err == nil && started {
+		s.startQueue()
+	}
 	return err
 }
 
@@ -93,18 +105,10 @@ func (s *RuntimeSession) ApplyRestore(materialized *ports.RuntimeMaterialization
 	if err != nil {
 		return err
 	}
-	processLauncher, err := coreservices.NewProcedureLauncherForRuntime(scrollService, s.runtimeBackend, root, s.runtimeScroll.ID, s.runtimeScroll.ScrollName, func() []domain.RuntimeRouteAssignment {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		routing := make([]domain.RuntimeRouteAssignment, len(s.runtimeScroll.Routing))
-		copy(routing, s.runtimeScroll.Routing)
-		return routing
-	})
+	queueManager, processLauncher, err := s.newQueue(scrollService, root, scrollService.GetCurrent().Name)
 	if err != nil {
 		return err
 	}
-	queueManager := coreservices.NewQueueManager(scrollService, processLauncher)
-	queueManager.SetStatusObserver(s.persistCommandStatus)
 
 	s.mu.Lock()
 	oldQueue := s.queueManager
