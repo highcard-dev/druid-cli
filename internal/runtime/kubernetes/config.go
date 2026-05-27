@@ -80,6 +80,11 @@ func (c Config) WithDefaults() Config {
 	return c
 }
 
+func (c Config) HubbleEnabled() bool {
+	value := strings.ToLower(strings.TrimSpace(c.HubbleRelayAddr))
+	return value != "disabled" && value != "disable" && value != "off" && value != "false" && value != "none"
+}
+
 func plainHTTPEnv(name string) bool {
 	value := strings.ToLower(strings.TrimSpace(os.Getenv(name)))
 	return value == "1" || value == "true" || value == "yes"

@@ -57,22 +57,30 @@ func New(config Config, consoleManager ports.ConsoleManagerInterface) (*Backend,
 		return nil, fmt.Errorf("kubernetes API unavailable: %w", err)
 	}
 	logger.Log().Info("Using Kubernetes backend settings", zap.String("source", source), zap.String("namespace", config.Namespace))
+	var hubble HubbleClient
+	if config.HubbleEnabled() {
+		hubble = NewHubbleRelayClient(config.HubbleRelayAddr)
+	}
 	backend := &Backend{
 		client:         client,
 		restConfig:     restConfig,
 		consoleManager: consoleManager,
 		config:         config,
-		hubble:         NewHubbleRelayClient(config.HubbleRelayAddr),
+		hubble:         hubble,
 		jobExits:       make(map[string]recentJobExit),
 	}
 	if config.PullImage == "" {
 		logger.Log().Warn("Kubernetes cluster materialization requires --k8s-pull-image or DRUID_K8S_PULL_IMAGE")
 	}
-	if !inCluster && config.HubbleRelayAddr == defaultHubbleRelayAddr {
+	if config.HubbleEnabled() && !inCluster && config.HubbleRelayAddr == defaultHubbleRelayAddr {
 		logger.Log().Warn("Default Hubble Relay address may not be reachable outside the cluster; set --hubble-relay-addr or port-forward Hubble Relay", zap.String("addr", config.HubbleRelayAddr))
 	}
-	if err := backend.checkHubble(context.Background()); err != nil {
-		logger.Log().Warn("Hubble Relay unavailable; Kubernetes port traffic will degrade to Service/Endpoint status", zap.Error(err), zap.String("addr", config.HubbleRelayAddr))
+	if config.HubbleEnabled() {
+		if err := backend.checkHubble(context.Background()); err != nil {
+			logger.Log().Warn("Hubble Relay unavailable; Kubernetes port traffic will degrade to Service/Endpoint status", zap.Error(err), zap.String("addr", config.HubbleRelayAddr))
+		}
+	} else {
+		logger.Log().Info("Hubble Relay disabled; Kubernetes port traffic will use Service/Endpoint status", zap.String("addr", config.HubbleRelayAddr))
 	}
 	return backend, nil
 }
@@ -139,7 +147,7 @@ func NewWithClient(config Config, consoleManager ports.ConsoleManagerInterface, 
 	if config.Namespace == "" {
 		config.Namespace = "default"
 	}
-	if hubble == nil {
+	if hubble == nil && config.HubbleEnabled() {
 		hubble = NewHubbleRelayClient(config.HubbleRelayAddr)
 	}
 	return &Backend{client: client, consoleManager: consoleManager, config: config, hubble: hubble, jobExits: make(map[string]recentJobExit)}

@@ -592,6 +592,18 @@ func TestExpectedPortsDegradesWhenHubbleUnavailable(t *testing.T) {
 	if _, err := client.CoreV1().Services("druid").Create(context.Background(), service, metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
+	ready := true
+	if _, err := client.DiscoveryV1().EndpointSlices("druid").Create(context.Background(), &discoveryv1.EndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "http",
+			Namespace: "druid",
+			Labels:    map[string]string{"kubernetes.io/service-name": service.Name},
+		},
+		Endpoints: []discoveryv1.Endpoint{{Conditions: discoveryv1.EndpointConditions{Ready: &ready}}},
+		Ports:     []discoveryv1.EndpointPort{{Name: &service.Spec.Ports[0].Name}},
+	}, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
 
 	statuses, err := backend.ExpectedPorts(root, map[string]*domain.CommandInstructionSet{
 		"start": {Procedures: []*domain.Procedure{{ExpectedPorts: []domain.ExpectedPort{{Name: "http", KeepAliveTraffic: "1b/5m"}}}}},
@@ -608,6 +620,52 @@ func TestExpectedPortsDegradesWhenHubbleUnavailable(t *testing.T) {
 	}
 	if status.Traffic || status.TrafficOK != nil {
 		t.Fatalf("traffic should be unavailable: %#v", status)
+	}
+}
+
+func TestExpectedPortsSkipsHubbleWhenDisabled(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	backend := NewWithClient(Config{Namespace: "druid", HubbleRelayAddr: "disabled"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, nil)
+	root := ref("druid", "druid-static-web-data")
+	procedureName := "start"
+	service, err := serviceSpec("druid", root, procedureName, serviceSelector(refPVCName(root), procedureName, procedureName, "http", map[string]int{"http": 1}), "http", domain.Port{Name: "http", Port: 80, Protocol: "tcp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.CoreV1().Services("druid").Create(context.Background(), service, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	ready := true
+	if _, err := client.DiscoveryV1().EndpointSlices("druid").Create(context.Background(), &discoveryv1.EndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "http",
+			Namespace: "druid",
+			Labels:    map[string]string{"kubernetes.io/service-name": service.Name},
+		},
+		Endpoints: []discoveryv1.Endpoint{{Conditions: discoveryv1.EndpointConditions{Ready: &ready}}},
+		Ports:     []discoveryv1.EndpointPort{{Name: &service.Spec.Ports[0].Name}},
+	}, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	statuses, err := backend.ExpectedPorts(root, map[string]*domain.CommandInstructionSet{
+		"start": {Procedures: []*domain.Procedure{{Id: &procedureName, ExpectedPorts: []domain.ExpectedPort{{Name: "http", KeepAliveTraffic: "1b/5m"}}}}},
+	}, []domain.Port{{Name: "http", Port: 80, Protocol: "tcp"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(statuses) != 1 {
+		t.Fatalf("statuses = %#v", statuses)
+	}
+	status := statuses[0]
+	if status.Source != "kubernetes-service" {
+		t.Fatalf("source = %s, want kubernetes-service", status.Source)
+	}
+	if !status.Bound {
+		t.Fatalf("bound = false, want true: %#v", status)
+	}
+	if status.Traffic || status.TrafficOK != nil {
+		t.Fatalf("traffic should be skipped when Hubble is disabled: %#v", status)
 	}
 }
 

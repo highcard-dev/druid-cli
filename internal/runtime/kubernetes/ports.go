@@ -25,10 +25,14 @@ func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.Command
 	}
 	portsByName := portsByName(globalPorts)
 	statuses := []domain.RuntimePortStatus{}
-	hubbleAvailable := true
-	if err := b.checkHubble(context.Background()); err != nil {
-		hubbleAvailable = false
-		logger.Log().Warn("Hubble Relay unavailable; Kubernetes port traffic unavailable", zap.Error(err))
+	hubbleEnabled := b.config.HubbleEnabled()
+	hubbleAvailable := false
+	if hubbleEnabled {
+		hubbleAvailable = true
+		if err := b.checkHubble(context.Background()); err != nil {
+			hubbleAvailable = false
+			logger.Log().Warn("Hubble Relay unavailable; Kubernetes port traffic unavailable", zap.Error(err))
+		}
 	}
 	for commandName, command := range commands {
 		if command == nil {
@@ -60,6 +64,10 @@ func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.Command
 				serviceReady, hostPort := b.serviceReady(context.Background(), namespace, serviceName(root, serviceProcedure, expectedPort.Name))
 				status.Bound = serviceReady
 				status.HostPort = hostPort
+				if !hubbleEnabled {
+					statuses = append(statuses, status)
+					continue
+				}
 				if !hubbleAvailable {
 					status.Source = "hubble-relay-unavailable"
 					statuses = append(statuses, status)
