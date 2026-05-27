@@ -397,6 +397,27 @@ func TestWaitForJobReportsPodFailureReason(t *testing.T) {
 	}
 }
 
+func TestWaitForJobUsesRecentSuccessfulDeletion(t *testing.T) {
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset(), fakeHubble{})
+	backend.recordJobExit("druid", "finished", 0)
+
+	exitCode, err := backend.waitForJob(context.Background(), "druid", "finished")
+	if err != nil {
+		t.Fatalf("waitForJob error = %v, want nil", err)
+	}
+	if exitCode == nil || *exitCode != 0 {
+		t.Fatalf("exitCode = %#v, want 0", exitCode)
+	}
+}
+
+func TestWaitForJobMissingWithoutRecentExitFails(t *testing.T) {
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset(), fakeHubble{})
+
+	if _, err := backend.waitForJob(context.Background(), "druid", "missing"); !apierrors.IsNotFound(err) {
+		t.Fatalf("waitForJob error = %v, want not found", err)
+	}
+}
+
 func failedProcedureJob(root string, name string, command string, procedure string, attempt int) *batchv1.Job {
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{

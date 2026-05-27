@@ -17,6 +17,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const recentJobExitTTL = 10 * time.Minute
+
 func (b *Backend) createOrReuseProcedureJob(ctx context.Context, namespace string, root string, commandName string, procedureName string, baseName string, procedure *domain.Procedure, env map[string]string) (*batchv1.Job, error) {
 	_, pvc, err := parseRef(root)
 	if err != nil {
@@ -183,6 +185,7 @@ func (b *Backend) deleteJobAndWait(ctx context.Context, namespace string, name s
 }
 
 func (b *Backend) deleteFinishedJob(ctx context.Context, namespace string, name string) {
+	b.recordJobExit(namespace, name, 0)
 	propagation := metav1.DeletePropagationBackground
 	deleteCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -197,4 +200,38 @@ func (b *Backend) deleteFinishedJob(ctx context.Context, namespace string, name 
 		return
 	}
 	logger.Log().Info("Deleted finished Kubernetes job", zap.String("namespace", namespace), zap.String("job", name))
+}
+
+func (b *Backend) recordJobExit(namespace string, name string, exitCode int) {
+	b.jobExitMu.Lock()
+	defer b.jobExitMu.Unlock()
+	if b.jobExits == nil {
+		b.jobExits = make(map[string]recentJobExit)
+	}
+	now := time.Now()
+	for key, item := range b.jobExits {
+		if now.Sub(item.recordedAt) > recentJobExitTTL {
+			delete(b.jobExits, key)
+		}
+	}
+	b.jobExits[jobExitKey(namespace, name)] = recentJobExit{exitCode: exitCode, recordedAt: now}
+}
+
+func (b *Backend) recentJobExit(namespace string, name string) (*int, bool) {
+	b.jobExitMu.Lock()
+	defer b.jobExitMu.Unlock()
+	item, ok := b.jobExits[jobExitKey(namespace, name)]
+	if !ok {
+		return nil, false
+	}
+	if time.Since(item.recordedAt) > recentJobExitTTL {
+		delete(b.jobExits, jobExitKey(namespace, name))
+		return nil, false
+	}
+	exitCode := item.exitCode
+	return &exitCode, true
+}
+
+func jobExitKey(namespace string, name string) string {
+	return namespace + "/" + name
 }

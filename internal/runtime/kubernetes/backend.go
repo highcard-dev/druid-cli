@@ -3,6 +3,8 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	k8sclient "k8s.io/client-go/kubernetes"
@@ -21,6 +23,13 @@ type Backend struct {
 	config         Config
 	hubble         HubbleClient
 	jobLogRunner   func(context.Context, *batchv1.Job) ([]byte, error)
+	jobExitMu      sync.Mutex
+	jobExits       map[string]recentJobExit
+}
+
+type recentJobExit struct {
+	exitCode   int
+	recordedAt time.Time
 }
 
 const (
@@ -54,6 +63,7 @@ func New(config Config, consoleManager ports.ConsoleManagerInterface) (*Backend,
 		consoleManager: consoleManager,
 		config:         config,
 		hubble:         NewHubbleRelayClient(config.HubbleRelayAddr),
+		jobExits:       make(map[string]recentJobExit),
 	}
 	if config.PullImage == "" {
 		logger.Log().Warn("Kubernetes cluster materialization requires --k8s-pull-image or DRUID_K8S_PULL_IMAGE")
@@ -132,7 +142,7 @@ func NewWithClient(config Config, consoleManager ports.ConsoleManagerInterface, 
 	if hubble == nil {
 		hubble = NewHubbleRelayClient(config.HubbleRelayAddr)
 	}
-	return &Backend{client: client, consoleManager: consoleManager, config: config, hubble: hubble}
+	return &Backend{client: client, consoleManager: consoleManager, config: config, hubble: hubble, jobExits: make(map[string]recentJobExit)}
 }
 
 func (b *Backend) Name() string {

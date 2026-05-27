@@ -10,6 +10,7 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
@@ -89,11 +90,18 @@ func (b *Backend) waitForJob(ctx context.Context, namespace string, jobName stri
 	for {
 		job, err := b.client.BatchV1().Jobs(namespace).Get(ctx, jobName, metav1.GetOptions{})
 		if err != nil {
+			if apierrors.IsNotFound(err) {
+				if exitCode, ok := b.recentJobExit(namespace, jobName); ok {
+					logger.Log().Info("Kubernetes job was already completed by another waiter", zap.String("namespace", namespace), zap.String("job", jobName), zap.Int("exit_code", *exitCode))
+					return exitCode, nil
+				}
+			}
 			logger.Log().Error("Failed to get Kubernetes job while waiting", zap.String("namespace", namespace), zap.String("job", jobName), zap.Error(err))
 			return nil, err
 		}
 		if job.Status.Succeeded > 0 {
 			exitCode := 0
+			b.recordJobExit(namespace, jobName, exitCode)
 			logger.Log().Debug("Kubernetes job succeeded", zap.String("namespace", namespace), zap.String("job", jobName), zap.Int32("succeeded", job.Status.Succeeded), zap.Int32("failed", job.Status.Failed), zap.Int32("active", job.Status.Active))
 			return &exitCode, nil
 		}
