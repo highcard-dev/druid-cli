@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
+	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/spf13/cobra"
+	"oras.land/oras-go/v2/registry/remote"
 )
 
 func TestWorkerPullCommandUsesRuntimeIDOnly(t *testing.T) {
@@ -46,6 +48,24 @@ func TestWorkerUpdateMergePreservesSkipUpdateAndExtraFiles(t *testing.T) {
 	assertFile(t, filepath.Join(dst, "data", "keep", "state.txt"), "old")
 	assertFile(t, filepath.Join(dst, "data", "overwrite.txt"), "new")
 	assertFile(t, filepath.Join(dst, "data", "extra.txt"), "extra")
+}
+
+func TestWorkerRestoreStagesBeforeReplacingRoot(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "scroll.yaml"), "name: old\n")
+	mustWrite(t, filepath.Join(root, "data", "logs", "latest.log"), "old")
+	mustWrite(t, filepath.Join(root, "data", "old-only.txt"), "old")
+
+	oci := fakeRestoreOCI{t: t}
+	if err := pullWorkerRestore(root, "registry.local/backup:1", oci); err != nil {
+		t.Fatal(err)
+	}
+
+	assertFile(t, filepath.Join(root, "scroll.yaml"), "name: restored\n")
+	assertFile(t, filepath.Join(root, "data", "logs", "latest.log"), "restored")
+	if _, err := os.Stat(filepath.Join(root, "data", "old-only.txt")); !os.IsNotExist(err) {
+		t.Fatalf("old root contents should be removed before restore, stat err = %v", err)
+	}
 }
 
 func TestWorkerCollectSkipUpdatePaths(t *testing.T) {
@@ -111,4 +131,42 @@ func assertFile(t *testing.T, path string, want string) {
 	if string(data) != want {
 		t.Fatalf("%s = %q, want %q", path, string(data), want)
 	}
+}
+
+type fakeRestoreOCI struct {
+	t *testing.T
+}
+
+func (fakeRestoreOCI) GetRepo(string) (*remote.Repository, error) {
+	return nil, nil
+}
+
+func (fakeRestoreOCI) Push(string, string, string, map[string]string, bool, *domain.File) (v1.Descriptor, error) {
+	return v1.Descriptor{}, nil
+}
+
+func (f fakeRestoreOCI) Pull(dir string, artifact string) error {
+	return f.PullSelective(dir, artifact, true, nil)
+}
+
+func (f fakeRestoreOCI) PullSelective(dir string, artifact string, includeData bool, progress *domain.SnapshotProgress) error {
+	mustWrite(f.t, filepath.Join(dir, "scroll.yaml"), "name: restored\n")
+	mustWrite(f.t, filepath.Join(dir, "data", "logs", "latest.log"), "restored")
+	return nil
+}
+
+func (fakeRestoreOCI) FetchFile(string, string) ([]byte, error) {
+	return nil, os.ErrNotExist
+}
+
+func (fakeRestoreOCI) ValidateCredentials(string, string, string) error {
+	return nil
+}
+
+func (fakeRestoreOCI) ResolveDigest(string) (string, error) {
+	return "sha256:restored", nil
+}
+
+func (fakeRestoreOCI) CanUpdateTag(v1.Descriptor, string, string) (bool, error) {
+	return false, nil
 }

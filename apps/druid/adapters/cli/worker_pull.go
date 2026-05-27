@@ -70,9 +70,12 @@ func runWorkerPull(action ports.RuntimeWorkerAction) ports.RuntimeWorkerResult {
 	if err == nil {
 		result.ArtifactDigest = digest
 	}
-	if action.Mode == ports.RuntimeWorkerModeUpdate {
+	switch action.Mode {
+	case ports.RuntimeWorkerModeUpdate:
 		err = pullWorkerUpdate(root, action.Artifact, oci)
-	} else {
+	case ports.RuntimeWorkerModeRestore:
+		err = pullWorkerRestore(root, action.Artifact, oci)
+	default:
 		err = pullWorkerCreate(root, action.Artifact, oci)
 	}
 	if err != nil {
@@ -157,6 +160,30 @@ func pullWorkerUpdate(root string, artifact string, oci ports.OciRegistryInterfa
 	skipData := map[string]bool{}
 	collectSkipUpdatePaths(skipData, "", scroll.Chunks)
 	return mergePulledRoot(tmp, root, skipData)
+}
+
+func pullWorkerRestore(root string, artifact string, oci ports.OciRegistryInterface) error {
+	tmp, err := os.MkdirTemp("", "druid-worker-restore-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	if err := coreservices.MaterializeScrollArtifact(artifact, tmp, oci, true); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(root, 0755); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := os.RemoveAll(filepath.Join(root, entry.Name())); err != nil {
+			return err
+		}
+	}
+	return copyPath(tmp, root)
 }
 
 func collectSkipUpdatePaths(out map[string]bool, parent string, chunks []*domain.Chunks) {

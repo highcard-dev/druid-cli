@@ -2,6 +2,8 @@ package kubernetes
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,6 +27,12 @@ func (b *Backend) StopRuntime(root string) error {
 	}
 	if err := b.deleteRuntimePodsByScroll(context.Background(), root, options); err != nil {
 		logger.Log().Error("Failed to delete Kubernetes runtime pods", zap.String("root", root), zap.Error(err))
+		return err
+	}
+	waitCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if err := b.waitRuntimePodsByScrollDeleted(waitCtx, root); err != nil {
+		logger.Log().Error("Timed out waiting for Kubernetes runtime pods to stop", zap.String("root", root), zap.Error(err))
 		return err
 	}
 	logger.Log().Info("Stopped Kubernetes runtime", zap.String("root", root))
@@ -255,4 +263,32 @@ func (b *Backend) deleteRuntimePodsByScroll(ctx context.Context, root string, op
 		logger.Log().Debug("Deleted Kubernetes runtime pod by scroll", zap.String("namespace", namespace), zap.String("pod", pod.Name))
 	}
 	return nil
+}
+
+func (b *Backend) waitRuntimePodsByScrollDeleted(ctx context.Context, root string) error {
+	namespace, pvc, err := parseRef(root)
+	if err != nil {
+		return err
+	}
+	selector := labels.SelectorFromSet(labels.Set{
+		labelScrollID: dnsLabel(pvc),
+	}).String()
+	backoff := newCappedBackoff(podPollInitial, podPollMax)
+	for {
+		pods, err := b.client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
+		if err != nil {
+			return err
+		}
+		if len(pods.Items) == 0 {
+			return nil
+		}
+		names := make([]string, 0, len(pods.Items))
+		for _, pod := range pods.Items {
+			names = append(names, pod.Name)
+		}
+		logger.Log().Debug("Waiting for Kubernetes runtime pods to stop", zap.String("namespace", namespace), zap.String("selector", selector), zap.Strings("pods", names))
+		if err := sleepWithContext(ctx, backoff.Next()); err != nil {
+			return fmt.Errorf("pods still present for %s: %v: %w", selector, names, err)
+		}
+	}
 }
