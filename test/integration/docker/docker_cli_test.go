@@ -3,6 +3,7 @@
 package docker_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -194,10 +195,34 @@ func TestDockerBackendColdstarterFrontsRuntime(t *testing.T) {
 	if started.Status != "running" {
 		t.Fatalf("started status = %s, want running", started.Status)
 	}
+	procedures := readStatusMap(t, socket, "/api/v1/scrolls/"+created.ID+"/procedures")
+	if procedures["coldstart"] != "running" {
+		t.Fatalf("procedures = %#v, want coldstart alias running", procedures)
+	}
+	if procedures["start"] != "running" {
+		t.Fatalf("procedures = %#v, want compatibility command key running", procedures)
+	}
+	queue := readStatusMap(t, socket, "/api/v1/scrolls/"+created.ID+"/queue")
+	if _, ok := queue["coldstart"]; ok {
+		t.Fatalf("queue = %#v, want command keys only", queue)
+	}
+	if queue["start"] != "running" {
+		t.Fatalf("queue = %#v, want start command running", queue)
+	}
 	if got := e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/index.txt", publicPort)); !strings.Contains(got, "cold-started") {
 		t.Fatalf("served body = %q, want cold-started", got)
 	}
 	e2e.UnixJSONRequest(t, socket, http.MethodDelete, "/api/v1/scrolls/"+created.ID+"?purge_data=true", "")
+}
+
+func readStatusMap(t *testing.T, socket string, path string) map[string]string {
+	t.Helper()
+	body := e2e.UnixJSONRequest(t, socket, http.MethodGet, path, "")
+	statuses := map[string]string{}
+	if err := json.Unmarshal([]byte(body), &statuses); err != nil {
+		t.Fatalf("decode %s JSON: %v\n%s", path, err, body)
+	}
+	return statuses
 }
 
 func assertPortBound(t *testing.T, statuses []e2e.RuntimePortStatus, fixture e2e.Fixture) {

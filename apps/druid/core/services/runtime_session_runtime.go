@@ -24,7 +24,24 @@ func (s *RuntimeSession) RoutingTargets() ([]domain.RuntimeRoutingTarget, error)
 }
 
 func (s *RuntimeSession) Procedures() map[string]domain.ScrollLockStatus {
-	return s.procedures.GetProcedureStatuses()
+	statuses := s.procedures.GetProcedureStatuses()
+	out := make(map[string]domain.ScrollLockStatus, len(statuses))
+	for name, status := range statuses {
+		out[name] = status
+	}
+	for commandName, status := range statuses {
+		command := s.scrollService.GetFile().Commands[commandName]
+		if command == nil {
+			continue
+		}
+		for idx, procedure := range command.Procedures {
+			procedureName := domain.ProcedureName(commandName, idx, procedure)
+			if _, ok := out[procedureName]; !ok {
+				out[procedureName] = status
+			}
+		}
+	}
+	return out
 }
 
 func (s *RuntimeSession) ApplyRouting(assignments []domain.RuntimeRouteAssignment) (*domain.RuntimeScroll, error) {

@@ -863,6 +863,66 @@ func TestRuntimeSessionProceduresUsesLauncherStatus(t *testing.T) {
 	}
 }
 
+func TestRuntimeSessionProceduresExpandCommandStatusToProcedureAliases(t *testing.T) {
+	session := newRuntimeSessionForTest(t, map[string]domain.LockStatus{}, multiProcedureScrollYAML())
+	session.procedures = fakeProcedureStatuses{statuses: map[string]domain.ScrollLockStatus{
+		"start": domain.ScrollLockStatusRunning,
+	}}
+
+	got := session.Procedures()
+	if got["start"] != domain.ScrollLockStatusRunning {
+		t.Fatalf("procedures = %#v, want compatibility command key", got)
+	}
+	if got["coldstart"] != domain.ScrollLockStatusRunning {
+		t.Fatalf("procedures = %#v, want coldstart alias", got)
+	}
+}
+
+func TestRuntimeSessionProceduresExpandUnnamedProcedureFallback(t *testing.T) {
+	session := newRuntimeSessionForTest(t, map[string]domain.LockStatus{}, multiProcedureScrollYAML())
+	session.procedures = fakeProcedureStatuses{statuses: map[string]domain.ScrollLockStatus{
+		"install": domain.ScrollLockStatusDone,
+	}}
+
+	got := session.Procedures()
+	if got["install"] != domain.ScrollLockStatusDone {
+		t.Fatalf("procedures = %#v, want compatibility command key", got)
+	}
+	if got["install.0"] != domain.ScrollLockStatusDone {
+		t.Fatalf("procedures = %#v, want unnamed procedure fallback alias", got)
+	}
+}
+
+func TestRuntimeSessionProceduresPreserveExistingProcedureStatus(t *testing.T) {
+	session := newRuntimeSessionForTest(t, map[string]domain.LockStatus{}, multiProcedureScrollYAML())
+	session.procedures = fakeProcedureStatuses{statuses: map[string]domain.ScrollLockStatus{
+		"start":     domain.ScrollLockStatusRunning,
+		"coldstart": domain.ScrollLockStatusDone,
+	}}
+
+	got := session.Procedures()
+	if got["coldstart"] != domain.ScrollLockStatusDone {
+		t.Fatalf("procedures = %#v, want existing procedure status preserved", got)
+	}
+}
+
+func TestRuntimeSessionProceduresDoNotChangeQueue(t *testing.T) {
+	session := newRuntimeSessionForTest(t, map[string]domain.LockStatus{}, multiProcedureScrollYAML())
+	session.queueManager.RememberDoneItem("install")
+	session.procedures = fakeProcedureStatuses{statuses: map[string]domain.ScrollLockStatus{
+		"install": domain.ScrollLockStatusDone,
+	}}
+
+	_ = session.Procedures()
+	queue := session.queueManager.GetQueue()
+	if _, ok := queue["install.0"]; ok {
+		t.Fatalf("queue changed by procedure aliases: %#v", queue)
+	}
+	if queue["install"] != domain.ScrollLockStatusDone {
+		t.Fatalf("queue = %#v, want original command key only", queue)
+	}
+}
+
 func TestDeriveRuntimeScrollStatusTreatsDonePersistentAsRunning(t *testing.T) {
 	status := deriveRuntimeScrollStatus(map[string]domain.LockStatus{
 		"start": {Status: domain.ScrollLockStatusDone},
@@ -1067,6 +1127,29 @@ commands:
       - type: signal
         target: start
         signal: SIGTERM
+`
+}
+
+func multiProcedureScrollYAML() string {
+	return `name: cached
+desc: Cached scroll
+version: 0.1.0
+app_version: "1.0"
+commands:
+  install:
+    run: once
+    procedures:
+      - image: alpine:3.20
+        command: ["true"]
+  start:
+    run: restart
+    procedures:
+      - id: coldstart
+        image: artifacts.druid.gg/druid-team/druid:stable
+        command: ["druid-coldstarter"]
+      - id: start
+        image: eclipse-temurin:21-jre
+        command: ["sh", "./start.sh"]
 `
 }
 
