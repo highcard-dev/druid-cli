@@ -16,17 +16,17 @@ func NewCredentialStore(registries []domain.RegistryCredential) *CredentialStore
 }
 
 func (s *CredentialStore) CredentialForRepo(repoURL string) (auth.Credential, error) {
-	repoURL = strings.TrimPrefix(repoURL, "https://")
-	repoURL = strings.TrimPrefix(repoURL, "http://")
+	repoURL = normalizeRegistryPrefix(repoURL)
 
 	var bestMatch *domain.RegistryCredential
 	bestLen := 0
 
 	for i := range s.registries {
 		reg := &s.registries[i]
-		if strings.HasPrefix(repoURL, reg.Host) && len(reg.Host) > bestLen {
+		host := normalizeRegistryPrefix(reg.Host)
+		if strings.HasPrefix(repoURL, host) && len(host) > bestLen {
 			bestMatch = reg
-			bestLen = len(reg.Host)
+			bestLen = len(host)
 		}
 	}
 
@@ -48,4 +48,11 @@ func (s *CredentialStore) Credentials() []domain.RegistryCredential {
 	out := make([]domain.RegistryCredential, len(s.registries))
 	copy(out, s.registries)
 	return out
+}
+
+func normalizeRegistryPrefix(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.TrimPrefix(value, "https://")
+	value = strings.TrimPrefix(value, "http://")
+	return strings.TrimRight(value, "/")
 }
