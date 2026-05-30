@@ -23,25 +23,10 @@ func (s *RuntimeSession) RoutingTargets() ([]domain.RuntimeRoutingTarget, error)
 	return s.runtimeBackend.RoutingTargets(runtimeScroll.Root, s.scrollService.GetFile().Commands, s.scrollService.GetFile().Ports)
 }
 
-func (s *RuntimeSession) Procedures() map[string]domain.ScrollLockStatus {
-	statuses := s.procedures.GetProcedureStatuses()
-	out := make(map[string]domain.ScrollLockStatus, len(statuses))
-	for name, status := range statuses {
-		out[name] = status
-	}
-	for commandName, status := range statuses {
-		command := s.scrollService.GetFile().Commands[commandName]
-		if command == nil {
-			continue
-		}
-		for idx, procedure := range command.Procedures {
-			procedureName := domain.ProcedureName(commandName, idx, procedure)
-			if _, ok := out[procedureName]; !ok {
-				out[procedureName] = status
-			}
-		}
-	}
-	return out
+func (s *RuntimeSession) Queue() domain.ProcedureStatusMap {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return copyProcedureStatuses(s.runtimeScroll.Procedures)
 }
 
 func (s *RuntimeSession) ApplyRouting(assignments []domain.RuntimeRouteAssignment) (*domain.RuntimeScroll, error) {
@@ -62,11 +47,12 @@ func (s *RuntimeSession) StopRuntime() error {
 	root := s.runtimeScroll.Root
 	started := s.started
 	s.mu.Unlock()
-	oldQueue, err := s.replaceQueue(false)
-	if err != nil {
+	if started {
+		s.shutdownQueueLoop()
+	}
+	if err := s.replaceQueue(false); err != nil {
 		return err
 	}
-	oldQueue.Shutdown()
 	if err := s.runtimeBackend.StopRuntime(root); err != nil {
 		if started {
 			s.startQueue()
@@ -75,16 +61,17 @@ func (s *RuntimeSession) StopRuntime() error {
 	}
 	s.mu.Lock()
 	commands := s.scrollService.GetFile().Commands
-	for commandName, status := range s.runtimeScroll.Commands {
+	for commandName, procedures := range s.runtimeScroll.Procedures {
 		command := commands[commandName]
-		if command != nil && command.Run == domain.RunModeOnce && status.Status == domain.ScrollLockStatusDone {
+		status, ok := deriveCommandStatus(procedures, commandName, command)
+		if ok && command != nil && command.Run == domain.RunModeOnce && status == domain.ScrollLockStatusDone {
 			continue
 		}
-		delete(s.runtimeScroll.Commands, commandName)
+		delete(s.runtimeScroll.Procedures, commandName)
 	}
 	s.runtimeScroll.Status = domain.RuntimeScrollStatusStopped
 	s.runtimeScroll.LastError = ""
-	err = s.store.UpdateScroll(s.runtimeScroll)
+	err := s.store.UpdateScroll(s.runtimeScroll)
 	s.mu.Unlock()
 	if err == nil && started {
 		s.startQueue()
@@ -126,14 +113,19 @@ func (s *RuntimeSession) ApplyRestore(materialized *ports.RuntimeMaterialization
 	if err != nil {
 		return err
 	}
+	s.mu.Lock()
+	started := s.started
+	s.mu.Unlock()
+	if started {
+		s.shutdownQueueLoop()
+	}
 
 	s.mu.Lock()
-	oldQueue := s.queueManager
 	commands := scrollService.GetFile().Commands
 	routing := preserveRoutingAssignments(s.runtimeScroll.Routing, scrollService.GetFile().Ports)
-	for commandName := range s.runtimeScroll.Commands {
+	for commandName := range s.runtimeScroll.Procedures {
 		if commands[commandName] == nil {
-			delete(s.runtimeScroll.Commands, commandName)
+			delete(s.runtimeScroll.Procedures, commandName)
 		}
 	}
 	s.runtimeScroll.Artifact = materialized.Artifact
@@ -147,12 +139,10 @@ func (s *RuntimeSession) ApplyRestore(materialized *ports.RuntimeMaterialization
 	s.scrollService = scrollService
 	s.queueManager = queueManager
 	s.procedures = processLauncher
-	started := s.started
 	err = s.store.UpdateScroll(s.runtimeScroll)
 	s.mu.Unlock()
 	if err == nil && started {
-		oldQueue.Shutdown()
-		go queueManager.Work()
+		s.startQueue()
 	}
 	return err
 }

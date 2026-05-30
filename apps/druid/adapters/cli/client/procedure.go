@@ -28,7 +28,7 @@ var ProcedureListCommand = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		statuses, err := daemon.GetScrollProcedures(cmd.Context(), args[0])
+		statuses, err := daemon.GetScrollQueue(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
@@ -70,7 +70,7 @@ type procedureRow struct {
 	console   string
 }
 
-func procedureRows(file *domain.File, statuses map[string]domain.ScrollLockStatus, consoles map[string]domain.Console) []procedureRow {
+func procedureRows(file *domain.File, statuses domain.ProcedureStatusMap, consoles map[string]domain.Console) []procedureRow {
 	if file == nil {
 		return nil
 	}
@@ -88,11 +88,7 @@ func procedureRows(file *domain.File, statuses map[string]domain.ScrollLockStatu
 		}
 		for idx, procedure := range definition.Procedures {
 			name := domain.ProcedureName(command, idx, procedure)
-			procedureStatusValue := ""
-			if name != command {
-				procedureStatusValue = string(statuses[name])
-			}
-			status := procedureStatus(name, procedureStatusValue, string(statuses[command]), consoles)
+			status := procedureStatus(name, statuses[command][name], consoles)
 			console := "no"
 			if _, ok := consoles[name]; ok {
 				console = "yes"
@@ -103,9 +99,9 @@ func procedureRows(file *domain.File, statuses map[string]domain.ScrollLockStatu
 	return rows
 }
 
-func procedureStatus(name string, status string, commandStatus string, consoles map[string]domain.Console) string {
-	if status != "" {
-		return status
+func procedureStatus(name string, status domain.LockStatus, consoles map[string]domain.Console) string {
+	if status.Status != "" {
+		return string(status.Status)
 	}
 	if console, ok := consoles[name]; ok {
 		if console.Exit == nil {
@@ -115,12 +111,6 @@ func procedureStatus(name string, status string, commandStatus string, consoles 
 			return string(domain.ScrollLockStatusDone)
 		}
 		return string(domain.ScrollLockStatusError)
-	}
-	if commandStatus == string(domain.ScrollLockStatusRunning) {
-		return string(domain.ScrollLockStatusWaiting)
-	}
-	if commandStatus != "" {
-		return commandStatus
 	}
 	return "-"
 }

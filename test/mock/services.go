@@ -209,20 +209,6 @@ func (m *MockProcedureLauchnerInterface) EXPECT() *MockProcedureLauchnerInterfac
 	return m.recorder
 }
 
-// GetProcedureStatuses mocks base method.
-func (m *MockProcedureLauchnerInterface) GetProcedureStatuses() map[string]domain.ScrollLockStatus {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetProcedureStatuses")
-	ret0, _ := ret[0].(map[string]domain.ScrollLockStatus)
-	return ret0
-}
-
-// GetProcedureStatuses indicates an expected call of GetProcedureStatuses.
-func (mr *MockProcedureLauchnerInterfaceMockRecorder) GetProcedureStatuses() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProcedureStatuses", reflect.TypeOf((*MockProcedureLauchnerInterface)(nil).GetProcedureStatuses))
-}
-
 // Run mocks base method.
 func (m *MockProcedureLauchnerInterface) Run(cmd string) error {
 	m.ctrl.T.Helper()

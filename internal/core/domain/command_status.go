@@ -17,6 +17,8 @@ type LockStatus struct {
 	LastStatusChange int64            `json:"last_status_change"`
 }
 
+type ProcedureStatusMap map[string]map[string]LockStatus
+
 type CommandExecutionError struct {
 	Command  string
 	ExitCode int

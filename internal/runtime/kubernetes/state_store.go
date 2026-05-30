@@ -30,7 +30,7 @@ const (
 	configMapKeyLastError      = "last_error"
 	configMapKeyCreatedAt      = "created_at"
 	configMapKeyUpdatedAt      = "updated_at"
-	configMapKeyCommandsJSON   = "commands_json"
+	configMapKeyProceduresJSON = "procedures_json"
 	configMapKeyRoutingJSON    = "routing_json"
 	configMapKeyUIPackagesJSON = "ui_packages_json"
 )
@@ -75,8 +75,8 @@ func (s *ConfigMapStateStore) CreateScroll(scroll *domain.RuntimeScroll) error {
 	if scroll.Status == "" {
 		scroll.Status = domain.RuntimeScrollStatusCreated
 	}
-	if scroll.Commands == nil {
-		scroll.Commands = map[string]domain.LockStatus{}
+	if scroll.Procedures == nil {
+		scroll.Procedures = domain.ProcedureStatusMap{}
 	}
 	configMap, err := runtimeScrollConfigMap(s.namespace, scroll)
 	if err != nil {
@@ -153,7 +153,7 @@ func (s *ConfigMapStateStore) DeleteScroll(id string) error {
 }
 
 func runtimeScrollConfigMap(namespace string, scroll *domain.RuntimeScroll) (*corev1.ConfigMap, error) {
-	commands, err := json.Marshal(scroll.Commands)
+	procedures, err := json.Marshal(scroll.Procedures)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +188,7 @@ func runtimeScrollConfigMap(namespace string, scroll *domain.RuntimeScroll) (*co
 			configMapKeyLastError:      scroll.LastError,
 			configMapKeyCreatedAt:      formatRuntimeTime(scroll.CreatedAt),
 			configMapKeyUpdatedAt:      formatRuntimeTime(scroll.UpdatedAt),
-			configMapKeyCommandsJSON:   string(commands),
+			configMapKeyProceduresJSON: string(procedures),
 			configMapKeyRoutingJSON:    string(routing),
 			configMapKeyUIPackagesJSON: string(uiPackages),
 		},
@@ -197,12 +197,12 @@ func runtimeScrollConfigMap(namespace string, scroll *domain.RuntimeScroll) (*co
 
 func runtimeScrollFromConfigMap(configMap *corev1.ConfigMap) (*domain.RuntimeScroll, error) {
 	data := configMap.Data
-	commandsJSON := data[configMapKeyCommandsJSON]
-	if commandsJSON == "" {
-		commandsJSON = "{}"
+	proceduresJSON := data[configMapKeyProceduresJSON]
+	if proceduresJSON == "" {
+		proceduresJSON = "{}"
 	}
-	commands := map[string]domain.LockStatus{}
-	if err := json.Unmarshal([]byte(commandsJSON), &commands); err != nil {
+	procedures := domain.ProcedureStatusMap{}
+	if err := json.Unmarshal([]byte(proceduresJSON), &procedures); err != nil {
 		return nil, err
 	}
 	routingJSON := data[configMapKeyRoutingJSON]
@@ -239,7 +239,7 @@ func runtimeScrollFromConfigMap(configMap *corev1.ConfigMap) (*domain.RuntimeScr
 		UIPackages:     uiPackages,
 		CreatedAt:      parseRuntimeTime(data[configMapKeyCreatedAt]),
 		UpdatedAt:      parseRuntimeTime(data[configMapKeyUpdatedAt]),
-		Commands:       commands,
+		Procedures:     procedures,
 	}
 	if scroll.Status == "" {
 		scroll.Status = domain.RuntimeScrollStatusCreated

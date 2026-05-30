@@ -13,31 +13,57 @@ import (
 
 func (s *RuntimeSession) Hydrate() error {
 	s.mu.Lock()
-	statuses := copyCommandStatuses(s.runtimeScroll.Commands)
+	statuses := copyProcedureStatuses(s.runtimeScroll.Procedures)
 	runtimeStatus := s.runtimeScroll.Status
 	s.mu.Unlock()
 	commands := s.scrollService.GetFile().Commands
 	if len(statuses) > 0 {
-		filtered := map[string]domain.LockStatus{}
+		filtered := domain.ProcedureStatusMap{}
 		removedStaleStatus := false
-		for commandName, status := range statuses {
+		for commandName, procedureStatuses := range statuses {
 			command := commands[commandName]
 			if command == nil {
 				removedStaleStatus = true
 				continue
 			}
+			filteredProcedures := map[string]domain.LockStatus{}
+			for idx, procedure := range command.Procedures {
+				procedureName := domain.ProcedureName(commandName, idx, procedure)
+				if status, ok := procedureStatuses[procedureName]; ok {
+					filteredProcedures[procedureName] = status
+				}
+			}
+			if len(filteredProcedures) != len(procedureStatuses) {
+				removedStaleStatus = true
+			}
 			// Kubernetes keeps persistent workloads alive; do not requeue them just because
 			// the singleton API process restarted.
-			if runtimeStatus == domain.RuntimeScrollStatusRunning && status.Status == domain.ScrollLockStatusDone && command.Run == domain.RunModePersistent {
+			commandStatus, ok := deriveCommandStatus(filteredProcedures, commandName, command)
+			if ok && runtimeStatus == domain.RuntimeScrollStatusRunning && commandStatus == domain.ScrollLockStatusRunning && command.Run == domain.RunModePersistent {
 				continue
 			}
-			filtered[commandName] = status
+			if len(filteredProcedures) > 0 {
+				filtered[commandName] = filteredProcedures
+			}
 		}
 		if removedStaleStatus {
 			s.mu.Lock()
-			for commandName := range s.runtimeScroll.Commands {
+			for commandName := range s.runtimeScroll.Procedures {
 				if commands[commandName] == nil {
-					delete(s.runtimeScroll.Commands, commandName)
+					delete(s.runtimeScroll.Procedures, commandName)
+					continue
+				}
+				for procedureName := range s.runtimeScroll.Procedures[commandName] {
+					found := false
+					for idx, procedure := range commands[commandName].Procedures {
+						if procedureName == domain.ProcedureName(commandName, idx, procedure) {
+							found = true
+							break
+						}
+					}
+					if !found {
+						delete(s.runtimeScroll.Procedures[commandName], procedureName)
+					}
 				}
 			}
 			err := s.store.UpdateScroll(s.runtimeScroll)
@@ -47,7 +73,7 @@ func (s *RuntimeSession) Hydrate() error {
 			}
 		}
 		statuses = filtered
-		if err := s.queueManager.HydrateCommandStatuses(statuses); err != nil {
+		if err := s.HydrateFromState(statuses); err != nil {
 			return err
 		}
 	}
@@ -55,7 +81,7 @@ func (s *RuntimeSession) Hydrate() error {
 		return err
 	}
 	s.mu.Lock()
-	s.runtimeScroll.Status = deriveRuntimeScrollStatus(s.runtimeScroll.Commands, s.scrollService.GetFile().Commands)
+	s.runtimeScroll.Status = deriveRuntimeScrollStatus(s.runtimeScroll.Procedures, s.scrollService.GetFile().Commands)
 	err := s.store.UpdateScroll(s.runtimeScroll)
 	s.mu.Unlock()
 	return err
@@ -73,14 +99,14 @@ func (s *RuntimeSession) AutoStartServe() error {
 	s.rememberDoneDependencies(command, map[string]bool{})
 	if command.Run == domain.RunModePersistent {
 		s.mu.Lock()
-		status, ok := s.runtimeScroll.Commands[serveCommand]
+		status, ok := deriveCommandStatus(s.runtimeScroll.Procedures[serveCommand], serveCommand, command)
 		runtimeStatus := s.runtimeScroll.Status
 		s.mu.Unlock()
-		if ok && status.Status == domain.ScrollLockStatusDone && runtimeStatus == domain.RuntimeScrollStatusRunning {
+		if ok && (status == domain.ScrollLockStatusDone || status == domain.ScrollLockStatusRunning) && runtimeStatus == domain.RuntimeScrollStatusRunning {
 			return nil
 		}
 	}
-	if err := s.queueManager.AddForcedItem(serveCommand); err != nil && !errors.Is(err, coreservices.ErrAlreadyInQueue) {
+	if err := s.AddForcedItem(serveCommand); err != nil && !errors.Is(err, coreservices.ErrAlreadyInQueue) {
 		return err
 	}
 	return nil
@@ -100,19 +126,19 @@ func (s *RuntimeSession) RunWithContext(ctx context.Context, command string) (*d
 	longRunning := targetCommand.Run == domain.RunModeRestart || targetCommand.Run == domain.RunModePersistent
 	s.rememberDoneDependencies(targetCommand, map[string]bool{})
 
-	if err := s.queueManager.AddTempItem(command); err != nil {
+	if err := s.AddTempItem(command); err != nil {
 		s.markError(err)
 		return nil, err
 	}
 	if !longRunning {
-		if err := s.queueManager.WaitUntilEmptyContext(ctx); err != nil {
+		if err := s.WaitUntilEmptyContext(ctx); err != nil {
 			s.markError(err)
 			return nil, err
 		}
 	}
 
 	s.mu.Lock()
-	s.runtimeScroll.Status = deriveRuntimeScrollStatus(s.runtimeScroll.Commands, s.scrollService.GetFile().Commands)
+	s.runtimeScroll.Status = deriveRuntimeScrollStatus(s.runtimeScroll.Procedures, s.scrollService.GetFile().Commands)
 	err = s.store.UpdateScroll(s.runtimeScroll)
 	id := s.runtimeScroll.ID
 	s.mu.Unlock()
@@ -129,9 +155,9 @@ func (s *RuntimeSession) refreshCommandState() {
 	}
 	commands := s.scrollService.GetFile().Commands
 	removedStaleStatus := false
-	for commandName := range fresh.Commands {
+	for commandName := range fresh.Procedures {
 		if commands[commandName] == nil {
-			delete(fresh.Commands, commandName)
+			delete(fresh.Procedures, commandName)
 			removedStaleStatus = true
 		}
 	}
@@ -139,7 +165,7 @@ func (s *RuntimeSession) refreshCommandState() {
 		_ = s.store.UpdateScroll(fresh)
 	}
 	s.mu.Lock()
-	s.runtimeScroll.Commands = copyCommandStatuses(fresh.Commands)
+	s.runtimeScroll.Procedures = copyProcedureStatuses(fresh.Procedures)
 	s.runtimeScroll.Status = fresh.Status
 	s.mu.Unlock()
 }
@@ -154,10 +180,11 @@ func (s *RuntimeSession) rememberDoneDependencies(command *domain.CommandInstruc
 		}
 		seen[dependency] = true
 		s.mu.Lock()
-		status, ok := s.runtimeScroll.Commands[dependency]
+		dependencyCommand := s.scrollService.GetFile().Commands[dependency]
+		status, ok := deriveCommandStatus(s.runtimeScroll.Procedures[dependency], dependency, dependencyCommand)
 		s.mu.Unlock()
-		if ok && status.Status == domain.ScrollLockStatusDone {
-			s.queueManager.RememberDoneItem(dependency)
+		if ok && status == domain.ScrollLockStatusDone {
+			s.RememberDoneItem(dependency)
 		}
 		dependencyCommand, err := s.scrollService.GetCommand(dependency)
 		if err == nil {
@@ -167,28 +194,72 @@ func (s *RuntimeSession) rememberDoneDependencies(command *domain.CommandInstruc
 }
 
 func (s *RuntimeSession) persistCommandStatus(command string, status domain.ScrollLockStatus, exitCode *int) {
+	if status == domain.ScrollLockStatusRunning {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	commands := s.scrollService.GetFile().Commands
+	commandDefinition := commands[command]
+	if commandDefinition == nil {
+		return
+	}
+	if s.runtimeScroll.Procedures == nil {
+		s.runtimeScroll.Procedures = domain.ProcedureStatusMap{}
+	}
+	for commandName := range s.runtimeScroll.Procedures {
+		if commands[commandName] == nil {
+			delete(s.runtimeScroll.Procedures, commandName)
+		}
+	}
+	if s.runtimeScroll.Procedures[command] == nil {
+		s.runtimeScroll.Procedures[command] = map[string]domain.LockStatus{}
+	}
+	for idx, procedure := range commandDefinition.Procedures {
+		procedureName := domain.ProcedureName(command, idx, procedure)
+		s.runtimeScroll.Procedures[command][procedureName] = domain.LockStatus{
+			Status:           status,
+			ExitCode:         exitCode,
+			LastStatusChange: time.Now().Unix(),
+		}
+	}
+	s.runtimeScroll.Status = deriveRuntimeScrollStatus(s.runtimeScroll.Procedures, s.scrollService.GetFile().Commands)
+	if err := s.store.UpdateScroll(s.runtimeScroll); err != nil {
+		logger.Log().Error("failed to persist command status", zap.String("scroll", s.runtimeScroll.ID), zap.String("command", command), zap.Error(err))
+	}
+}
+
+func (s *RuntimeSession) Snapshot() domain.ProcedureStatusMap {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return copyProcedureStatuses(s.runtimeScroll.Procedures)
+}
+
+func (s *RuntimeSession) SetCommandStatus(command string, status domain.ScrollLockStatus, exitCode *int) {
+	s.persistCommandStatus(command, status, exitCode)
+}
+
+func (s *RuntimeSession) persistProcedureStatus(command string, procedure string, status domain.ScrollLockStatus, exitCode *int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	commands := s.scrollService.GetFile().Commands
 	if commands[command] == nil {
 		return
 	}
-	if s.runtimeScroll.Commands == nil {
-		s.runtimeScroll.Commands = map[string]domain.LockStatus{}
+	if s.runtimeScroll.Procedures == nil {
+		s.runtimeScroll.Procedures = domain.ProcedureStatusMap{}
 	}
-	for commandName := range s.runtimeScroll.Commands {
-		if commands[commandName] == nil {
-			delete(s.runtimeScroll.Commands, commandName)
-		}
+	if s.runtimeScroll.Procedures[command] == nil {
+		s.runtimeScroll.Procedures[command] = map[string]domain.LockStatus{}
 	}
-	s.runtimeScroll.Commands[command] = domain.LockStatus{
+	s.runtimeScroll.Procedures[command][procedure] = domain.LockStatus{
 		Status:           status,
 		ExitCode:         exitCode,
 		LastStatusChange: time.Now().Unix(),
 	}
-	s.runtimeScroll.Status = deriveRuntimeScrollStatus(s.runtimeScroll.Commands, s.scrollService.GetFile().Commands)
+	s.runtimeScroll.Status = deriveRuntimeScrollStatus(s.runtimeScroll.Procedures, commands)
 	if err := s.store.UpdateScroll(s.runtimeScroll); err != nil {
-		logger.Log().Error("failed to persist command status", zap.String("scroll", s.runtimeScroll.ID), zap.String("command", command), zap.Error(err))
+		logger.Log().Error("failed to persist procedure status", zap.String("scroll", s.runtimeScroll.ID), zap.String("command", command), zap.String("procedure", procedure), zap.Error(err))
 	}
 }
 

@@ -141,11 +141,11 @@ type fakeRoutingDaemon struct {
 
 func (f *fakeRoutingDaemon) CreateScroll(ctx context.Context, name string, artifact string, registryCredentials []api.RegistryCredential) (*api.RuntimeScroll, error) {
 	f.createCalls++
-	return &api.RuntimeScroll{Id: name, Artifact: artifact, Root: "/root", ScrollName: name, Status: api.Created}, nil
+	return &api.RuntimeScroll{Id: name, Artifact: artifact, Root: "/root", ScrollName: name, Status: api.RuntimeScrollStatusCreated}, nil
 }
 
 func (f *fakeRoutingDaemon) UpdateScroll(ctx context.Context, id string, artifact string, registryCredentials []api.RegistryCredential) (*api.RuntimeScroll, error) {
-	return &api.RuntimeScroll{Id: id, Artifact: artifact, Root: "/root", ScrollName: id, Status: api.Created}, nil
+	return &api.RuntimeScroll{Id: id, Artifact: artifact, Root: "/root", ScrollName: id, Status: api.RuntimeScrollStatusCreated}, nil
 }
 
 func (f *fakeRoutingDaemon) ListScrolls(ctx context.Context) ([]api.RuntimeScroll, error) {
@@ -153,14 +153,10 @@ func (f *fakeRoutingDaemon) ListScrolls(ctx context.Context) ([]api.RuntimeScrol
 }
 
 func (f *fakeRoutingDaemon) GetScroll(ctx context.Context, id string) (*api.RuntimeScroll, error) {
-	return &api.RuntimeScroll{Id: id, Status: api.Created}, nil
+	return &api.RuntimeScroll{Id: id, Status: api.RuntimeScrollStatusCreated}, nil
 }
 
 func (f *fakeRoutingDaemon) DeleteScroll(ctx context.Context, id string) (*api.DeletedScroll, error) {
-	return nil, nil
-}
-
-func (f *fakeRoutingDaemon) RunScrollCommand(ctx context.Context, id string, command string) (*api.RuntimeScroll, error) {
 	return nil, nil
 }
 
@@ -168,11 +164,7 @@ func (f *fakeRoutingDaemon) GetScrollConfig(ctx context.Context, id string) (*do
 	return &domain.File{}, nil
 }
 
-func (f *fakeRoutingDaemon) GetScrollProcedures(ctx context.Context, id string) (map[string]domain.ScrollLockStatus, error) {
-	return nil, nil
-}
-
-func (f *fakeRoutingDaemon) GetScrollQueue(ctx context.Context, id string) (map[string]domain.ScrollLockStatus, error) {
+func (f *fakeRoutingDaemon) GetScrollQueue(ctx context.Context, id string) (domain.ProcedureStatusMap, error) {
 	return nil, nil
 }
 
@@ -202,7 +194,7 @@ func (f *fakeRoutingDaemon) ApplyScrollRouting(ctx context.Context, id string, a
 	f.applyCalls++
 	f.applied = assignments
 	routing := append([]api.RuntimeRouteAssignment(nil), assignments...)
-	return &api.RuntimeScroll{Id: id, Status: api.Created, Routing: &routing}, nil
+	return &api.RuntimeScroll{Id: id, Status: api.RuntimeScrollStatusCreated, Routing: &routing}, nil
 }
 
 func (f *fakeRoutingDaemon) GetScrollUIPackages(ctx context.Context, id string) (map[string]api.RuntimeUIPackage, error) {
@@ -210,7 +202,7 @@ func (f *fakeRoutingDaemon) GetScrollUIPackages(ctx context.Context, id string) 
 }
 
 func (f *fakeRoutingDaemon) PublishScrollUIPackage(ctx context.Context, id string, scope string, path string) (*api.RuntimeScroll, error) {
-	return &api.RuntimeScroll{Id: id, Status: api.Created}, nil
+	return &api.RuntimeScroll{Id: id, Status: api.RuntimeScrollStatusCreated}, nil
 }
 
 func (f *fakeRoutingDaemon) EnableWatch(ctx context.Context, id string, request api.DevWatchRequest) (*api.DevWatchResponse, error) {

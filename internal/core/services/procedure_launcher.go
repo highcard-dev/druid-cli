@@ -2,7 +2,6 @@ package services
 
 import (
 	"errors"
-	"sync"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
@@ -17,9 +16,10 @@ type ProcedureLauncher struct {
 	runtimeScrollName string
 	routingProvider   func() []domain.RuntimeRouteAssignment
 	scrollService     ports.ScrollServiceInterface
-	procedures        map[string]domain.ScrollLockStatus
-	proceduresMutex   *sync.Mutex
+	statusObserver    ProcedureStatusObserver
 }
+
+type ProcedureStatusObserver func(command string, procedure string, status domain.ScrollLockStatus, exitCode *int)
 
 func NewProcedureLauncher(
 	scrollService ports.ScrollServiceInterface,
@@ -57,33 +57,25 @@ func NewProcedureLauncherForRuntime(
 		runtimeScrollName: runtimeScrollName,
 		routingProvider:   routingProvider,
 		scrollService:     scrollService,
-		procedures:        make(map[string]domain.ScrollLockStatus),
-		proceduresMutex:   &sync.Mutex{},
 	}
 
 	return s, nil
 }
 
-func (sc *ProcedureLauncher) setProcedureStatus(procedure string, status domain.ScrollLockStatus) {
-	sc.proceduresMutex.Lock()
-	defer sc.proceduresMutex.Unlock()
-	sc.procedures[procedure] = status
+func (sc *ProcedureLauncher) SetProcedureStatusObserver(observer ProcedureStatusObserver) {
+	sc.statusObserver = observer
 }
 
-func (sc *ProcedureLauncher) GetProcedureStatuses() map[string]domain.ScrollLockStatus {
-	sc.proceduresMutex.Lock()
-	defer sc.proceduresMutex.Unlock()
-	statuses := make(map[string]domain.ScrollLockStatus, len(sc.procedures))
-	for name, status := range sc.procedures {
-		statuses[name] = status
+func (sc *ProcedureLauncher) setProcedureStatus(command string, procedure string, status domain.ScrollLockStatus, exitCode *int) {
+	observer := sc.statusObserver
+	if observer != nil {
+		observer(command, procedure, status, exitCode)
 	}
-	return statuses
 }
 
 func (sc *ProcedureLauncher) Run(cmd string) error {
 	command, err := sc.scrollService.GetCommand(cmd)
 	if err != nil {
-		sc.setProcedureStatus(cmd, domain.ScrollLockStatusError)
 		return err
 	}
 
@@ -108,10 +100,9 @@ func (sc *ProcedureLauncher) Run(cmd string) error {
 		Routing:    routing,
 	})
 	if err != nil {
-		sc.setProcedureStatus(cmd, domain.ScrollLockStatusError)
+		sc.setCommandProcedureStatus(cmd, command, domain.ScrollLockStatusError, nil)
 		return err
 	}
-	sc.setProcedureStatus(cmd, domain.ScrollLockStatusRunning)
 	exitCode, err := sc.runtimeBackend.RunCommand(ports.RuntimeCommand{
 		Name:         cmd,
 		ScrollID:     sc.runtimeScrollID,
@@ -120,19 +111,27 @@ func (sc *ProcedureLauncher) Run(cmd string) error {
 		GlobalPorts:  file.Ports,
 		Routing:      routing,
 		ProcedureEnv: procedureEnv,
+		ProcedureStatusObserver: func(procedure string, status domain.ScrollLockStatus, exitCode *int) {
+			sc.setProcedureStatus(cmd, procedure, status, exitCode)
+		},
 	})
 	if err != nil {
-		sc.setProcedureStatus(cmd, domain.ScrollLockStatusError)
+		sc.setCommandProcedureStatus(cmd, command, domain.ScrollLockStatusError, exitCode)
 		return err
 	}
 	if exitCode != nil && *exitCode != 0 {
-		sc.setProcedureStatus(cmd, domain.ScrollLockStatusError)
+		sc.setCommandProcedureStatus(cmd, command, domain.ScrollLockStatusError, exitCode)
 		return &domain.CommandExecutionError{
 			Command:  cmd,
 			ExitCode: *exitCode,
 			Err:      errors.New("command failed"),
 		}
 	}
-	sc.setProcedureStatus(cmd, domain.ScrollLockStatusDone)
 	return nil
+}
+
+func (sc *ProcedureLauncher) setCommandProcedureStatus(commandName string, command *domain.CommandInstructionSet, status domain.ScrollLockStatus, exitCode *int) {
+	for idx, procedure := range command.Procedures {
+		sc.setProcedureStatus(commandName, domain.ProcedureName(commandName, idx, procedure), status, exitCode)
+	}
 }

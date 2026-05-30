@@ -71,8 +71,8 @@ func (s *RuntimeSupervisor) markScrollError(runtimeScroll *domain.RuntimeScroll,
 	logger.Log().Error("failed to restore runtime scroll", zap.String("scroll", runtimeScroll.ID), zap.Error(err))
 	runtimeScroll.Status = domain.RuntimeScrollStatusError
 	runtimeScroll.LastError = err.Error()
-	if runtimeScroll.Commands == nil {
-		runtimeScroll.Commands = map[string]domain.LockStatus{}
+	if runtimeScroll.Procedures == nil {
+		runtimeScroll.Procedures = domain.ProcedureStatusMap{}
 	}
 	_ = s.store.UpdateScroll(runtimeScroll)
 }

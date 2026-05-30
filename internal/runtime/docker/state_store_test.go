@@ -7,7 +7,7 @@ import (
 	"github.com/highcard-dev/daemon/internal/core/domain"
 )
 
-func TestStateStorePersistsCommandStatuses(t *testing.T) {
+func TestStateStorePersistsProcedureStatuses(t *testing.T) {
 	store, err := NewStateStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -19,10 +19,12 @@ func TestStateStorePersistsCommandStatuses(t *testing.T) {
 		Root:       "/tmp/root",
 		ScrollName: "test",
 		ScrollYAML: "name: test\n",
-		Commands: map[string]domain.LockStatus{
+		Procedures: domain.ProcedureStatusMap{
 			"start": {
-				Status:           domain.ScrollLockStatusRunning,
-				LastStatusChange: 10,
+				"start.0": {
+					Status:           domain.ScrollLockStatusRunning,
+					LastStatusChange: 10,
+				},
 			},
 		},
 	}
@@ -31,7 +33,7 @@ func TestStateStorePersistsCommandStatuses(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	scroll.Commands["start"] = domain.LockStatus{
+	scroll.Procedures["start"]["start.0"] = domain.LockStatus{
 		Status:           domain.ScrollLockStatusError,
 		ExitCode:         &exitCode,
 		LastStatusChange: 20,
@@ -45,7 +47,7 @@ func TestStateStorePersistsCommandStatuses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	status := got.Commands["start"]
+	status := got.Procedures["start"]["start.0"]
 	if status.Status != domain.ScrollLockStatusError {
 		t.Fatalf("status = %s, want error", status.Status)
 	}

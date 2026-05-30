@@ -79,8 +79,6 @@ func TestRootCommandExposesDaemonTargets(t *testing.T) {
 
 func TestRootCommandExposesLeanProcedureCommands(t *testing.T) {
 	for _, args := range [][]string{
-		{"command", "run"},
-		{"command", "list"},
 		{"procedure", "list"},
 		{"procedure", "attach"},
 	} {
@@ -89,7 +87,7 @@ func TestRootCommandExposesLeanProcedureCommands(t *testing.T) {
 			t.Fatalf("druid should expose %v", args)
 		}
 	}
-	for _, removed := range [][]string{{"run"}, {"attach"}} {
+	for _, removed := range [][]string{{"run"}, {"attach"}, {"command"}} {
 		cmd, _, err := RootCmd.Find(removed)
 		if err == nil && cmd != nil && cmd.Name() == removed[0] {
 			t.Fatalf("druid should not expose removed top-level %s", removed[0])

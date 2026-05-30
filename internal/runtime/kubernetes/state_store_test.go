@@ -19,8 +19,10 @@ func TestConfigMapStateStoreRoundTripsRuntimeScroll(t *testing.T) {
 		ScrollName: "container-lab",
 		ScrollYAML: "name: container-lab\n",
 		Status:     domain.RuntimeScrollStatusCreated,
-		Commands: map[string]domain.LockStatus{
-			"verify": {Status: domain.ScrollLockStatusError, ExitCode: &exitCode, LastStatusChange: 123},
+		Procedures: domain.ProcedureStatusMap{
+			"verify": {
+				"verify.0": {Status: domain.ScrollLockStatusError, ExitCode: &exitCode, LastStatusChange: 123},
+			},
 		},
 	}
 
@@ -35,15 +37,15 @@ func TestConfigMapStateStoreRoundTripsRuntimeScroll(t *testing.T) {
 	if got.Artifact != scroll.Artifact || got.Root != scroll.Root || got.ScrollYAML != scroll.ScrollYAML {
 		t.Fatalf("stored scroll mismatch: %#v", got)
 	}
-	if got.Commands["verify"].Status != domain.ScrollLockStatusError {
-		t.Fatalf("command status = %s, want error", got.Commands["verify"].Status)
+	if got.Procedures["verify"]["verify.0"].Status != domain.ScrollLockStatusError {
+		t.Fatalf("procedure status = %s, want error", got.Procedures["verify"]["verify.0"].Status)
 	}
-	if got.Commands["verify"].ExitCode == nil || *got.Commands["verify"].ExitCode != exitCode {
-		t.Fatalf("exit code = %#v, want %d", got.Commands["verify"].ExitCode, exitCode)
+	if got.Procedures["verify"]["verify.0"].ExitCode == nil || *got.Procedures["verify"]["verify.0"].ExitCode != exitCode {
+		t.Fatalf("exit code = %#v, want %d", got.Procedures["verify"]["verify.0"].ExitCode, exitCode)
 	}
 
 	got.Status = domain.RuntimeScrollStatusRunning
-	got.Commands["verify"] = domain.LockStatus{Status: domain.ScrollLockStatusDone, LastStatusChange: 456}
+	got.Procedures["verify"]["verify.0"] = domain.LockStatus{Status: domain.ScrollLockStatusDone, LastStatusChange: 456}
 	if err := store.UpdateScroll(got); err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +54,7 @@ func TestConfigMapStateStoreRoundTripsRuntimeScroll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 1 || list[0].Status != domain.RuntimeScrollStatusRunning || list[0].Commands["verify"].Status != domain.ScrollLockStatusDone {
+	if len(list) != 1 || list[0].Status != domain.RuntimeScrollStatusRunning || list[0].Procedures["verify"]["verify.0"].Status != domain.ScrollLockStatusDone {
 		t.Fatalf("list = %#v, want updated scroll", list)
 	}
 
@@ -60,8 +62,11 @@ func TestConfigMapStateStoreRoundTripsRuntimeScroll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if configMap.Data[configMapKeyCommandsJSON] == "" {
-		t.Fatal("commands_json was not stored")
+	if configMap.Data[configMapKeyProceduresJSON] == "" {
+		t.Fatal("procedures_json was not stored")
+	}
+	if _, ok := configMap.Data["commands_"+"json"]; ok {
+		t.Fatal("legacy command status JSON was stored")
 	}
 
 	if err := store.DeleteScroll("container-lab"); err != nil {

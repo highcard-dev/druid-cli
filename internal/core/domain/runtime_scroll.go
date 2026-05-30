@@ -34,7 +34,7 @@ type RuntimeScroll struct {
 	UIPackages     RuntimeUIPackages        `json:"ui_packages,omitempty"`
 	CreatedAt      time.Time                `json:"created_at"`
 	UpdatedAt      time.Time                `json:"updated_at"`
-	Commands       map[string]LockStatus    `json:"commands,omitempty"`
+	Procedures     ProcedureStatusMap       `json:"procedures,omitempty"`
 }
 
 type RuntimeState struct {

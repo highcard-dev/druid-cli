@@ -89,7 +89,7 @@ func TestRuntimeSessionHydrateDoesNotDuplicateActiveServe(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	queue := session.queueManager.GetQueue()
+	queue := session.GetQueue()
 	if len(queue) != 1 {
 		t.Fatalf("queue len = %d, want 1: %#v", len(queue), queue)
 	}
@@ -105,7 +105,7 @@ func TestRuntimeSessionHydrateSkipsMissingServe(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if queue := session.queueManager.GetQueue(); len(queue) != 0 {
+	if queue := session.GetQueue(); len(queue) != 0 {
 		t.Fatalf("queue = %#v, want empty", queue)
 	}
 }
@@ -123,14 +123,14 @@ func TestRuntimeSessionHydrateDropsStaleCommandStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := updated.Commands["missing"]; ok {
-		t.Fatalf("stale command was not removed: %#v", updated.Commands)
+	if _, ok := updated.Procedures["missing"]; ok {
+		t.Fatalf("stale command was not removed: %#v", updated.Procedures)
 	}
 }
 
 func TestRuntimeSessionHydrateDoesNotRequeueRunningPersistentServe(t *testing.T) {
 	session := newRuntimeSessionForTest(t, map[string]domain.LockStatus{
-		"start": {Status: domain.ScrollLockStatusDone},
+		"start": {Status: domain.ScrollLockStatusRunning},
 	}, `name: cached
 desc: Cached scroll
 version: 0.1.0
@@ -152,7 +152,7 @@ commands:
 		t.Fatal(err)
 	}
 
-	if queue := session.queueManager.GetQueue(); len(queue) != 0 {
+	if queue := session.GetQueue(); len(queue) != 0 {
 		t.Fatalf("queue = %#v, want empty", queue)
 	}
 }
@@ -176,7 +176,7 @@ func TestRuntimeSessionAutoStartServeRemembersDoneOnceDependencies(t *testing.T)
 		t.Fatal(err)
 	}
 
-	queue := session.queueManager.GetQueue()
+	queue := session.GetQueue()
 	if queue["install"] != domain.ScrollLockStatusDone {
 		t.Fatalf("install = %s, want done; queue=%#v", queue["install"], queue)
 	}
@@ -203,8 +203,8 @@ func TestRuntimeSessionStopPreservesDoneOnceCommands(t *testing.T) {
 	if updated.Status != domain.RuntimeScrollStatusStopped {
 		t.Fatalf("status = %s, want stopped", updated.Status)
 	}
-	if len(updated.Commands) != 1 || updated.Commands["install"].Status != domain.ScrollLockStatusDone {
-		t.Fatalf("commands = %#v, want only install done", updated.Commands)
+	if len(updated.Procedures) != 1 || updated.Procedures["install"]["install.0"].Status != domain.ScrollLockStatusDone {
+		t.Fatalf("procedures = %#v, want only install done", updated.Procedures)
 	}
 }
 
@@ -234,8 +234,8 @@ commands:
       - image: alpine:3.20
         command: ["false"]
 `,
-		Commands: map[string]domain.LockStatus{},
-		Status:   domain.RuntimeScrollStatusRunning,
+		Procedures: domain.ProcedureStatusMap{},
+		Status:     domain.RuntimeScrollStatusRunning,
 	}
 	if err := store.CreateScroll(runtimeScroll); err != nil {
 		t.Fatal(err)
@@ -276,8 +276,8 @@ func TestRuntimeSupervisorStartDoesNotHydrateStoppedScroll(t *testing.T) {
 		ScrollName: "cached",
 		ScrollYAML: installThenStartScrollYAML(),
 		Status:     domain.RuntimeScrollStatusStopped,
-		Commands: map[string]domain.LockStatus{
-			"install": {Status: domain.ScrollLockStatusDone},
+		Procedures: domain.ProcedureStatusMap{
+			"install": {"install.0": {Status: domain.ScrollLockStatusDone}},
 		},
 	}
 	if err := store.CreateScroll(runtimeScroll); err != nil {
@@ -296,8 +296,8 @@ func TestRuntimeSupervisorStartDoesNotHydrateStoppedScroll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.Commands["install"].Status != domain.ScrollLockStatusDone {
-		t.Fatalf("commands = %#v, want install still done", updated.Commands)
+	if updated.Procedures["install"]["install.0"].Status != domain.ScrollLockStatusDone {
+		t.Fatalf("procedures = %#v, want install still done", updated.Procedures)
 	}
 }
 
@@ -310,8 +310,8 @@ func TestRuntimeSupervisorStartHydratesRunningScroll(t *testing.T) {
 		ScrollName: "cached",
 		ScrollYAML: installThenStartScrollYAML(),
 		Status:     domain.RuntimeScrollStatusRunning,
-		Commands: map[string]domain.LockStatus{
-			"install": {Status: domain.ScrollLockStatusDone},
+		Procedures: domain.ProcedureStatusMap{
+			"install": {"install.0": {Status: domain.ScrollLockStatusDone}},
 		},
 	}
 	if err := store.CreateScroll(runtimeScroll); err != nil {
@@ -332,7 +332,7 @@ func TestRuntimeSupervisorStartHydratesRunningScroll(t *testing.T) {
 	if session == nil {
 		t.Fatal("running scroll was not hydrated")
 	}
-	queue := session.queueManager.GetQueue()
+	queue := session.GetQueue()
 	if queue["install"] != domain.ScrollLockStatusDone {
 		t.Fatalf("install = %s, want done; queue=%#v", queue["install"], queue)
 	}
@@ -363,8 +363,8 @@ func TestRuntimeSupervisorEnsureCanCreate(t *testing.T) {
 	if runtimeScroll.Status != domain.RuntimeScrollStatusCreated {
 		t.Fatalf("status = %s, want created", runtimeScroll.Status)
 	}
-	if len(runtimeScroll.Commands) != 0 {
-		t.Fatalf("commands = %#v, want empty", runtimeScroll.Commands)
+	if len(runtimeScroll.Procedures) != 0 {
+		t.Fatalf("procedures = %#v, want empty", runtimeScroll.Procedures)
 	}
 }
 
@@ -390,8 +390,8 @@ func TestRuntimeSupervisorCreateCanCreate(t *testing.T) {
 	if runtimeScroll.Status != domain.RuntimeScrollStatusCreated {
 		t.Fatalf("status = %s, want created", runtimeScroll.Status)
 	}
-	if len(runtimeScroll.Commands) != 0 {
-		t.Fatalf("commands = %#v, want empty", runtimeScroll.Commands)
+	if len(runtimeScroll.Procedures) != 0 {
+		t.Fatalf("procedures = %#v, want empty", runtimeScroll.Procedures)
 	}
 }
 
@@ -558,11 +558,11 @@ func TestRuntimeSupervisorEnsureRetriesIncompleteMaterializationFailure(t *testi
 func TestRuntimeSupervisorEnsureRepairsIncompletePlaceholder(t *testing.T) {
 	store := newTestStateStore(t)
 	if err := store.CreateScroll(&domain.RuntimeScroll{
-		ID:       "repair-scroll",
-		Artifact: "registry.local/lab:1.0",
-		Root:     store.Root("repair-scroll"),
-		Status:   domain.RuntimeScrollStatusCreated,
-		Commands: map[string]domain.LockStatus{},
+		ID:         "repair-scroll",
+		Artifact:   "registry.local/lab:1.0",
+		Root:       store.Root("repair-scroll"),
+		Status:     domain.RuntimeScrollStatusCreated,
+		Procedures: domain.ProcedureStatusMap{},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -597,7 +597,7 @@ func TestRuntimeSupervisorEnsureDoesNotRetryExistingError(t *testing.T) {
 		ScrollYAML: cachedScrollYAML("start"),
 		Status:     domain.RuntimeScrollStatusError,
 		LastError:  "procedure field mode is unsupported",
-		Commands:   map[string]domain.LockStatus{},
+		Procedures: domain.ProcedureStatusMap{},
 	}
 	if err := store.CreateScroll(existing); err != nil {
 		t.Fatal(err)
@@ -630,8 +630,8 @@ func TestRuntimeSupervisorEnsureUpdatesChangedArtifact(t *testing.T) {
 		ScrollName: "old-scroll",
 		ScrollYAML: cachedScrollYAML("start"),
 		Status:     domain.RuntimeScrollStatusRunning,
-		Commands: map[string]domain.LockStatus{
-			"start": {Status: domain.ScrollLockStatusDone},
+		Procedures: domain.ProcedureStatusMap{
+			"start": {"start.0": {Status: domain.ScrollLockStatusDone}},
 		},
 		Routing: []domain.RuntimeRouteAssignment{
 			{Name: "main-route", PortName: "main", Host: "old.example.test"},
@@ -667,8 +667,8 @@ func TestRuntimeSupervisorEnsureUpdatesChangedArtifact(t *testing.T) {
 	if updated.Status != domain.RuntimeScrollStatusStopped {
 		t.Fatalf("status = %s, want stopped", updated.Status)
 	}
-	if len(updated.Commands) != 0 {
-		t.Fatalf("commands = %#v, want cleared", updated.Commands)
+	if len(updated.Procedures) != 0 {
+		t.Fatalf("procedures = %#v, want cleared", updated.Procedures)
 	}
 	if len(updated.Routing) != 1 || updated.Routing[0].PortName != "main" {
 		t.Fatalf("routing = %#v, want matching route preserved", updated.Routing)
@@ -688,7 +688,7 @@ func TestRuntimeSupervisorUpdateUsesPullWorkerWhenAvailable(t *testing.T) {
 		ScrollName: "old-scroll",
 		ScrollYAML: cachedScrollYAML("start"),
 		Status:     domain.RuntimeScrollStatusStopped,
-		Commands:   map[string]domain.LockStatus{},
+		Procedures: domain.ProcedureStatusMap{},
 	}
 	if err := store.CreateScroll(existing); err != nil {
 		t.Fatal(err)
@@ -724,7 +724,7 @@ func TestRuntimeSupervisorUpdateRefreshesCurrentArtifactAndRestartsRunningScroll
 		ScrollName: "old-scroll",
 		ScrollYAML: cachedScrollYAML("start"),
 		Status:     domain.RuntimeScrollStatusRunning,
-		Commands:   map[string]domain.LockStatus{"start": {Status: domain.ScrollLockStatusDone}},
+		Procedures: domain.ProcedureStatusMap{"start": {"start.0": {Status: domain.ScrollLockStatusDone}}},
 	}
 	if err := store.CreateScroll(existing); err != nil {
 		t.Fatal(err)
@@ -766,9 +766,9 @@ func TestRuntimeSupervisorRestoreUsesPullWorkerResult(t *testing.T) {
 		ScrollName: "old-scroll",
 		ScrollYAML: cachedScrollYAML("start"),
 		Status:     domain.RuntimeScrollStatusRunning,
-		Commands: map[string]domain.LockStatus{
-			"start":    {Status: domain.ScrollLockStatusDone},
-			"obsolete": {Status: domain.ScrollLockStatusDone},
+		Procedures: domain.ProcedureStatusMap{
+			"start":    {"start.0": {Status: domain.ScrollLockStatusDone}},
+			"obsolete": {"obsolete.0": {Status: domain.ScrollLockStatusDone}},
 		},
 		Routing: []domain.RuntimeRouteAssignment{
 			{Name: "main-route", PortName: "main", Host: "old.example.test"},
@@ -800,8 +800,8 @@ func TestRuntimeSupervisorRestoreUsesPullWorkerResult(t *testing.T) {
 	if restored.Status != domain.RuntimeScrollStatusStopped {
 		t.Fatalf("status = %s, want stopped", restored.Status)
 	}
-	if _, ok := restored.Commands["obsolete"]; ok {
-		t.Fatalf("commands = %#v, want obsolete command removed", restored.Commands)
+	if _, ok := restored.Procedures["obsolete"]; ok {
+		t.Fatalf("procedures = %#v, want obsolete command removed", restored.Procedures)
 	}
 	if len(restored.Routing) != 1 || restored.Routing[0].PortName != "main" {
 		t.Fatalf("routing = %#v, want matching route preserved", restored.Routing)
@@ -811,11 +811,11 @@ func TestRuntimeSupervisorRestoreUsesPullWorkerResult(t *testing.T) {
 func TestNewRuntimeSessionRequiresPersistedScrollYAML(t *testing.T) {
 	store := newTestStateStore(t)
 	runtimeScroll := &domain.RuntimeScroll{
-		ID:       "missing-yaml",
-		Artifact: "local",
-		Root:     "runtime://missing-yaml",
-		Status:   domain.RuntimeScrollStatusCreated,
-		Commands: map[string]domain.LockStatus{},
+		ID:         "missing-yaml",
+		Artifact:   "local",
+		Root:       "runtime://missing-yaml",
+		Status:     domain.RuntimeScrollStatusCreated,
+		Procedures: domain.ProcedureStatusMap{},
 	}
 	if err := store.CreateScroll(runtimeScroll); err != nil {
 		t.Fatal(err)
@@ -847,87 +847,79 @@ func TestRuntimeSessionApplyRoutingPersistsAssignments(t *testing.T) {
 	}
 }
 
-func TestRuntimeSessionProceduresUsesLauncherStatus(t *testing.T) {
+func TestRuntimeSessionQueueReturnsProcedureStatuses(t *testing.T) {
 	session := newRuntimeSessionForTest(t, map[string]domain.LockStatus{}, cachedScrollYAML(""))
-	session.queueManager.RememberDoneItem("start")
-	session.procedures = fakeProcedureStatuses{statuses: map[string]domain.ScrollLockStatus{
-		"start.0": domain.ScrollLockStatusRunning,
-	}}
+	session.RememberDoneItem("start")
+	session.runtimeScroll.Procedures = domain.ProcedureStatusMap{"start": {"start.0": {Status: domain.ScrollLockStatusRunning}}}
 
-	got := session.Procedures()
-	if got["start.0"] != domain.ScrollLockStatusRunning {
-		t.Fatalf("procedures = %#v", got)
+	got := session.Queue()
+	if got["start"]["start.0"].Status != domain.ScrollLockStatusRunning {
+		t.Fatalf("queue = %#v", got)
 	}
-	if _, ok := got["start"]; ok {
-		t.Fatalf("procedures leaked queue status: %#v", got)
+	if _, ok := got["start"]["start"]; ok {
+		t.Fatalf("queue leaked command status as procedure: %#v", got)
 	}
 }
 
-func TestRuntimeSessionProceduresExpandCommandStatusToProcedureAliases(t *testing.T) {
+func TestRuntimeSessionQueueReturnsExplicitProcedureStatuses(t *testing.T) {
 	session := newRuntimeSessionForTest(t, map[string]domain.LockStatus{}, multiProcedureScrollYAML())
-	session.procedures = fakeProcedureStatuses{statuses: map[string]domain.ScrollLockStatus{
-		"start": domain.ScrollLockStatusRunning,
+	session.runtimeScroll.Procedures = domain.ProcedureStatusMap{"start": {
+		"coldstart": {Status: domain.ScrollLockStatusDone},
+		"start":     {Status: domain.ScrollLockStatusRunning},
 	}}
 
-	got := session.Procedures()
-	if got["start"] != domain.ScrollLockStatusRunning {
-		t.Fatalf("procedures = %#v, want compatibility command key", got)
+	got := session.Queue()
+	if got["start"]["start"].Status != domain.ScrollLockStatusRunning {
+		t.Fatalf("queue = %#v, want start running", got)
 	}
-	if got["coldstart"] != domain.ScrollLockStatusRunning {
-		t.Fatalf("procedures = %#v, want coldstart alias", got)
+	if got["start"]["coldstart"].Status != domain.ScrollLockStatusDone {
+		t.Fatalf("queue = %#v, want coldstart done", got)
 	}
 }
 
-func TestRuntimeSessionProceduresExpandUnnamedProcedureFallback(t *testing.T) {
+func TestRuntimeSessionQueueUsesUnnamedProcedureFallback(t *testing.T) {
 	session := newRuntimeSessionForTest(t, map[string]domain.LockStatus{}, multiProcedureScrollYAML())
-	session.procedures = fakeProcedureStatuses{statuses: map[string]domain.ScrollLockStatus{
-		"install": domain.ScrollLockStatusDone,
-	}}
+	session.runtimeScroll.Procedures = domain.ProcedureStatusMap{"install": {"install.0": {Status: domain.ScrollLockStatusDone}}}
 
-	got := session.Procedures()
-	if got["install"] != domain.ScrollLockStatusDone {
-		t.Fatalf("procedures = %#v, want compatibility command key", got)
-	}
-	if got["install.0"] != domain.ScrollLockStatusDone {
-		t.Fatalf("procedures = %#v, want unnamed procedure fallback alias", got)
+	got := session.Queue()
+	if got["install"]["install.0"].Status != domain.ScrollLockStatusDone {
+		t.Fatalf("queue = %#v, want unnamed procedure fallback", got)
 	}
 }
 
-func TestRuntimeSessionProceduresPreserveExistingProcedureStatus(t *testing.T) {
+func TestRuntimeSessionQueuePreservesExistingProcedureStatus(t *testing.T) {
 	session := newRuntimeSessionForTest(t, map[string]domain.LockStatus{}, multiProcedureScrollYAML())
-	session.procedures = fakeProcedureStatuses{statuses: map[string]domain.ScrollLockStatus{
-		"start":     domain.ScrollLockStatusRunning,
-		"coldstart": domain.ScrollLockStatusDone,
+	session.runtimeScroll.Procedures = domain.ProcedureStatusMap{"start": {
+		"start":     {Status: domain.ScrollLockStatusRunning},
+		"coldstart": {Status: domain.ScrollLockStatusDone},
 	}}
 
-	got := session.Procedures()
-	if got["coldstart"] != domain.ScrollLockStatusDone {
-		t.Fatalf("procedures = %#v, want existing procedure status preserved", got)
+	got := session.Queue()
+	if got["start"]["coldstart"].Status != domain.ScrollLockStatusDone {
+		t.Fatalf("queue = %#v, want existing procedure status preserved", got)
 	}
 }
 
-func TestRuntimeSessionProceduresDoNotChangeQueue(t *testing.T) {
+func TestRuntimeSessionQueueDoesNotChangeInternalCommandQueue(t *testing.T) {
 	session := newRuntimeSessionForTest(t, map[string]domain.LockStatus{}, multiProcedureScrollYAML())
-	session.queueManager.RememberDoneItem("install")
-	session.procedures = fakeProcedureStatuses{statuses: map[string]domain.ScrollLockStatus{
-		"install": domain.ScrollLockStatusDone,
-	}}
+	session.RememberDoneItem("install")
+	session.runtimeScroll.Procedures = domain.ProcedureStatusMap{"install": {"install.0": {Status: domain.ScrollLockStatusDone}}}
 
-	_ = session.Procedures()
-	queue := session.queueManager.GetQueue()
+	_ = session.Queue()
+	queue := session.GetQueue()
 	if _, ok := queue["install.0"]; ok {
-		t.Fatalf("queue changed by procedure aliases: %#v", queue)
+		t.Fatalf("internal queue changed by procedure state: %#v", queue)
 	}
 	if queue["install"] != domain.ScrollLockStatusDone {
 		t.Fatalf("queue = %#v, want original command key only", queue)
 	}
 }
 
-func TestDeriveRuntimeScrollStatusTreatsDonePersistentAsRunning(t *testing.T) {
-	status := deriveRuntimeScrollStatus(map[string]domain.LockStatus{
-		"start": {Status: domain.ScrollLockStatusDone},
+func TestDeriveRuntimeScrollStatusTreatsRunningPersistentAsRunning(t *testing.T) {
+	status := deriveRuntimeScrollStatus(domain.ProcedureStatusMap{
+		"start": {"start.0": {Status: domain.ScrollLockStatusRunning}},
 	}, map[string]*domain.CommandInstructionSet{
-		"start": {Run: domain.RunModePersistent},
+		"start": {Run: domain.RunModePersistent, Procedures: []*domain.Procedure{{}}},
 	})
 
 	if status != domain.RuntimeScrollStatusRunning {
@@ -936,10 +928,10 @@ func TestDeriveRuntimeScrollStatusTreatsDonePersistentAsRunning(t *testing.T) {
 }
 
 func TestDeriveRuntimeScrollStatusTreatsDoneFiniteAsStopped(t *testing.T) {
-	status := deriveRuntimeScrollStatus(map[string]domain.LockStatus{
-		"report": {Status: domain.ScrollLockStatusDone},
+	status := deriveRuntimeScrollStatus(domain.ProcedureStatusMap{
+		"report": {"report.0": {Status: domain.ScrollLockStatusDone}},
 	}, map[string]*domain.CommandInstructionSet{
-		"report": {Run: domain.RunModeAlways},
+		"report": {Run: domain.RunModeAlways, Procedures: []*domain.Procedure{{}}},
 	})
 
 	if status != domain.RuntimeScrollStatusStopped {
@@ -976,13 +968,29 @@ func newRuntimeSessionForTest(t *testing.T, commands map[string]domain.LockStatu
 	t.Helper()
 	root := t.TempDir()
 	store := newTestStateStore(t)
+	procedures := domain.ProcedureStatusMap{}
+	scroll, err := domain.NewScrollFromBytes(root, []byte(scrollYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for commandName, status := range commands {
+		command := scroll.Commands[commandName]
+		procedures[commandName] = map[string]domain.LockStatus{}
+		if command == nil || len(command.Procedures) == 0 {
+			procedures[commandName][commandName+".0"] = status
+			continue
+		}
+		for idx, procedure := range command.Procedures {
+			procedures[commandName][domain.ProcedureName(commandName, idx, procedure)] = status
+		}
+	}
 	runtimeScroll := &domain.RuntimeScroll{
 		ID:         "cached",
 		Artifact:   "local",
 		Root:       root,
 		ScrollName: "cached",
 		ScrollYAML: scrollYAML,
-		Commands:   commands,
+		Procedures: procedures,
 	}
 	if err := store.CreateScroll(runtimeScroll); err != nil {
 		t.Fatal(err)
@@ -1193,7 +1201,7 @@ commands:
 
 func assertQueued(t *testing.T, session *RuntimeSession, command string) {
 	t.Helper()
-	queue := session.queueManager.GetQueue()
+	queue := session.GetQueue()
 	if queue[command] != domain.ScrollLockStatusWaiting {
 		t.Fatalf("%s = %s, want waiting; queue=%#v", command, queue[command], queue)
 	}
@@ -1206,16 +1214,4 @@ func newTestStateStore(t *testing.T) ports.RuntimeScrollStore {
 		t.Fatal(err)
 	}
 	return store
-}
-
-type fakeProcedureStatuses struct {
-	statuses map[string]domain.ScrollLockStatus
-}
-
-func (f fakeProcedureStatuses) Run(string) error {
-	return nil
-}
-
-func (f fakeProcedureStatuses) GetProcedureStatuses() map[string]domain.ScrollLockStatus {
-	return f.statuses
 }

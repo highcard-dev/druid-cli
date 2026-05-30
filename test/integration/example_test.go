@@ -10,7 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/highcard-dev/daemon/internal/core/services"
+	appservices "github.com/highcard-dev/daemon/apps/druid/core/services"
+	"github.com/highcard-dev/daemon/internal/core/domain"
+	coreservices "github.com/highcard-dev/daemon/internal/core/services"
+	"github.com/highcard-dev/daemon/internal/runtime/docker"
 	mock_ports "github.com/highcard-dev/daemon/test/mock"
 	test_utils "github.com/highcard-dev/daemon/test/utils"
 	"github.com/otiai10/copy"
@@ -27,7 +30,9 @@ type ServiceConfig struct {
 	LogSpy        func(string, []byte) bool
 }
 
-func checkQueue(queueManager *services.QueueManager, config ServiceConfig) error {
+func checkQueue(queueManager interface {
+	GetQueue() map[string]domain.ScrollLockStatus
+}, config ServiceConfig) error {
 	queue := queueManager.GetQueue()
 	for _, status := range config.CommandStatus {
 		if _, ok := queue[status]; !ok {
@@ -98,8 +103,7 @@ func TestExamples(t *testing.T) {
 				return
 			}
 
-			scrollService, err := services.NewScrollService(path)
-			if err != nil {
+			if _, err := coreservices.NewScrollService(path); err != nil {
 				t.Error(err)
 				return
 			}
@@ -107,16 +111,37 @@ func TestExamples(t *testing.T) {
 			exitCode := 0
 			runtimeBackend.EXPECT().Name().Return("docker").AnyTimes()
 			runtimeBackend.EXPECT().RunCommand(gomock.Any()).Return(&exitCode, nil).AnyTimes()
-			procedureLauncher, err := services.NewProcedureLauncher(scrollService, runtimeBackend, "/tmp")
+			scrollYAML, err := os.ReadFile(path + "scroll.yaml")
 			if err != nil {
 				t.Error(err)
 				return
 			}
-			queueManager := services.NewQueueManager(scrollService, procedureLauncher)
+			store, err := docker.NewStateStore(t.TempDir())
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			runtimeScroll := &domain.RuntimeScroll{
+				ID:         config.ServiceName,
+				Root:       path,
+				ScrollName: config.ServiceName,
+				ScrollYAML: string(scrollYAML),
+				Status:     domain.RuntimeScrollStatusCreated,
+				Procedures: domain.ProcedureStatusMap{},
+			}
+			if err := store.CreateScroll(runtimeScroll); err != nil {
+				t.Error(err)
+				return
+			}
+			session, err := appservices.NewRuntimeSession(store, runtimeScroll, runtimeBackend)
+			if err != nil {
+				t.Error(err)
+				return
+			}
 
-			go queueManager.Work()
+			session.Start()
 
-			err = queueManager.AddTempItem("start")
+			err = session.AddTempItem("start")
 
 			if err != nil {
 				t.Error(err)
@@ -139,18 +164,18 @@ func TestExamples(t *testing.T) {
 				t.Error("Failed to test to server: ", err)
 			}
 
-			err = checkQueue(queueManager, config)
+			err = checkQueue(session, config)
 			if err != nil {
 				t.Error(err)
 				return
 			}
 
-			err = queueManager.AddTempItemWithWait("stop")
+			err = session.AddTempItemWithWait("stop")
 			if err != nil {
 				t.Error(err)
 				return
 			}
-			queueManager.Shutdown()
+			session.Shutdown()
 
 			if config.TestAddress != "" {
 				err = test_utils.ConnectionTest(config.TestAddress, false)
@@ -160,7 +185,7 @@ func TestExamples(t *testing.T) {
 				}
 			}
 
-			err = checkQueue(queueManager, config)
+			err = checkQueue(session, config)
 			if err != nil {
 				t.Error(err)
 				return

@@ -214,17 +214,6 @@ func (h *ScrollHandler) GetScrollQueue(c *fiber.Ctx, id string) error {
 	return c.JSON(queue)
 }
 
-func (h *ScrollHandler) GetScrollProcedures(c *fiber.Ctx, id string) error {
-	if _, err := h.getScroll(id); err != nil {
-		return err
-	}
-	procedures, err := h.supervisor.Procedures(id)
-	if err != nil {
-		return err
-	}
-	return c.JSON(procedures)
-}
-
 func (h *ScrollHandler) GetScrollConsoles(c *fiber.Ctx, id string) error {
 	if _, err := h.getScroll(id); err != nil {
 		return err
@@ -269,10 +258,6 @@ func (h *ScrollHandler) RunDaemonCommand(c *fiber.Ctx) error {
 
 func (h *ScrollHandler) GetDaemonQueue(c *fiber.Ctx) error {
 	return h.GetScrollQueue(c, c.Params("id"))
-}
-
-func (h *ScrollHandler) GetDaemonProcedures(c *fiber.Ctx) error {
-	return h.GetScrollProcedures(c, c.Params("id"))
 }
 
 func (h *ScrollHandler) GetDaemonConsoles(c *fiber.Ctx) error {

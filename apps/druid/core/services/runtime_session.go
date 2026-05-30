@@ -21,6 +21,14 @@ type RuntimeSession struct {
 	watchService      ports.WatchServiceInterface
 	runtimeBackend    ports.RuntimeBackendInterface
 	procedures        ports.ProcedureLauchnerInterface
+	queue             map[string]*runtimeQueueItem
+	taskChan          chan string
+	taskDoneChan      chan struct{}
+	shutdownChan      chan struct{}
+	shutdownDoneChan  chan struct{}
+	shutdownOnce      sync.Once
+	workWg            sync.WaitGroup
+	notifierChan      []chan []string
 	devWatchPaths     []string
 	devCommands       []string
 	devDaemonURL      string
@@ -31,6 +39,8 @@ type RuntimeSession struct {
 	devWatchCancel    context.CancelFunc
 
 	mu      sync.Mutex
+	queueMu sync.Mutex
+	runMu   sync.Mutex
 	started bool
 }
 
@@ -56,35 +66,37 @@ func NewRuntimeSession(
 		scrollService:  scrollService,
 		runtimeBackend: runtimeService,
 	}
+	session.resetQueueState()
 	queueManager, processLauncher, err := session.newQueue(scrollService, runtimeScroll.Root, runtimeScroll.ScrollName)
 	if err != nil {
 		return nil, err
 	}
 	session.queueManager = queueManager
 	session.procedures = processLauncher
-	queueManager.SetStatusObserver(session.persistCommandStatus)
 	return session, nil
 }
 
 func (s *RuntimeSession) Start() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.started {
+		s.mu.Unlock()
 		return
 	}
 	s.started = true
-	go s.queueManager.Work()
+	s.mu.Unlock()
+	s.startQueue()
 }
 
 func (s *RuntimeSession) Shutdown() {
-	s.queueManager.Shutdown()
+	s.shutdownQueueLoop()
+	s.mu.Lock()
+	s.started = false
+	s.mu.Unlock()
 }
 
 func (s *RuntimeSession) startQueue() {
-	s.mu.Lock()
-	queueManager := s.queueManager
-	s.mu.Unlock()
-	go queueManager.Work()
+	s.resetQueueState()
+	go s.Work()
 }
 
 func (s *RuntimeSession) newQueue(scrollService *coreservices.ScrollService, root string, scrollName string) (*coreservices.QueueManager, *coreservices.ProcedureLauncher, error) {
@@ -98,22 +110,21 @@ func (s *RuntimeSession) newQueue(scrollService *coreservices.ScrollService, roo
 	if err != nil {
 		return nil, nil, err
 	}
+	processLauncher.SetProcedureStatusObserver(s.persistProcedureStatus)
 	queueManager := coreservices.NewQueueManager(scrollService, processLauncher)
-	queueManager.SetStatusObserver(s.persistCommandStatus)
 	return queueManager, processLauncher, nil
 }
 
-func (s *RuntimeSession) replaceQueue(start bool) (*coreservices.QueueManager, error) {
+func (s *RuntimeSession) replaceQueue(start bool) error {
 	s.mu.Lock()
 	scrollService := s.scrollService
 	root := s.runtimeScroll.Root
 	scrollName := s.runtimeScroll.ScrollName
-	oldQueue := s.queueManager
 	s.mu.Unlock()
 
 	queueManager, processLauncher, err := s.newQueue(scrollService, root, scrollName)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	s.mu.Lock()
@@ -122,7 +133,9 @@ func (s *RuntimeSession) replaceQueue(start bool) (*coreservices.QueueManager, e
 	s.mu.Unlock()
 
 	if start {
-		go queueManager.Work()
+		s.startQueue()
+	} else {
+		s.resetQueueState()
 	}
-	return oldQueue, nil
+	return nil
 }

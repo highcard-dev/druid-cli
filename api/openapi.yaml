@@ -251,9 +251,28 @@ components:
       additionalProperties:
         $ref: '#/components/schemas/RuntimeUIPackage'
 
-    CommandStatusMap:
+    LockStatus:
       type: object
-      additionalProperties: true
+      required:
+        - status
+        - last_status_change
+      properties:
+        status:
+          type: string
+          enum: [running, done, error, waiting]
+        exit_code:
+          type: integer
+          nullable: true
+        last_status_change:
+          type: integer
+          format: int64
+
+    ProcedureStatusMap:
+      type: object
+      additionalProperties:
+        type: object
+        additionalProperties:
+          $ref: '#/components/schemas/LockStatus'
 
     ScrollLogMap:
       type: object
@@ -299,9 +318,8 @@ components:
         updated_at:
           type: string
           format: date-time
-        commands:
-          type: object
-          additionalProperties: true
+        procedures:
+          $ref: '#/components/schemas/ProcedureStatusMap'
 
     DeletedScroll:
       type: object
@@ -583,26 +601,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CommandStatusMap'
-
-  /api/v1/scrolls/{id}/procedures:
-    get:
-      operationId: getScrollProcedures
-      summary: Get procedure state
-      tags: [runtime, daemon]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Procedure state
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CommandStatusMap'
+                $ref: '#/components/schemas/ProcedureStatusMap'
 
   /api/v1/scrolls/{id}/consoles:
     get:

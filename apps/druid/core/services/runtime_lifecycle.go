@@ -37,7 +37,7 @@ func (s *RuntimeSupervisor) StartScroll(id string) (*domain.RuntimeScroll, error
 		return nil, err
 	}
 	session.mu.Lock()
-	session.runtimeScroll.Status = deriveRuntimeScrollStatus(session.runtimeScroll.Commands, session.scrollService.GetFile().Commands)
+	session.runtimeScroll.Status = deriveRuntimeScrollStatus(session.runtimeScroll.Procedures, session.scrollService.GetFile().Commands)
 	if session.runtimeScroll.Status == domain.RuntimeScrollStatusCreated {
 		session.runtimeScroll.Status = domain.RuntimeScrollStatusRunning
 	}

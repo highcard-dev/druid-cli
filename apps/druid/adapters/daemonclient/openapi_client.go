@@ -164,27 +164,7 @@ func (c *OpenAPIClient) GetScrollConfig(ctx context.Context, id string) (*domain
 	return &file, json.Unmarshal(data, &file)
 }
 
-func (c *OpenAPIClient) GetScrollProcedures(ctx context.Context, id string) (map[string]domain.ScrollLockStatus, error) {
-	res, err := c.client.GetScrollProceduresWithResponse(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if err := ensureStatus(res.StatusCode(), res.Body); err != nil {
-		return nil, err
-	}
-	out := map[string]domain.ScrollLockStatus{}
-	if res.JSON200 == nil {
-		return out, nil
-	}
-	for name, value := range *res.JSON200 {
-		if status, ok := value.(string); ok {
-			out[name] = domain.ScrollLockStatus(status)
-		}
-	}
-	return out, nil
-}
-
-func (c *OpenAPIClient) GetScrollQueue(ctx context.Context, id string) (map[string]domain.ScrollLockStatus, error) {
+func (c *OpenAPIClient) GetScrollQueue(ctx context.Context, id string) (domain.ProcedureStatusMap, error) {
 	res, err := c.client.GetScrollQueueWithResponse(ctx, id)
 	if err != nil {
 		return nil, err
@@ -192,16 +172,15 @@ func (c *OpenAPIClient) GetScrollQueue(ctx context.Context, id string) (map[stri
 	if err := ensureStatus(res.StatusCode(), res.Body); err != nil {
 		return nil, err
 	}
-	out := map[string]domain.ScrollLockStatus{}
+	out := domain.ProcedureStatusMap{}
 	if res.JSON200 == nil {
 		return out, nil
 	}
-	for name, value := range *res.JSON200 {
-		if status, ok := value.(string); ok {
-			out[name] = domain.ScrollLockStatus(status)
-		}
+	data, err := json.Marshal(res.JSON200)
+	if err != nil {
+		return nil, err
 	}
-	return out, nil
+	return out, json.Unmarshal(data, &out)
 }
 
 func (c *OpenAPIClient) GetScrollConsoles(ctx context.Context, id string) (map[string]domain.Console, error) {
