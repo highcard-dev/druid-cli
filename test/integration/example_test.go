@@ -175,7 +175,6 @@ func TestExamples(t *testing.T) {
 				t.Error(err)
 				return
 			}
-			session.Shutdown()
 
 			if config.TestAddress != "" {
 				err = test_utils.ConnectionTest(config.TestAddress, false)

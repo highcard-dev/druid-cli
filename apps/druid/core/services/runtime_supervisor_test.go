@@ -324,7 +324,7 @@ func TestRuntimeSupervisorStartHydratesRunningScroll(t *testing.T) {
 	}
 	defer func() {
 		if session := supervisor.sessions["running-scroll"]; session != nil {
-			session.Shutdown()
+			session.stopDeploymentQueue()
 		}
 	}()
 

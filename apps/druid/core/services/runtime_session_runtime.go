@@ -48,14 +48,20 @@ func (s *RuntimeSession) StopRuntime() error {
 	started := s.started
 	s.mu.Unlock()
 	if started {
-		s.shutdownQueueLoop()
+		s.mu.Lock()
+		s.started = false
+		s.mu.Unlock()
+		s.drainQueueWork()
 	}
 	if err := s.replaceQueue(false); err != nil {
 		return err
 	}
 	if err := s.runtimeBackend.StopRuntime(root); err != nil {
 		if started {
-			s.startQueue()
+			s.mu.Lock()
+			s.started = true
+			s.mu.Unlock()
+			s.triggerRunQueue()
 		}
 		return err
 	}
@@ -74,7 +80,10 @@ func (s *RuntimeSession) StopRuntime() error {
 	err := s.store.UpdateScroll(s.runtimeScroll)
 	s.mu.Unlock()
 	if err == nil && started {
-		s.startQueue()
+		s.mu.Lock()
+		s.started = true
+		s.mu.Unlock()
+		s.triggerRunQueue()
 	}
 	return err
 }
@@ -117,7 +126,10 @@ func (s *RuntimeSession) ApplyRestore(materialized *ports.RuntimeMaterialization
 	started := s.started
 	s.mu.Unlock()
 	if started {
-		s.shutdownQueueLoop()
+		s.mu.Lock()
+		s.started = false
+		s.mu.Unlock()
+		s.drainQueueWork()
 	}
 
 	s.mu.Lock()
@@ -142,7 +154,11 @@ func (s *RuntimeSession) ApplyRestore(materialized *ports.RuntimeMaterialization
 	err = s.store.UpdateScroll(s.runtimeScroll)
 	s.mu.Unlock()
 	if err == nil && started {
-		s.startQueue()
+		s.resetQueueState()
+		s.mu.Lock()
+		s.started = true
+		s.mu.Unlock()
+		s.triggerRunQueue()
 	}
 	return err
 }

@@ -32,7 +32,7 @@ func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeSc
 	delete(s.sessions, runtimeScroll.ID)
 	s.mu.Unlock()
 	if session != nil {
-		session.Shutdown()
+		session.stopDeploymentQueue()
 	}
 
 	if wasRunning {

@@ -3,8 +3,6 @@ package services
 import (
 	"context"
 	"errors"
-	"fmt"
-	"sync"
 	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -76,10 +74,9 @@ func (s *RuntimeSession) addQueueItem(cmd string, options coreservices.AddItemOp
 	item = &runtimeQueueItem{doneChan: doneChan}
 	s.queue[cmd] = item
 	s.setQueueStatusLocked(cmd, item, domain.ScrollLockStatusWaiting, nil)
-	taskChan := s.taskChan
 	s.queueMu.Unlock()
 
-	taskChan <- cmd
+	s.triggerRunQueue()
 
 	if options.Wait {
 		<-doneChan
@@ -127,29 +124,14 @@ func (s *RuntimeSession) HydrateFromState(statuses domain.ProcedureStatusMap) er
 	return nil
 }
 
-func (s *RuntimeSession) Work() {
-	s.queueMu.Lock()
-	taskChan := s.taskChan
-	taskDoneChan := s.taskDoneChan
-	shutdownChan := s.shutdownChan
-	shutdownDoneChan := s.shutdownDoneChan
-	s.queueMu.Unlock()
-	defer close(shutdownDoneChan)
-
-	for {
-		select {
-		case <-taskChan:
-			s.startRunQueue()
-		case <-taskDoneChan:
-			s.startRunQueue()
-		case <-shutdownChan:
-			s.workWg.Wait()
-			s.queueMu.Lock()
-			s.queue = make(map[string]*runtimeQueueItem)
-			s.queueMu.Unlock()
-			return
-		}
+func (s *RuntimeSession) triggerRunQueue() {
+	s.mu.Lock()
+	started := s.started
+	s.mu.Unlock()
+	if !started {
+		return
 	}
+	s.startRunQueue()
 }
 
 func (s *RuntimeSession) startRunQueue() {
@@ -241,15 +223,7 @@ func (s *RuntimeSession) RunQueue() {
 				if i.doneChan != nil {
 					close(i.doneChan)
 				}
-
-				s.queueMu.Lock()
-				taskDoneChan := s.taskDoneChan
-				shutdownChan := s.shutdownChan
-				s.queueMu.Unlock()
-				select {
-				case taskDoneChan <- struct{}{}:
-				case <-shutdownChan:
-				}
+				s.triggerRunQueue()
 			}()
 
 			startedAt := time.Now()
@@ -301,7 +275,6 @@ func (s *RuntimeSession) WaitUntilEmptyContext(ctx context.Context) error {
 
 	s.queueMu.Lock()
 	s.notifierChan = append(s.notifierChan, notifier)
-	shutdownChan := s.shutdownChan
 	if !s.hasActiveItemsLocked() {
 		s.removeNotifierLocked(notifier)
 		s.queueMu.Unlock()
@@ -322,8 +295,6 @@ func (s *RuntimeSession) WaitUntilEmptyContext(ctx context.Context) error {
 			}
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-shutdownChan:
-			return fmt.Errorf("queue manager shut down while waiting for commands")
 		}
 	}
 }
@@ -340,21 +311,25 @@ func (s *RuntimeSession) GetQueue() map[string]domain.ScrollLockStatus {
 	return queue
 }
 
-func (s *RuntimeSession) shutdownQueueLoop() {
-	s.queueMu.Lock()
-	shutdownChan := s.shutdownChan
-	shutdownDoneChan := s.shutdownDoneChan
-	s.queueMu.Unlock()
+func (s *RuntimeSession) stopDeploymentQueue() {
+	s.mu.Lock()
+	s.started = false
+	s.mu.Unlock()
+	s.drainQueueWork()
+	s.resetQueueState()
+}
 
-	s.shutdownOnce.Do(func() {
-		close(shutdownChan)
-		s.notify()
-	})
+func (s *RuntimeSession) drainQueueWork() {
+	done := make(chan struct{})
+	go func() {
+		s.workWg.Wait()
+		close(done)
+	}()
 
 	select {
-	case <-shutdownDoneChan:
+	case <-done:
 	case <-time.After(5 * time.Second):
-		logger.Log().Warn("Timed out waiting for queue manager shutdown")
+		logger.Log().Warn("Timed out waiting for queue work to finish")
 	}
 }
 
@@ -362,12 +337,6 @@ func (s *RuntimeSession) resetQueueState() {
 	s.queueMu.Lock()
 	defer s.queueMu.Unlock()
 	s.queue = make(map[string]*runtimeQueueItem)
-	s.taskChan = make(chan string, 100)
-	s.taskDoneChan = make(chan struct{}, 1)
-	s.shutdownChan = make(chan struct{})
-	s.shutdownDoneChan = make(chan struct{})
-	s.shutdownOnce = sync.Once{}
-	s.workWg = sync.WaitGroup{}
 	s.notifierChan = make([]chan []string, 0)
 }
 

@@ -12,7 +12,7 @@ func (s *RuntimeSupervisor) DeleteWithPolicy(id string, purgeData bool) error {
 	delete(s.sessions, id)
 	s.mu.Unlock()
 	if session != nil {
-		session.Shutdown()
+		session.stopDeploymentQueue()
 	}
 
 	runtimeScroll, err := s.store.GetScroll(id)
@@ -60,6 +60,6 @@ func (s *RuntimeSupervisor) Stop(id string) (*domain.RuntimeScroll, error) {
 		session.markError(err)
 		return nil, err
 	}
-	session.Shutdown()
+	session.stopDeploymentQueue()
 	return s.store.GetScroll(id)
 }

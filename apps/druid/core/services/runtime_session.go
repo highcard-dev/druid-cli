@@ -22,11 +22,6 @@ type RuntimeSession struct {
 	runtimeBackend    ports.RuntimeBackendInterface
 	procedures        ports.ProcedureLauchnerInterface
 	queue             map[string]*runtimeQueueItem
-	taskChan          chan string
-	taskDoneChan      chan struct{}
-	shutdownChan      chan struct{}
-	shutdownDoneChan  chan struct{}
-	shutdownOnce      sync.Once
 	workWg            sync.WaitGroup
 	notifierChan      []chan []string
 	devWatchPaths     []string
@@ -84,19 +79,7 @@ func (s *RuntimeSession) Start() {
 	}
 	s.started = true
 	s.mu.Unlock()
-	s.startQueue()
-}
-
-func (s *RuntimeSession) Shutdown() {
-	s.shutdownQueueLoop()
-	s.mu.Lock()
-	s.started = false
-	s.mu.Unlock()
-}
-
-func (s *RuntimeSession) startQueue() {
-	s.resetQueueState()
-	go s.Work()
+	s.triggerRunQueue()
 }
 
 func (s *RuntimeSession) newQueue(scrollService *coreservices.ScrollService, root string, scrollName string) (*coreservices.QueueManager, *coreservices.ProcedureLauncher, error) {
@@ -133,7 +116,11 @@ func (s *RuntimeSession) replaceQueue(start bool) error {
 	s.mu.Unlock()
 
 	if start {
-		s.startQueue()
+		s.resetQueueState()
+		s.mu.Lock()
+		s.started = true
+		s.mu.Unlock()
+		s.triggerRunQueue()
 	} else {
 		s.resetQueueState()
 	}
