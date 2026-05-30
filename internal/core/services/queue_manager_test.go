@@ -6,24 +6,7 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/services"
-	mock_ports "github.com/highcard-dev/daemon/test/mock"
-	"go.uber.org/mock/gomock"
 )
-
-func TestQueueManagerRunCommandDelegatesToLauncher(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	scrollService := mock_ports.NewMockScrollServiceInterface(ctrl)
-	procedureLauncher := mock_ports.NewMockProcedureLauchnerInterface(ctrl)
-	queueManager := services.NewQueueManager(scrollService, procedureLauncher)
-
-	procedureLauncher.EXPECT().Run("start").Return(nil)
-
-	if err := queueManager.RunCommand("start"); err != nil {
-		t.Fatal(err)
-	}
-}
 
 func TestDeriveCommandStatusFromProcedures(t *testing.T) {
 	command := &domain.CommandInstructionSet{Procedures: []*domain.Procedure{{}, {}}}

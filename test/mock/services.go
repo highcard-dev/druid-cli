@@ -185,44 +185,6 @@ func (mr *MockScrollServiceInterfaceMockRecorder) GetFile() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFile", reflect.TypeOf((*MockScrollServiceInterface)(nil).GetFile))
 }
 
-// MockProcedureLauchnerInterface is a mock of ProcedureLauchnerInterface interface.
-type MockProcedureLauchnerInterface struct {
-	ctrl     *gomock.Controller
-	recorder *MockProcedureLauchnerInterfaceMockRecorder
-	isgomock struct{}
-}
-
-// MockProcedureLauchnerInterfaceMockRecorder is the mock recorder for MockProcedureLauchnerInterface.
-type MockProcedureLauchnerInterfaceMockRecorder struct {
-	mock *MockProcedureLauchnerInterface
-}
-
-// NewMockProcedureLauchnerInterface creates a new mock instance.
-func NewMockProcedureLauchnerInterface(ctrl *gomock.Controller) *MockProcedureLauchnerInterface {
-	mock := &MockProcedureLauchnerInterface{ctrl: ctrl}
-	mock.recorder = &MockProcedureLauchnerInterfaceMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockProcedureLauchnerInterface) EXPECT() *MockProcedureLauchnerInterfaceMockRecorder {
-	return m.recorder
-}
-
-// Run mocks base method.
-func (m *MockProcedureLauchnerInterface) Run(cmd string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Run", cmd)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// Run indicates an expected call of Run.
-func (mr *MockProcedureLauchnerInterfaceMockRecorder) Run(cmd any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Run", reflect.TypeOf((*MockProcedureLauchnerInterface)(nil).Run), cmd)
-}
-
 // MockLogManagerInterface is a mock of LogManagerInterface interface.
 type MockLogManagerInterface struct {
 	ctrl     *gomock.Controller

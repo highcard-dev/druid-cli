@@ -30,10 +30,6 @@ type ScrollServiceInterface interface {
 	GetCommand(cmd string) (*domain.CommandInstructionSet, error)
 }
 
-type ProcedureLauchnerInterface interface {
-	Run(cmd string) error
-}
-
 type LogManagerInterface interface {
 	GetStreams() map[string]*domain.Log
 	AddLine(stream string, sc []byte)

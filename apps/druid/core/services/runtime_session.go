@@ -17,10 +17,8 @@ type RuntimeSession struct {
 	store             ports.RuntimeScrollStore
 	runtimeScroll     *domain.RuntimeScroll
 	scrollService     *coreservices.ScrollService
-	queueManager      *coreservices.QueueManager
 	watchService      ports.WatchServiceInterface
 	runtimeBackend    ports.RuntimeBackendInterface
-	procedures        ports.ProcedureLauchnerInterface
 	queue             map[string]*runtimeQueueItem
 	workWg            sync.WaitGroup
 	notifierChan      []chan []string
@@ -51,6 +49,9 @@ func NewRuntimeSession(
 	if len(scrollYAML) == 0 {
 		return nil, fmt.Errorf("runtime scroll %s has no scroll_yaml", runtimeScroll.ID)
 	}
+	if runtimeService == nil {
+		return nil, fmt.Errorf("runtime backend is required")
+	}
 	scrollService, err := coreservices.NewCachedScrollService(runtimeScroll.Root, scrollYAML)
 	if err != nil {
 		return nil, err
@@ -62,12 +63,6 @@ func NewRuntimeSession(
 		runtimeBackend: runtimeService,
 	}
 	session.resetQueueState()
-	queueManager, processLauncher, err := session.newQueue(scrollService, runtimeScroll.Root, runtimeScroll.ScrollName)
-	if err != nil {
-		return nil, err
-	}
-	session.queueManager = queueManager
-	session.procedures = processLauncher
 	return session, nil
 }
 
@@ -80,49 +75,4 @@ func (s *RuntimeSession) Start() {
 	s.started = true
 	s.mu.Unlock()
 	s.triggerRunQueue()
-}
-
-func (s *RuntimeSession) newQueue(scrollService *coreservices.ScrollService, root string, scrollName string) (*coreservices.QueueManager, *coreservices.ProcedureLauncher, error) {
-	processLauncher, err := coreservices.NewProcedureLauncherForRuntime(scrollService, s.runtimeBackend, root, s.runtimeScroll.ID, scrollName, func() []domain.RuntimeRouteAssignment {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		routing := make([]domain.RuntimeRouteAssignment, len(s.runtimeScroll.Routing))
-		copy(routing, s.runtimeScroll.Routing)
-		return routing
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	processLauncher.SetProcedureStatusObserver(s.persistProcedureStatus)
-	queueManager := coreservices.NewQueueManager(scrollService, processLauncher)
-	return queueManager, processLauncher, nil
-}
-
-func (s *RuntimeSession) replaceQueue(start bool) error {
-	s.mu.Lock()
-	scrollService := s.scrollService
-	root := s.runtimeScroll.Root
-	scrollName := s.runtimeScroll.ScrollName
-	s.mu.Unlock()
-
-	queueManager, processLauncher, err := s.newQueue(scrollService, root, scrollName)
-	if err != nil {
-		return err
-	}
-
-	s.mu.Lock()
-	s.queueManager = queueManager
-	s.procedures = processLauncher
-	s.mu.Unlock()
-
-	if start {
-		s.resetQueueState()
-		s.mu.Lock()
-		s.started = true
-		s.mu.Unlock()
-		s.triggerRunQueue()
-	} else {
-		s.resetQueueState()
-	}
-	return nil
 }

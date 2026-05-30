@@ -53,9 +53,7 @@ func (s *RuntimeSession) StopRuntime() error {
 		s.mu.Unlock()
 		s.drainQueueWork()
 	}
-	if err := s.replaceQueue(false); err != nil {
-		return err
-	}
+	s.resetQueueState()
 	if err := s.runtimeBackend.StopRuntime(root); err != nil {
 		if started {
 			s.mu.Lock()
@@ -118,10 +116,6 @@ func (s *RuntimeSession) ApplyRestore(materialized *ports.RuntimeMaterialization
 	if err != nil {
 		return err
 	}
-	queueManager, processLauncher, err := s.newQueue(scrollService, root, scrollService.GetCurrent().Name)
-	if err != nil {
-		return err
-	}
 	s.mu.Lock()
 	started := s.started
 	s.mu.Unlock()
@@ -149,8 +143,6 @@ func (s *RuntimeSession) ApplyRestore(materialized *ports.RuntimeMaterialization
 	s.runtimeScroll.Status = domain.RuntimeScrollStatusStopped
 	s.runtimeScroll.LastError = ""
 	s.scrollService = scrollService
-	s.queueManager = queueManager
-	s.procedures = processLauncher
 	err = s.store.UpdateScroll(s.runtimeScroll)
 	s.mu.Unlock()
 	if err == nil && started {

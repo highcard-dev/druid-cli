@@ -5,9 +5,6 @@ import (
 	"fmt"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
-	"github.com/highcard-dev/daemon/internal/core/ports"
-	"github.com/highcard-dev/daemon/internal/utils/logger"
-	"go.uber.org/zap"
 )
 
 var ErrAlreadyInQueue = fmt.Errorf("command is already in queue")
@@ -17,28 +14,6 @@ var ErrCommandDoneOnce = fmt.Errorf("command is already done and has run mode on
 type AddItemOptions struct {
 	Wait  bool
 	Force bool
-}
-
-type QueueManager struct {
-	scrollService     ports.ScrollServiceInterface
-	procedureLauncher ports.ProcedureLauchnerInterface
-}
-
-func NewQueueManager(
-	scrollService ports.ScrollServiceInterface,
-	procedureLauncher ports.ProcedureLauchnerInterface,
-) *QueueManager {
-	return &QueueManager{
-		scrollService:     scrollService,
-		procedureLauncher: procedureLauncher,
-	}
-}
-
-func (q *QueueManager) RunCommand(cmd string) error {
-	logger.Log().Debug("Running command",
-		zap.String("cmd", cmd),
-	)
-	return q.procedureLauncher.Run(cmd)
 }
 
 func DeriveCommandStatusFromProcedures(commandName string, command *domain.CommandInstructionSet, statuses map[string]domain.LockStatus) (domain.ScrollLockStatus, bool) {

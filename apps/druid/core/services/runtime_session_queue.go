@@ -227,7 +227,7 @@ func (s *RuntimeSession) RunQueue() {
 			}()
 
 			startedAt := time.Now()
-			err := s.queueManager.RunCommand(c)
+			err := s.runCommand(c)
 			isRestartMode := runMode == domain.RunModeRestart
 
 			if err != nil {
