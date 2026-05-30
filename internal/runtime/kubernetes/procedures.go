@@ -200,7 +200,7 @@ func (b *Backend) runJobProcedure(scrollID string, commandName string, procedure
 	} else {
 		logger.Log().Warn("Could not find Kubernetes job pod before wait; console logs may be empty", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.String("job", jobName), zap.Error(err))
 	}
-	exitCode, err := b.waitForJob(ctx, namespace, jobName)
+	exitCode, err := b.waitForJobWithIdleStop(ctx, namespace, jobName, b.keepAliveTrafficIdleStopper(namespace, root, commandName, procedureName, procedure, globalPorts))
 	if exitCode != nil {
 		console.MarkExited(*exitCode)
 	}

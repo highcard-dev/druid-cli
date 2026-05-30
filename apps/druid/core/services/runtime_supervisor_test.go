@@ -93,9 +93,70 @@ func TestRuntimeSessionHydrateDoesNotDuplicateActiveServe(t *testing.T) {
 	if len(queue) != 1 {
 		t.Fatalf("queue len = %d, want 1: %#v", len(queue), queue)
 	}
-	if queue["start"] != domain.ScrollLockStatusWaiting {
-		t.Fatalf("start = %s, want waiting", queue["start"])
+	if queue["start"] != domain.ScrollLockStatusRunning {
+		t.Fatalf("start = %s, want running", queue["start"])
 	}
+}
+
+func TestRuntimeSessionHydratePreservesProcedureStateWhenReattachingRunningRestart(t *testing.T) {
+	root := t.TempDir()
+	store := newTestStateStore(t)
+	scrollYAML := multiProcedureScrollYAML()
+	runtimeScroll := &domain.RuntimeScroll{
+		ID:         "cached",
+		Artifact:   "local",
+		Root:       root,
+		ScrollName: "cached",
+		ScrollYAML: scrollYAML,
+		Status:     domain.RuntimeScrollStatusRunning,
+		Procedures: domain.ProcedureStatusMap{
+			"start": {
+				"coldstart": {Status: domain.ScrollLockStatusDone},
+				"start":     {Status: domain.ScrollLockStatusRunning},
+			},
+		},
+	}
+	if err := store.CreateScroll(runtimeScroll); err != nil {
+		t.Fatal(err)
+	}
+	called := make(chan ports.RuntimeCommand, 1)
+	release := make(chan struct{})
+	session, err := NewRuntimeSession(store, runtimeScroll, &fakeWorkerBackend{
+		runCommand: func(command ports.RuntimeCommand) (*int, error) {
+			called <- command
+			<-release
+			return nil, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Hydrate(); err != nil {
+		t.Fatal(err)
+	}
+
+	session.Start()
+	select {
+	case command := <-called:
+		if command.Name != "start" {
+			t.Fatalf("reattached command = %s, want start", command.Name)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for hydrated command reattach")
+	}
+
+	updated, err := store.GetScroll(runtimeScroll.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Procedures["start"]["coldstart"].Status != domain.ScrollLockStatusDone {
+		t.Fatalf("coldstart = %s, want done; procedures=%#v", updated.Procedures["start"]["coldstart"].Status, updated.Procedures)
+	}
+	if updated.Procedures["start"]["start"].Status != domain.ScrollLockStatusRunning {
+		t.Fatalf("start = %s, want running; procedures=%#v", updated.Procedures["start"]["start"].Status, updated.Procedures)
+	}
+	close(release)
+	session.stopDeploymentQueue()
 }
 
 func TestRuntimeSessionHydrateSkipsMissingServe(t *testing.T) {

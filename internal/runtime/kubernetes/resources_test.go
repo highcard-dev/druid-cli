@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -733,6 +734,136 @@ func TestExpectedPortsSkipsHubbleWhenDisabled(t *testing.T) {
 	}
 	if status.Traffic || status.TrafficOK != nil {
 		t.Fatalf("traffic should be skipped when Hubble is disabled: %#v", status)
+	}
+}
+
+func TestKeepAliveTrafficStopsIdleRunningProcedure(t *testing.T) {
+	root := ref("druid", "druid-static-web-data")
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "start-job",
+			Namespace:         "druid",
+			CreationTimestamp: metav1.NewTime(time.Now().Add(-2 * time.Minute)),
+			Labels:            procedureTestLabels(root, "start", "start", 1),
+		},
+		Status: batchv1.JobStatus{Active: 1},
+	}
+	client := fake.NewSimpleClientset(job)
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{hasFlow: false})
+	stopper := backend.keepAliveTrafficIdleStopper("druid", root, "start", "start", &domain.Procedure{
+		ExpectedPorts: []domain.ExpectedPort{{Name: "main", KeepAliveTraffic: "1b/1s"}},
+	}, []domain.Port{{Name: "main", Port: 25565, Protocol: "tcp"}})
+	if stopper == nil {
+		t.Fatal("stopper = nil, want enforcement")
+	}
+
+	stopped, err := stopper(context.Background(), job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stopped {
+		t.Fatal("stopped = false, want true")
+	}
+	if _, err := client.BatchV1().Jobs("druid").Get(context.Background(), "start-job", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("job err = %v, want not found", err)
+	}
+}
+
+func TestKeepAliveTrafficKeepsProcedureWhenTrafficPresent(t *testing.T) {
+	root := ref("druid", "druid-static-web-data")
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "start-job",
+			Namespace:         "druid",
+			CreationTimestamp: metav1.NewTime(time.Now().Add(-2 * time.Minute)),
+			Labels:            procedureTestLabels(root, "start", "start", 1),
+		},
+		Status: batchv1.JobStatus{Active: 1},
+	}
+	client := fake.NewSimpleClientset(job)
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{hasFlow: true})
+	stopper := backend.keepAliveTrafficIdleStopper("druid", root, "start", "start", &domain.Procedure{
+		ExpectedPorts: []domain.ExpectedPort{{Name: "main", KeepAliveTraffic: "1b/1s"}},
+	}, []domain.Port{{Name: "main", Port: 25565, Protocol: "tcp"}})
+
+	stopped, err := stopper(context.Background(), job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stopped {
+		t.Fatal("stopped = true, want false")
+	}
+	if _, err := client.BatchV1().Jobs("druid").Get(context.Background(), "start-job", metav1.GetOptions{}); err != nil {
+		t.Fatalf("job err = %v", err)
+	}
+}
+
+func TestKeepAliveTrafficKeepsProcedureWhenHubbleUnavailable(t *testing.T) {
+	root := ref("druid", "druid-static-web-data")
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "start-job",
+			Namespace:         "druid",
+			CreationTimestamp: metav1.NewTime(time.Now().Add(-2 * time.Minute)),
+			Labels:            procedureTestLabels(root, "start", "start", 1),
+		},
+		Status: batchv1.JobStatus{Active: 1},
+	}
+	client := fake.NewSimpleClientset(job)
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{err: errors.New("relay unavailable")})
+	stopper := backend.keepAliveTrafficIdleStopper("druid", root, "start", "start", &domain.Procedure{
+		ExpectedPorts: []domain.ExpectedPort{{Name: "main", KeepAliveTraffic: "1b/1s"}},
+	}, []domain.Port{{Name: "main", Port: 25565, Protocol: "tcp"}})
+
+	stopped, err := stopper(context.Background(), job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stopped {
+		t.Fatal("stopped = true, want false")
+	}
+	if _, err := client.BatchV1().Jobs("druid").Get(context.Background(), "start-job", metav1.GetOptions{}); err != nil {
+		t.Fatalf("job err = %v", err)
+	}
+}
+
+func TestKeepAliveTrafficWaitsForFullWindowBeforeStopping(t *testing.T) {
+	root := ref("druid", "druid-static-web-data")
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "start-job",
+			Namespace:         "druid",
+			CreationTimestamp: metav1.NewTime(time.Now()),
+			Labels:            procedureTestLabels(root, "start", "start", 1),
+		},
+		Status: batchv1.JobStatus{Active: 1},
+	}
+	client := fake.NewSimpleClientset(job)
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{hasFlow: false})
+	stopper := backend.keepAliveTrafficIdleStopper("druid", root, "start", "start", &domain.Procedure{
+		ExpectedPorts: []domain.ExpectedPort{{Name: "main", KeepAliveTraffic: "1b/1m"}},
+	}, []domain.Port{{Name: "main", Port: 25565, Protocol: "tcp"}})
+
+	stopped, err := stopper(context.Background(), job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stopped {
+		t.Fatal("stopped = true, want false before full window")
+	}
+	if _, err := client.BatchV1().Jobs("druid").Get(context.Background(), "start-job", metav1.GetOptions{}); err != nil {
+		t.Fatalf("job err = %v", err)
+	}
+}
+
+func TestKeepAliveTrafficDoesNotStopColdstarter(t *testing.T) {
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset(), fakeHubble{hasFlow: false})
+	stopper := backend.keepAliveTrafficIdleStopper("druid", ref("druid", "druid-static-web-data"), "start", "coldstart", &domain.Procedure{
+		Command:       []string{"druid-coldstarter"},
+		ExpectedPorts: []domain.ExpectedPort{{Name: "main", KeepAliveTraffic: "1b/1s"}},
+	}, []domain.Port{{Name: "main", Port: 25565, Protocol: "tcp"}})
+	if stopper != nil {
+		t.Fatal("stopper != nil, want coldstarter keepAliveTraffic to be reporting-only")
 	}
 }
 

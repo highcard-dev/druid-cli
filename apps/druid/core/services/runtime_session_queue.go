@@ -16,6 +16,7 @@ type runtimeQueueItem struct {
 	doneChan     chan struct{}
 	inFlight     bool
 	rememberDone bool
+	runRequested bool
 	restartCount uint
 }
 
@@ -116,12 +117,23 @@ func (s *RuntimeSession) HydrateFromState(statuses domain.ProcedureStatusMap) er
 			}
 		}
 
-		if err := s.addQueueItem(cmd, coreservices.AddItemOptions{}); err != nil && !errors.Is(err, coreservices.ErrAlreadyInQueue) {
-			return err
-		}
+		s.rememberHydratedItem(cmd)
 	}
 
 	return nil
+}
+
+func (s *RuntimeSession) rememberHydratedItem(cmd string) {
+	s.queueMu.Lock()
+	defer s.queueMu.Unlock()
+	item, ok := s.queue[cmd]
+	if !ok {
+		item = &runtimeQueueItem{}
+		s.queue[cmd] = item
+	}
+	item.err = nil
+	item.rememberDone = false
+	item.runRequested = true
 }
 
 func (s *RuntimeSession) triggerRunQueue() {
@@ -149,17 +161,19 @@ func (s *RuntimeSession) RunQueue() {
 
 	s.queueMu.Lock()
 	queueKeys := make(map[string]domain.ScrollLockStatus, len(s.queue))
+	runRequested := make(map[string]bool, len(s.queue))
 	snapshot := s.Snapshot()
 	for cmd, item := range s.queue {
 		status, _ := s.derivedScheduledStatusLocked(cmd, item, snapshot)
 		queueKeys[cmd] = status
+		runRequested[cmd] = item.runRequested
 	}
 	s.queueMu.Unlock()
 
 	logger.Log().Info("Running queue", zap.Any("queueKeys", queueKeys))
 
 	for cmd, status := range queueKeys {
-		if status == domain.ScrollLockStatusRunning {
+		if status == domain.ScrollLockStatusRunning && !runRequested[cmd] {
 			continue
 		}
 
@@ -172,12 +186,12 @@ func (s *RuntimeSession) RunQueue() {
 			continue
 		}
 
-		if status == domain.ScrollLockStatusError {
+		if status == domain.ScrollLockStatusError && !runRequested[cmd] {
 			continue
 		}
 
 		isRestartMode := command.Run == domain.RunModeRestart
-		if status == domain.ScrollLockStatusDone && !isRestartMode {
+		if status == domain.ScrollLockStatusDone && !isRestartMode && !runRequested[cmd] {
 			continue
 		}
 
@@ -420,8 +434,14 @@ func (s *RuntimeSession) setQueueStatusLocked(cmd string, item *runtimeQueueItem
 	switch status {
 	case domain.ScrollLockStatusDone:
 		item.rememberDone = true
+		item.runRequested = false
 	case domain.ScrollLockStatusWaiting:
 		item.rememberDone = false
+		item.runRequested = true
+	case domain.ScrollLockStatusRunning:
+		item.runRequested = false
+	case domain.ScrollLockStatusError:
+		item.runRequested = false
 	}
 	if status != domain.ScrollLockStatusRunning {
 		s.SetCommandStatus(cmd, status, exitCode)
