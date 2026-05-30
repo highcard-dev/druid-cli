@@ -15,10 +15,8 @@ type RuntimeDaemon interface {
 	ListScrolls(ctx context.Context) ([]api.RuntimeScroll, error)
 	GetScroll(ctx context.Context, id string) (*api.RuntimeScroll, error)
 	DeleteScroll(ctx context.Context, id string) (*api.DeletedScroll, error)
-	RunScrollCommand(ctx context.Context, id string, command string) (*api.RuntimeScroll, error)
 	GetScrollConfig(ctx context.Context, id string) (*domain.File, error)
-	GetScrollQueue(ctx context.Context, id string) (map[string]domain.ScrollLockStatus, error)
-	GetScrollProcedures(ctx context.Context, id string) (map[string]domain.ScrollLockStatus, error)
+	GetScrollQueue(ctx context.Context, id string) (domain.ProcedureStatusMap, error)
 	GetScrollConsoles(ctx context.Context, id string) (map[string]domain.Console, error)
 	GetScrollPorts(ctx context.Context, id string) ([]api.RuntimePortStatus, error)
 	StartScroll(ctx context.Context, id string) (*api.RuntimeScroll, error)
@@ -43,10 +41,8 @@ var config Config
 func Register(root *cobra.Command, cfg Config) {
 	config = cfg
 	RoutingCommand.AddCommand(RoutingTargetsCommand, RoutingApplyCommand)
-	CommandCommand.AddCommand(CommandRunCommand, CommandListCommand)
 	ProcedureCommand.AddCommand(ProcedureListCommand, ProcedureAttachCommand)
 	root.AddCommand(
-		CommandCommand,
 		CreateCommand,
 		DeleteCommand,
 		DescribeCommand,

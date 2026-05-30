@@ -106,12 +106,12 @@ func (s *RuntimeSupervisor) CreateWithOwner(artifact string, name string, ownerI
 		return nil, err
 	}
 	placeholder := &domain.RuntimeScroll{
-		ID:       id,
-		OwnerID:  ownerID,
-		Artifact: artifact,
-		Root:     s.runtimeBackend.RootRef(id, namespace),
-		Status:   domain.RuntimeScrollStatusCreated,
-		Commands: map[string]domain.LockStatus{},
+		ID:         id,
+		OwnerID:    ownerID,
+		Artifact:   artifact,
+		Root:       s.runtimeBackend.RootRef(id, namespace),
+		Status:     domain.RuntimeScrollStatusCreated,
+		Procedures: domain.ProcedureStatusMap{},
 	}
 	if err := s.store.CreateScroll(placeholder); err != nil {
 		return nil, err
@@ -241,7 +241,7 @@ func (s *RuntimeSupervisor) applyMaterializedScroll(runtimeScroll *domain.Runtim
 	runtimeScroll.ScrollYAML = string(materialized.ScrollYAML)
 	runtimeScroll.Status = domain.RuntimeScrollStatusCreated
 	runtimeScroll.LastError = ""
-	runtimeScroll.Commands = map[string]domain.LockStatus{}
+	runtimeScroll.Procedures = domain.ProcedureStatusMap{}
 	if err := s.store.UpdateScroll(runtimeScroll); err != nil {
 		return nil, err
 	}

@@ -99,7 +99,6 @@ Legacy REST endpoints were removed from OpenAPI and code:
 ```text
 /api/v1/command
 /api/v1/procedure
-/api/v1/procedures
 /api/v1/logs
 /api/v1/metrics
 /api/v1/pstree

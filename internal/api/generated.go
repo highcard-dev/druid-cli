@@ -22,13 +22,21 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+// Defines values for LockStatusStatus.
+const (
+	LockStatusStatusDone    LockStatusStatus = "done"
+	LockStatusStatusError   LockStatusStatus = "error"
+	LockStatusStatusRunning LockStatusStatus = "running"
+	LockStatusStatusWaiting LockStatusStatus = "waiting"
+)
+
 // Defines values for RuntimeScrollStatus.
 const (
-	Created RuntimeScrollStatus = "created"
-	Deleted RuntimeScrollStatus = "deleted"
-	Error   RuntimeScrollStatus = "error"
-	Running RuntimeScrollStatus = "running"
-	Stopped RuntimeScrollStatus = "stopped"
+	RuntimeScrollStatusCreated RuntimeScrollStatus = "created"
+	RuntimeScrollStatusDeleted RuntimeScrollStatus = "deleted"
+	RuntimeScrollStatusError   RuntimeScrollStatus = "error"
+	RuntimeScrollStatusRunning RuntimeScrollStatus = "running"
+	RuntimeScrollStatusStopped RuntimeScrollStatus = "stopped"
 )
 
 // Defines values for PublishScrollUIPackageParamsScope.
@@ -41,9 +49,6 @@ const (
 type ApplyRoutingRequest struct {
 	Assignments []RuntimeRouteAssignment `json:"assignments"`
 }
-
-// CommandStatusMap defines model for CommandStatusMap.
-type CommandStatusMap map[string]interface{}
 
 // CreateScrollRequest defines model for CreateScrollRequest.
 type CreateScrollRequest struct {
@@ -96,6 +101,19 @@ type HealthResponse struct {
 	// StartDate When the daemon started
 	StartDate *time.Time `json:"start_date"`
 }
+
+// LockStatus defines model for LockStatus.
+type LockStatus struct {
+	ExitCode         *int             `json:"exit_code"`
+	LastStatusChange int64            `json:"last_status_change"`
+	Status           LockStatusStatus `json:"status"`
+}
+
+// LockStatusStatus defines model for LockStatus.Status.
+type LockStatusStatus string
+
+// ProcedureStatusMap defines model for ProcedureStatusMap.
+type ProcedureStatusMap map[string]map[string]LockStatus
 
 // PublishUIPackageRequest defines model for PublishUIPackageRequest.
 type PublishUIPackageRequest struct {
@@ -164,11 +182,11 @@ type RuntimeRoutingTarget struct {
 // RuntimeScroll defines model for RuntimeScroll.
 type RuntimeScroll struct {
 	Artifact   string                    `json:"artifact"`
-	Commands   *map[string]interface{}   `json:"commands,omitempty"`
 	CreatedAt  time.Time                 `json:"created_at"`
 	Id         string                    `json:"id"`
 	LastError  *string                   `json:"last_error,omitempty"`
 	OwnerId    *string                   `json:"owner_id,omitempty"`
+	Procedures *ProcedureStatusMap       `json:"procedures,omitempty"`
 	Root       string                    `json:"root"`
 	Routing    *[]RuntimeRouteAssignment `json:"routing,omitempty"`
 	ScrollName string                    `json:"scroll_name"`
@@ -339,9 +357,6 @@ type ClientInterface interface {
 
 	// GetScrollPorts request
 	GetScrollPorts(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetScrollProcedures request
-	GetScrollProcedures(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetScrollQueue request
 	GetScrollQueue(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -549,18 +564,6 @@ func (c *Client) GetScrollLogs(ctx context.Context, id string, reqEditors ...Req
 
 func (c *Client) GetScrollPorts(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetScrollPortsRequest(c.Server, id)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetScrollProcedures(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetScrollProceduresRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -1153,40 +1156,6 @@ func NewGetScrollPortsRequest(server string, id string) (*http.Request, error) {
 	return req, nil
 }
 
-// NewGetScrollProceduresRequest generates requests for GetScrollProcedures
-func NewGetScrollProceduresRequest(server string, id string) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/procedures", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
 // NewGetScrollQueueRequest generates requests for GetScrollQueue
 func NewGetScrollQueueRequest(server string, id string) (*http.Request, error) {
 	var err error
@@ -1637,9 +1606,6 @@ type ClientWithResponsesInterface interface {
 	// GetScrollPortsWithResponse request
 	GetScrollPortsWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollPortsResponse, error)
 
-	// GetScrollProceduresWithResponse request
-	GetScrollProceduresWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollProceduresResponse, error)
-
 	// GetScrollQueueWithResponse request
 	GetScrollQueueWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollQueueResponse, error)
 
@@ -1941,32 +1907,10 @@ func (r GetScrollPortsResponse) StatusCode() int {
 	return 0
 }
 
-type GetScrollProceduresResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *CommandStatusMap
-}
-
-// Status returns HTTPResponse.Status
-func (r GetScrollProceduresResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetScrollProceduresResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
 type GetScrollQueueResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *CommandStatusMap
+	JSON200      *ProcedureStatusMap
 }
 
 // Status returns HTTPResponse.Status
@@ -2291,15 +2235,6 @@ func (c *ClientWithResponses) GetScrollPortsWithResponse(ctx context.Context, id
 		return nil, err
 	}
 	return ParseGetScrollPortsResponse(rsp)
-}
-
-// GetScrollProceduresWithResponse request returning *GetScrollProceduresResponse
-func (c *ClientWithResponses) GetScrollProceduresWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollProceduresResponse, error) {
-	rsp, err := c.GetScrollProcedures(ctx, id, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetScrollProceduresResponse(rsp)
 }
 
 // GetScrollQueueWithResponse request returning *GetScrollQueueResponse
@@ -2734,32 +2669,6 @@ func ParseGetScrollPortsResponse(rsp *http.Response) (*GetScrollPortsResponse, e
 	return response, nil
 }
 
-// ParseGetScrollProceduresResponse parses an HTTP response from a GetScrollProceduresWithResponse call
-func ParseGetScrollProceduresResponse(rsp *http.Response) (*GetScrollProceduresResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetScrollProceduresResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest CommandStatusMap
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	}
-
-	return response, nil
-}
-
 // ParseGetScrollQueueResponse parses an HTTP response from a GetScrollQueueWithResponse call
 func ParseGetScrollQueueResponse(rsp *http.Response) (*GetScrollQueueResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -2775,7 +2684,7 @@ func ParseGetScrollQueueResponse(rsp *http.Response) (*GetScrollQueueResponse, e
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest CommandStatusMap
+		var dest ProcedureStatusMap
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3032,9 +2941,6 @@ type ServerInterface interface {
 	// Get runtime scroll port status
 	// (GET /api/v1/scrolls/{id}/ports)
 	GetScrollPorts(c *fiber.Ctx, id string) error
-	// Get procedure state
-	// (GET /api/v1/scrolls/{id}/procedures)
-	GetScrollProcedures(c *fiber.Ctx, id string) error
 	// Get runtime queue state
 	// (GET /api/v1/scrolls/{id}/queue)
 	GetScrollQueue(c *fiber.Ctx, id string) error
@@ -3229,22 +3135,6 @@ func (siw *ServerInterfaceWrapper) GetScrollPorts(c *fiber.Ctx) error {
 	}
 
 	return siw.Handler.GetScrollPorts(c, id)
-}
-
-// GetScrollProcedures operation middleware
-func (siw *ServerInterfaceWrapper) GetScrollProcedures(c *fiber.Ctx) error {
-
-	var err error
-
-	// ------------- Path parameter "id" -------------
-	var id string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
-	}
-
-	return siw.Handler.GetScrollProcedures(c, id)
 }
 
 // GetScrollQueue operation middleware
@@ -3444,8 +3334,6 @@ func RegisterHandlersWithOptions(router fiber.Router, si ServerInterface, option
 
 	router.Get(options.BaseURL+"/api/v1/scrolls/:id/ports", wrapper.GetScrollPorts)
 
-	router.Get(options.BaseURL+"/api/v1/scrolls/:id/procedures", wrapper.GetScrollProcedures)
-
 	router.Get(options.BaseURL+"/api/v1/scrolls/:id/queue", wrapper.GetScrollQueue)
 
 	router.Post(options.BaseURL+"/api/v1/scrolls/:id/restore", wrapper.RestoreScroll)
@@ -3469,52 +3357,53 @@ func RegisterHandlersWithOptions(router fiber.Router, si ServerInterface, option
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

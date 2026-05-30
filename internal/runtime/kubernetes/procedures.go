@@ -84,10 +84,13 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 		)
 		if command.Command.Run == domain.RunModePersistent {
 			if procedure.IsSignal() {
+				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusRunning, nil)
 				if err := b.Signal(procedureName, procedure.Target, procedure.Signal, command.Root); err != nil {
+					command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusError, nil)
 					logger.Log().Error("Kubernetes signal procedure failed", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("procedure", procedureName), zap.String("target", procedure.Target), zap.String("signal", procedure.Signal), zap.Error(err))
 					return nil, err
 				}
+				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, nil)
 				logger.Log().Info("Kubernetes signal procedure completed", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("procedure", procedureName), zap.String("target", procedure.Target), zap.String("signal", procedure.Signal))
 				continue
 			}
@@ -96,29 +99,37 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 				logger.Log().Error("Kubernetes persistent procedure missing image", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("procedure", procedureName), zap.Error(err))
 				return nil, err
 			}
+			command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusRunning, nil)
 			if err := b.ensurePersistentProcedure(context.Background(), command.ScrollID, command.Root, command.Name, procedureName, resourceName, procedure, command.GlobalPorts, env, portUse); err != nil {
+				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusError, nil)
 				logger.Log().Error("Kubernetes persistent procedure failed", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("procedure", procedureName), zap.Error(err))
 				return nil, err
 			}
 			continue
 		}
+		command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusRunning, nil)
 		exitCode, err := b.runJobProcedure(command.ScrollID, command.Name, procedureName, resourceName, procedure, command.Root, command.GlobalPorts, env, portUse)
 		if err != nil {
 			if exitCode != nil && *exitCode != 0 && procedure.IgnoreFailure {
+				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, exitCode)
 				logger.Log().Warn("Kubernetes job procedure failed but failure is ignored", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("procedure", procedureName), zap.Int("exit_code", *exitCode), zap.Error(err))
 				continue
 			}
+			command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusError, exitCode)
 			logger.Log().Error("Kubernetes job procedure failed", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("procedure", procedureName), zap.Any("exit_code", exitCode), zap.Error(err))
 			return exitCode, err
 		}
 		if exitCode != nil && *exitCode != 0 {
 			if procedure.IgnoreFailure {
+				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, exitCode)
 				logger.Log().Warn("Kubernetes job procedure failed but failure is ignored", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("procedure", procedureName), zap.Int("exit_code", *exitCode))
 				continue
 			}
+			command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusError, exitCode)
 			logger.Log().Warn("Kubernetes command stopped after non-zero procedure exit", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("procedure", procedureName), zap.Int("exit_code", *exitCode))
 			return exitCode, nil
 		}
+		command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, exitCode)
 		if exitCode != nil {
 			logger.Log().Info("Kubernetes job procedure completed", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("procedure", procedureName), zap.Int("exit_code", *exitCode))
 		}
@@ -189,7 +200,7 @@ func (b *Backend) runJobProcedure(scrollID string, commandName string, procedure
 	} else {
 		logger.Log().Warn("Could not find Kubernetes job pod before wait; console logs may be empty", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.String("job", jobName), zap.Error(err))
 	}
-	exitCode, err := b.waitForJob(ctx, namespace, jobName)
+	exitCode, err := b.waitForJobWithIdleStop(ctx, namespace, jobName, b.keepAliveTrafficIdleStopper(namespace, root, commandName, procedureName, procedure, globalPorts))
 	if exitCode != nil {
 		console.MarkExited(*exitCode)
 	}

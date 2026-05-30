@@ -19,9 +19,11 @@ func TestProcedureRowsCombineConfigStatusAndConsoles(t *testing.T) {
 			},
 		},
 	}}
-	rows := procedureRows(file, map[string]domain.ScrollLockStatus{
-		"start":     domain.ScrollLockStatusWaiting,
-		"coldstart": domain.ScrollLockStatusRunning,
+	rows := procedureRows(file, domain.ProcedureStatusMap{
+		"start": {
+			"coldstart": {Status: domain.ScrollLockStatusRunning},
+			"start.1":   {Status: domain.ScrollLockStatusWaiting},
+		},
 	}, map[string]domain.Console{
 		"coldstart": {},
 	})
@@ -48,8 +50,10 @@ func TestProcedureRowsDoNotMarkEveryProcedureRunningFromCommandStatus(t *testing
 			},
 		},
 	}}
-	rows := procedureRows(file, map[string]domain.ScrollLockStatus{
-		"start": domain.ScrollLockStatusRunning,
+	rows := procedureRows(file, domain.ProcedureStatusMap{
+		"start": {
+			"start": {Status: domain.ScrollLockStatusWaiting},
+		},
 	}, map[string]domain.Console{
 		"coldstart": {},
 	})
@@ -58,38 +62,6 @@ func TestProcedureRowsDoNotMarkEveryProcedureRunningFromCommandStatus(t *testing
 		t.Fatalf("row 0 = %#v", rows[0])
 	}
 	if rows[1] != (procedureRow{command: "start", procedure: "start", status: "waiting", console: "no"}) {
-		t.Fatalf("row 1 = %#v", rows[1])
-	}
-}
-
-func TestCommandRunCallsDaemon(t *testing.T) {
-	daemon := &fakeProcedureDaemon{}
-	withClientConfig(t, Config{Daemon: func() (RuntimeDaemon, error) { return daemon, nil }})
-
-	if err := CommandRunCommand.RunE(&cobra.Command{}, []string{"scroll-a", "start"}); err != nil {
-		t.Fatal(err)
-	}
-	if daemon.runScroll != "scroll-a" || daemon.runCommand != "start" {
-		t.Fatalf("run scroll=%q command=%q", daemon.runScroll, daemon.runCommand)
-	}
-}
-
-func TestCommandRowsCombineConfigAndQueue(t *testing.T) {
-	file := &domain.File{Commands: map[string]*domain.CommandInstructionSet{
-		"install": {Run: domain.RunModeOnce, Procedures: []*domain.Procedure{{}}},
-		"start":   {Run: domain.RunModeRestart, Procedures: []*domain.Procedure{{}, {}}},
-	}}
-	rows := commandRows(file, map[string]domain.ScrollLockStatus{
-		"start": domain.ScrollLockStatusWaiting,
-	})
-
-	if len(rows) != 2 {
-		t.Fatalf("rows = %#v", rows)
-	}
-	if rows[0] != (commandRow{command: "install", status: "-", runMode: "once", procedures: 1}) {
-		t.Fatalf("row 0 = %#v", rows[0])
-	}
-	if rows[1] != (commandRow{command: "start", status: "waiting", runMode: "restart", procedures: 2}) {
 		t.Fatalf("row 1 = %#v", rows[1])
 	}
 }
@@ -125,9 +97,7 @@ func withClientConfig(t *testing.T, cfg Config) {
 }
 
 type fakeProcedureDaemon struct {
-	runScroll  string
-	runCommand string
-	consoles   map[string]domain.Console
+	consoles map[string]domain.Console
 }
 
 func (f *fakeProcedureDaemon) CreateScroll(ctx context.Context, name string, artifact string, registryCredentials []api.RegistryCredential) (*api.RuntimeScroll, error) {
@@ -150,21 +120,11 @@ func (f *fakeProcedureDaemon) DeleteScroll(ctx context.Context, id string) (*api
 	return nil, nil
 }
 
-func (f *fakeProcedureDaemon) RunScrollCommand(ctx context.Context, id string, command string) (*api.RuntimeScroll, error) {
-	f.runScroll = id
-	f.runCommand = command
-	return &api.RuntimeScroll{Id: id}, nil
-}
-
 func (f *fakeProcedureDaemon) GetScrollConfig(ctx context.Context, id string) (*domain.File, error) {
 	return &domain.File{}, nil
 }
 
-func (f *fakeProcedureDaemon) GetScrollProcedures(ctx context.Context, id string) (map[string]domain.ScrollLockStatus, error) {
-	return nil, nil
-}
-
-func (f *fakeProcedureDaemon) GetScrollQueue(ctx context.Context, id string) (map[string]domain.ScrollLockStatus, error) {
+func (f *fakeProcedureDaemon) GetScrollQueue(ctx context.Context, id string) (domain.ProcedureStatusMap, error) {
 	return nil, nil
 }
 

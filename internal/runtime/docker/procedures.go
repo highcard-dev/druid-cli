@@ -34,32 +34,43 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 		)
 		if command.Command.Run == domain.RunModePersistent {
 			if procedure.IsSignal() {
+				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusRunning, nil)
 				if err := b.Signal(procedureName, procedure.Target, procedure.Signal, command.Root); err != nil {
+					command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusError, nil)
 					return nil, err
 				}
+				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, nil)
 				continue
 			}
 			if procedure.Image == "" {
 				return nil, fmt.Errorf("docker runtime procedure %s requires image", procedureName)
 			}
+			command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusRunning, nil)
 			if err := b.startPersistentContainer(runtimeConsoleID(command.ScrollID, procedureName), command.Name, procedureName, procedureResourceName(command.Name, idx), procedure, command.Root, command.GlobalPorts, command.Routing, env); err != nil {
+				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusError, nil)
 				return nil, err
 			}
 			continue
 		}
+		command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusRunning, nil)
 		exitCode, err := b.runProcedure(runtimeConsoleID(command.ScrollID, procedureName), command.Name, procedureName, procedureResourceName(command.Name, idx), procedure, command.Root, command.GlobalPorts, command.Routing, env)
 		if err != nil {
 			if exitCode != nil && *exitCode != 0 && procedure.IgnoreFailure {
+				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, exitCode)
 				continue
 			}
+			command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusError, exitCode)
 			return exitCode, err
 		}
 		if exitCode != nil && *exitCode != 0 {
 			if procedure.IgnoreFailure {
+				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, exitCode)
 				continue
 			}
+			command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusError, exitCode)
 			return exitCode, nil
 		}
+		command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, exitCode)
 	}
 	return nil, nil
 }

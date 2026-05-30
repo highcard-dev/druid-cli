@@ -59,7 +59,7 @@ func (s *RuntimeSupervisor) startSession(runtimeScroll *domain.RuntimeScroll) (*
 	s.mu.Lock()
 	if existing := s.sessions[runtimeScroll.ID]; existing != nil {
 		s.mu.Unlock()
-		session.Shutdown()
+		session.stopDeploymentQueue()
 		return existing, nil
 	}
 	s.sessions[runtimeScroll.ID] = session
@@ -71,8 +71,8 @@ func (s *RuntimeSupervisor) markScrollError(runtimeScroll *domain.RuntimeScroll,
 	logger.Log().Error("failed to restore runtime scroll", zap.String("scroll", runtimeScroll.ID), zap.Error(err))
 	runtimeScroll.Status = domain.RuntimeScrollStatusError
 	runtimeScroll.LastError = err.Error()
-	if runtimeScroll.Commands == nil {
-		runtimeScroll.Commands = map[string]domain.LockStatus{}
+	if runtimeScroll.Procedures == nil {
+		runtimeScroll.Procedures = domain.ProcedureStatusMap{}
 	}
 	_ = s.store.UpdateScroll(runtimeScroll)
 }

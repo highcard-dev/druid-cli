@@ -30,11 +30,6 @@ type ScrollServiceInterface interface {
 	GetCommand(cmd string) (*domain.CommandInstructionSet, error)
 }
 
-type ProcedureLauchnerInterface interface {
-	Run(cmd string) error
-	GetProcedureStatuses() map[string]domain.ScrollLockStatus
-}
-
 type LogManagerInterface interface {
 	GetStreams() map[string]*domain.Log
 	AddLine(stream string, sc []byte)
@@ -78,13 +73,20 @@ type RuntimeScrollStore interface {
 }
 
 type RuntimeCommand struct {
-	Name         string
-	ScrollID     string
-	Command      *domain.CommandInstructionSet
-	Root         string
-	GlobalPorts  []domain.Port
-	Routing      []domain.RuntimeRouteAssignment
-	ProcedureEnv map[string]map[string]string
+	Name                    string
+	ScrollID                string
+	Command                 *domain.CommandInstructionSet
+	Root                    string
+	GlobalPorts             []domain.Port
+	Routing                 []domain.RuntimeRouteAssignment
+	ProcedureEnv            map[string]map[string]string
+	ProcedureStatusObserver func(procedure string, status domain.ScrollLockStatus, exitCode *int)
+}
+
+func (c RuntimeCommand) ObserveProcedureStatus(procedure string, status domain.ScrollLockStatus, exitCode *int) {
+	if c.ProcedureStatusObserver != nil {
+		c.ProcedureStatusObserver(procedure, status, exitCode)
+	}
 }
 
 type RuntimeUIPackageAction struct {

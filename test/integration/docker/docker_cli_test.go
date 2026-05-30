@@ -62,7 +62,7 @@ func TestDockerBackendCLIComplexLifecycle(t *testing.T) {
 	statuses := e2e.RunClientJSON[[]e2e.RuntimePortStatus](t, bins, socket, "ports", created.ID)
 	assertPortBound(t, statuses, fixture)
 
-	e2e.RunClient(t, bins, socket, "command", "run", created.ID, "record")
+	e2e.UnixJSONRequest(t, socket, http.MethodPost, "/api/v1/scrolls/"+created.ID+"/commands/record", "")
 	root := strings.TrimPrefix(created.Root, "docker-bind://")
 	if got := readDockerRootFile(t, root, "data/finite.txt"); !strings.Contains(got, "finite-ok") {
 		t.Fatalf("finite file = %q, want finite-ok", got)
@@ -195,19 +195,9 @@ func TestDockerBackendColdstarterFrontsRuntime(t *testing.T) {
 	if started.Status != "running" {
 		t.Fatalf("started status = %s, want running", started.Status)
 	}
-	procedures := readStatusMap(t, socket, "/api/v1/scrolls/"+created.ID+"/procedures")
-	if procedures["coldstart"] != "running" {
-		t.Fatalf("procedures = %#v, want coldstart alias running", procedures)
-	}
-	if procedures["start"] != "running" {
-		t.Fatalf("procedures = %#v, want compatibility command key running", procedures)
-	}
-	queue := readStatusMap(t, socket, "/api/v1/scrolls/"+created.ID+"/queue")
-	if _, ok := queue["coldstart"]; ok {
-		t.Fatalf("queue = %#v, want command keys only", queue)
-	}
-	if queue["start"] != "running" {
-		t.Fatalf("queue = %#v, want start command running", queue)
+	queue := readProcedureStatusMap(t, socket, "/api/v1/scrolls/"+created.ID+"/queue")
+	if queue["start"]["coldstart"].Status != "running" {
+		t.Fatalf("queue = %#v, want start/coldstart running", queue)
 	}
 	if got := e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/index.txt", publicPort)); !strings.Contains(got, "cold-started") {
 		t.Fatalf("served body = %q, want cold-started", got)
@@ -215,10 +205,14 @@ func TestDockerBackendColdstarterFrontsRuntime(t *testing.T) {
 	e2e.UnixJSONRequest(t, socket, http.MethodDelete, "/api/v1/scrolls/"+created.ID+"?purge_data=true", "")
 }
 
-func readStatusMap(t *testing.T, socket string, path string) map[string]string {
+type lockStatus struct {
+	Status string `json:"status"`
+}
+
+func readProcedureStatusMap(t *testing.T, socket string, path string) map[string]map[string]lockStatus {
 	t.Helper()
 	body := e2e.UnixJSONRequest(t, socket, http.MethodGet, path, "")
-	statuses := map[string]string{}
+	statuses := map[string]map[string]lockStatus{}
 	if err := json.Unmarshal([]byte(body), &statuses); err != nil {
 		t.Fatalf("decode %s JSON: %v\n%s", path, err, body)
 	}

@@ -62,7 +62,7 @@ func (m *RuntimeScrollManager) CreateWithDigest(artifact string, artifactDigest 
 		ScrollName:     scroll.Name,
 		ScrollYAML:     string(scrollYAML),
 		Status:         domain.RuntimeScrollStatusCreated,
-		Commands:       map[string]domain.LockStatus{},
+		Procedures:     domain.ProcedureStatusMap{},
 	}
 	if err := m.store.CreateScroll(runtimeScroll); err != nil {
 		return nil, err

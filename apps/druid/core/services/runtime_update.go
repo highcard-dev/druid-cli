@@ -32,7 +32,7 @@ func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeSc
 	delete(s.sessions, runtimeScroll.ID)
 	s.mu.Unlock()
 	if session != nil {
-		session.Shutdown()
+		session.stopDeploymentQueue()
 	}
 
 	if wasRunning {
@@ -82,7 +82,7 @@ func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeSc
 	runtimeScroll.Root = materialized.Root
 	runtimeScroll.ScrollName = scroll.Name
 	runtimeScroll.ScrollYAML = string(materialized.ScrollYAML)
-	runtimeScroll.Commands = map[string]domain.LockStatus{}
+	runtimeScroll.Procedures = domain.ProcedureStatusMap{}
 	runtimeScroll.Routing = preserveRoutingAssignments(existingRouting, scroll.Ports)
 	runtimeScroll.LastError = ""
 	if wasRunning || runtimeScroll.Status == domain.RuntimeScrollStatusStopped {

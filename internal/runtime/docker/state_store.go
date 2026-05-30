@@ -27,16 +27,16 @@ const scrollsTableSQL = `
 		artifact_digest TEXT NOT NULL DEFAULT '',
 		root TEXT NOT NULL,
 		scroll_name TEXT NOT NULL,
-		scroll_yaml TEXT NOT NULL DEFAULT '',
-		status TEXT NOT NULL,
-		last_error TEXT NOT NULL DEFAULT '',
-		created_at TEXT NOT NULL,
-		updated_at TEXT NOT NULL,
-		commands_json TEXT NOT NULL DEFAULT '{}',
-		routing_json TEXT NOT NULL DEFAULT '[]',
-		ui_packages_json TEXT NOT NULL DEFAULT '{}'
-	)
-`
+			scroll_yaml TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL,
+			last_error TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			procedures_json TEXT NOT NULL DEFAULT '{}',
+			routing_json TEXT NOT NULL DEFAULT '[]',
+			ui_packages_json TEXT NOT NULL DEFAULT '{}'
+		)
+	`
 
 func NewStateStore(stateDir string) (*StateStore, error) {
 	if stateDir == "" {
@@ -73,10 +73,10 @@ func (s *StateStore) CreateScroll(scroll *domain.RuntimeScroll) error {
 	if scroll.Status == "" {
 		scroll.Status = domain.RuntimeScrollStatusCreated
 	}
-	if scroll.Commands == nil {
-		scroll.Commands = map[string]domain.LockStatus{}
+	if scroll.Procedures == nil {
+		scroll.Procedures = domain.ProcedureStatusMap{}
 	}
-	commands, err := json.Marshal(scroll.Commands)
+	procedures, err := json.Marshal(scroll.Procedures)
 	if err != nil {
 		return err
 	}
@@ -91,9 +91,9 @@ func (s *StateStore) CreateScroll(scroll *domain.RuntimeScroll) error {
 	}
 
 	_, err = db.Exec(`
-		INSERT INTO scrolls (id, owner_id, artifact, artifact_digest, root, scroll_name, scroll_yaml, status, last_error, created_at, updated_at, commands_json, routing_json, ui_packages_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, scroll.ID, scroll.OwnerID, scroll.Artifact, scroll.ArtifactDigest, scroll.Root, scroll.ScrollName, scroll.ScrollYAML, scroll.Status, scroll.LastError, formatTime(scroll.CreatedAt), formatTime(scroll.UpdatedAt), string(commands), string(routing), string(uiPackages))
+			INSERT INTO scrolls (id, owner_id, artifact, artifact_digest, root, scroll_name, scroll_yaml, status, last_error, created_at, updated_at, procedures_json, routing_json, ui_packages_json)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, scroll.ID, scroll.OwnerID, scroll.Artifact, scroll.ArtifactDigest, scroll.Root, scroll.ScrollName, scroll.ScrollYAML, scroll.Status, scroll.LastError, formatTime(scroll.CreatedAt), formatTime(scroll.UpdatedAt), string(procedures), string(routing), string(uiPackages))
 	if err != nil {
 		return fmt.Errorf("create runtime scroll %s: %w", scroll.ID, err)
 	}
@@ -108,10 +108,10 @@ func (s *StateStore) ListScrolls() ([]*domain.RuntimeScroll, error) {
 	defer db.Close()
 
 	rows, err := db.Query(`
-		SELECT id, owner_id, artifact, artifact_digest, root, scroll_name, scroll_yaml, status, last_error, created_at, updated_at, commands_json, routing_json, ui_packages_json
-		FROM scrolls
-		ORDER BY id
-	`)
+			SELECT id, owner_id, artifact, artifact_digest, root, scroll_name, scroll_yaml, status, last_error, created_at, updated_at, procedures_json, routing_json, ui_packages_json
+			FROM scrolls
+			ORDER BY id
+		`)
 	if err != nil {
 		return nil, err
 	}
@@ -136,10 +136,10 @@ func (s *StateStore) GetScroll(id string) (*domain.RuntimeScroll, error) {
 	defer db.Close()
 
 	row := db.QueryRow(`
-		SELECT id, owner_id, artifact, artifact_digest, root, scroll_name, scroll_yaml, status, last_error, created_at, updated_at, commands_json, routing_json, ui_packages_json
-		FROM scrolls
-		WHERE id = ?
-	`, id)
+			SELECT id, owner_id, artifact, artifact_digest, root, scroll_name, scroll_yaml, status, last_error, created_at, updated_at, procedures_json, routing_json, ui_packages_json
+			FROM scrolls
+			WHERE id = ?
+		`, id)
 	scroll, err := scanRuntimeScroll(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, domain.ErrRuntimeScrollNotFound
@@ -155,7 +155,7 @@ func (s *StateStore) UpdateScroll(scroll *domain.RuntimeScroll) error {
 	defer db.Close()
 
 	scroll.UpdatedAt = time.Now().UTC()
-	commands, err := json.Marshal(scroll.Commands)
+	procedures, err := json.Marshal(scroll.Procedures)
 	if err != nil {
 		return err
 	}
@@ -169,9 +169,9 @@ func (s *StateStore) UpdateScroll(scroll *domain.RuntimeScroll) error {
 	}
 	res, err := db.Exec(`
 		UPDATE scrolls
-		SET owner_id = ?, artifact = ?, artifact_digest = ?, root = ?, scroll_name = ?, scroll_yaml = ?, status = ?, last_error = ?, updated_at = ?, commands_json = ?, routing_json = ?, ui_packages_json = ?
-		WHERE id = ?
-	`, scroll.OwnerID, scroll.Artifact, scroll.ArtifactDigest, scroll.Root, scroll.ScrollName, scroll.ScrollYAML, scroll.Status, scroll.LastError, formatTime(scroll.UpdatedAt), string(commands), string(routing), string(uiPackages), scroll.ID)
+			SET owner_id = ?, artifact = ?, artifact_digest = ?, root = ?, scroll_name = ?, scroll_yaml = ?, status = ?, last_error = ?, updated_at = ?, procedures_json = ?, routing_json = ?, ui_packages_json = ?
+			WHERE id = ?
+		`, scroll.OwnerID, scroll.Artifact, scroll.ArtifactDigest, scroll.Root, scroll.ScrollName, scroll.ScrollYAML, scroll.Status, scroll.LastError, formatTime(scroll.UpdatedAt), string(procedures), string(routing), string(uiPackages), scroll.ID)
 	if err != nil {
 		return err
 	}
@@ -226,6 +226,18 @@ func (s *StateStore) open() (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	hasLegacyCommands, err := tableHasColumn(db, "scrolls", "commands_"+"json")
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	if hasLegacyCommands {
+		db.Close()
+		if err := s.resetDB(); err != nil {
+			return nil, err
+		}
+		return s.open()
+	}
 	if err := ensureColumn(db, "scrolls", "artifact_digest", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		db.Close()
 		return nil, err
@@ -242,6 +254,10 @@ func (s *StateStore) open() (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := ensureColumn(db, "scrolls", "procedures_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
+		db.Close()
+		return nil, err
+	}
 	if err := ensureColumn(db, "scrolls", "routing_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		db.Close()
 		return nil, err
@@ -251,6 +267,15 @@ func (s *StateStore) open() (*sql.DB, error) {
 		return nil, err
 	}
 	return db, nil
+}
+
+func (s *StateStore) resetDB() error {
+	for _, path := range []string{s.dbPath, s.dbPath + "-wal", s.dbPath + "-shm"} {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
 }
 
 func ensureColumn(db *sql.DB, table string, column string, definition string) error {
@@ -305,24 +330,24 @@ func scanRuntimeScroll(scanner runtimeScrollScanner) (*domain.RuntimeScroll, err
 	var lastError string
 	var createdAt string
 	var updatedAt string
-	var commandsJSON string
+	var proceduresJSON string
 	var routingJSON string
 	var uiPackagesJSON string
-	if err := scanner.Scan(&scroll.ID, &scroll.OwnerID, &scroll.Artifact, &scroll.ArtifactDigest, &scroll.Root, &scroll.ScrollName, &scroll.ScrollYAML, &status, &lastError, &createdAt, &updatedAt, &commandsJSON, &routingJSON, &uiPackagesJSON); err != nil {
+	if err := scanner.Scan(&scroll.ID, &scroll.OwnerID, &scroll.Artifact, &scroll.ArtifactDigest, &scroll.Root, &scroll.ScrollName, &scroll.ScrollYAML, &status, &lastError, &createdAt, &updatedAt, &proceduresJSON, &routingJSON, &uiPackagesJSON); err != nil {
 		return nil, err
 	}
 	scroll.Status = domain.RuntimeScrollStatus(status)
 	scroll.LastError = lastError
 	scroll.CreatedAt = parseTime(createdAt)
 	scroll.UpdatedAt = parseTime(updatedAt)
-	if commandsJSON == "" {
-		commandsJSON = "{}"
+	if proceduresJSON == "" {
+		proceduresJSON = "{}"
 	}
-	if err := json.Unmarshal([]byte(commandsJSON), &scroll.Commands); err != nil {
+	if err := json.Unmarshal([]byte(proceduresJSON), &scroll.Procedures); err != nil {
 		return nil, err
 	}
-	if scroll.Commands == nil {
-		scroll.Commands = map[string]domain.LockStatus{}
+	if scroll.Procedures == nil {
+		scroll.Procedures = domain.ProcedureStatusMap{}
 	}
 	if routingJSON == "" {
 		routingJSON = "[]"

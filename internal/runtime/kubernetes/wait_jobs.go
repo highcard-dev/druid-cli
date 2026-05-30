@@ -84,7 +84,13 @@ func (b *Backend) waitForStatefulSet(ctx context.Context, namespace string, name
 	}
 }
 
+type jobIdleStopFunc func(context.Context, *batchv1.Job) (bool, error)
+
 func (b *Backend) waitForJob(ctx context.Context, namespace string, jobName string) (*int, error) {
+	return b.waitForJobWithIdleStop(ctx, namespace, jobName, nil)
+}
+
+func (b *Backend) waitForJobWithIdleStop(ctx context.Context, namespace string, jobName string, idleStop jobIdleStopFunc) (*int, error) {
 	startedAt := time.Now()
 	deadline := time.Now().Add(24 * time.Hour)
 	for {
@@ -119,6 +125,17 @@ func (b *Backend) waitForJob(ctx context.Context, namespace string, jobName stri
 		if time.Now().After(deadline) {
 			logger.Log().Error("Timed out waiting for Kubernetes job", zap.String("namespace", namespace), zap.String("job", jobName), zap.Int32("succeeded", job.Status.Succeeded), zap.Int32("failed", job.Status.Failed), zap.Int32("active", job.Status.Active))
 			return nil, fmt.Errorf("timed out waiting for job %s", jobName)
+		}
+		if idleStop != nil && activeKubernetesJob(job) {
+			stopped, err := idleStop(ctx, job)
+			if err != nil {
+				logger.Log().Warn("Kubernetes job keepAliveTraffic enforcement skipped", zap.String("namespace", namespace), zap.String("job", jobName), zap.Error(err))
+			} else if stopped {
+				exitCode := 0
+				b.recordJobExit(namespace, jobName, exitCode)
+				logger.Log().Info("Kubernetes job stopped by keepAliveTraffic enforcement", zap.String("namespace", namespace), zap.String("job", jobName), zap.Int("exit_code", exitCode))
+				return &exitCode, nil
+			}
 		}
 		sleep := jobPollInterval(time.Since(startedAt))
 		logger.Log().Debug("Kubernetes job still running", zap.String("namespace", namespace), zap.String("job", jobName), zap.Int32("succeeded", job.Status.Succeeded), zap.Int32("failed", job.Status.Failed), zap.Int32("active", job.Status.Active), zap.Duration("sleep", sleep), zap.Time("deadline", deadline))

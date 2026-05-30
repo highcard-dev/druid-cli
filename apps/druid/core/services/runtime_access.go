@@ -90,18 +90,10 @@ func (s *RuntimeSupervisor) ScrollFile(id string) (*domain.File, error) {
 	return session.scrollService.GetFile(), nil
 }
 
-func (s *RuntimeSupervisor) Queue(id string) (map[string]domain.ScrollLockStatus, error) {
+func (s *RuntimeSupervisor) Queue(id string) (domain.ProcedureStatusMap, error) {
 	session, err := s.sessionFor(id)
 	if err != nil {
 		return nil, err
 	}
-	return session.queueManager.GetQueue(), nil
-}
-
-func (s *RuntimeSupervisor) Procedures(id string) (map[string]domain.ScrollLockStatus, error) {
-	session, err := s.sessionFor(id)
-	if err != nil {
-		return nil, err
-	}
-	return session.Procedures(), nil
+	return session.Queue(), nil
 }
