@@ -343,6 +343,73 @@ func TestCreateOrReuseProcedureJobReusesActiveAttempt(t *testing.T) {
 	}
 }
 
+func TestResumeRestartProcedureIndexDeletesSupersededActiveProcedure(t *testing.T) {
+	root := ref("druid", dataPVCName("deployment-123"))
+	coldstart := "coldstart"
+	start := "start"
+	coldstartJob := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      procedureResourceName(root, "start", 0),
+			Namespace: "druid",
+			Labels:    procedureTestLabels(root, "start", coldstart, 1),
+		},
+		Status: batchv1.JobStatus{Active: 1},
+	}
+	startJob := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      procedureResourceName(root, "start", 1),
+			Namespace: "druid",
+			Labels:    procedureTestLabels(root, "start", start, 1),
+		},
+		Status: batchv1.JobStatus{Active: 1},
+	}
+	client := fake.NewSimpleClientset(coldstartJob, startJob)
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+
+	resumeIndex, err := backend.resumeRestartProcedureIndex(context.Background(), root, "start", &domain.CommandInstructionSet{Procedures: []*domain.Procedure{
+		{Id: &coldstart},
+		{Id: &start},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumeIndex != 1 {
+		t.Fatalf("resumeIndex = %d, want 1", resumeIndex)
+	}
+	if _, err := client.BatchV1().Jobs("druid").Get(context.Background(), coldstartJob.Name, metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("coldstart job err = %v, want not found", err)
+	}
+	if _, err := client.BatchV1().Jobs("druid").Get(context.Background(), startJob.Name, metav1.GetOptions{}); err != nil {
+		t.Fatalf("start job err = %v", err)
+	}
+}
+
+func TestResumeRestartProcedureIndexKeepsOnlyActiveFirstProcedure(t *testing.T) {
+	root := ref("druid", dataPVCName("deployment-123"))
+	coldstart := "coldstart"
+	coldstartJob := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      procedureResourceName(root, "start", 0),
+			Namespace: "druid",
+			Labels:    procedureTestLabels(root, "start", coldstart, 1),
+		},
+		Status: batchv1.JobStatus{Active: 1},
+	}
+	client := fake.NewSimpleClientset(coldstartJob)
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+
+	resumeIndex, err := backend.resumeRestartProcedureIndex(context.Background(), root, "start", &domain.CommandInstructionSet{Procedures: []*domain.Procedure{{Id: &coldstart}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumeIndex != 0 {
+		t.Fatalf("resumeIndex = %d, want 0", resumeIndex)
+	}
+	if _, err := client.BatchV1().Jobs("druid").Get(context.Background(), coldstartJob.Name, metav1.GetOptions{}); err != nil {
+		t.Fatalf("coldstart job err = %v", err)
+	}
+}
+
 func TestCreateOrReuseProcedureJobDeletesSucceededAttempt(t *testing.T) {
 	root := ref("druid", dataPVCName("deployment-123"))
 	base := procedureResourceName(root, "install", 0)

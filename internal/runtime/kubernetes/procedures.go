@@ -28,12 +28,31 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 		zap.Int("procedures", len(command.Command.Procedures)),
 	)
 	portUse := expectedPortUse(command.Command)
+	startIndex := 0
+	if command.Command.Run == domain.RunModeRestart {
+		resumeIndex, err := b.resumeRestartProcedureIndex(context.Background(), command.Root, command.Name, command.Command)
+		if err != nil {
+			logger.Log().Error("Failed to inspect active Kubernetes restart procedures", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.Error(err))
+			return nil, err
+		}
+		startIndex = resumeIndex
+	}
 	for idx, procedure := range command.Command.Procedures {
 		if procedure == nil {
 			logger.Log().Warn("Skipping nil Kubernetes procedure", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.Int("procedure_index", idx))
 			continue
 		}
 		procedureName := domain.ProcedureName(command.Name, idx, procedure)
+		if idx < startIndex {
+			logger.Log().Info("Skipping earlier Kubernetes restart procedure because a later procedure is already active",
+				zap.String("scroll_id", command.ScrollID),
+				zap.String("command", command.Name),
+				zap.String("procedure", procedureName),
+				zap.Int("procedure_index", idx),
+				zap.Int("resume_index", startIndex),
+			)
+			continue
+		}
 		resourceName := procedureResourceName(command.Root, command.Name, idx)
 		env := command.ProcedureEnv[procedureName]
 		if env == nil {

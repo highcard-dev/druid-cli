@@ -19,6 +19,67 @@ import (
 
 const recentJobExitTTL = 10 * time.Minute
 
+func (b *Backend) resumeRestartProcedureIndex(ctx context.Context, root string, commandName string, command *domain.CommandInstructionSet) (int, error) {
+	if command == nil {
+		return 0, nil
+	}
+	namespace, pvc, err := parseRef(root)
+	if err != nil {
+		return 0, err
+	}
+	procedureIndexes := make(map[string]int, len(command.Procedures))
+	for idx, procedure := range command.Procedures {
+		if procedure == nil {
+			continue
+		}
+		procedureIndexes[dnsLabel(domain.ProcedureName(commandName, idx, procedure))] = idx
+	}
+	selector := labels.SelectorFromSet(labels.Set{
+		labelScrollID: dnsLabel(pvc),
+		labelCommand:  dnsLabel(commandName),
+	}).String()
+	jobs, err := b.client.BatchV1().Jobs(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
+	if err != nil {
+		return 0, err
+	}
+	resumeIndex := 0
+	for idx := range jobs.Items {
+		job := &jobs.Items[idx]
+		if !activeKubernetesJob(job) {
+			continue
+		}
+		procedureIndex, ok := procedureIndexes[job.Labels[labelProcedure]]
+		if ok && procedureIndex > resumeIndex {
+			resumeIndex = procedureIndex
+		}
+	}
+	if resumeIndex == 0 {
+		return 0, nil
+	}
+	for idx := range jobs.Items {
+		job := &jobs.Items[idx]
+		if !activeKubernetesJob(job) {
+			continue
+		}
+		procedureIndex, ok := procedureIndexes[job.Labels[labelProcedure]]
+		if !ok || procedureIndex >= resumeIndex {
+			continue
+		}
+		logger.Log().Info("Deleting superseded Kubernetes restart procedure job",
+			zap.String("namespace", namespace),
+			zap.String("job", job.Name),
+			zap.String("command", commandName),
+			zap.String("procedure", job.Labels[labelProcedure]),
+			zap.Int("procedure_index", procedureIndex),
+			zap.Int("resume_index", resumeIndex),
+		)
+		if err := b.deleteJobAndWait(ctx, namespace, job.Name); err != nil {
+			return 0, err
+		}
+	}
+	return resumeIndex, nil
+}
+
 func (b *Backend) createOrReuseProcedureJob(ctx context.Context, namespace string, root string, commandName string, procedureName string, baseName string, procedure *domain.Procedure, env map[string]string) (*batchv1.Job, error) {
 	_, pvc, err := parseRef(root)
 	if err != nil {
@@ -90,6 +151,10 @@ func (b *Backend) createOrReuseProcedureJob(ctx context.Context, namespace strin
 		zap.Int("attempt", nextAttempt),
 	)
 	return created, nil
+}
+
+func activeKubernetesJob(job *batchv1.Job) bool {
+	return job != nil && job.Status.Active > 0 && job.Status.Succeeded == 0 && !kubernetesJobFailed(job)
 }
 
 func procedureAttemptName(baseName string, attempt int) string {
