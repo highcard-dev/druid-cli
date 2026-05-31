@@ -21,7 +21,7 @@ type Backend struct {
 	restConfig     *rest.Config
 	consoleManager ports.ConsoleManagerInterface
 	config         Config
-	hubble         HubbleClient
+	statsReader    nodeStatsReader
 	jobLogRunner   func(context.Context, *batchv1.Job) ([]byte, error)
 	jobExitMu      sync.Mutex
 	jobExits       map[string]recentJobExit
@@ -40,7 +40,7 @@ const (
 func New(config Config, consoleManager ports.ConsoleManagerInterface) (*Backend, error) {
 	config = config.WithDefaults()
 
-	restConfig, namespace, source, inCluster, err := runtimeRESTConfig(config)
+	restConfig, namespace, source, _, err := runtimeRESTConfig(config)
 	if err != nil {
 		return nil, err
 	}
@@ -57,30 +57,16 @@ func New(config Config, consoleManager ports.ConsoleManagerInterface) (*Backend,
 		return nil, fmt.Errorf("kubernetes API unavailable: %w", err)
 	}
 	logger.Log().Info("Using Kubernetes backend settings", zap.String("source", source), zap.String("namespace", config.Namespace))
-	var hubble HubbleClient
-	if config.HubbleEnabled() {
-		hubble = NewHubbleRelayClient(config.HubbleRelayAddr)
-	}
 	backend := &Backend{
 		client:         client,
 		restConfig:     restConfig,
 		consoleManager: consoleManager,
 		config:         config,
-		hubble:         hubble,
 		jobExits:       make(map[string]recentJobExit),
 	}
+	backend.statsReader = backend.readNodeStatsSummary
 	if config.PullImage == "" {
 		logger.Log().Warn("Kubernetes cluster materialization requires --k8s-pull-image or DRUID_K8S_PULL_IMAGE")
-	}
-	if config.HubbleEnabled() && !inCluster && config.HubbleRelayAddr == defaultHubbleRelayAddr {
-		logger.Log().Warn("Default Hubble Relay address may not be reachable outside the cluster; set --hubble-relay-addr or port-forward Hubble Relay", zap.String("addr", config.HubbleRelayAddr))
-	}
-	if config.HubbleEnabled() {
-		if err := backend.checkHubble(context.Background()); err != nil {
-			logger.Log().Warn("Hubble Relay unavailable; Kubernetes port traffic will degrade to Service/Endpoint status", zap.Error(err), zap.String("addr", config.HubbleRelayAddr))
-		}
-	} else {
-		logger.Log().Info("Hubble Relay disabled; Kubernetes port traffic will use Service/Endpoint status", zap.String("addr", config.HubbleRelayAddr))
 	}
 	return backend, nil
 }
@@ -142,15 +128,14 @@ func kubeconfigRESTConfig(config Config) (*rest.Config, string, string, error) {
 	return restConfig, namespace, source, nil
 }
 
-func NewWithClient(config Config, consoleManager ports.ConsoleManagerInterface, client k8sclient.Interface, hubble HubbleClient) *Backend {
+func NewWithClient(config Config, consoleManager ports.ConsoleManagerInterface, client k8sclient.Interface) *Backend {
 	config = config.WithDefaults()
 	if config.Namespace == "" {
 		config.Namespace = "default"
 	}
-	if hubble == nil && config.HubbleEnabled() {
-		hubble = NewHubbleRelayClient(config.HubbleRelayAddr)
-	}
-	return &Backend{client: client, consoleManager: consoleManager, config: config, hubble: hubble, jobExits: make(map[string]recentJobExit)}
+	backend := &Backend{client: client, consoleManager: consoleManager, config: config, jobExits: make(map[string]recentJobExit)}
+	backend.statsReader = backend.readNodeStatsSummary
+	return backend
 }
 
 func (b *Backend) Name() string {

@@ -14,7 +14,7 @@ import (
 )
 
 func (b *Backend) keepAliveTrafficIdleStopper(namespace string, root string, commandName string, procedureName string, procedure *domain.Procedure, globalPorts []domain.Port) jobIdleStopFunc {
-	if !b.config.HubbleEnabled() || b.hubble == nil || procedure == nil || coldstarterProcedure(procedureName, procedure) {
+	if procedure == nil || coldstarterProcedure(procedureName, procedure) {
 		return nil
 	}
 	ports := portsByName(globalPorts)
@@ -29,21 +29,19 @@ func (b *Backend) keepAliveTrafficIdleStopper(namespace string, root string, com
 				return false, err
 			}
 		}
-		port, ok := ports[expectedPort.Name]
-		if !ok {
+		if _, ok := ports[expectedPort.Name]; !ok {
 			return nil
 		}
 		thresholds = append(thresholds, keepAliveThreshold{
 			expectedPort: expectedPort,
-			port:         port,
+			bytes:        threshold.Bytes,
 			window:       threshold.Window,
 		})
 	}
 	if len(thresholds) == 0 {
 		return nil
 	}
-	_, scrollID, err := parseRef(root)
-	if err != nil {
+	if _, _, err := parseRef(root); err != nil {
 		return func(context.Context, *batchv1.Job) (bool, error) {
 			return false, err
 		}
@@ -53,32 +51,44 @@ func (b *Backend) keepAliveTrafficIdleStopper(namespace string, root string, com
 			return false, nil
 		}
 		now := time.Now()
+		traffic, err := b.procedureTrafficForJob(ctx, namespace, job.Name, now)
+		if err != nil {
+			logger.Log().Warn("Kubernetes pod stats unavailable; keepAliveTraffic enforcement skipped",
+				zap.String("namespace", namespace),
+				zap.String("job", job.Name),
+				zap.String("command", commandName),
+				zap.String("procedure", procedureName),
+				zap.Error(err),
+			)
+			return false, nil
+		}
+		if traffic == nil {
+			logger.Log().Warn("Active procedure pod unavailable; keepAliveTraffic enforcement skipped",
+				zap.String("namespace", namespace),
+				zap.String("job", job.Name),
+				zap.String("command", commandName),
+				zap.String("procedure", procedureName),
+			)
+			return false, nil
+		}
 		for _, threshold := range thresholds {
 			if !keepAliveWindowElapsed(now, job.CreationTimestamp, threshold.window) {
 				return false, nil
 			}
 		}
 		for _, threshold := range thresholds {
-			hasTraffic, err := b.hubble.HasFlow(ctx, TrafficQuery{
-				Namespace:     namespace,
-				ScrollID:      scrollID,
-				ProcedureName: procedureName,
-				Port:          threshold.port,
-				ExpectedPort:  threshold.expectedPort,
-				Window:        threshold.window,
-			})
-			if err != nil {
-				logger.Log().Warn("Hubble Relay unavailable; keepAliveTraffic enforcement skipped",
+			if !traffic.windowReady(threshold.window, now) {
+				logger.Log().Info("Kubernetes pod stats sample window warming; keepAliveTraffic enforcement skipped",
 					zap.String("namespace", namespace),
 					zap.String("job", job.Name),
 					zap.String("command", commandName),
 					zap.String("procedure", procedureName),
 					zap.String("port", threshold.expectedPort.Name),
-					zap.Error(err),
+					zap.Duration("window", threshold.window),
 				)
 				return false, nil
 			}
-			if hasTraffic {
+			if traffic.rxDelta(threshold.window, now) >= threshold.bytes {
 				return false, nil
 			}
 		}
@@ -88,6 +98,7 @@ func (b *Backend) keepAliveTrafficIdleStopper(namespace string, root string, com
 			zap.String("command", commandName),
 			zap.String("procedure", procedureName),
 			zap.Int("ports", len(thresholds)),
+			zap.Uint64("rx_bytes", traffic.rxBytes),
 		)
 		if err := b.deleteJobAndWait(ctx, namespace, job.Name); err != nil {
 			return false, err
@@ -98,7 +109,7 @@ func (b *Backend) keepAliveTrafficIdleStopper(namespace string, root string, com
 
 type keepAliveThreshold struct {
 	expectedPort domain.ExpectedPort
-	port         domain.Port
+	bytes        uint64
 	window       time.Duration
 }
 

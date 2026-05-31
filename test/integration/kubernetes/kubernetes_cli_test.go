@@ -49,7 +49,6 @@ func TestKubernetesBackendCLIComplexLifecycle(t *testing.T) {
 		"--k8s-namespace", namespace,
 		"--k8s-kubeconfig", kubeconfig,
 		"--k8s-pull-image", workerImage,
-		"--hubble-relay-addr", "127.0.0.1:9",
 		"--worker-callback-listen", fmt.Sprintf(":%d", callbackPort),
 		"--worker-callback-url", fmt.Sprintf("http://%s:%d", containerHost, callbackPort),
 		"--listen", fmt.Sprintf(":%d", managementPort),
@@ -106,7 +105,17 @@ func TestKubernetesBackendCLIComplexLifecycle(t *testing.T) {
 		t.Fatalf("webdav file = %q, want dev-write", got)
 	}
 
-	statuses := e2e.RunClientJSON[[]e2e.RuntimePortStatus](t, bins, socket, "ports", created.ID)
+	_ = e2e.RunClientJSON[[]e2e.RuntimePortStatus](t, bins, socket, "ports", created.ID)
+	deadline := time.Now().Add(30 * time.Second)
+	var statuses []e2e.RuntimePortStatus
+	for time.Now().Before(deadline) {
+		_ = e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/index.txt", localPort))
+		time.Sleep(1 * time.Second)
+		statuses = e2e.RunClientJSON[[]e2e.RuntimePortStatus](t, bins, socket, "ports", created.ID)
+		if status, ok := findRuntimePortStatus(statuses, fixture); ok && status.Source == "kubernetes-pod-stats" && status.RXBytes != nil && status.TXBytes != nil && status.TrafficBytes != nil && *status.TrafficBytes > 0 && status.TrafficOK != nil && *status.TrafficOK {
+			break
+		}
+	}
 	assertKubernetesPort(t, statuses, fixture)
 
 	if got := readPVCFile(t, namespace, pvc, "data/finite.txt"); !strings.Contains(got, "finite-ok") {
@@ -273,18 +282,34 @@ func waitRuntimePodReady(t *testing.T, namespace string, pvc string) {
 
 func assertKubernetesPort(t *testing.T, statuses []e2e.RuntimePortStatus, fixture e2e.Fixture) {
 	t.Helper()
+	status, ok := findRuntimePortStatus(statuses, fixture)
+	if !ok {
+		t.Fatalf("http port for %s not found in %#v", fixture.ServeProc, statuses)
+	}
+	if !status.Bound {
+		t.Fatalf("port status = %#v, want bound", status)
+	}
+	if status.Port != fixture.Port {
+		t.Fatalf("service port = %d, want %d in status %#v", status.Port, fixture.Port, status)
+	}
+	if status.Source != "kubernetes-pod-stats" {
+		t.Fatalf("source = %s, want kubernetes-pod-stats in status %#v", status.Source, status)
+	}
+	if status.RXBytes == nil || status.TXBytes == nil || status.TrafficBytes == nil {
+		t.Fatalf("traffic counters missing in status %#v", status)
+	}
+	if *status.TrafficBytes == 0 || status.TrafficOK == nil || !*status.TrafficOK {
+		t.Fatalf("traffic status = %#v, want positive traffic and traffic_ok=true", status)
+	}
+}
+
+func findRuntimePortStatus(statuses []e2e.RuntimePortStatus, fixture e2e.Fixture) (e2e.RuntimePortStatus, bool) {
 	for _, status := range statuses {
 		if status.Name == "http" && status.Procedure == fixture.ServeProc {
-			if !status.Bound {
-				t.Fatalf("port status = %#v, want bound", status)
-			}
-			if status.Port != fixture.Port {
-				t.Fatalf("service port = %d, want %d in status %#v", status.Port, fixture.Port, status)
-			}
-			return
+			return status, true
 		}
 	}
-	t.Fatalf("http port for %s not found in %#v", fixture.ServeProc, statuses)
+	return e2e.RuntimePortStatus{}, false
 }
 
 func readPVCFile(t *testing.T, namespace string, pvc string, relativePath string) string {

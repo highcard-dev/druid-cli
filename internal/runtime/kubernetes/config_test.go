@@ -27,19 +27,6 @@ func TestConfigWithDefaultsReadsRegistryPlainHTTPEnv(t *testing.T) {
 	}
 }
 
-func TestConfigHubbleEnabled(t *testing.T) {
-	enabled := Config{HubbleRelayAddr: "hubble-relay.kube-system.svc.cluster.local:80"}
-	if !enabled.HubbleEnabled() {
-		t.Fatal("HubbleEnabled = false, want true")
-	}
-
-	for _, value := range []string{"disabled", "disable", "off", "false", "none", " DISABLED "} {
-		if (Config{HubbleRelayAddr: value}).HubbleEnabled() {
-			t.Fatalf("HubbleEnabled(%q) = true, want false", value)
-		}
-	}
-}
-
 func TestKubeconfigRESTConfigUsesCurrentContextNamespace(t *testing.T) {
 	kubeconfig := writeKubeconfig(t, "from-context")
 

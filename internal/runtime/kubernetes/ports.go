@@ -2,7 +2,6 @@ package kubernetes
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -25,15 +24,7 @@ func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.Command
 	}
 	portsByName := portsByName(globalPorts)
 	statuses := []domain.RuntimePortStatus{}
-	hubbleEnabled := b.config.HubbleEnabled()
-	hubbleAvailable := false
-	if hubbleEnabled {
-		hubbleAvailable = true
-		if err := b.checkHubble(context.Background()); err != nil {
-			hubbleAvailable = false
-			logger.Log().Warn("Hubble Relay unavailable; Kubernetes port traffic unavailable", zap.Error(err))
-		}
-	}
+	now := time.Now()
 	for commandName, command := range commands {
 		if command == nil {
 			continue
@@ -47,6 +38,7 @@ func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.Command
 			if procedure.Id != nil {
 				procedureName = *procedure.Id
 			}
+			traffic, trafficErr := b.procedureTrafficForSelector(context.Background(), namespace, serviceSelector(pvc, commandName, procedureName, "", nil), now)
 			for _, expectedPort := range procedure.ExpectedPorts {
 				port, ok := portsByName[expectedPort.Name]
 				if !ok {
@@ -64,44 +56,34 @@ func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.Command
 				serviceReady, hostPort := b.serviceReady(context.Background(), namespace, serviceName(root, serviceProcedure, expectedPort.Name))
 				status.Bound = serviceReady
 				status.HostPort = hostPort
-				if !hubbleEnabled {
+				if trafficErr != nil {
+					status.Source = "kubernetes-pod-stats-unavailable"
 					statuses = append(statuses, status)
 					continue
 				}
-				if !hubbleAvailable {
-					status.Source = "hubble-relay-unavailable"
+				if traffic == nil {
 					statuses = append(statuses, status)
 					continue
 				}
-				window := 5 * time.Minute
+				status.Source = "kubernetes-pod-stats"
+				rxBytes := traffic.rxBytes
+				txBytes := traffic.txBytes
+				status.RXBytes = &rxBytes
+				status.TXBytes = &txBytes
+				status.LastActivityAt = traffic.lastActivityAt
+				delta := traffic.rxDelta(0, now)
 				if expectedPort.KeepAliveTraffic != "" {
 					threshold, err := domain.ParseKeepAliveTraffic(expectedPort.KeepAliveTraffic)
 					if err != nil {
 						return nil, err
 					}
-					window = threshold.Window
+					delta = traffic.rxDelta(threshold.Window, now)
+					trafficOK := delta >= threshold.Bytes
+					status.TrafficOK = &trafficOK
 					status.TrafficWindow = threshold.Window.String()
 				}
-				traffic, err := b.hubble.HasFlow(context.Background(), TrafficQuery{
-					Namespace:     namespace,
-					ScrollID:      pvc,
-					ProcedureName: procedureName,
-					Port:          port,
-					ExpectedPort:  expectedPort,
-					Window:        window,
-				})
-				if err != nil {
-					logger.Log().Warn("Hubble Relay query failed", zap.Error(err))
-					status.Source = "hubble-relay-unavailable"
-					statuses = append(statuses, status)
-					continue
-				}
-				status.Source = "hubble-relay"
-				status.Traffic = traffic
-				if expectedPort.KeepAliveTraffic != "" {
-					trafficOK := traffic
-					status.TrafficOK = &trafficOK
-				}
+				status.Traffic = delta > 0
+				status.TrafficBytes = &delta
 				statuses = append(statuses, status)
 			}
 		}
@@ -311,23 +293,21 @@ func endpointSlicesReady(slices []discoveryv1.EndpointSlice) bool {
 	return false
 }
 
-func (b *Backend) checkHubble(ctx context.Context) error {
-	if b.hubble == nil {
-		return errors.New("hubble client is not configured")
-	}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	_, err := b.hubble.HasFlow(ctx, TrafficQuery{Namespace: b.config.Namespace, Port: domain.Port{Port: 1, Protocol: "tcp"}})
-	if err != nil && !strings.Contains(err.Error(), "context deadline") {
-		return err
-	}
-	return nil
-}
-
 func portsByName(ports []domain.Port) map[string]domain.Port {
 	result := map[string]domain.Port{}
 	for _, port := range ports {
 		result[port.Name] = port
 	}
 	return result
+}
+
+func normalizeProtocol(protocol string) string {
+	switch strings.ToLower(protocol) {
+	case "", "tcp":
+		return "tcp"
+	case "udp":
+		return "udp"
+	default:
+		return protocol
+	}
 }

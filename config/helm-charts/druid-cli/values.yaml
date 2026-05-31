@@ -63,9 +63,6 @@ runtime:
     name: ""
     key: kubeconfig
 
-hubble:
-  relayAddr: hubble-relay.kube-system.svc.cluster.local:80
-
 auth:
   enabled: false
   jwksUrl: ""

@@ -35,7 +35,6 @@ var k8sUIS3Region string
 var k8sUIS3Endpoint string
 var k8sUIS3Prefix string
 var k8sUIS3Secret string
-var hubbleRelayAddr string
 var k8sKubeconfig string
 var runtimeListen string
 var runtimePublicListen string
@@ -98,7 +97,6 @@ func init() {
 	DaemonCommand.Flags().StringVar(&k8sUIS3Prefix, "k8s-ui-s3-prefix", "", "Optional S3 key prefix for UI packages (default: DRUID_K8S_UI_S3_PREFIX)")
 	DaemonCommand.Flags().StringVar(&k8sUIS3Secret, "k8s-ui-s3-credentials-secret", "", "Kubernetes secret with AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (default: DRUID_K8S_UI_S3_CREDENTIALS_SECRET)")
 	DaemonCommand.Flags().StringVar(&k8sKubeconfig, "k8s-kubeconfig", "", "Kubernetes kubeconfig path for out-of-cluster runtime access (default: DRUID_K8S_KUBECONFIG, KUBECONFIG, or ~/.kube/config)")
-	DaemonCommand.Flags().StringVar(&hubbleRelayAddr, "hubble-relay-addr", "", "Hubble Relay gRPC address for Kubernetes port traffic (default: DRUID_HUBBLE_RELAY_ADDR or hubble-relay.kube-system.svc.cluster.local:80)")
 }
 
 func runRuntimeDaemon() error {
@@ -111,7 +109,6 @@ func runRuntimeDaemon() error {
 		StorageClass:      k8sStorageClass,
 		PullImage:         k8sPullImage,
 		RegistrySecret:    k8sRegistrySecret,
-		HubbleRelayAddr:   hubbleRelayAddr,
 		Kubeconfig:        k8sKubeconfig,
 		UIS3Bucket:        k8sUIS3Bucket,
 		UIS3PublicBaseURL: k8sUIS3PublicBaseURL,
