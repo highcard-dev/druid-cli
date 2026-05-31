@@ -68,8 +68,6 @@ spec:
               value: {{ .Values.runtime.registrySecret | quote }}
             - name: DRUID_REGISTRY_PLAIN_HTTP
               value: {{ ternary "true" "false" .Values.runtime.registryPlainHTTP | quote }}
-            - name: DRUID_HUBBLE_RELAY_ADDR
-              value: {{ .Values.hubble.relayAddr | quote }}
             {{- if .Values.runtime.kubeconfigSecret.name }}
             - name: DRUID_K8S_KUBECONFIG
               value: /etc/druid/kubeconfig

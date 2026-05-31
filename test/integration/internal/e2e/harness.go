@@ -41,11 +41,16 @@ type RuntimeScroll struct {
 }
 
 type RuntimePortStatus struct {
-	Name      string `json:"name"`
-	Procedure string `json:"procedure"`
-	Port      int    `json:"port"`
-	Bound     bool   `json:"bound"`
-	HostPort  int    `json:"host_port"`
+	Name         string  `json:"name"`
+	Procedure    string  `json:"procedure"`
+	Port         int     `json:"port"`
+	Bound        bool    `json:"bound"`
+	HostPort     int     `json:"host_port"`
+	TrafficBytes *uint64 `json:"traffic_bytes"`
+	RXBytes      *uint64 `json:"rx_bytes"`
+	TXBytes      *uint64 `json:"tx_bytes"`
+	TrafficOK    *bool   `json:"traffic_ok"`
+	Source       string  `json:"source"`
 }
 
 type RuntimeRoutingTarget struct {

@@ -7,8 +7,7 @@ import (
 )
 
 const (
-	defaultHubbleRelayAddr = "hubble-relay.kube-system.svc.cluster.local:80"
-	defaultHelperImage     = "busybox:1.36"
+	defaultHelperImage = "busybox:1.36"
 )
 
 type Config struct {
@@ -17,7 +16,6 @@ type Config struct {
 	PullImage         string
 	RegistrySecret    string
 	RegistryPlainHTTP bool
-	HubbleRelayAddr   string
 	HelperImage       string
 	Kubeconfig        string
 	UIS3Bucket        string
@@ -47,12 +45,6 @@ func (c Config) WithDefaults() Config {
 	if c.Kubeconfig == "" {
 		c.Kubeconfig = os.Getenv("DRUID_K8S_KUBECONFIG")
 	}
-	if c.HubbleRelayAddr == "" {
-		c.HubbleRelayAddr = os.Getenv("DRUID_HUBBLE_RELAY_ADDR")
-	}
-	if c.HubbleRelayAddr == "" {
-		c.HubbleRelayAddr = defaultHubbleRelayAddr
-	}
 	if c.HelperImage == "" {
 		c.HelperImage = os.Getenv("DRUID_K8S_HELPER_IMAGE")
 	}
@@ -78,11 +70,6 @@ func (c Config) WithDefaults() Config {
 		c.UIS3Secret = os.Getenv("DRUID_K8S_UI_S3_CREDENTIALS_SECRET")
 	}
 	return c
-}
-
-func (c Config) HubbleEnabled() bool {
-	value := strings.ToLower(strings.TrimSpace(c.HubbleRelayAddr))
-	return value != "disabled" && value != "disable" && value != "off" && value != "false" && value != "none"
 }
 
 func plainHTTPEnv(name string) bool {

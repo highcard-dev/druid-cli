@@ -30,7 +30,7 @@ func TestChartRendersDefaultAndCustomValues(t *testing.T) {
 		`resources: ["secrets"]`,
 		`resources: ["pods/attach"]`,
 		`verbs: ["create"]`,
-		"hubble-relay.kube-system.svc.cluster.local:80",
+		`resources: ["nodes/proxy"]`,
 	} {
 		if !strings.Contains(defaultManifest, want) {
 			t.Fatalf("default manifest does not contain %q", want)
@@ -51,7 +51,6 @@ func TestChartRendersDefaultAndCustomValues(t *testing.T) {
 		"--set", "runtime.pullImage=registry.local/druid-cli:e2e",
 		"--set", "runtime.helperImage=busybox:1.36",
 		"--set", "runtime.kubeconfigSecret.name=druid-kubeconfig",
-		"--set", "hubble.relayAddr=hubble.example:80",
 		"--set", "networkPolicy.enabled=true",
 		"--set", "ingress.enabled=true",
 		"--set", "ingress.hosts[0].host=runtime.example.test",
@@ -68,7 +67,6 @@ func TestChartRendersDefaultAndCustomValues(t *testing.T) {
 		"value: \"busybox:1.36\"",
 		"value: \"true\"",
 		"value: /etc/druid/kubeconfig",
-		"hubble.example:80",
 		"kind: NetworkPolicy",
 		"kind: Ingress",
 		"runtime.example.test",
@@ -79,6 +77,10 @@ func TestChartRendersDefaultAndCustomValues(t *testing.T) {
 		if !strings.Contains(customManifest, want) {
 			t.Fatalf("custom manifest does not contain %q", want)
 		}
+	}
+	removedTrafficEnv := "DRUID_" + "HU" + "BBLE_RELAY_ADDR"
+	if strings.Contains(defaultManifest, removedTrafficEnv) || strings.Contains(customManifest, removedTrafficEnv) {
+		t.Fatal("chart rendered removed traffic environment")
 	}
 }
 

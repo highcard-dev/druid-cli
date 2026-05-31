@@ -15,6 +15,7 @@ import (
 	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -22,17 +23,58 @@ import (
 	coreservices "github.com/highcard-dev/daemon/internal/core/services"
 )
 
-type fakeHubble struct {
-	hasFlow bool
-	err     error
+func setStatsReader(backend *Backend, nodeName string, summary *nodeStatsSummary, err error) {
+	backend.statsReader = func(ctx context.Context, node string) (*nodeStatsSummary, error) {
+		if err != nil {
+			return nil, err
+		}
+		if node != nodeName {
+			return nil, fmt.Errorf("unexpected node %s", node)
+		}
+		return summary, nil
+	}
 }
 
-func (f fakeHubble) HasFlow(context.Context, TrafficQuery) (bool, error) {
-	return f.hasFlow, f.err
+func podStats(namespace string, uid string, rx uint64, tx uint64) *nodeStatsSummary {
+	rxCopy := rx
+	txCopy := tx
+	return &nodeStatsSummary{Pods: []nodePodStats{{
+		PodRef: struct {
+			Name      string `json:"name"`
+			Namespace string `json:"namespace"`
+			UID       string `json:"uid"`
+		}{Name: "runtime-pod", Namespace: namespace, UID: uid},
+		Network: &nodeNetworkStats{RXBytes: &rxCopy, TXBytes: &txCopy},
+	}}}
+}
+
+func runningProcedurePod(namespace string, root string, command string, procedure string, attempt int, uid string, jobName string) *corev1.Pod {
+	labels := procedureTestLabels(root, command, procedure, attempt)
+	if jobName != "" {
+		labels["batch.kubernetes.io/job-name"] = jobName
+	}
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "runtime-pod",
+			Namespace: namespace,
+			UID:       typesUID(uid),
+			Labels:    labels,
+		},
+		Spec:   corev1.PodSpec{NodeName: "node-a"},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+	}
+}
+
+func typesUID(value string) types.UID {
+	return types.UID(value)
+}
+
+func ptrString(value string) *string {
+	return &value
 }
 
 func TestRootRefUsesRequestedNamespace(t *testing.T) {
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset(), fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset())
 	if got, want := backend.RootRef("deployment-123", "games"), ref("games", dataPVCName("deployment-123")); got != want {
 		t.Fatalf("RootRef = %s, want %s", got, want)
 	}
@@ -193,7 +235,7 @@ func TestWorkerPullJobSpecRunsDruidWorkerPull(t *testing.T) {
 
 func TestSpawnPullWorkerCreateUsesFinalPVCAndWorkerJob(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "druid", PullImage: "druid-cli:test"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid", PullImage: "druid-cli:test"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 	var jobs []*batchv1.Job
 	backend.jobLogRunner = func(ctx context.Context, job *batchv1.Job) ([]byte, error) {
 		jobs = append(jobs, job.DeepCopy())
@@ -234,7 +276,7 @@ func TestDeleteFinishedJobRemovesJob(t *testing.T) {
 	client := fake.NewSimpleClientset(&batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{Name: "finished", Namespace: "druid"},
 	})
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 
 	backend.deleteFinishedJob(context.Background(), "druid", "finished")
 
@@ -251,7 +293,7 @@ func TestCreateFreshJobKeepsFailedJob(t *testing.T) {
 			Status: corev1.ConditionTrue,
 		}}},
 	})
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 
 	created, err := backend.createFreshJob(context.Background(), &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "failed", Namespace: "druid"}})
 	if err != nil {
@@ -282,7 +324,7 @@ func TestCreateOrReuseProcedureJobRetainsFailedBaseAndCreatesRetry(t *testing.T)
 			Status: corev1.ConditionTrue,
 		}}},
 	})
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 
 	created, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "start", "start.1", base, &domain.Procedure{Image: "alpine"}, nil)
 	if err != nil {
@@ -303,7 +345,7 @@ func TestCreateOrReuseProcedureJobUsesNextRetryAttempt(t *testing.T) {
 		failedProcedureJob(root, base, "start", "start.1", 1),
 		failedProcedureJob(root, base+"-r2", "start", "start.1", 2),
 	)
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 
 	created, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "start", "start.1", base, &domain.Procedure{Image: "alpine"}, nil)
 	if err != nil {
@@ -326,7 +368,7 @@ func TestCreateOrReuseProcedureJobReusesActiveAttempt(t *testing.T) {
 		Status: batchv1.JobStatus{Active: 1},
 	}
 	client := fake.NewSimpleClientset(active)
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 
 	created, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "start", "coldstart", base, &domain.Procedure{Image: "alpine"}, nil)
 	if err != nil {
@@ -365,7 +407,7 @@ func TestResumeRestartProcedureIndexDeletesSupersededActiveProcedure(t *testing.
 		Status: batchv1.JobStatus{Active: 1},
 	}
 	client := fake.NewSimpleClientset(coldstartJob, startJob)
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 
 	resumeIndex, err := backend.resumeRestartProcedureIndex(context.Background(), root, "start", &domain.CommandInstructionSet{Procedures: []*domain.Procedure{
 		{Id: &coldstart},
@@ -397,7 +439,7 @@ func TestResumeRestartProcedureIndexKeepsOnlyActiveFirstProcedure(t *testing.T) 
 		Status: batchv1.JobStatus{Active: 1},
 	}
 	client := fake.NewSimpleClientset(coldstartJob)
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 
 	resumeIndex, err := backend.resumeRestartProcedureIndex(context.Background(), root, "start", &domain.CommandInstructionSet{Procedures: []*domain.Procedure{{Id: &coldstart}}})
 	if err != nil {
@@ -422,7 +464,7 @@ func TestCreateOrReuseProcedureJobDeletesSucceededAttempt(t *testing.T) {
 		},
 		Status: batchv1.JobStatus{Succeeded: 1},
 	})
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 
 	created, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "install", "install", base, &domain.Procedure{Image: "alpine"}, nil)
 	if err != nil {
@@ -451,7 +493,7 @@ func TestWaitForJobReportsPodFailureReason(t *testing.T) {
 			}},
 		}}},
 	}
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset(job, pod), fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset(job, pod))
 
 	exitCode, err := backend.waitForJob(context.Background(), "druid", "failed-start")
 	if err == nil {
@@ -466,7 +508,7 @@ func TestWaitForJobReportsPodFailureReason(t *testing.T) {
 }
 
 func TestWaitForJobUsesRecentSuccessfulDeletion(t *testing.T) {
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset(), fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset())
 	backend.recordJobExit("druid", "finished", 0)
 
 	exitCode, err := backend.waitForJob(context.Background(), "druid", "finished")
@@ -479,7 +521,7 @@ func TestWaitForJobUsesRecentSuccessfulDeletion(t *testing.T) {
 }
 
 func TestWaitForJobMissingWithoutRecentExitFails(t *testing.T) {
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset(), fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset())
 
 	if _, err := backend.waitForJob(context.Background(), "druid", "missing"); !apierrors.IsNotFound(err) {
 		t.Fatalf("waitForJob error = %v, want not found", err)
@@ -557,7 +599,7 @@ func TestStartupContainerFailureReportsNonzeroTermination(t *testing.T) {
 
 func TestExpectedServicesUseRootNamespace(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "druid-system"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid-system"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 	root := ref("games", dataPVCName("deployment-123"))
 	procedure := &domain.Procedure{ExpectedPorts: []domain.ExpectedPort{{Name: "http"}}}
 
@@ -575,7 +617,7 @@ func TestExpectedServicesUseRootNamespace(t *testing.T) {
 
 func TestRegistryConfigSecretUsesDruidClientConfigShape(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 	secretName, cleanup, err := backend.createRegistryConfigSecret(context.Background(), "druid", "artifact", []domain.RegistryCredential{{
 		Host:     "artifacts.druid.gg/user/scroll",
 		Username: "robot$scroll",
@@ -600,11 +642,18 @@ func TestRegistryConfigSecretUsesDruidClientConfigShape(t *testing.T) {
 	}
 }
 
-func TestExpectedPortsUsesHubbleFlowPresence(t *testing.T) {
+func TestExpectedPortsUsesPodStatsTraffic(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{hasFlow: true})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 	root := ref("druid", "druid-static-web-data")
 	procedureName := "start"
+	pod := runningProcedurePod("druid", root, "start", procedureName, 1, "pod-start-stats", "start-job")
+	if _, err := client.CoreV1().Pods("druid").Create(context.Background(), pod, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	globalPodTrafficStore.record("pod-start-stats", 100, 50, time.Now().Add(-6*time.Minute))
+	globalPodTrafficStore.record("pod-start-stats", 100, 50, time.Now().Add(-4*time.Minute))
+	setStatsReader(backend, "node-a", podStats("druid", "pod-start-stats", 200, 75), nil)
 	service, err := serviceSpec("druid", root, procedureName, serviceSelector(refPVCName(root), procedureName, procedureName, "http", map[string]int{"http": 1}), "http", domain.Port{Name: "http", Port: 80, Protocol: "tcp"})
 	if err != nil {
 		t.Fatal(err)
@@ -641,18 +690,23 @@ func TestExpectedPortsUsesHubbleFlowPresence(t *testing.T) {
 	if !status.Bound || !status.Traffic || status.TrafficOK == nil || !*status.TrafficOK {
 		t.Fatalf("status = %#v", status)
 	}
-	if status.Source != "hubble-relay" {
-		t.Fatalf("source = %s, want hubble-relay", status.Source)
+	if status.Source != "kubernetes-pod-stats" {
+		t.Fatalf("source = %s, want kubernetes-pod-stats", status.Source)
 	}
-	if status.RXBytes != nil || status.TXBytes != nil || status.TrafficBytes != nil {
-		t.Fatalf("byte counters should be nil for Kubernetes Hubble status: %#v", status)
+	if status.RXBytes == nil || *status.RXBytes != 200 || status.TXBytes == nil || *status.TXBytes != 75 || status.TrafficBytes == nil || *status.TrafficBytes != 100 {
+		t.Fatalf("byte counters = %#v", status)
 	}
 }
 
-func TestExpectedPortsDegradesWhenHubbleUnavailable(t *testing.T) {
+func TestExpectedPortsDegradesWhenPodStatsUnavailable(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{err: errors.New("relay unavailable")})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 	root := ref("druid", "druid-static-web-data")
+	pod := runningProcedurePod("druid", root, "start", "start", 1, "pod-start-unavailable", "start-job")
+	if _, err := client.CoreV1().Pods("druid").Create(context.Background(), pod, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	setStatsReader(backend, "node-a", nil, errors.New("stats unavailable"))
 	service, err := serviceSpec("druid", root, "start", serviceSelector(refPVCName(root), "start", "start", "http", map[string]int{"http": 1}), "http", domain.Port{Name: "http", Port: 80, Protocol: "tcp"})
 	if err != nil {
 		t.Fatal(err)
@@ -674,7 +728,7 @@ func TestExpectedPortsDegradesWhenHubbleUnavailable(t *testing.T) {
 	}
 
 	statuses, err := backend.ExpectedPorts(root, map[string]*domain.CommandInstructionSet{
-		"start": {Procedures: []*domain.Procedure{{ExpectedPorts: []domain.ExpectedPort{{Name: "http", KeepAliveTraffic: "1b/5m"}}}}},
+		"start": {Procedures: []*domain.Procedure{{Id: ptrString("start"), ExpectedPorts: []domain.ExpectedPort{{Name: "http", KeepAliveTraffic: "1b/5m"}}}}},
 	}, []domain.Port{{Name: "http", Port: 80, Protocol: "tcp"}})
 	if err != nil {
 		t.Fatal(err)
@@ -683,19 +737,25 @@ func TestExpectedPortsDegradesWhenHubbleUnavailable(t *testing.T) {
 		t.Fatalf("statuses = %#v", statuses)
 	}
 	status := statuses[0]
-	if status.Source != "hubble-relay-unavailable" {
-		t.Fatalf("source = %s, want hubble-relay-unavailable", status.Source)
+	if status.Source != "kubernetes-pod-stats-unavailable" {
+		t.Fatalf("source = %s, want kubernetes-pod-stats-unavailable", status.Source)
 	}
 	if status.Traffic || status.TrafficOK != nil {
 		t.Fatalf("traffic should be unavailable: %#v", status)
 	}
 }
 
-func TestExpectedPortsSkipsHubbleWhenDisabled(t *testing.T) {
+func TestExpectedPortsWithoutActivePodDoesNotBorrowTraffic(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "druid", HubbleRelayAddr: "disabled"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, nil)
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 	root := ref("druid", "druid-static-web-data")
 	procedureName := "start"
+	unrelated := runningProcedurePod("druid", ref("druid", "other-scroll"), "start", procedureName, 1, "pod-other", "start-job")
+	if _, err := client.CoreV1().Pods("druid").Create(context.Background(), unrelated, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	globalPodTrafficStore.record("pod-other", 100, 50, time.Now().Add(-6*time.Minute))
+	setStatsReader(backend, "node-a", podStats("druid", "pod-other", 200, 75), nil)
 	service, err := serviceSpec("druid", root, procedureName, serviceSelector(refPVCName(root), procedureName, procedureName, "http", map[string]int{"http": 1}), "http", domain.Port{Name: "http", Port: 80, Protocol: "tcp"})
 	if err != nil {
 		t.Fatal(err)
@@ -733,12 +793,13 @@ func TestExpectedPortsSkipsHubbleWhenDisabled(t *testing.T) {
 		t.Fatalf("bound = false, want true: %#v", status)
 	}
 	if status.Traffic || status.TrafficOK != nil {
-		t.Fatalf("traffic should be skipped when Hubble is disabled: %#v", status)
+		t.Fatalf("traffic should be absent without an active matching pod: %#v", status)
 	}
 }
 
 func TestKeepAliveTrafficStopsIdleRunningProcedure(t *testing.T) {
 	root := ref("druid", "druid-static-web-data")
+	pod := runningProcedurePod("druid", root, "start", "start", 1, "pod-idle-stop", "start-job")
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              "start-job",
@@ -748,8 +809,10 @@ func TestKeepAliveTrafficStopsIdleRunningProcedure(t *testing.T) {
 		},
 		Status: batchv1.JobStatus{Active: 1},
 	}
-	client := fake.NewSimpleClientset(job)
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{hasFlow: false})
+	client := fake.NewSimpleClientset(job, pod)
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	globalPodTrafficStore.record("pod-idle-stop", 100, 50, time.Now().Add(-2*time.Minute))
+	setStatsReader(backend, "node-a", podStats("druid", "pod-idle-stop", 100, 50), nil)
 	stopper := backend.keepAliveTrafficIdleStopper("druid", root, "start", "start", &domain.Procedure{
 		ExpectedPorts: []domain.ExpectedPort{{Name: "main", KeepAliveTraffic: "1b/1s"}},
 	}, []domain.Port{{Name: "main", Port: 25565, Protocol: "tcp"}})
@@ -771,6 +834,7 @@ func TestKeepAliveTrafficStopsIdleRunningProcedure(t *testing.T) {
 
 func TestKeepAliveTrafficKeepsProcedureWhenTrafficPresent(t *testing.T) {
 	root := ref("druid", "druid-static-web-data")
+	pod := runningProcedurePod("druid", root, "start", "start", 1, "pod-traffic-present", "start-job")
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              "start-job",
@@ -780,8 +844,11 @@ func TestKeepAliveTrafficKeepsProcedureWhenTrafficPresent(t *testing.T) {
 		},
 		Status: batchv1.JobStatus{Active: 1},
 	}
-	client := fake.NewSimpleClientset(job)
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{hasFlow: true})
+	client := fake.NewSimpleClientset(job, pod)
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	globalPodTrafficStore.record("pod-traffic-present", 100, 50, time.Now().Add(-2*time.Minute))
+	globalPodTrafficStore.record("pod-traffic-present", 100, 50, time.Now().Add(-500*time.Millisecond))
+	setStatsReader(backend, "node-a", podStats("druid", "pod-traffic-present", 102, 55), nil)
 	stopper := backend.keepAliveTrafficIdleStopper("druid", root, "start", "start", &domain.Procedure{
 		ExpectedPorts: []domain.ExpectedPort{{Name: "main", KeepAliveTraffic: "1b/1s"}},
 	}, []domain.Port{{Name: "main", Port: 25565, Protocol: "tcp"}})
@@ -798,8 +865,9 @@ func TestKeepAliveTrafficKeepsProcedureWhenTrafficPresent(t *testing.T) {
 	}
 }
 
-func TestKeepAliveTrafficKeepsProcedureWhenHubbleUnavailable(t *testing.T) {
+func TestKeepAliveTrafficKeepsProcedureWhenPodStatsUnavailable(t *testing.T) {
 	root := ref("druid", "druid-static-web-data")
+	pod := runningProcedurePod("druid", root, "start", "start", 1, "pod-stats-unavailable", "start-job")
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              "start-job",
@@ -809,8 +877,9 @@ func TestKeepAliveTrafficKeepsProcedureWhenHubbleUnavailable(t *testing.T) {
 		},
 		Status: batchv1.JobStatus{Active: 1},
 	}
-	client := fake.NewSimpleClientset(job)
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{err: errors.New("relay unavailable")})
+	client := fake.NewSimpleClientset(job, pod)
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	setStatsReader(backend, "node-a", nil, errors.New("stats unavailable"))
 	stopper := backend.keepAliveTrafficIdleStopper("druid", root, "start", "start", &domain.Procedure{
 		ExpectedPorts: []domain.ExpectedPort{{Name: "main", KeepAliveTraffic: "1b/1s"}},
 	}, []domain.Port{{Name: "main", Port: 25565, Protocol: "tcp"}})
@@ -824,11 +893,40 @@ func TestKeepAliveTrafficKeepsProcedureWhenHubbleUnavailable(t *testing.T) {
 	}
 	if _, err := client.BatchV1().Jobs("druid").Get(context.Background(), "start-job", metav1.GetOptions{}); err != nil {
 		t.Fatalf("job err = %v", err)
+	}
+}
+
+func TestKeepAliveTrafficKeepsProcedureWhilePodStatsWarmUp(t *testing.T) {
+	root := ref("druid", "druid-static-web-data")
+	pod := runningProcedurePod("druid", root, "start", "start", 1, "pod-stats-warmup", "start-job")
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "start-job",
+			Namespace:         "druid",
+			CreationTimestamp: metav1.NewTime(time.Now().Add(-2 * time.Minute)),
+			Labels:            procedureTestLabels(root, "start", "start", 1),
+		},
+		Status: batchv1.JobStatus{Active: 1},
+	}
+	client := fake.NewSimpleClientset(job, pod)
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	setStatsReader(backend, "node-a", podStats("druid", "pod-stats-warmup", 100, 50), nil)
+	stopper := backend.keepAliveTrafficIdleStopper("druid", root, "start", "start", &domain.Procedure{
+		ExpectedPorts: []domain.ExpectedPort{{Name: "main", KeepAliveTraffic: "1b/1s"}},
+	}, []domain.Port{{Name: "main", Port: 25565, Protocol: "tcp"}})
+
+	stopped, err := stopper(context.Background(), job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stopped {
+		t.Fatal("stopped = true, want false while pod stats sample window warms up")
 	}
 }
 
 func TestKeepAliveTrafficWaitsForFullWindowBeforeStopping(t *testing.T) {
 	root := ref("druid", "druid-static-web-data")
+	pod := runningProcedurePod("druid", root, "start", "start", 1, "pod-full-window", "start-job")
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              "start-job",
@@ -838,8 +936,10 @@ func TestKeepAliveTrafficWaitsForFullWindowBeforeStopping(t *testing.T) {
 		},
 		Status: batchv1.JobStatus{Active: 1},
 	}
-	client := fake.NewSimpleClientset(job)
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{hasFlow: false})
+	client := fake.NewSimpleClientset(job, pod)
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	globalPodTrafficStore.record("pod-full-window", 100, 50, time.Now().Add(-2*time.Minute))
+	setStatsReader(backend, "node-a", podStats("druid", "pod-full-window", 100, 50), nil)
 	stopper := backend.keepAliveTrafficIdleStopper("druid", root, "start", "start", &domain.Procedure{
 		ExpectedPorts: []domain.ExpectedPort{{Name: "main", KeepAliveTraffic: "1b/1m"}},
 	}, []domain.Port{{Name: "main", Port: 25565, Protocol: "tcp"}})
@@ -857,7 +957,7 @@ func TestKeepAliveTrafficWaitsForFullWindowBeforeStopping(t *testing.T) {
 }
 
 func TestKeepAliveTrafficDoesNotStopColdstarter(t *testing.T) {
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset(), fakeHubble{hasFlow: false})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset())
 	stopper := backend.keepAliveTrafficIdleStopper("druid", ref("druid", "druid-static-web-data"), "start", "coldstart", &domain.Procedure{
 		Command:       []string{"druid-coldstarter"},
 		ExpectedPorts: []domain.ExpectedPort{{Name: "main", KeepAliveTraffic: "1b/1s"}},
@@ -868,7 +968,7 @@ func TestKeepAliveTrafficDoesNotStopColdstarter(t *testing.T) {
 }
 
 func TestRoutingTargetsReturnStableBackendServices(t *testing.T) {
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset(), fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset())
 	root := ref("druid", "druid-static-web-data")
 	procedureID := "web"
 
@@ -910,7 +1010,7 @@ func TestRoutingTargetsReturnStableBackendServices(t *testing.T) {
 }
 
 func TestRoutingTargetsCollapseColdstarterAndRuntimePort(t *testing.T) {
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset(), fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset())
 	root := ref("druid", "druid-minecraft-data")
 	coldstart := "coldstart"
 	start := "start"
@@ -944,7 +1044,7 @@ func TestRoutingTargetsCollapseColdstarterAndRuntimePort(t *testing.T) {
 
 func TestExpectedServiceForSharedPortMovesToActiveProcedure(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 	root := ref("druid", "druid-minecraft-data")
 	coldstart := &domain.Procedure{ExpectedPorts: []domain.ExpectedPort{{Name: "main"}}}
 	start := &domain.Procedure{ExpectedPorts: []domain.ExpectedPort{{Name: "main"}}}
@@ -976,7 +1076,7 @@ func TestExpectedServiceForSharedPortMovesToActiveProcedure(t *testing.T) {
 
 func TestRoutingTargetsUseCurrentServiceSelector(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 	root := ref("druid", "druid-minecraft-data")
 	coldstart := "coldstart"
 	start := "start"
@@ -1012,7 +1112,7 @@ func TestRoutingTargetsUseCurrentServiceSelector(t *testing.T) {
 
 func TestStopRuntimeDeletesWorkloadsButPreservesDataAndServices(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 	root := ref("druid", "druid-static-web-data")
 	labels := baseLabels("druid-static-web-data")
 	labels[labelProcedure] = "web"
@@ -1071,7 +1171,7 @@ func TestStopRuntimeDeletesWorkloadsButPreservesDataAndServices(t *testing.T) {
 
 func TestDeleteRuntimePurgesServicesAndDataWhenRequested(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 	root := ref("druid", "druid-static-web-data")
 	service, err := serviceSpec("druid", root, "web", serviceSelector(refPVCName(root), "web", "web", "http", map[string]int{"http": 1}), "http", domain.Port{Name: "http", Port: 8080, Protocol: "tcp"})
 	if err != nil {
@@ -1113,7 +1213,7 @@ func TestBackupJobSpecUsesRuntimePVCAndRegistryEnv(t *testing.T) {
 }
 
 func TestSpawnPullWorkerRequiresPullImage(t *testing.T) {
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset(), fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset())
 	err := backend.SpawnPullWorker(context.Background(), ports.RuntimeWorkerAction{
 		Mode:      ports.RuntimeWorkerModeCreate,
 		RuntimeID: "scroll",
@@ -1129,7 +1229,7 @@ func TestSpawnPullWorkerRequiresPullImage(t *testing.T) {
 }
 
 func TestSpawnPullWorkerRejectsLocalArtifactPath(t *testing.T) {
-	backend := NewWithClient(Config{Namespace: "druid", PullImage: "druid-cli:test"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset(), fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid", PullImage: "druid-cli:test"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset())
 	err := backend.SpawnPullWorker(context.Background(), ports.RuntimeWorkerAction{
 		Mode:      ports.RuntimeWorkerModeCreate,
 		RuntimeID: "scroll",
@@ -1146,7 +1246,7 @@ func TestSpawnPullWorkerRejectsLocalArtifactPath(t *testing.T) {
 
 func TestSignalDeletesPersistentStatefulSetAndPods(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client, fakeHubble{})
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 	root := ref("druid", "druid-static-web-data")
 	name := "static-web-start-0"
 	labels := baseLabels("druid-static-web-data")

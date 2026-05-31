@@ -59,6 +59,9 @@ func TestDockerBackendCLIComplexLifecycle(t *testing.T) {
 		t.Fatalf("USER_ENV = %q, want fixture", env["USER_ENV"])
 	}
 
+	_ = e2e.RunClientJSON[[]e2e.RuntimePortStatus](t, bins, socket, "ports", created.ID)
+	_ = e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/index.txt", fixture.RoutePort))
+	time.Sleep(500 * time.Millisecond)
 	statuses := e2e.RunClientJSON[[]e2e.RuntimePortStatus](t, bins, socket, "ports", created.ID)
 	assertPortBound(t, statuses, fixture)
 
@@ -228,6 +231,15 @@ func assertPortBound(t *testing.T, statuses []e2e.RuntimePortStatus, fixture e2e
 			}
 			if status.HostPort != fixture.RoutePort {
 				t.Fatalf("host port = %d, want %d in status %#v", status.HostPort, fixture.RoutePort, status)
+			}
+			if status.Source != "docker-container-stats" {
+				t.Fatalf("source = %s, want docker-container-stats in status %#v", status.Source, status)
+			}
+			if status.RXBytes == nil || status.TXBytes == nil || status.TrafficBytes == nil {
+				t.Fatalf("traffic counters missing in status %#v", status)
+			}
+			if *status.TrafficBytes == 0 || status.TrafficOK == nil || !*status.TrafficOK {
+				t.Fatalf("traffic status = %#v, want positive traffic and traffic_ok=true", status)
 			}
 			return
 		}

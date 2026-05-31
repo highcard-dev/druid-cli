@@ -67,7 +67,7 @@ There is also websocket support for stdout. TTY is also supported.
 
 Runtime selection is daemon-only: start the daemon with `druid daemon --runtime docker`, then use `druid` to create, run, and inspect scrolls without passing a runtime. Docker runtime state stays in SQLite under the runtime state directory. Scroll specs and runtime data live together in one runtime root.
 
-Kubernetes runtime support is available with `druid daemon --runtime kubernetes` for in-cluster daemons or out-of-cluster daemons using kubeconfig. It stores daemon scroll state in ConfigMaps, materializes OCI artifacts through `druid worker pull` Jobs, and uses Cilium/Hubble Relay for port traffic presence. See `docs/kubernetes_runtime.md` for kubeconfig, RBAC, PVC, and Hubble setup.
+Kubernetes runtime support is available with `druid daemon --runtime kubernetes` for in-cluster daemons or out-of-cluster daemons using kubeconfig. It stores daemon scroll state in ConfigMaps, materializes OCI artifacts through `druid worker pull` Jobs, and uses kubelet pod stats for procedure-level traffic checks. See `docs/kubernetes_runtime.md` for kubeconfig, RBAC, and PVC setup.
 
 ## Documentation
 
