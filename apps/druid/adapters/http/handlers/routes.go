@@ -52,10 +52,11 @@ func RegisterPublicRoutes(app *fiber.App, handlers RouteHandlers) {
 		authorizer = handlers.Server.ScrollHandler.authorizer
 	}
 	app.Use(cors.New(cors.Config{
-		AllowOrigins:  "*",
-		AllowMethods:  "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD,PROPFIND,MOVE,MKCOL,COPY",
-		AllowHeaders:  "Origin,Content-Type,Accept,Authorization,X-Requested-With,Cache-Control,DNT,Keep-Alive,User-Agent,If-Modified-Since,Depth,Destination,Overwrite,If,Lock-Token,Timeout,Dav",
-		ExposeHeaders: "Druid-Version",
+		AllowOrigins:     "https://app.druid.gg,http://localhost:3000,http://127.0.0.1:3000",
+		AllowMethods:     "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD,PROPFIND,MOVE,MKCOL,COPY",
+		AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-Requested-With,Cache-Control,DNT,Keep-Alive,User-Agent,If-Modified-Since,Depth,Destination,Overwrite,If,Lock-Token,Timeout,Dav",
+		AllowCredentials: true,
+		ExposeHeaders:    "Druid-Version",
 	}))
 	app.Get("/health", handlers.Server.GetHealthAuth)
 	app.Get("/.well-known/jwks.json", RuntimeJWKS(authorizer))

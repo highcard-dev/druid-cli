@@ -72,6 +72,8 @@ func TestChartRendersDefaultAndCustomValues(t *testing.T) {
 		"runtime.example.test",
 		"name: public",
 		"nginx.ingress.kubernetes.io/enable-cors",
+		"nginx.ingress.kubernetes.io/cors-allow-origin",
+		"nginx.ingress.kubernetes.io/cors-allow-credentials",
 		"storageClassName: \"local-path\"",
 	} {
 		if !strings.Contains(customManifest, want) {

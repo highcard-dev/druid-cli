@@ -50,8 +50,11 @@ func TestPublicRoutesAnswerCorsPreflight(t *testing.T) {
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("preflight status = %d, want 204", resp.StatusCode)
 	}
-	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "*" {
-		t.Fatalf("allow origin = %q, want *", got)
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "http://127.0.0.1:3000" {
+		t.Fatalf("allow origin = %q, want request origin", got)
+	}
+	if got := resp.Header.Get("Access-Control-Allow-Credentials"); got != "true" {
+		t.Fatalf("allow credentials = %q, want true", got)
 	}
 }
 
