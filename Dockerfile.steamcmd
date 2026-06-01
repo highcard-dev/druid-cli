@@ -8,12 +8,27 @@ COPY --from=base /usr/bin/druid* /usr/bin/
 COPY --from=base /entrypoint.sh /entrypoint.sh
 
 RUN apt-get update && apt-get install -y \
+    bc \
+    binutils \
+    bsdmainutils \
+    bzip2 \
     ca-certificates \
+    cpio \
     curl \
+    distro-info \
+    file \
+    iproute2 \
     jq \
+    lib32stdc++6 \
     moreutils \
+    netcat-openbsd \
+    pigz \
+    python3 \
+    tmux \
     unzip \
+    uuid-runtime \
     wget \
+    xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
 RUN ARCH=$(uname -m) && \
