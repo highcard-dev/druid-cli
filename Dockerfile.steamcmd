@@ -9,8 +9,10 @@ COPY --from=base /entrypoint.sh /entrypoint.sh
 
 RUN apt-get update && apt-get install -y \
     ca-certificates \
+    curl \
     jq \
     moreutils \
+    unzip \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
