@@ -1,5 +1,5 @@
 ARG VERSION=latest
-FROM highcard/druid:${VERSION} AS base
+FROM artifacts.druid.gg/druid-team/druid:${VERSION} AS base
 FROM gameservermanagers/steamcmd:ubuntu-24.04
 
 RUN if id -u steam >/dev/null 2>&1; then echo "Removing steam user from base image"; userdel -r steam || true; else echo "steam user not present"; fi
@@ -22,8 +22,10 @@ RUN apt-get update && apt-get install -y \
     lib32stdc++6 \
     moreutils \
     netcat-openbsd \
+    openjdk-21-jre \
     pigz \
     python3 \
+    rng-tools5 \
     tmux \
     unzip \
     uuid-runtime \
