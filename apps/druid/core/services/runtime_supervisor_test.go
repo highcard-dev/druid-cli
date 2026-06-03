@@ -402,6 +402,56 @@ func TestRuntimeSupervisorStartHydratesRunningScroll(t *testing.T) {
 	}
 }
 
+func TestRuntimeSupervisorStartRunsHydratedRestartCommand(t *testing.T) {
+	store := newTestStateStore(t)
+	scrollYAML := multiProcedureScrollYAML()
+	runtimeScroll := &domain.RuntimeScroll{
+		ID:         "running-restart-scroll",
+		Artifact:   "local",
+		Root:       "runtime://running-restart-scroll",
+		ScrollName: "cached",
+		ScrollYAML: scrollYAML,
+		Status:     domain.RuntimeScrollStatusRunning,
+		Procedures: domain.ProcedureStatusMap{
+			"start": {
+				"coldstart": {Status: domain.ScrollLockStatusRunning},
+				"start":     {Status: domain.ScrollLockStatusWaiting},
+			},
+		},
+	}
+	if err := store.CreateScroll(runtimeScroll); err != nil {
+		t.Fatal(err)
+	}
+	called := make(chan ports.RuntimeCommand, 1)
+	release := make(chan struct{})
+	supervisor := NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), &fakeWorkerBackend{
+		runCommand: func(command ports.RuntimeCommand) (*int, error) {
+			called <- command
+			<-release
+			return nil, nil
+		},
+	})
+
+	if err := supervisor.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		close(release)
+		if session := supervisor.sessions["running-restart-scroll"]; session != nil {
+			session.stopDeploymentQueue()
+		}
+	}()
+
+	select {
+	case command := <-called:
+		if command.Name != "start" {
+			t.Fatalf("hydrated command = %s, want start", command.Name)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for hydrated restart command to run")
+	}
+}
+
 func TestRuntimeSupervisorEnsureCanCreate(t *testing.T) {
 	artifact := t.TempDir()
 	if err := os.WriteFile(filepath.Join(artifact, "scroll.yaml"), []byte(cachedScrollYAML("start")), 0644); err != nil {
