@@ -84,7 +84,11 @@ func (s *RuntimeSession) Hydrate() error {
 	s.runtimeScroll.Status = deriveRuntimeScrollStatus(s.runtimeScroll.Procedures, s.scrollService.GetFile().Commands)
 	err := s.store.UpdateScroll(s.runtimeScroll)
 	s.mu.Unlock()
-	return err
+	if err != nil {
+		return err
+	}
+	s.triggerRunQueue()
+	return nil
 }
 
 func (s *RuntimeSession) AutoStartServe() error {
