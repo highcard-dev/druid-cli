@@ -7,7 +7,7 @@ RUN if id -u steam >/dev/null 2>&1; then echo "Removing steam user from base ima
 COPY --from=base /usr/bin/druid* /usr/bin/
 COPY --from=base /entrypoint.sh /entrypoint.sh
 
-RUN apt-get update && apt-get install -y \
+RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y --no-install-recommends \
     bc \
     binutils \
     bsdmainutils \
@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y \
     lib32stdc++6 \
     moreutils \
     netcat-openbsd \
-    openjdk-21-jre \
+    openjdk-21-jre-headless \
     pigz \
     python3 \
     rng-tools5 \
