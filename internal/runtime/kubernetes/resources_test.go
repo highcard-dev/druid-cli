@@ -213,7 +213,7 @@ func TestWorkerPullJobSpecRunsDruidWorkerPull(t *testing.T) {
 	job := workerPullJobSpec("druid", "worker-pull", "runtime-pvc", "druid-cli:test", action, "pull-secret", "runtime-registry", true)
 	container := job.Spec.Template.Spec.Containers[0]
 	command := strings.Join(container.Command, " ")
-	for _, want := range []string{"druid --config /tmp/druid-registry.json", "worker pull", "--mode update", "--runtime-id deployment-123", "--callback-url"} {
+	for _, want := range []string{"druid --config /tmp/druid-registry.json", "worker pull", "--mode update", "--runtime-id deployment-123", "--callback-url", "chown -R 1000:1000"} {
 		if !strings.Contains(command, want) {
 			t.Fatalf("command = %#v, want %s", container.Command, want)
 		}
@@ -227,6 +227,18 @@ func TestWorkerPullJobSpecRunsDruidWorkerPull(t *testing.T) {
 	}
 	if env["DRUID_WORKER_TOKEN"] != "secret-token" || env["DRUID_REGISTRY_PLAIN_HTTP"] != "true" {
 		t.Fatalf("env = %#v", container.Env)
+	}
+	if env[workerPullRootEnvName] != "/scroll" {
+		t.Fatalf("%s = %q, want /scroll", workerPullRootEnvName, env[workerPullRootEnvName])
+	}
+	if container.SecurityContext == nil || container.SecurityContext.RunAsUser == nil || *container.SecurityContext.RunAsUser != 0 {
+		t.Fatalf("worker pull must run as root to repair PVC ownership, securityContext = %#v", container.SecurityContext)
+	}
+	if container.SecurityContext.RunAsGroup == nil || *container.SecurityContext.RunAsGroup != 0 {
+		t.Fatalf("worker pull runAsGroup = %#v, want 0", container.SecurityContext.RunAsGroup)
+	}
+	if container.SecurityContext.RunAsNonRoot == nil || *container.SecurityContext.RunAsNonRoot {
+		t.Fatalf("worker pull runAsNonRoot = %#v, want false", container.SecurityContext.RunAsNonRoot)
 	}
 	if len(job.Spec.Template.Spec.ImagePullSecrets) != 1 || job.Spec.Template.Spec.ImagePullSecrets[0].Name != "pull-secret" {
 		t.Fatalf("image pull secrets = %#v", job.Spec.Template.Spec.ImagePullSecrets)
