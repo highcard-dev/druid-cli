@@ -41,25 +41,42 @@ const (
 	registryConfigEnvName   = "DRUID_RUNTIME_REGISTRY_CONFIG_JSON"
 	registryConfigSecretKey = "config.json"
 	registryConfigScript    = `printf '%s' "$DRUID_RUNTIME_REGISTRY_CONFIG_JSON" > /tmp/druid-registry.json && exec druid --config /tmp/druid-registry.json "$@"`
+	workerPullRootEnvName   = "DRUID_WORKER_ROOT"
+	workerPullScript        = `set -eu
+if [ -n "${DRUID_RUNTIME_REGISTRY_CONFIG_JSON:-}" ]; then
+  printf '%s' "$DRUID_RUNTIME_REGISTRY_CONFIG_JSON" > /tmp/druid-registry.json
+  druid --config /tmp/druid-registry.json "$@"
+else
+  druid "$@"
+fi
+chown -R 1000:1000 "$DRUID_WORKER_ROOT"`
 )
 
 func workerPullJobSpec(namespace string, jobName string, pvc string, image string, action ports.RuntimeWorkerAction, imagePullSecret string, registryConfigSecret string, registryPlainHTTP bool) *batchv1.Job {
 	command := []string{
-		"druid", "worker", "pull",
+		"sh", "-c", workerPullScript, "druid-worker-pull",
+		"worker", "pull",
 		"--artifact", action.Artifact,
 		"--runtime-id", action.RuntimeID,
 		"--mode", string(action.Mode),
 		"--root", action.MountPath,
 		"--callback-url", action.CallbackURL,
 	}
-	if registryConfigSecret != "" {
-		command = append([]string{"sh", "-c", registryConfigScript, "sh"}, command[1:]...)
-	}
 	job := helperJobSpec(namespace, jobName, pvc, image, command, imagePullSecret, map[string]string{
 		labelComponent: "worker-pull",
 	})
 	container := &job.Spec.Template.Spec.Containers[0]
-	container.Env = append(container.Env, corev1.EnvVar{Name: "DRUID_WORKER_TOKEN", Value: action.CallbackToken})
+	runAsRoot := int64(0)
+	runAsNonRoot := false
+	container.SecurityContext = &corev1.SecurityContext{
+		RunAsUser:    &runAsRoot,
+		RunAsGroup:   &runAsRoot,
+		RunAsNonRoot: &runAsNonRoot,
+	}
+	container.Env = append(container.Env,
+		corev1.EnvVar{Name: "DRUID_WORKER_TOKEN", Value: action.CallbackToken},
+		corev1.EnvVar{Name: workerPullRootEnvName, Value: action.MountPath},
+	)
 	if registryConfigSecret != "" {
 		container.Env = append(container.Env, corev1.EnvVar{
 			Name: registryConfigEnvName,
