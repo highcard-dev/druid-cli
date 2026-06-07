@@ -2,6 +2,12 @@ ARG VERSION=latest
 FROM artifacts.druid.gg/druid-team/druid:${VERSION} AS base
 FROM gameservermanagers/steamcmd:ubuntu-24.04
 
+RUN mkdir -p /tmp/steamcmd-seed/linux32 /tmp/steamcmd-seed/linux64 && \
+    cp /home/steam/.local/share/Steam/steamcmd/linux32/steamclient.so /tmp/steamcmd-seed/linux32/steamclient.so && \
+    cp /home/steam/.local/share/Steam/steamcmd/linux64/steamclient.so /tmp/steamcmd-seed/linux64/steamclient.so && \
+    test -s /tmp/steamcmd-seed/linux32/steamclient.so && \
+    test -s /tmp/steamcmd-seed/linux64/steamclient.so
+
 RUN if id -u steam >/dev/null 2>&1; then echo "Removing steam user from base image"; userdel -r steam || true; else echo "steam user not present"; fi
 
 COPY --from=base /usr/bin/druid* /usr/bin/
@@ -46,6 +52,22 @@ ARG UID=1000
 ARG GID=1000
 RUN groupadd -g $GID -o druid
 RUN useradd -m -u $UID -g $GID -o -s /bin/bash druid
+
+RUN mkdir -p \
+      /home/druid/.local/share/Steam/steamcmd/linux32 \
+      /home/druid/.local/share/Steam/steamcmd/linux64 \
+      /home/druid/.steam/sdk32 \
+      /home/druid/.steam/sdk64 && \
+    cp /tmp/steamcmd-seed/linux32/steamclient.so /home/druid/.local/share/Steam/steamcmd/linux32/steamclient.so && \
+    cp /tmp/steamcmd-seed/linux64/steamclient.so /home/druid/.local/share/Steam/steamcmd/linux64/steamclient.so && \
+    ln -sfn /home/druid/.local/share/Steam /home/druid/.steam/root && \
+    ln -sfn /home/druid/.local/share/Steam /home/druid/.steam/steam && \
+    ln -sfn /home/druid/.local/share/Steam/steamcmd/linux32/steamclient.so /home/druid/.steam/sdk32/steamclient.so && \
+    ln -sfn /home/druid/.local/share/Steam/steamcmd/linux64/steamclient.so /home/druid/.steam/sdk64/steamclient.so && \
+    chown -R druid:druid /home/druid/.local /home/druid/.steam && \
+    rm -rf /tmp/steamcmd-seed
+
+WORKDIR /home/druid
 
 USER druid
 
