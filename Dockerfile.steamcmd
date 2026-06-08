@@ -23,16 +23,19 @@ RUN mkdir -p /usr/share/man/man1 && \
     cpio \
     curl \
     distro-info \
+    expect \
     file \
     iproute2 \
     jq \
     lib32stdc++6 \
+    libxml2-utils \
     moreutils \
     netcat-openbsd \
     openjdk-21-jre-headless \
     pigz \
     python3 \
     rng-tools5 \
+    telnet \
     tmux \
     unzip \
     uuid-runtime \
