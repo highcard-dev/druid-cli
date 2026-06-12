@@ -375,6 +375,37 @@ func (c *OciClient) ResolveDigest(artifact string) (string, error) {
 	return desc.Digest.String(), nil
 }
 
+func (c *OciClient) ResolveAnnotationInfo(artifact string) (domain.AnnotationInfo, error) {
+	repo, ref, _ := utils.ParseArtifactRef(artifact)
+	if repo == "" || ref == "" {
+		return domain.AnnotationInfo{}, fmt.Errorf("reference (tag or digest) must be set")
+	}
+	repoInstance, err := c.GetRepo(repo)
+	if err != nil {
+		return domain.AnnotationInfo{}, err
+	}
+	desc, err := oras.Resolve(context.Background(), repoInstance, ref, oras.DefaultResolveOptions)
+	if err != nil {
+		return domain.AnnotationInfo{}, fmt.Errorf("failed to resolve %s: %w", ref, err)
+	}
+	manifest, err := content.FetchAll(context.Background(), repoInstance, desc)
+	if err != nil {
+		return domain.AnnotationInfo{}, fmt.Errorf("failed to fetch manifest for %s: %w", ref, err)
+	}
+	var fullDesc v1.Descriptor
+	if err := json.Unmarshal(manifest, &fullDesc); err != nil {
+		return domain.AnnotationInfo{}, fmt.Errorf("failed to parse manifest for %s: %w", ref, err)
+	}
+	annotations := fullDesc.Annotations
+	return domain.AnnotationInfo{
+		MinRam:  annotations["gg.druid.scroll.minRam"],
+		MinDisk: annotations["gg.druid.scroll.minDisk"],
+		MinCpu:  annotations["gg.druid.scroll.minCpu"],
+		Image:   annotations["gg.druid.scroll.image"],
+		Smart:   annotations["gg.druid.scroll.smart"] == "true",
+	}, nil
+}
+
 func fetchFileFromOCI(ctx context.Context, fetcher content.Fetcher, rootDesc v1.Descriptor, filePath string) ([]byte, error) {
 	seen := map[string]bool{}
 	queue := []v1.Descriptor{rootDesc}

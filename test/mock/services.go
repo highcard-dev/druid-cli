@@ -880,6 +880,21 @@ func (mr *MockOciRegistryInterfaceMockRecorder) ResolveDigest(artifact any) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveDigest", reflect.TypeOf((*MockOciRegistryInterface)(nil).ResolveDigest), artifact)
 }
 
+// ResolveAnnotationInfo mocks base method.
+func (m *MockOciRegistryInterface) ResolveAnnotationInfo(artifact string) (domain.AnnotationInfo, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResolveAnnotationInfo", artifact)
+	ret0, _ := ret[0].(domain.AnnotationInfo)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ResolveAnnotationInfo indicates an expected call of ResolveAnnotationInfo.
+func (mr *MockOciRegistryInterfaceMockRecorder) ResolveAnnotationInfo(artifact any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveAnnotationInfo", reflect.TypeOf((*MockOciRegistryInterface)(nil).ResolveAnnotationInfo), artifact)
+}
+
 // MockQueueManagerInterface is a mock of QueueManagerInterface interface.
 type MockQueueManagerInterface struct {
 	ctrl     *gomock.Controller

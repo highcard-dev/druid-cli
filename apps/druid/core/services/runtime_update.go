@@ -51,7 +51,7 @@ func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeSc
 		_ = s.store.UpdateScroll(runtimeScroll)
 		return nil, err
 	}
-	materialized, err := s.runPullWorker(context.Background(), s.runtimeBackend, ports.RuntimeWorkerModeUpdate, runtimeScroll.ID, artifact, runtimeScroll.Root, registryCredentials)
+	materialized, err := s.runPullWorker(context.Background(), s.runtimeBackend, ports.RuntimeWorkerModeUpdate, runtimeScroll.ID, artifact, runtimeScroll.Root, registryCredentials, "")
 	if err != nil {
 		runtimeScroll.Status = domain.RuntimeScrollStatusError
 		runtimeScroll.LastError = err.Error()
