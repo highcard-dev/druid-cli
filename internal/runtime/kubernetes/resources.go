@@ -16,8 +16,14 @@ import (
 	"github.com/highcard-dev/daemon/internal/core/ports"
 )
 
-func pvcSpec(namespace string, name string, storageClass string) *corev1.PersistentVolumeClaim {
-	quantity := resource.MustParse("1Gi")
+func pvcSpec(namespace string, name string, storageClass string, storageRequest string) *corev1.PersistentVolumeClaim {
+	if storageRequest == "" {
+		storageRequest = "1Gi"
+	}
+	quantity, err := resource.ParseQuantity(storageRequest)
+	if err != nil || quantity.Sign() <= 0 {
+		quantity = resource.MustParse("1Gi")
+	}
 	spec := corev1.PersistentVolumeClaimSpec{
 		AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 		Resources: corev1.VolumeResourceRequirements{

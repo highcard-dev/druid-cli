@@ -40,6 +40,7 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 		zap.String("namespace", namespace),
 		zap.String("pvc", pvc),
 		zap.String("artifact", action.Artifact),
+		zap.String("storage", action.Storage),
 	)
 	logger.Log().Debug("Kubernetes pull worker details",
 		zap.String("runtime_id", action.RuntimeID),
@@ -50,7 +51,7 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 		zap.Bool("has_registry_credentials", len(action.RegistryCredentials) > 0),
 	)
 	if action.Mode == ports.RuntimeWorkerModeCreate {
-		if err := b.ensurePVC(ctx, namespace, pvc); err != nil {
+		if err := b.ensurePVC(ctx, namespace, pvc, action.Storage); err != nil {
 			logger.Log().Error("Failed to ensure runtime PVC for pull worker", zap.String("runtime_id", action.RuntimeID), zap.String("namespace", namespace), zap.String("pvc", pvc), zap.Error(err))
 			return err
 		}
@@ -113,9 +114,9 @@ func setJobDeadlineFromContext(ctx context.Context, job *batchv1.Job) {
 	job.Spec.ActiveDeadlineSeconds = &seconds
 }
 
-func (b *Backend) ensurePVC(ctx context.Context, namespace string, name string) error {
-	pvc := pvcSpec(namespace, name, b.config.StorageClass)
-	logger.Log().Debug("Ensuring Kubernetes PVC", zap.String("namespace", namespace), zap.String("pvc", name), zap.String("storage_class", b.config.StorageClass))
+func (b *Backend) ensurePVC(ctx context.Context, namespace string, name string, storageRequest string) error {
+	pvc := pvcSpec(namespace, name, b.config.StorageClass, storageRequest)
+	logger.Log().Debug("Ensuring Kubernetes PVC", zap.String("namespace", namespace), zap.String("pvc", name), zap.String("storage_class", b.config.StorageClass), zap.String("storage", storageRequest))
 	_, err := b.client.CoreV1().PersistentVolumeClaims(namespace).Create(ctx, pvc, metav1.CreateOptions{})
 	if apierrors.IsAlreadyExists(err) {
 		logger.Log().Debug("Kubernetes PVC already exists", zap.String("namespace", namespace), zap.String("pvc", name))

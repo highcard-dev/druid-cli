@@ -167,6 +167,10 @@ func (fakeRestoreOCI) ResolveDigest(string) (string, error) {
 	return "sha256:restored", nil
 }
 
+func (fakeRestoreOCI) ResolveAnnotationInfo(string) (domain.AnnotationInfo, error) {
+	return domain.AnnotationInfo{}, nil
+}
+
 func (fakeRestoreOCI) CanUpdateTag(v1.Descriptor, string, string) (bool, error) {
 	return false, nil
 }

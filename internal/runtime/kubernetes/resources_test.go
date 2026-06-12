@@ -305,6 +305,7 @@ func TestSpawnPullWorkerCreateUsesFinalPVCAndWorkerJob(t *testing.T) {
 		Mode:          ports.RuntimeWorkerModeCreate,
 		RuntimeID:     "deployment-123",
 		Artifact:      "registry.local/lab:1.0",
+		Storage:       "25Gi",
 		RootRef:       ref("games", dataPVCName("deployment-123")),
 		MountPath:     "/scroll",
 		CallbackURL:   "http://druid-cli:8083/internal/v1/workers/deployment-123/complete",
@@ -319,6 +320,9 @@ func TestSpawnPullWorkerCreateUsesFinalPVCAndWorkerJob(t *testing.T) {
 	}
 	if len(pvcs.Items) != 1 || pvcs.Items[0].Name != dataPVCName("deployment-123") {
 		t.Fatalf("pvcs = %#v, want final PVC", pvcs.Items)
+	}
+	if got := pvcs.Items[0].Spec.Resources.Requests.Storage().String(); got != "25Gi" {
+		t.Fatalf("pvc storage = %s, want 25Gi", got)
 	}
 	if len(jobs) != 1 {
 		t.Fatalf("jobs = %d, want 1", len(jobs))
@@ -1184,7 +1188,7 @@ func TestStopRuntimeDeletesWorkloadsButPreservesDataAndServices(t *testing.T) {
 	}
 	for _, create := range []func() error{
 		func() error {
-			_, err := client.CoreV1().PersistentVolumeClaims("druid").Create(context.Background(), pvcSpec("druid", "druid-static-web-data", ""), metav1.CreateOptions{})
+			_, err := client.CoreV1().PersistentVolumeClaims("druid").Create(context.Background(), pvcSpec("druid", "druid-static-web-data", "", ""), metav1.CreateOptions{})
 			return err
 		},
 		func() error {
@@ -1237,7 +1241,7 @@ func TestDeleteRuntimePurgesServicesAndDataWhenRequested(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.CoreV1().PersistentVolumeClaims("druid").Create(context.Background(), pvcSpec("druid", "druid-static-web-data", ""), metav1.CreateOptions{}); err != nil {
+	if _, err := client.CoreV1().PersistentVolumeClaims("druid").Create(context.Background(), pvcSpec("druid", "druid-static-web-data", "", ""), metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := client.CoreV1().Services("druid").Create(context.Background(), service, metav1.CreateOptions{}); err != nil {

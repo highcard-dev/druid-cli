@@ -14,10 +14,11 @@ import (
 )
 
 func (s *RuntimeSupervisor) materializeNewScroll(ctx context.Context, runtimeService ports.RuntimeBackendInterface, artifact string, runtimeID string, namespace string, registryCredentials []domain.RegistryCredential) (*ports.RuntimeMaterialization, error) {
-	return s.runPullWorker(ctx, runtimeService, ports.RuntimeWorkerModeCreate, runtimeID, artifact, runtimeService.RootRef(runtimeID, namespace), registryCredentials)
+	storage := resolveArtifactMinDisk(artifact, registryCredentials)
+	return s.runPullWorker(ctx, runtimeService, ports.RuntimeWorkerModeCreate, runtimeID, artifact, runtimeService.RootRef(runtimeID, namespace), registryCredentials, storage)
 }
 
-func (s *RuntimeSupervisor) runPullWorker(ctx context.Context, runtimeService ports.RuntimeBackendInterface, mode ports.RuntimeWorkerMode, runtimeID string, artifact string, root string, registryCredentials []domain.RegistryCredential) (*ports.RuntimeMaterialization, error) {
+func (s *RuntimeSupervisor) runPullWorker(ctx context.Context, runtimeService ports.RuntimeBackendInterface, mode ports.RuntimeWorkerMode, runtimeID string, artifact string, root string, registryCredentials []domain.RegistryCredential, storage string) (*ports.RuntimeMaterialization, error) {
 	if s.workerCallbacks == nil || s.workerCallbackURL == "" {
 		return nil, fmt.Errorf("daemon materialization requires --worker-callback-url and --worker-callback-listen")
 	}
@@ -32,6 +33,7 @@ func (s *RuntimeSupervisor) runPullWorker(ctx context.Context, runtimeService po
 		Mode:                mode,
 		RuntimeID:           runtimeID,
 		Artifact:            artifact,
+		Storage:             storage,
 		RootRef:             root,
 		MountPath:           "/scroll",
 		CallbackURL:         callbackURL,
@@ -60,6 +62,22 @@ func (s *RuntimeSupervisor) runPullWorker(ctx context.Context, runtimeService po
 		s.workerCallbacks.Cancel(runtimeID)
 		return nil, fmt.Errorf("worker action for runtime %s timed out: %w", runtimeID, waitCtx.Err())
 	}
+}
+
+func resolveArtifactMinDisk(artifact string, registryCredentials []domain.RegistryCredential) string {
+	if artifact == "" {
+		return ""
+	}
+	if _, err := os.Stat(artifact); err == nil {
+		return ""
+	}
+	oci := registry.NewOciClient(registry.NewCredentialStore(registryCredentials))
+	info, err := oci.ResolveAnnotationInfo(artifact)
+	if err != nil {
+		logger.Log().Warn("Unable to resolve artifact min disk", zap.String("artifact", artifact), zap.Error(err))
+		return ""
+	}
+	return info.MinDisk
 }
 
 func resolveArtifactDigest(artifact string, registryCredentials []domain.RegistryCredential) string {

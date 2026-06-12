@@ -67,7 +67,7 @@ func (s *RuntimeSupervisor) Restore(id string, artifact string, restart bool, re
 		session.markError(err)
 		return nil, err
 	}
-	materialized, err := s.runPullWorker(context.Background(), s.runtimeBackend, ports.RuntimeWorkerModeRestore, id, artifact, root, registryCredentials)
+	materialized, err := s.runPullWorker(context.Background(), s.runtimeBackend, ports.RuntimeWorkerModeRestore, id, artifact, root, registryCredentials, "")
 	if err != nil {
 		session.markError(err)
 		return nil, err

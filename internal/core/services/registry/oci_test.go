@@ -172,6 +172,44 @@ func TestPushDataChunkPathNotDoubled(t *testing.T) {
 	}
 }
 
+func TestResolveAnnotationInfoReadsManifestAnnotations(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	srv := fakeRegistry(t)
+	registryHost := strings.TrimPrefix(srv.URL, "http://")
+
+	folder := filepath.Join("scrolls", "cs2server")
+	if err := os.MkdirAll(folder, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(folder, "scroll.yaml"), []byte("name: test\nversion: 0.1.0\napp_version: cs2server\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	client := &OciClient{
+		credentialStore: NewCredentialStore([]domain.RegistryCredential{}),
+		plainHTTP:       true,
+	}
+	repoRef := registryHost + "/test/scroll"
+	if _, err := client.Push(folder, repoRef, "cs2server-prebuild", map[string]string{
+		"gg.druid.scroll.minDisk": "70Gi",
+		"gg.druid.scroll.minRam":  "1Gi",
+		"gg.druid.scroll.minCpu":  "0.5",
+		"gg.druid.scroll.smart":   "true",
+	}, false, nil); err != nil {
+		t.Fatalf("Push failed unexpectedly: %v", err)
+	}
+
+	info, err := client.ResolveAnnotationInfo(repoRef + ":cs2server-prebuild")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.MinDisk != "70Gi" || info.MinRam != "1Gi" || info.MinCpu != "0.5" || !info.Smart {
+		t.Fatalf("annotation info = %#v", info)
+	}
+}
+
 func TestPushPullExecutableDataChunkPreservesMode(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Chdir(tmpDir)

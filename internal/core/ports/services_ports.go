@@ -121,6 +121,7 @@ type RuntimeWorkerAction struct {
 	Mode                RuntimeWorkerMode
 	RuntimeID           string
 	Artifact            string
+	Storage             string
 	RootRef             string
 	MountPath           string
 	CallbackURL         string
@@ -164,6 +165,7 @@ type OciRegistryInterface interface {
 	GetRepo(repoUrl string) (*remote.Repository, error)
 	FetchFile(artifact string, filePath string) ([]byte, error)
 	ResolveDigest(artifact string) (string, error)
+	ResolveAnnotationInfo(artifact string) (domain.AnnotationInfo, error)
 	Pull(dir string, artifact string) error
 	PullSelective(dir string, artifact string, includeData bool, progress *domain.SnapshotProgress) error
 	CanUpdateTag(descriptor v1.Descriptor, folder string, tag string) (bool, error)
