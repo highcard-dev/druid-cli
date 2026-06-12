@@ -179,7 +179,7 @@ func (b *Backend) runJobProcedure(scrollID string, commandName string, procedure
 		zap.Int("expected_ports", len(procedure.ExpectedPorts)),
 		zap.Int("mounts", len(procedure.Mounts)),
 	)
-	createdJob, err := b.createOrReuseProcedureJob(ctx, namespace, root, commandName, procedureName, resourceName, procedure, env)
+	createdJob, err := b.createOrReuseProcedureJob(ctx, namespace, root, commandName, procedureName, resourceName, procedure, globalPorts, env)
 	if err != nil {
 		logger.Log().Error("Failed to create Kubernetes job procedure", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.String("base_job", resourceName), zap.Error(err))
 		return nil, err
@@ -237,7 +237,7 @@ func (b *Backend) ensurePersistentProcedure(ctx context.Context, scrollID string
 		logger.Log().Error("Kubernetes persistent procedure root ref invalid", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("root", root), zap.Error(err))
 		return err
 	}
-	statefulSet, err := procedureStatefulSetSpec(namespace, root, commandName, procedureName, resourceName, procedure, env, b.config.RegistrySecret)
+	statefulSet, err := procedureStatefulSetSpec(namespace, root, commandName, procedureName, resourceName, procedure, globalPorts, env, b.config.RegistrySecret)
 	if err != nil {
 		logger.Log().Error("Failed to build Kubernetes persistent procedure StatefulSet", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.Error(err))
 		return err

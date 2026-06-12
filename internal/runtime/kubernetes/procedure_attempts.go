@@ -80,7 +80,7 @@ func (b *Backend) resumeRestartProcedureIndex(ctx context.Context, root string, 
 	return resumeIndex, nil
 }
 
-func (b *Backend) createOrReuseProcedureJob(ctx context.Context, namespace string, root string, commandName string, procedureName string, baseName string, procedure *domain.Procedure, env map[string]string) (*batchv1.Job, error) {
+func (b *Backend) createOrReuseProcedureJob(ctx context.Context, namespace string, root string, commandName string, procedureName string, baseName string, procedure *domain.Procedure, globalPorts []domain.Port, env map[string]string) (*batchv1.Job, error) {
 	_, pvc, err := parseRef(root)
 	if err != nil {
 		return nil, err
@@ -134,7 +134,7 @@ func (b *Backend) createOrReuseProcedureJob(ctx context.Context, namespace strin
 		return active, nil
 	}
 	name := procedureAttemptName(baseName, nextAttempt)
-	job, err := procedureJobSpec(namespace, root, commandName, procedureName, name, nextAttempt, procedure, env, b.config.RegistrySecret)
+	job, err := procedureJobSpec(namespace, root, commandName, procedureName, name, nextAttempt, procedure, globalPorts, env, b.config.RegistrySecret)
 	if err != nil {
 		return nil, err
 	}
