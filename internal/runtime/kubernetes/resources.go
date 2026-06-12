@@ -148,7 +148,7 @@ func helperJobSpec(namespace string, jobName string, pvc string, image string, c
 	}
 }
 
-func procedureJobSpec(namespace string, root string, commandName string, procedureName string, resourceName string, attempt int, procedure *domain.Procedure, env map[string]string, registrySecret string) (*batchv1.Job, error) {
+func procedureJobSpec(namespace string, root string, commandName string, procedureName string, resourceName string, attempt int, procedure *domain.Procedure, globalPorts []domain.Port, env map[string]string, registrySecret string) (*batchv1.Job, error) {
 	_, pvc, err := parseRef(root)
 	if err != nil {
 		return nil, err
@@ -173,6 +173,7 @@ func procedureJobSpec(namespace string, root string, commandName string, procedu
 		Env:             envVars(env),
 		VolumeMounts:    volumeMounts(procedure.Mounts),
 	}
+	applyProcedureReadiness(&container, procedure, globalPorts)
 	podSpec := corev1.PodSpec{
 		RestartPolicy: corev1.RestartPolicyNever,
 		Containers:    []corev1.Container{container},
@@ -197,7 +198,7 @@ func procedureJobSpec(namespace string, root string, commandName string, procedu
 	}, nil
 }
 
-func procedureStatefulSetSpec(namespace string, root string, commandName string, procedureName string, resourceName string, procedure *domain.Procedure, env map[string]string, registrySecret string) (*appsv1.StatefulSet, error) {
+func procedureStatefulSetSpec(namespace string, root string, commandName string, procedureName string, resourceName string, procedure *domain.Procedure, globalPorts []domain.Port, env map[string]string, registrySecret string) (*appsv1.StatefulSet, error) {
 	_, pvc, err := parseRef(root)
 	if err != nil {
 		return nil, err
@@ -221,6 +222,7 @@ func procedureStatefulSetSpec(namespace string, root string, commandName string,
 		Env:             envVars(env),
 		VolumeMounts:    volumeMounts(procedure.Mounts),
 	}
+	applyProcedureReadiness(&container, procedure, globalPorts)
 	podSpec := corev1.PodSpec{
 		Containers: []corev1.Container{container},
 		Volumes:    []corev1.Volume{pvcVolume("data", pvc)},
@@ -244,6 +246,38 @@ func procedureStatefulSetSpec(namespace string, root string, commandName string,
 			},
 		},
 	}, nil
+}
+
+func applyProcedureReadiness(container *corev1.Container, procedure *domain.Procedure, globalPorts []domain.Port) {
+	port, ok := firstTCPExpectedPort(procedure, globalPorts)
+	if !ok {
+		return
+	}
+	container.ReadinessProbe = &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt(port.Port)},
+		},
+		PeriodSeconds:    2,
+		FailureThreshold: 3,
+	}
+}
+
+func firstTCPExpectedPort(procedure *domain.Procedure, globalPorts []domain.Port) (domain.Port, bool) {
+	if procedure == nil {
+		return domain.Port{}, false
+	}
+	ports := portsByName(globalPorts)
+	for _, expected := range procedure.ExpectedPorts {
+		port, ok := ports[expected.Name]
+		if !ok {
+			continue
+		}
+		if normalizeProtocol(port.Protocol) == "udp" {
+			continue
+		}
+		return port, true
+	}
+	return domain.Port{}, false
 }
 
 func devStatefulSetSpec(namespace string, root string, pvc string, image string, action ports.RuntimeDevAction, registrySecret string) *appsv1.StatefulSet {
