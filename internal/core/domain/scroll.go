@@ -363,7 +363,7 @@ func (sc *Scroll) Validate(strict bool) error {
 		}
 	}
 	//scan for files in sc.scrollDir
-	if sc.scrollDir == "" {
+	if sc.scrollDir == "" || strings.Contains(sc.scrollDir, "://") {
 		return nil
 	}
 	entries, err := os.ReadDir(sc.scrollDir)

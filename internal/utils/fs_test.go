@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -168,6 +169,9 @@ func TestAutoChunkDataDirValidatesSymlinksAfterExpansion(t *testing.T) {
 	contentDir := filepath.Join(dataDir, "serverfiles", "ShooterGame", "Content")
 	mkdirAll(t, filepath.Join(contentDir, "Maps", "TheIsland"))
 	if err := os.Symlink(filepath.Join("Maps", "TheIsland"), filepath.Join(contentDir, "CurrentMap")); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("Windows denied symlink creation: %v", err)
+		}
 		t.Fatalf("failed to create symlink: %v", err)
 	}
 

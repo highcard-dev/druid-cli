@@ -96,7 +96,7 @@ func portServiceFromEnv(root string) (*envPortService, error) {
 		}
 		if handler != "generic" {
 			path := filepath.Join(root, filepath.Clean(handler))
-			if rel, err := filepath.Rel(root, path); err != nil || rel == ".." || filepath.IsAbs(rel) || strings.HasPrefix(rel, "../") {
+			if rel, err := filepath.Rel(root, path); err != nil || rel == ".." || filepath.IsAbs(rel) || strings.HasPrefix(filepath.ToSlash(rel), "../") {
 				return nil, fmt.Errorf("%s must be generic or a path below DRUID_ROOT", key)
 			}
 		}

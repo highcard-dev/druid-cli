@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -211,6 +212,10 @@ func TestResolveAnnotationInfoReadsManifestAnnotations(t *testing.T) {
 }
 
 func TestPushPullExecutableDataChunkPreservesMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows filesystems do not preserve POSIX executable bits")
+	}
+
 	tmpDir := t.TempDir()
 	t.Chdir(tmpDir)
 

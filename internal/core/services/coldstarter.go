@@ -78,7 +78,7 @@ func (c *ColdStarter) Serve(ctx context.Context) {
 			handler = lua.NewGenericReturnHandler()
 		} else {
 			path := filepath.Join(c.dir, filepath.Clean(port.ColdstarterHandler))
-			if rel, err := filepath.Rel(c.dir, path); err != nil || rel == ".." || filepath.IsAbs(rel) || strings.HasPrefix(rel, "../") {
+			if rel, err := filepath.Rel(c.dir, path); err != nil || rel == ".." || filepath.IsAbs(rel) || strings.HasPrefix(filepath.ToSlash(rel), "../") {
 				logger.Log().Error("Invalid coldstarter handler path", zap.String("handler", port.ColdstarterHandler))
 				continue
 			}

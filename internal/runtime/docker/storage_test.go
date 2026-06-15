@@ -40,10 +40,12 @@ func TestRuntimeRootRefUsesBindRoot(t *testing.T) {
 }
 
 func TestParseRootRefSupportsVolumeBindAndLocalBindPath(t *testing.T) {
+	bindRoot := filepath.Join(t.TempDir(), "scroll")
+	bindRef := "docker-bind://" + bindRoot
 	cases := map[string]RootRef{
 		"docker-volume://druid-scroll-data": {Kind: StorageVolume, Source: "druid-scroll-data"},
-		"docker-bind:///tmp/druid/scroll":   {Kind: StorageBind, Source: "/tmp/druid/scroll"},
-		"/tmp/druid/local":                  {Kind: StorageBind, Source: "/tmp/druid/local"},
+		bindRef:                             {Kind: StorageBind, Source: filepath.Clean(bindRoot)},
+		bindRoot:                            {Kind: StorageBind, Source: filepath.Clean(bindRoot)},
 	}
 	for input, want := range cases {
 		got, err := ParseRootRef(input)
@@ -74,13 +76,14 @@ func TestDockerMountUsesVolumeSubpath(t *testing.T) {
 }
 
 func TestDockerMountUsesBindSubpath(t *testing.T) {
-	got, err := DockerMount("docker-bind:///tmp/druid/scroll", "/site", false, "data/site")
+	bindRoot := filepath.Join(t.TempDir(), "scroll")
+	got, err := DockerMount("docker-bind://"+bindRoot, "/site", false, "data/site")
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := mount.Mount{
 		Type:        mount.TypeBind,
-		Source:      "/tmp/druid/scroll/data/site",
+		Source:      filepath.Join(bindRoot, "data", "site"),
 		Target:      "/site",
 		BindOptions: &mount.BindOptions{CreateMountpoint: true},
 	}

@@ -6,17 +6,39 @@ A good use case is to let it run inside of a docker container. It will give addi
 
 The current runtime backends are Docker for local development and Kubernetes for in-cluster or kubeconfig-backed cluster operation.
 
-## Installation
+## Installation and Local Build
 
-We publish [releases on Github](https://github.com/highcard-dev/druid-cli/releases).
+We publish [releases on GitHub](https://github.com/highcard-dev/druid-cli/releases).
 
-You can easlily install druid-cli on Linux by running:
+You can install the latest Linux release with:
 
 ```bash
 curl -L -o druid "https://github.com/highcard-dev/druid-cli/releases/latest/download/druid" && sudo install -c -m 0755 druid /usr/local/bin
 ```
 
 Also consider our installation documentation: [https://docs.druid.gg/cli/introduction](https://docs.druid.gg/cli/introduction)
+
+### Windows development build
+
+For local Windows development, use the sibling monorepo tool installer first:
+
+```powershell
+cd ..\monorepo
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows-tools.ps1
+```
+
+Then build both CLI binaries from this repository:
+
+```powershell
+cd ..\druid-cli
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows.ps1
+.\bin\druid.exe version
+```
+
+The Windows build script generates OpenAPI clients, then writes:
+
+- `bin/druid.exe`
+- `bin/druid-coldstarter.exe`
 
 ## Scroll OCI manifest
 
@@ -39,6 +61,12 @@ Build all binaries with:
 make build
 ```
 
+On Windows without GNU Make, use:
+
+```powershell
+.\scripts\build-windows.ps1
+```
+
 Common local flow:
 
 ```bash
@@ -55,7 +83,7 @@ For examples, omit `[name]` so each scroll derives its own id from `scroll.yaml`
 
 ### Dependency based command runner
 
-The way commands are handled is described in the `scroll.yaml` and is similar to how Github Actions work, with support for long-running container commands.
+The way commands are handled is described in the `scroll.yaml` and is similar to how GitHub Actions work, with support for long-running container commands.
 Commands can also depend on each other.
 
 ### Web Server
@@ -68,6 +96,21 @@ There is also websocket support for stdout. TTY is also supported.
 Runtime selection is daemon-only: start the daemon with `druid daemon --runtime docker`, then use `druid` to create, run, and inspect scrolls without passing a runtime. Docker runtime state stays in SQLite under the runtime state directory. Scroll specs and runtime data live together in one runtime root.
 
 Kubernetes runtime support is available with `druid daemon --runtime kubernetes` for in-cluster daemons or out-of-cluster daemons using kubeconfig. It stores daemon scroll state in ConfigMaps, materializes OCI artifacts through `druid worker pull` Jobs, and uses kubelet pod stats for procedure-level traffic checks. See `docs/kubernetes_runtime.md` for kubeconfig, RBAC, and PVC setup.
+
+For the local K3D cluster created by the monorepo, build and import the runtime image, then start the daemon:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\k3d-build-pull-image.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-kubernetes-daemon.ps1
+```
+
+The daemon listens on:
+
+- management API: `http://127.0.0.1:8081`
+- public API: `http://127.0.0.1:8082`
+
+Those defaults match the monorepo's generated local operator and SPA environment files.
+The Windows daemon script automatically uses `..\monorepo\.tools\kubeconfig-druid-gs.yaml` when no kubeconfig is set.
 
 ## Documentation
 

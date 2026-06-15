@@ -337,12 +337,14 @@ func (s devServer) writeFile(c *fiber.Ctx, raw string) error {
 
 func devFilePath(root string, raw string) (string, error) {
 	cleaned := filepath.Clean(strings.TrimPrefix(raw, "/"))
-	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+	cleanedSlash := filepath.ToSlash(cleaned)
+	if cleanedSlash == "." || cleanedSlash == ".." || strings.HasPrefix(cleanedSlash, "../") {
 		return "", fmt.Errorf("invalid path %q", raw)
 	}
 	full := filepath.Join(root, filepath.FromSlash(cleaned))
 	rel, err := filepath.Rel(root, full)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
+	relSlash := filepath.ToSlash(rel)
+	if err != nil || relSlash == ".." || strings.HasPrefix(relSlash, "../") {
 		return "", fmt.Errorf("invalid path %q", raw)
 	}
 	return full, nil
