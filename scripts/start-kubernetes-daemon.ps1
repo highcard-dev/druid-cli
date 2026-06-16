@@ -3,8 +3,11 @@ param(
   [string]$DruidExe = '.\bin\druid.exe',
   [string]$PullImage = 'druid:local',
   [string]$Kubeconfig = '',
-  [string]$ManagementListen = '127.0.0.1:8081',
-  [string]$PublicListen = '127.0.0.1:8082'
+  [string]$ManagementListen = '0.0.0.0:8081',
+  [string]$PublicListen = '127.0.0.1:8082',
+  [string]$WorkerCallbackListen = '0.0.0.0:8083',
+  [string]$WorkerCallbackUrl = 'http://host.docker.internal:8083',
+  [string]$WorkerDaemonUrl = 'http://host.docker.internal:8081'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -52,7 +55,9 @@ $args = @(
   '--public-listen', $PublicListen,
   '--unsafe-allow-unauthenticated-management',
   '--unsafe-allow-unauthenticated-public',
-  '--worker-daemon-url', "http://$ManagementListen",
+  '--worker-callback-listen', $WorkerCallbackListen,
+  '--worker-callback-url', $WorkerCallbackUrl,
+  '--worker-daemon-url', $WorkerDaemonUrl,
   '--k8s-pull-image', $PullImage
 )
 

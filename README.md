@@ -106,8 +106,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-kubernetes-d
 
 The daemon listens on:
 
-- management API: `http://127.0.0.1:8081`
+- management API: `http://127.0.0.1:8081` from the host and `http://host.docker.internal:8081` from K3D worker pods
 - public API: `http://127.0.0.1:8082`
+- worker callback API: `http://host.docker.internal:8083` from K3D worker pods
 
 Those defaults match the monorepo's generated local operator and SPA environment files.
 The Windows daemon script automatically uses `..\monorepo\.tools\kubeconfig-druid-gs.yaml` when no kubeconfig is set.

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -311,7 +312,7 @@ func (sc *Scroll) Validate(strict bool) error {
 					if mount.Path == "" {
 						return fmt.Errorf("mount path is required")
 					}
-					if !filepath.IsAbs(mount.Path) {
+					if !mountPathIsAbsolute(mount.Path) {
 						return fmt.Errorf("mount path %s must be absolute", mount.Path)
 					}
 					if mountPaths[mount.Path] {
@@ -321,11 +322,12 @@ func (sc *Scroll) Validate(strict bool) error {
 					if mount.SubPath == "" {
 						continue
 					}
-					if filepath.IsAbs(mount.SubPath) {
+					normalizedSubPath := normalizeMountSubPath(mount.SubPath)
+					if mountSubPathIsAbsolute(mount.SubPath, normalizedSubPath) {
 						return fmt.Errorf("mount sub_path %s must be relative", mount.SubPath)
 					}
-					clean := filepath.Clean(mount.SubPath)
-					if clean == ".." || strings.HasPrefix(clean, "../") {
+					clean := path.Clean(normalizedSubPath)
+					if clean == ".." || strings.HasPrefix(clean, "../") || mountSubPathHasParentSegment(normalizedSubPath) {
 						return fmt.Errorf("mount sub_path %s escapes runtime root", mount.SubPath)
 					}
 				}
@@ -363,7 +365,7 @@ func (sc *Scroll) Validate(strict bool) error {
 		}
 	}
 	//scan for files in sc.scrollDir
-	if sc.scrollDir == "" || strings.Contains(sc.scrollDir, "://") {
+	if sc.scrollDir == "" || isVirtualScrollDir(sc.scrollDir) {
 		return nil
 	}
 	entries, err := os.ReadDir(sc.scrollDir)
@@ -391,6 +393,43 @@ func (sc *Scroll) Validate(strict bool) error {
 	}
 
 	return nil
+}
+
+func normalizeMountSubPath(subPath string) string {
+	return strings.ReplaceAll(subPath, "\\", "/")
+}
+
+func mountPathIsAbsolute(mountPath string) bool {
+	normalized := strings.ReplaceAll(mountPath, "\\", "/")
+	return path.IsAbs(normalized) && !isWindowsDrivePath(normalized)
+}
+
+func mountSubPathIsAbsolute(subPath string, normalized string) bool {
+	return filepath.IsAbs(subPath) ||
+		path.IsAbs(normalized) ||
+		isWindowsDrivePath(normalized)
+}
+
+func mountSubPathHasParentSegment(subPath string) bool {
+	for _, segment := range strings.Split(subPath, "/") {
+		if segment == ".." {
+			return true
+		}
+	}
+	return false
+}
+
+func isWindowsDrivePath(value string) bool {
+	return len(value) >= 2 && value[1] == ':'
+}
+
+func isVirtualScrollDir(scrollDir string) bool {
+	for _, prefix := range []string{"runtime://", "k8s://", "docker-volume://", "docker-bind://"} {
+		if strings.HasPrefix(scrollDir, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (sc *Scroll) CanColdStart() bool {

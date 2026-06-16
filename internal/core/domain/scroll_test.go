@@ -100,6 +100,51 @@ func TestScrollValidateRejectsUnknownServeCommand(t *testing.T) {
 	}
 }
 
+func TestScrollValidateAcceptsPosixContainerMountPathOnWindows(t *testing.T) {
+	scroll := testScroll(t, &Procedure{
+		Image:   "alpine:3.20",
+		Command: []string{"true"},
+		Mounts: []Mount{{
+			Path:    "/data",
+			SubPath: "public",
+		}},
+	})
+
+	if err := scroll.Validate(false); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestScrollValidateRejectsEscapingMountSubPath(t *testing.T) {
+	tests := []string{
+		"../private",
+		`..\private`,
+		`data\..\private`,
+		"C:/private",
+	}
+
+	for _, subPath := range tests {
+		t.Run(subPath, func(t *testing.T) {
+			scroll := testScroll(t, &Procedure{
+				Image:   "alpine:3.20",
+				Command: []string{"true"},
+				Mounts: []Mount{{
+					Path:    "/data",
+					SubPath: subPath,
+				}},
+			})
+
+			err := scroll.Validate(false)
+			if err == nil {
+				t.Fatal("Validate() error = nil, want error")
+			}
+			if !strings.Contains(err.Error(), "mount sub_path") {
+				t.Fatalf("Validate() error = %q, want mount sub_path error", err.Error())
+			}
+		})
+	}
+}
+
 func testScroll(t *testing.T, procedure *Procedure) *Scroll {
 	t.Helper()
 	version, err := semver.NewVersion("0.1.0")
