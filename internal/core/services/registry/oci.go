@@ -174,6 +174,8 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 		return err
 	}
 
+	defer fs.Close()
+
 	var completed atomic.Int64
 	var totalLayers atomic.Int64
 	var totalPullBytes atomic.Int64
@@ -227,7 +229,7 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 			PreCopy: func(ctx context.Context, desc v1.Descriptor) error {
 				title := desc.Annotations["org.opencontainers.image.title"]
 				compressed := strings.HasSuffix(desc.MediaType, "+gzip")
-				logger.Log().Info("Downloading layer",
+				logger.Log().Debug("Downloading layer",
 					zap.String("title", title),
 					zap.String("mediaType", desc.MediaType),
 					zap.Int64("size", desc.Size),
@@ -245,7 +247,7 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 					progress.Percentage.Store(pct)
 				}
 				title := desc.Annotations["org.opencontainers.image.title"]
-				logger.Log().Info("Pulled layer",
+				logger.Log().Debug("Pulled layer",
 					zap.String("title", title),
 					zap.Int64("size", desc.Size),
 					zap.String("digest", desc.Digest.String()),
@@ -265,7 +267,7 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 					progress.Percentage.Store(pct)
 				}
 				title := desc.Annotations["org.opencontainers.image.title"]
-				logger.Log().Info("Layer already exists locally, skipped",
+				logger.Log().Debug("Layer already exists locally, skipped",
 					zap.String("title", title),
 					zap.Int64("size", desc.Size),
 					zap.String("digest", desc.Digest.String()),
