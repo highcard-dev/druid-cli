@@ -124,6 +124,7 @@ func ValidateCredentials(host, username, password string) error {
 		return fmt.Errorf("invalid registry host: %w", err)
 	}
 
+	reg.PlainHTTP = plainHTTPFromEnv()
 	reg.Client = &auth.Client{
 		Client: retry.DefaultClient,
 		Cache:  auth.DefaultCache,

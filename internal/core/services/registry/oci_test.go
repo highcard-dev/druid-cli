@@ -117,6 +117,17 @@ func fakeRegistry(t *testing.T) *httptest.Server {
 	return srv
 }
 
+func TestValidateCredentialsUsesPlainHTTPEnv(t *testing.T) {
+	t.Setenv("DRUID_REGISTRY_PLAIN_HTTP", "true")
+
+	srv := fakeRegistry(t)
+	registryHost := strings.TrimPrefix(srv.URL, "http://")
+
+	if err := ValidateCredentials(registryHost, "admin", "admin"); err != nil {
+		t.Fatalf("ValidateCredentials failed: %v", err)
+	}
+}
+
 // TestPushDataChunkPathNotDoubled calls OciClient.Push directly with a
 // relative scroll folder containing a data directory, pushing to a fake
 // in-process OCI registry. This verifies the data-chunk file paths are
