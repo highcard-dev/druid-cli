@@ -1,4 +1,4 @@
-.PHONY: test build k3d-build-pull-image watch test-integration test-integration-docker test-integration-kubernetes kind-integration-up kind-integration-down
+.PHONY: test build k3d-build-pull-image watch watch-windows test-integration test-integration-docker test-integration-kubernetes kind-integration-up kind-integration-down
 
 VERSION ?= "dev"
 DRUID_K8S_PULL_IMAGE ?= druid:local
@@ -9,9 +9,7 @@ KIND_VERSION ?= v0.27.0
 GO_BIN ?= $(shell go env GOPATH)/bin
 DRUID_K8S_NAMESPACE ?= druid
 DRUID_WORKER_CALLBACK_LISTEN ?= 0.0.0.0:8083
-DRUID_IS_WSL ?= $(shell if grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null; then printf 1; fi)
-DRUID_HOST_SERVICES_IP ?= $(if $(DRUID_IS_WSL),$(shell ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([^ ]*\).*/\1/p' | head -n 1),)
-DRUID_WORKER_CALLBACK_URL ?= $(if $(DRUID_IS_WSL),$(if $(strip $(DRUID_HOST_SERVICES_IP)),http://$(strip $(DRUID_HOST_SERVICES_IP)):8083,$(error Unable to determine the WSL callback address; set DRUID_WORKER_CALLBACK_URL explicitly)),http://host.k3d.internal:8083)
+DRUID_WORKER_CALLBACK_URL ?= http://host.k3d.internal:8083
 DRUID_WATCH_ARGS ?= daemon --runtime kubernetes --listen 127.0.0.1:8081 --public-listen 127.0.0.1:8082 --worker-callback-listen $(DRUID_WORKER_CALLBACK_LISTEN) --worker-callback-url $(DRUID_WORKER_CALLBACK_URL) --unsafe-allow-unauthenticated-management --unsafe-allow-unauthenticated-public --k8s-namespace $(DRUID_K8S_NAMESPACE) --k8s-pull-image $(DRUID_K8S_PULL_IMAGE)
 
 generate-api: ## Generate API types from OpenAPI spec
@@ -56,6 +54,9 @@ run: ## Run Daemon
 watch: ## Run Daemon with auto reload
 	@command -v air >/dev/null 2>&1 || go install github.com/air-verse/air@latest
 	air --build.cmd "CGO_ENABLED=0 go build -ldflags '-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)' -o ./bin/druid ./apps/druid" --build.full_bin "DRUID_REGISTRY_PLAIN_HTTP=true ./bin/druid $(DRUID_WATCH_ARGS)"
+
+watch-windows: ## Run Daemon with auto reload on Windows through WSL
+	./scripts/watch-windows.sh
 
 mock:
 	mockgen -source=internal/core/ports/services_ports.go -destination test/mock/services.go
