@@ -958,6 +958,48 @@ func TestRuntimeSessionApplyRoutingPersistsAssignments(t *testing.T) {
 	}
 }
 
+func TestRuntimeSessionApplyRoutingRejectsRunningDynamicPortRemap(t *testing.T) {
+	session := newRuntimeSessionForTest(t, map[string]domain.LockStatus{}, dynamicExecutionScrollYAML())
+	session.runtimeScroll.Status = domain.RuntimeScrollStatusRunning
+	session.runtimeScroll.Procedures = domain.ProcedureStatusMap{
+		"serve": {"server": {Status: domain.ScrollLockStatusRunning}},
+	}
+	session.runtimeScroll.Routing = []domain.RuntimeRouteAssignment{{
+		Name:       "main",
+		PortName:   "main",
+		PublicPort: 11000,
+		Protocol:   "udp",
+	}}
+
+	_, err := session.ApplyRouting([]domain.RuntimeRouteAssignment{{
+		Name:       "main",
+		PortName:   "main",
+		PublicPort: 11001,
+		Protocol:   "udp",
+	}})
+	if err == nil || !strings.Contains(err.Error(), `cannot change dynamic port "main" from 11000 to 11001 while runtime is running`) {
+		t.Fatalf("ApplyRouting error = %v", err)
+	}
+	if session.runtimeScroll.Routing[0].PublicPort != 11000 {
+		t.Fatalf("routing changed after rejection: %#v", session.runtimeScroll.Routing)
+	}
+
+	session.runtimeScroll.Status = domain.RuntimeScrollStatusStopped
+	session.runtimeScroll.Procedures = nil
+	updated, err := session.ApplyRouting([]domain.RuntimeRouteAssignment{{
+		Name:       "main",
+		PortName:   "main",
+		PublicPort: 11001,
+		Protocol:   "udp",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Routing[0].PublicPort != 11001 {
+		t.Fatalf("routing = %#v, want stopped runtime remapped to 11001", updated.Routing)
+	}
+}
+
 func TestRuntimeSessionQueueReturnsProcedureStatuses(t *testing.T) {
 	session := newRuntimeSessionForTest(t, map[string]domain.LockStatus{}, cachedScrollYAML(""))
 	session.RememberDoneItem("start")
