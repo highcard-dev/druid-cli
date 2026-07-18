@@ -56,7 +56,6 @@ func (b *Backend) RoutingTargets(root string, commands map[string]*domain.Comman
 		Port:        8084,
 		Protocol:    "https",
 		ServiceName: ContainerName(root, "dev"),
-		ServicePort: 8084,
 	}}
 	seen := map[string]struct{}{"webdav": {}}
 	commandNames := make([]string, 0, len(commands))
@@ -91,7 +90,6 @@ func (b *Backend) RoutingTargets(root string, commands map[string]*domain.Comman
 					Port:        port.Port,
 					Protocol:    normalizeProtocol(port.Protocol),
 					ServiceName: serviceName,
-					ServicePort: port.Port,
 				})
 			}
 		}

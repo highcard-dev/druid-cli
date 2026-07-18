@@ -33,7 +33,14 @@ func (s *RuntimeSession) runCommand(cmd string) error {
 		root = s.scrollService.GetCwd()
 	}
 	file := s.scrollService.GetFile()
-	procedureEnv, err := coreservices.BuildRuntimeProcedureEnv(file, cmd, command, coreservices.RuntimeEnvContext{
+	runtimePorts, err := resolveRuntimePorts(file.Ports, routing, true)
+	if err != nil {
+		s.setCommandProcedureStatus(cmd, command, domain.ScrollLockStatusError, nil)
+		return err
+	}
+	runtimeFile := *file
+	runtimeFile.Ports = runtimePorts
+	procedureEnv, err := coreservices.BuildRuntimeProcedureEnv(&runtimeFile, cmd, command, coreservices.RuntimeEnvContext{
 		ScrollID:   scrollID,
 		ScrollName: scrollName,
 		Backend:    s.runtimeBackend.Name(),
@@ -49,7 +56,7 @@ func (s *RuntimeSession) runCommand(cmd string) error {
 		ScrollID:     scrollID,
 		Command:      command,
 		Root:         root,
-		GlobalPorts:  file.Ports,
+		GlobalPorts:  runtimePorts,
 		Routing:      routing,
 		ProcedureEnv: procedureEnv,
 		ProcedureStatusObserver: func(procedure string, status domain.ScrollLockStatus, exitCode *int) {

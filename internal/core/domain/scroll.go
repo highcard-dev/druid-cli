@@ -271,6 +271,10 @@ func (sc *Scroll) Validate(strict bool) error {
 	ids := make(map[string]bool)
 	portsByName := make(map[string]bool, len(sc.Ports))
 	for _, port := range sc.Ports {
+		protocol := strings.ToLower(strings.TrimSpace(port.Protocol))
+		if port.Port == 0 && (protocol == "http" || protocol == "https") {
+			return fmt.Errorf("port %s uses %s and requires a fixed port", port.Name, protocol)
+		}
 		if port.Name != "" {
 			portsByName[port.Name] = true
 		}

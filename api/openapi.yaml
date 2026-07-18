@@ -144,7 +144,6 @@ components:
         - port
         - protocol
         - service_name
-        - service_port
       properties:
         name:
           type: string
@@ -160,8 +159,6 @@ components:
           type: string
         service_name:
           type: string
-        service_port:
-          type: integer
         selector:
           type: object
           additionalProperties:

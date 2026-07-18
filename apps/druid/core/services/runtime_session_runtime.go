@@ -12,8 +12,14 @@ import (
 func (s *RuntimeSession) Ports() ([]domain.RuntimePortStatus, error) {
 	s.mu.Lock()
 	runtimeScroll := *s.runtimeScroll
+	routing := append([]domain.RuntimeRouteAssignment(nil), s.runtimeScroll.Routing...)
 	s.mu.Unlock()
-	return s.runtimeBackend.ExpectedPorts(runtimeScroll.Root, s.scrollService.GetFile().Commands, s.scrollService.GetFile().Ports)
+	file := s.scrollService.GetFile()
+	runtimePorts, err := resolveRuntimePorts(file.Ports, routing, false)
+	if err != nil {
+		return nil, err
+	}
+	return s.runtimeBackend.ExpectedPorts(runtimeScroll.Root, file.Commands, runtimePorts)
 }
 
 func (s *RuntimeSession) RoutingTargets() ([]domain.RuntimeRoutingTarget, error) {
@@ -31,6 +37,12 @@ func (s *RuntimeSession) Queue() domain.ProcedureStatusMap {
 
 func (s *RuntimeSession) ApplyRouting(assignments []domain.RuntimeRouteAssignment) (*domain.RuntimeScroll, error) {
 	s.mu.Lock()
+	if s.runtimeScroll.Status == domain.RuntimeScrollStatusRunning || hasRunningProcedure(s.runtimeScroll.Procedures) {
+		if err := validateDynamicPortsUnchanged(s.scrollService.GetFile().Ports, s.runtimeScroll.Routing, assignments); err != nil {
+			s.mu.Unlock()
+			return nil, err
+		}
+	}
 	s.runtimeScroll.Routing = assignments
 	s.runtimeScroll.LastError = ""
 	err := s.store.UpdateScroll(s.runtimeScroll)
@@ -40,6 +52,17 @@ func (s *RuntimeSession) ApplyRouting(assignments []domain.RuntimeRouteAssignmen
 		return nil, err
 	}
 	return s.store.GetScroll(id)
+}
+
+func hasRunningProcedure(procedures domain.ProcedureStatusMap) bool {
+	for _, commandProcedures := range procedures {
+		for _, procedure := range commandProcedures {
+			if procedure.Status == domain.ScrollLockStatusRunning {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *RuntimeSession) StopRuntime() error {

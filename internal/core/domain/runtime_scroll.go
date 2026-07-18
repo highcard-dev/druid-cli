@@ -49,7 +49,6 @@ type RuntimeRoutingTarget struct {
 	Protocol    string            `json:"protocol"`
 	Namespace   string            `json:"namespace,omitempty"`
 	ServiceName string            `json:"service_name"`
-	ServicePort int               `json:"service_port"`
 	Selector    map[string]string `json:"selector,omitempty"`
 }
 

@@ -100,6 +100,39 @@ func TestScrollValidateRejectsUnknownServeCommand(t *testing.T) {
 	}
 }
 
+func TestScrollValidateAllowsDynamicTransportPorts(t *testing.T) {
+	scroll := testScroll(t, &Procedure{
+		Image:   "alpine:3.20",
+		Command: []string{"true"},
+	})
+	scroll.Ports = []Port{
+		{Name: "tcp", Protocol: "tcp"},
+		{Name: "udp", Protocol: "udp"},
+		{Name: "web", Protocol: "http", Port: 8080},
+	}
+
+	if err := scroll.Validate(false); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestScrollValidateRejectsDynamicHTTPPorts(t *testing.T) {
+	for _, protocol := range []string{"http", "https"} {
+		t.Run(protocol, func(t *testing.T) {
+			scroll := testScroll(t, &Procedure{
+				Image:   "alpine:3.20",
+				Command: []string{"true"},
+			})
+			scroll.Ports = []Port{{Name: "web", Protocol: protocol}}
+
+			err := scroll.Validate(false)
+			if err == nil || !strings.Contains(err.Error(), "requires a fixed port") {
+				t.Fatalf("Validate() error = %v", err)
+			}
+		})
+	}
+}
+
 func testScroll(t *testing.T, procedure *Procedure) *Scroll {
 	t.Helper()
 	version, err := semver.NewVersion("0.1.0")
