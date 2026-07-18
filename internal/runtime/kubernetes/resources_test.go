@@ -1059,7 +1059,7 @@ func TestRoutingTargetsReturnStableBackendServices(t *testing.T) {
 			webdav = item
 		}
 	}
-	if target.Namespace != "druid" || target.ServiceName != serviceName(root, "web", "http") || target.ServicePort != 8080 {
+	if target.Namespace != "druid" || target.ServiceName != serviceName(root, "web", "http") || target.Port != 8080 {
 		t.Fatalf("target = %#v", target)
 	}
 	if target.Protocol != "http" || target.PortName != "http" || target.Procedure != "web" {
@@ -1070,6 +1070,25 @@ func TestRoutingTargetsReturnStableBackendServices(t *testing.T) {
 	}
 	if webdav.ServiceName != serviceName(root, "dev", "webdav") || webdav.Port != 8084 || webdav.Protocol != "https" {
 		t.Fatalf("webdav target = %#v", webdav)
+	}
+}
+
+func TestServiceSpecUsesRuntimePortForServiceAndTarget(t *testing.T) {
+	service, err := serviceSpec(
+		"druid",
+		ref("druid", "druid-static-game-data"),
+		"start",
+		map[string]string{"druid.gg/procedure": "start"},
+		"main",
+		domain.Port{Name: "main", Port: 7777, Protocol: "udp"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	port := service.Spec.Ports[0]
+	if port.Port != 7777 || port.TargetPort.IntValue() != 7777 {
+		t.Fatalf("service port = %#v, want port and targetPort 7777", port)
 	}
 }
 

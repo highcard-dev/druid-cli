@@ -72,8 +72,8 @@ func TestKubernetesBackendCLIComplexLifecycle(t *testing.T) {
 	pvc := strings.TrimPrefix(created.Root, rootPrefix)
 	targets := e2e.RunClientJSON[[]e2e.RuntimeRoutingTarget](t, bins, socket, "routing", "targets", created.ID)
 	target := findTarget(t, targets, fixture)
-	if target.Namespace != namespace || target.ServicePort != fixture.Port {
-		t.Fatalf("target = %#v, want namespace %s service port %d", target, namespace, fixture.Port)
+	if target.Namespace != namespace || target.Port != fixture.Port {
+		t.Fatalf("target = %#v, want namespace %s port %d", target, namespace, fixture.Port)
 	}
 
 	started := e2e.RunClientJSON[e2e.RuntimeScroll](t, bins, socket, "start", created.ID)

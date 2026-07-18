@@ -56,9 +56,9 @@ type RuntimePortStatus struct {
 type RuntimeRoutingTarget struct {
 	Procedure   string `json:"procedure"`
 	PortName    string `json:"port_name"`
+	Port        int    `json:"port"`
 	Namespace   string `json:"namespace"`
 	ServiceName string `json:"service_name"`
-	ServicePort int    `json:"service_port"`
 }
 
 type LockedBuffer struct {

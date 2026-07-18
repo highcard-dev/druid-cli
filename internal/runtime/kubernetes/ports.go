@@ -105,7 +105,6 @@ func (b *Backend) RoutingTargets(root string, commands map[string]*domain.Comman
 		Protocol:    "https",
 		Namespace:   namespace,
 		ServiceName: serviceName(root, "dev", "webdav"),
-		ServicePort: 8084,
 		Selector: map[string]string{
 			labelManagedBy: "druid",
 			labelComponent: "runtime",
@@ -156,7 +155,6 @@ func (b *Backend) RoutingTargets(root string, commands map[string]*domain.Comman
 					Protocol:    normalizeProtocol(port.Protocol),
 					Namespace:   namespace,
 					ServiceName: svcName,
-					ServicePort: port.Port,
 					Selector:    selector,
 				})
 			}
