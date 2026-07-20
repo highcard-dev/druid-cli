@@ -40,6 +40,8 @@ type OciClient struct {
 	httpClient *http.Client
 	// plainHTTP forces plain HTTP (no TLS) for registry communication.
 	plainHTTP bool
+	// disableTarReproducible opts out of reproducible tar layers for pushes.
+	disableTarReproducible bool
 }
 
 func NewOciClient(credentialStore *CredentialStore) *OciClient {
@@ -52,6 +54,20 @@ func NewOciClient(credentialStore *CredentialStore) *OciClient {
 func plainHTTPFromEnv() bool {
 	value := strings.ToLower(strings.TrimSpace(os.Getenv("DRUID_REGISTRY_PLAIN_HTTP")))
 	return value == "1" || value == "true" || value == "yes"
+}
+
+// DisableTarReproducible preserves source file timestamps in pushed tar layers.
+func (c *OciClient) DisableTarReproducible() {
+	c.disableTarReproducible = true
+}
+
+func (c *OciClient) newFileStore(root string) (*file.Store, error) {
+	fs, err := file.New(root)
+	if err != nil {
+		return nil, err
+	}
+	fs.TarReproducible = !c.disableTarReproducible
+	return fs, nil
 }
 
 func (c *OciClient) GetRepo(repoUrl string) (*remote.Repository, error) {
@@ -762,7 +778,7 @@ func (c *OciClient) Push(folder string, repo string, tag string, overrides map[s
 		return v1.Descriptor{}, fmt.Errorf("no files found to push")
 	}
 
-	fs, err := file.New(folder)
+	fs, err := c.newFileStore(folder)
 	if err != nil {
 		return v1.Descriptor{}, err
 	}
@@ -888,7 +904,7 @@ func (c *OciClient) PushCategory(dir string, repo string, category string) (v1.D
 		return v1.Descriptor{}, err
 	}
 
-	fs, err := file.New(dir)
+	fs, err := c.newFileStore(dir)
 	if err != nil {
 		return v1.Descriptor{}, err
 	}

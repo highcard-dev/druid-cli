@@ -22,6 +22,7 @@ var pushScrollPorts []string
 var pushPackMeta bool
 var pushSmart bool
 var pushCategory string
+var pushDisableTarReproducible bool
 
 var PushCommand = &cobra.Command{
 	Use:   "push [artifact] [dir]",
@@ -62,6 +63,9 @@ var PushCommand = &cobra.Command{
 		logger.Log().Info("Pushing "+repo+":"+tag+" to registry", zap.String("path", fullPath))
 
 		ociClient := registry.NewOciClient(credStore)
+		if pushDisableTarReproducible {
+			ociClient.DisableTarReproducible()
+		}
 
 		overrides := map[string]string{}
 		if pushMinRAM != "" {
@@ -112,4 +116,5 @@ func init() {
 	PushCommand.Flags().StringVarP(&pushImage, "image", "i", pushImage, "Image to use for the scroll. (Will be added as a manifest annotation gg.druid.scroll.image)")
 	PushCommand.Flags().StringSliceVarP(&pushScrollPorts, "port", "p", pushScrollPorts, "Ports to expose. Format webserver=80, dns=53/udp or just ftp (Will be added as a manifest annotation gg.druid.scroll.ports.<name>)")
 	PushCommand.Flags().BoolVarP(&pushPackMeta, "pack-meta", "m", pushPackMeta, "Pack the meta folder into the scroll.")
+	PushCommand.PersistentFlags().BoolVar(&pushDisableTarReproducible, "no-tar-reproducible", false, "Preserve file timestamps in pushed tar layers.")
 }
