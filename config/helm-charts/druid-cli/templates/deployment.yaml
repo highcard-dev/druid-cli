@@ -45,6 +45,7 @@ spec:
             {{- end }}
             - --runtime={{ .Values.runtime.backend }}
             - --state-dir={{ .Values.runtime.stateDir }}
+            - --socket={{ .Values.runtime.stateDir }}/druid-runtime.sock
           ports:
             - name: management
               containerPort: {{ .Values.service.managementPort }}
