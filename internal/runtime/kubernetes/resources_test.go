@@ -95,7 +95,7 @@ func TestProcedureJobSpecBuildsDeterministicMountsAndLabels(t *testing.T) {
 		Mounts: []domain.Mount{{Path: "/work", SubPath: "cache"}},
 	}
 
-	job, err := procedureJobSpec("druid", ref("druid", "druid-static-web-data"), "start", "start", "static-web-start-0", 1, procedure, nil, procedure.Env, "registry-secret")
+	job, err := procedureJobSpec("druid", ref("druid", "druid-static-web-data"), "start", "start", "static-web-start-0", 1, procedure, procedure.Env, "registry-secret")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestProcedureJobSpecUsesProvidedRuntimeEnv(t *testing.T) {
 			"PROCEDURE_ONLY": "ignored",
 		},
 	}
-	job, err := procedureJobSpec("druid", ref("druid", "druid-static-web-data"), "start", "start", "static-web-start-0", 1, procedure, nil, map[string]string{
+	job, err := procedureJobSpec("druid", ref("druid", "druid-static-web-data"), "start", "start", "static-web-start-0", 1, procedure, map[string]string{
 		"DRUID_PORT_HTTP": "8080",
 	}, "registry-secret")
 	if err != nil {
@@ -141,48 +141,31 @@ func TestProcedureJobSpecUsesProvidedRuntimeEnv(t *testing.T) {
 	}
 }
 
-func TestProcedureJobSpecAddsTCPReadinessProbe(t *testing.T) {
+func TestProcedureJobSpecDoesNotAddReadinessProbe(t *testing.T) {
 	procedure := &domain.Procedure{
 		Image:         "itzg/minecraft-server",
 		ExpectedPorts: []domain.ExpectedPort{{Name: "main"}},
 	}
-	job, err := procedureJobSpec("druid", ref("druid", "druid-minecraft-data"), "start", "start", "minecraft-start-0", 1, procedure, []domain.Port{{Name: "main", Protocol: "tcp", Port: 25565}}, nil, "registry-secret")
+	job, err := procedureJobSpec("druid", ref("druid", "druid-minecraft-data"), "start", "start", "minecraft-start-0", 1, procedure, nil, "registry-secret")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if probe := job.Spec.Template.Spec.Containers[0].ReadinessProbe; probe == nil || probe.TCPSocket == nil || probe.TCPSocket.Port.IntVal != 25565 {
-		t.Fatalf("readiness probe = %#v, want tcp 25565", probe)
+	if probe := job.Spec.Template.Spec.Containers[0].ReadinessProbe; probe != nil {
+		t.Fatalf("readiness probe = %#v, want nil", probe)
 	}
 }
 
-func TestProcedureReadinessProbeSkipsUDPOnlyPorts(t *testing.T) {
+func TestProcedureStatefulSetSpecDoesNotAddReadinessProbe(t *testing.T) {
 	procedure := &domain.Procedure{
-		Image:         "steam",
-		ExpectedPorts: []domain.ExpectedPort{{Name: "query"}},
+		Image:         "itzg/minecraft-server",
+		ExpectedPorts: []domain.ExpectedPort{{Name: "main"}},
 	}
-	statefulSet, err := procedureStatefulSetSpec("druid", ref("druid", "druid-game-data"), "start", "start", "game-start-0", procedure, []domain.Port{{Name: "query", Protocol: "udp", Port: 27015}}, nil, "registry-secret")
+	statefulSet, err := procedureStatefulSetSpec("druid", ref("druid", "druid-minecraft-data"), "start", "start", "minecraft-start-0", procedure, nil, "registry-secret")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if probe := statefulSet.Spec.Template.Spec.Containers[0].ReadinessProbe; probe != nil {
-		t.Fatalf("readiness probe = %#v, want nil for udp-only ports", probe)
-	}
-}
-
-func TestProcedureReadinessProbeUsesFirstTCPExpectedPort(t *testing.T) {
-	procedure := &domain.Procedure{
-		Image:         "steam",
-		ExpectedPorts: []domain.ExpectedPort{{Name: "query"}, {Name: "rcon"}},
-	}
-	statefulSet, err := procedureStatefulSetSpec("druid", ref("druid", "druid-game-data"), "start", "start", "game-start-0", procedure, []domain.Port{
-		{Name: "query", Protocol: "udp", Port: 27015},
-		{Name: "rcon", Protocol: "tcp", Port: 27020},
-	}, nil, "registry-secret")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if probe := statefulSet.Spec.Template.Spec.Containers[0].ReadinessProbe; probe == nil || probe.TCPSocket == nil || probe.TCPSocket.Port.IntVal != 27020 {
-		t.Fatalf("readiness probe = %#v, want tcp 27020", probe)
+		t.Fatalf("readiness probe = %#v, want nil", probe)
 	}
 }
 
@@ -193,7 +176,7 @@ func TestProcedureStatefulSetSpecUsesProvidedRuntimeEnv(t *testing.T) {
 			"PROCEDURE_ONLY": "ignored",
 		},
 	}
-	statefulSet, err := procedureStatefulSetSpec("druid", ref("druid", "druid-static-web-data"), "start", "start", "static-web-start-0", procedure, nil, map[string]string{
+	statefulSet, err := procedureStatefulSetSpec("druid", ref("druid", "druid-static-web-data"), "start", "start", "static-web-start-0", procedure, map[string]string{
 		"DRUID_PORT_HTTP": "8080",
 	}, "registry-secret")
 	if err != nil {
@@ -213,7 +196,7 @@ func TestProcedureStatefulSetSpecBuildsPersistentWorkload(t *testing.T) {
 		Mounts:        []domain.Mount{{Path: "/usr/share/nginx/html", SubPath: "site", ReadOnly: true}},
 	}
 
-	statefulSet, err := procedureStatefulSetSpec("druid", ref("druid", "druid-static-web-data"), "start", "start", "static-web-start-0", procedure, []domain.Port{{Name: "http", Protocol: "tcp", Port: 8080}}, procedure.Env, "registry-secret")
+	statefulSet, err := procedureStatefulSetSpec("druid", ref("druid", "druid-static-web-data"), "start", "start", "static-web-start-0", procedure, procedure.Env, "registry-secret")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,9 +216,6 @@ func TestProcedureStatefulSetSpecBuildsPersistentWorkload(t *testing.T) {
 	pod := statefulSet.Spec.Template.Spec
 	if len(pod.ImagePullSecrets) != 1 || pod.ImagePullSecrets[0].Name != "registry-secret" {
 		t.Fatalf("image pull secrets = %#v", pod.ImagePullSecrets)
-	}
-	if probe := pod.Containers[0].ReadinessProbe; probe == nil || probe.TCPSocket == nil || probe.TCPSocket.Port.IntVal != 8080 {
-		t.Fatalf("readiness probe = %#v, want tcp 8080", probe)
 	}
 	container := pod.Containers[0]
 	if container.Image != "nginx:1.27" {
@@ -390,7 +370,7 @@ func TestCreateOrReuseProcedureJobRetainsFailedBaseAndCreatesRetry(t *testing.T)
 	})
 	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 
-	created, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "start", "start.1", base, &domain.Procedure{Image: "alpine"}, nil, nil)
+	created, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "start", "start.1", base, &domain.Procedure{Image: "alpine"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -411,7 +391,7 @@ func TestCreateOrReuseProcedureJobUsesNextRetryAttempt(t *testing.T) {
 	)
 	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 
-	created, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "start", "start.1", base, &domain.Procedure{Image: "alpine"}, nil, nil)
+	created, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "start", "start.1", base, &domain.Procedure{Image: "alpine"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -434,7 +414,7 @@ func TestCreateOrReuseProcedureJobReusesActiveAttempt(t *testing.T) {
 	client := fake.NewSimpleClientset(active)
 	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 
-	created, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "start", "coldstart", base, &domain.Procedure{Image: "alpine"}, nil, nil)
+	created, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "start", "coldstart", base, &domain.Procedure{Image: "alpine"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -530,7 +510,7 @@ func TestCreateOrReuseProcedureJobDeletesSucceededAttempt(t *testing.T) {
 	})
 	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
 
-	created, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "install", "install", base, &domain.Procedure{Image: "alpine"}, nil, nil)
+	created, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "install", "install", base, &domain.Procedure{Image: "alpine"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
