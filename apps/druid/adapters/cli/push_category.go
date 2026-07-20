@@ -26,6 +26,9 @@ var PushCategoryCommand = &cobra.Command{
 		logger.Log().Info("Pushing "+repo+" category to registry", zap.String("scrollDir", scrollDir))
 
 		ociClient := registry.NewOciClient(credStore)
+		if pushDisableTarReproducible {
+			ociClient.DisableTarReproducible()
+		}
 
 		_, err := ociClient.PushCategory(scrollDir, repo, category)
 

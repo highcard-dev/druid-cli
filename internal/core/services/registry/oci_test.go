@@ -128,6 +128,31 @@ func TestValidateCredentialsUsesPlainHTTPEnv(t *testing.T) {
 	}
 }
 
+func TestNewFileStoreUsesReproducibleTarsByDefault(t *testing.T) {
+	client := NewOciClient(NewCredentialStore(nil))
+	store, err := client.newFileStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if !store.TarReproducible {
+		t.Fatal("TarReproducible = false, want true")
+	}
+}
+
+func TestDisableTarReproducible(t *testing.T) {
+	client := NewOciClient(NewCredentialStore(nil))
+	client.DisableTarReproducible()
+	store, err := client.newFileStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if store.TarReproducible {
+		t.Fatal("TarReproducible = true, want false")
+	}
+}
+
 // TestPushDataChunkPathNotDoubled calls OciClient.Push directly with a
 // relative scroll folder containing a data directory, pushing to a fake
 // in-process OCI registry. This verifies the data-chunk file paths are
