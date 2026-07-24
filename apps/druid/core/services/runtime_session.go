@@ -19,6 +19,7 @@ type RuntimeSession struct {
 	scrollService     *coreservices.ScrollService
 	watchService      ports.WatchServiceInterface
 	runtimeBackend    ports.RuntimeBackendInterface
+	snapshotProgress  *domain.SnapshotProgress
 	queue             map[string]*runtimeQueueItem
 	workWg            sync.WaitGroup
 	notifierChan      []chan []string

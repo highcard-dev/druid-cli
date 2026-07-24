@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 )
 
 type WorkerCallbackManager struct {
 	mu       sync.Mutex
 	actions  map[string]workerCallbackAction
-	progress map[string]int64
+	progress map[string]workerCallbackProgress
 }
 
 type workerCallbackAction struct {
@@ -20,10 +21,15 @@ type workerCallbackAction struct {
 	result chan ports.RuntimeWorkerResult
 }
 
+type workerCallbackProgress struct {
+	snapshot *domain.SnapshotProgress
+	trackers int
+}
+
 func NewWorkerCallbackManager() *WorkerCallbackManager {
 	return &WorkerCallbackManager{
 		actions:  map[string]workerCallbackAction{},
-		progress: map[string]int64{},
+		progress: map[string]workerCallbackProgress{},
 	}
 }
 
@@ -40,7 +46,12 @@ func (m *WorkerCallbackManager) Register(runtimeID string) (string, <-chan ports
 		return "", nil, fmt.Errorf("worker action already pending for runtime %s", runtimeID)
 	}
 	m.actions[runtimeID] = workerCallbackAction{token: token, result: ch}
-	m.progress[runtimeID] = 0
+	progress := m.progress[runtimeID]
+	if progress.snapshot == nil {
+		progress.snapshot = domain.NewSnapshotProgress()
+	}
+	progress.snapshot.Percentage.Store(0)
+	m.progress[runtimeID] = progress
 	m.mu.Unlock()
 	return token, ch, nil
 }
@@ -48,7 +59,9 @@ func (m *WorkerCallbackManager) Register(runtimeID string) (string, <-chan ports
 func (m *WorkerCallbackManager) Cancel(runtimeID string) {
 	m.mu.Lock()
 	delete(m.actions, runtimeID)
-	delete(m.progress, runtimeID)
+	if progress := m.progress[runtimeID]; progress.trackers == 0 {
+		delete(m.progress, runtimeID)
+	}
 	m.mu.Unlock()
 }
 
@@ -62,7 +75,7 @@ func (m *WorkerCallbackManager) ReportProgress(runtimeID string, token string, p
 	if token == "" || token != action.token {
 		return fmt.Errorf("invalid worker token")
 	}
-	m.progress[runtimeID] = max(0, min(100, percentage))
+	m.progress[runtimeID].snapshot.Percentage.Store(max(0, min(100, percentage)))
 	return nil
 }
 
@@ -70,7 +83,38 @@ func (m *WorkerCallbackManager) Progress(runtimeID string) (float64, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	progress, ok := m.progress[runtimeID]
-	return float64(progress), ok
+	if !ok {
+		return 0, false
+	}
+	return float64(progress.snapshot.Percentage.Load()), true
+}
+
+func (m *WorkerCallbackManager) TrackSnapshotProgress(runtimeID string) *domain.SnapshotProgress {
+	m.mu.Lock()
+	progress := m.progress[runtimeID]
+	if progress.snapshot == nil {
+		progress.snapshot = domain.NewSnapshotProgress()
+	}
+	progress.trackers++
+	m.progress[runtimeID] = progress
+	m.mu.Unlock()
+	return progress.snapshot
+}
+
+func (m *WorkerCallbackManager) ClearSnapshotProgress(runtimeID string, progress *domain.SnapshotProgress) {
+	m.mu.Lock()
+	current, ok := m.progress[runtimeID]
+	if ok && current.snapshot == progress {
+		if current.trackers > 0 {
+			current.trackers--
+		}
+		if _, pending := m.actions[runtimeID]; pending || current.trackers > 0 {
+			m.progress[runtimeID] = current
+		} else {
+			delete(m.progress, runtimeID)
+		}
+	}
+	m.mu.Unlock()
 }
 
 func (m *WorkerCallbackManager) Complete(runtimeID string, token string, result ports.RuntimeWorkerResult) error {
@@ -85,7 +129,9 @@ func (m *WorkerCallbackManager) Complete(runtimeID string, token string, result 
 		return fmt.Errorf("invalid worker token")
 	}
 	delete(m.actions, runtimeID)
-	delete(m.progress, runtimeID)
+	if progress := m.progress[runtimeID]; progress.trackers == 0 {
+		delete(m.progress, runtimeID)
+	}
 	m.mu.Unlock()
 	action.result <- result
 	close(action.result)

@@ -79,3 +79,58 @@ func TestWorkerCallbackTracksPullProgress(t *testing.T) {
 		t.Fatal("cancelled progress should be removed")
 	}
 }
+
+func TestWorkerCallbackReadsTrackedSnapshotProgress(t *testing.T) {
+	manager := NewWorkerCallbackManager()
+	progress := manager.TrackSnapshotProgress("scroll-a")
+	if again := manager.TrackSnapshotProgress("scroll-a"); again != progress {
+		t.Fatal("tracking the same runtime replaced SnapshotProgress")
+	}
+	progress.Percentage.Store(43)
+
+	if got, ok := manager.Progress("scroll-a"); !ok || got != 43 {
+		t.Fatalf("progress = %v, %v; want 43, true", got, ok)
+	}
+
+	manager.ClearSnapshotProgress("scroll-a", progress)
+	if _, ok := manager.Progress("scroll-a"); !ok {
+		t.Fatal("clearing one tracker removed another tracker's SnapshotProgress")
+	}
+	manager.ClearSnapshotProgress("scroll-a", progress)
+	if _, ok := manager.Progress("scroll-a"); ok {
+		t.Fatal("cleared SnapshotProgress should be removed")
+	}
+}
+
+func TestWorkerCallbackKeepsTrackedSnapshotAcrossWorkerLifecycle(t *testing.T) {
+	manager := NewWorkerCallbackManager()
+	progress := manager.TrackSnapshotProgress("scroll-a")
+	token, _, err := manager.Register("scroll-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.mu.Lock()
+	registered := manager.progress["scroll-a"].snapshot
+	manager.mu.Unlock()
+	if registered != progress {
+		t.Fatal("worker registration replaced tracked SnapshotProgress")
+	}
+	if err := manager.ReportProgress("scroll-a", token, 42); err != nil {
+		t.Fatal(err)
+	}
+	if got := progress.Percentage.Load(); got != 42 {
+		t.Fatalf("tracked percentage = %d; want 42", got)
+	}
+	if err := manager.Complete("scroll-a", token, ports.RuntimeWorkerResult{}); err != nil {
+		t.Fatal(err)
+	}
+
+	progress.Percentage.Store(43)
+	if got, ok := manager.Progress("scroll-a"); !ok || got != 43 {
+		t.Fatalf("progress after worker completion = %v, %v; want 43, true", got, ok)
+	}
+	manager.ClearSnapshotProgress("scroll-a", progress)
+	if _, ok := manager.Progress("scroll-a"); ok {
+		t.Fatal("cleared tracked progress should be removed")
+	}
+}
