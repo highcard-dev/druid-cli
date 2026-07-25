@@ -338,15 +338,15 @@ func startWorkerProgressReporter(action ports.RuntimeWorkerAction, progress *dom
 		defer wait.Done()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
-		lastPercentage := int64(-1)
+		lastPercentage := -1.0
 		report := func() {
-			percentage := progress.Percentage.Load()
+			percentage := progress.Percentage()
 			if percentage == lastPercentage {
 				return
 			}
 			body, _ := json.Marshal(struct {
-				Token      string `json:"token"`
-				Percentage int64  `json:"percentage"`
+				Token      string  `json:"token"`
+				Percentage float64 `json:"percentage"`
 			}{action.CallbackToken, percentage})
 			request, _ := http.NewRequest(http.MethodPost, progressURL, bytes.NewReader(body))
 			request.Header.Set("Content-Type", "application/json")

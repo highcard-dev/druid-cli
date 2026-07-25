@@ -150,8 +150,8 @@ func TestPullSelectiveDoesNotReportCompleteBeforeMetadataIsWritten(t *testing.T)
 	if err := client.PullSelective(destination, repository+":1.0", true, progress); err == nil {
 		t.Fatal("pull should fail when manifest.json cannot be written")
 	}
-	if percentage := progress.Percentage.Load(); percentage >= 100 {
-		t.Fatalf("failed pull progress = %d; want below 100", percentage)
+	if percentage := progress.Percentage(); percentage >= 100 {
+		t.Fatalf("failed pull progress = %v; want below 100", percentage)
 	}
 	if mode := progress.Mode.Load(); mode != domain.SnapshotProgressModeIdle {
 		t.Fatalf("failed pull mode = %v; want idle", mode)

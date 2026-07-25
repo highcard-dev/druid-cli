@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"path"
@@ -200,14 +201,14 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 
 	if progress != nil {
 		progress.Mode.Store(domain.SnapshotProgressModeRestore)
-		progress.Percentage.Store(0)
+		progress.StorePercentage(0)
 		defer progress.Mode.Store(domain.SnapshotProgressModeIdle)
 	}
 	storeProgress := func(done, total int64) {
 		if progress == nil || total <= 0 {
 			return
 		}
-		progress.Percentage.Store(min(99, done*100/total))
+		progress.StorePercentage(math.Min(99, float64(done)*100/float64(total)))
 	}
 
 	copyOpts := oras.CopyOptions{
@@ -343,7 +344,7 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 	}
 
 	if progress != nil {
-		progress.Percentage.Store(100)
+		progress.StorePercentage(100)
 	}
 
 	return nil

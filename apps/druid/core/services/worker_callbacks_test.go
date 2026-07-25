@@ -64,14 +64,14 @@ func TestWorkerCallbackTracksPullProgress(t *testing.T) {
 	if progress, ok := manager.Progress("scroll-a"); !ok || progress != 0 {
 		t.Fatalf("initial progress = %v, %v; want 0, true", progress, ok)
 	}
-	if err := manager.ReportProgress("scroll-a", "wrong-token", 42); err == nil {
+	if err := manager.ReportProgress("scroll-a", "wrong-token", 42.3); err == nil {
 		t.Fatal("invalid progress token should fail")
 	}
-	if err := manager.ReportProgress("scroll-a", token, 42); err != nil {
+	if err := manager.ReportProgress("scroll-a", token, 42.3); err != nil {
 		t.Fatal(err)
 	}
-	if progress, ok := manager.Progress("scroll-a"); !ok || progress != 42 {
-		t.Fatalf("reported progress = %v, %v; want 42, true", progress, ok)
+	if progress, ok := manager.Progress("scroll-a"); !ok || progress != 42.3 {
+		t.Fatalf("reported progress = %v, %v; want 42.3, true", progress, ok)
 	}
 
 	manager.Cancel("scroll-a")
@@ -86,10 +86,10 @@ func TestWorkerCallbackReadsTrackedSnapshotProgress(t *testing.T) {
 	if again := manager.TrackSnapshotProgress("scroll-a"); again != progress {
 		t.Fatal("tracking the same runtime replaced SnapshotProgress")
 	}
-	progress.Percentage.Store(43)
+	progress.StorePercentage(43.5)
 
-	if got, ok := manager.Progress("scroll-a"); !ok || got != 43 {
-		t.Fatalf("progress = %v, %v; want 43, true", got, ok)
+	if got, ok := manager.Progress("scroll-a"); !ok || got != 43.5 {
+		t.Fatalf("progress = %v, %v; want 43.5, true", got, ok)
 	}
 
 	manager.ClearSnapshotProgress("scroll-a", progress)
@@ -115,19 +115,19 @@ func TestWorkerCallbackKeepsTrackedSnapshotAcrossWorkerLifecycle(t *testing.T) {
 	if registered != progress {
 		t.Fatal("worker registration replaced tracked SnapshotProgress")
 	}
-	if err := manager.ReportProgress("scroll-a", token, 42); err != nil {
+	if err := manager.ReportProgress("scroll-a", token, 42.3); err != nil {
 		t.Fatal(err)
 	}
-	if got := progress.Percentage.Load(); got != 42 {
-		t.Fatalf("tracked percentage = %d; want 42", got)
+	if got := progress.Percentage(); got != 42.3 {
+		t.Fatalf("tracked percentage = %v; want 42.3", got)
 	}
 	if err := manager.Complete("scroll-a", token, ports.RuntimeWorkerResult{}); err != nil {
 		t.Fatal(err)
 	}
 
-	progress.Percentage.Store(43)
-	if got, ok := manager.Progress("scroll-a"); !ok || got != 43 {
-		t.Fatalf("progress after worker completion = %v, %v; want 43, true", got, ok)
+	progress.StorePercentage(43.5)
+	if got, ok := manager.Progress("scroll-a"); !ok || got != 43.5 {
+		t.Fatalf("progress after worker completion = %v, %v; want 43.5, true", got, ok)
 	}
 	manager.ClearSnapshotProgress("scroll-a", progress)
 	if _, ok := manager.Progress("scroll-a"); ok {

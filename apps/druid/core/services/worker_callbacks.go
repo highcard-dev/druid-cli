@@ -50,7 +50,7 @@ func (m *WorkerCallbackManager) Register(runtimeID string) (string, <-chan ports
 	if progress.snapshot == nil {
 		progress.snapshot = domain.NewSnapshotProgress()
 	}
-	progress.snapshot.Percentage.Store(0)
+	progress.snapshot.StorePercentage(0)
 	m.progress[runtimeID] = progress
 	m.mu.Unlock()
 	return token, ch, nil
@@ -65,7 +65,7 @@ func (m *WorkerCallbackManager) Cancel(runtimeID string) {
 	m.mu.Unlock()
 }
 
-func (m *WorkerCallbackManager) ReportProgress(runtimeID string, token string, percentage int64) error {
+func (m *WorkerCallbackManager) ReportProgress(runtimeID string, token string, percentage float64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	action, ok := m.actions[runtimeID]
@@ -75,7 +75,9 @@ func (m *WorkerCallbackManager) ReportProgress(runtimeID string, token string, p
 	if token == "" || token != action.token {
 		return fmt.Errorf("invalid worker token")
 	}
-	m.progress[runtimeID].snapshot.Percentage.Store(max(0, min(100, percentage)))
+	if !m.progress[runtimeID].snapshot.StorePercentage(percentage) {
+		return fmt.Errorf("invalid percentage")
+	}
 	return nil
 }
 
@@ -86,7 +88,7 @@ func (m *WorkerCallbackManager) Progress(runtimeID string) (float64, bool) {
 	if !ok {
 		return 0, false
 	}
-	return float64(progress.snapshot.Percentage.Load()), true
+	return progress.snapshot.Percentage(), true
 }
 
 func (m *WorkerCallbackManager) TrackSnapshotProgress(runtimeID string) *domain.SnapshotProgress {

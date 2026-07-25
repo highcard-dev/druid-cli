@@ -12,11 +12,11 @@ import (
 )
 
 func TestWorkerProgressReporterReadsSnapshotProgress(t *testing.T) {
-	reports := make(chan int64, 1)
+	reports := make(chan float64, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		var report struct {
-			Token      string `json:"token"`
-			Percentage int64  `json:"percentage"`
+			Token      string  `json:"token"`
+			Percentage float64 `json:"percentage"`
 		}
 		if err := json.NewDecoder(request.Body).Decode(&report); err != nil {
 			t.Error(err)
@@ -30,7 +30,7 @@ func TestWorkerProgressReporterReadsSnapshotProgress(t *testing.T) {
 	defer server.Close()
 
 	progress := domain.NewSnapshotProgress()
-	progress.Percentage.Store(37)
+	progress.StorePercentage(37.4)
 	stop := startWorkerProgressReporter(
 		ports.RuntimeWorkerAction{
 			RuntimeID:     "runtime-1",
@@ -44,8 +44,8 @@ func TestWorkerProgressReporterReadsSnapshotProgress(t *testing.T) {
 
 	select {
 	case percentage := <-reports:
-		if percentage != 37 {
-			t.Fatalf("percentage = %d; want 37", percentage)
+		if percentage != 37.4 {
+			t.Fatalf("percentage = %v; want 37.4", percentage)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("progress was not reported")
