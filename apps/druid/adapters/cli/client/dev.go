@@ -268,7 +268,7 @@ func (s devServer) GetInternalUIPackage(c *fiber.Ctx) error {
 		(!strings.HasPrefix(path, "private/") && !strings.HasPrefix(path, "public/")) {
 		return fiber.ErrNotFound
 	}
-	return s.sendFile(c, path)
+	return s.sendFile(c, filepath.ToSlash(filepath.Join(domain.RuntimeDataDir, path)))
 }
 
 func (s devServer) GetFile(c *fiber.Ctx, params devapi.GetFileParams) error {

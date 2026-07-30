@@ -123,14 +123,14 @@ func TestProcedureJobSpecBuildsDeterministicMountsAndLabels(t *testing.T) {
 	}
 }
 
-func TestDevStatefulSetMountsRuntimeDataAsScrollRoot(t *testing.T) {
+func TestDevStatefulSetMountsRuntimeRootAsScrollRoot(t *testing.T) {
 	root := ref("druid", "druid-ui-data")
 	statefulSet := devStatefulSetSpec("druid", root, "druid-ui-data", "druid:local", ports.RuntimeDevAction{
 		RuntimeID: "ui", RootRef: root, MountPath: "/scroll", Listen: ":8084",
 	}, "registry-secret")
 	mount := statefulSet.Spec.Template.Spec.Containers[0].VolumeMounts[0]
-	if mount.MountPath != "/scroll" || mount.SubPath != domain.RuntimeDataDir {
-		t.Fatalf("mount = %#v, want /scroll mapped to %s", mount, domain.RuntimeDataDir)
+	if mount.MountPath != "/scroll" || mount.SubPath != "" {
+		t.Fatalf("mount = %#v, want the runtime root at /scroll", mount)
 	}
 	if user := statefulSet.Spec.Template.Spec.Containers[0].SecurityContext.RunAsUser; user == nil || *user != 0 {
 		t.Fatalf("dev server must run as root to edit runtime files, got %#v", user)

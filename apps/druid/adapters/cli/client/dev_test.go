@@ -197,7 +197,7 @@ func TestDevServerFileAuth(t *testing.T) {
 
 func TestDevServerInternalUIPackageRequiresDaemonToken(t *testing.T) {
 	root := t.TempDir()
-	packagePath := filepath.Join(root, "private", "dist")
+	packagePath := filepath.Join(root, "data", "private", "dist")
 	if err := os.MkdirAll(packagePath, 0o755); err != nil {
 		t.Fatal(err)
 	}
