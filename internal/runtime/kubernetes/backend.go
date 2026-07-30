@@ -3,6 +3,7 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
@@ -12,19 +13,23 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/highcard-dev/daemon/internal/core/ports"
+	"github.com/highcard-dev/daemon/internal/uipackage"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"go.uber.org/zap"
 )
 
 type Backend struct {
-	client         k8sclient.Interface
-	restConfig     *rest.Config
-	consoleManager ports.ConsoleManagerInterface
-	config         Config
-	statsReader    nodeStatsReader
-	jobLogRunner   func(context.Context, *batchv1.Job) ([]byte, error)
-	jobExitMu      sync.Mutex
-	jobExits       map[string]recentJobExit
+	client            k8sclient.Interface
+	restConfig        *rest.Config
+	httpClient        *http.Client
+	consoleManager    ports.ConsoleManagerInterface
+	config            Config
+	statsReader       nodeStatsReader
+	jobLogRunner      func(context.Context, *batchv1.Job) ([]byte, error)
+	uiPackageFetcher  func(context.Context, string, string, string, string) ([]byte, error)
+	uiPackageUploader func(context.Context, []byte, uipackage.S3Config) (string, error)
+	jobExitMu         sync.Mutex
+	jobExits          map[string]recentJobExit
 }
 
 type recentJobExit struct {
@@ -56,10 +61,15 @@ func New(config Config, consoleManager ports.ConsoleManagerInterface) (*Backend,
 	if _, err := client.Discovery().ServerVersion(); err != nil {
 		return nil, fmt.Errorf("kubernetes API unavailable: %w", err)
 	}
+	httpClient, err := rest.HTTPClientFor(restConfig)
+	if err != nil {
+		return nil, fmt.Errorf("kubernetes HTTP client unavailable: %w", err)
+	}
 	logger.Log().Info("Using Kubernetes backend settings", zap.String("source", source), zap.String("namespace", config.Namespace))
 	backend := &Backend{
 		client:         client,
 		restConfig:     restConfig,
+		httpClient:     httpClient,
 		consoleManager: consoleManager,
 		config:         config,
 		jobExits:       make(map[string]recentJobExit),

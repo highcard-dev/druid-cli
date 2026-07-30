@@ -34,7 +34,9 @@ var k8sUIS3PublicBaseURL string
 var k8sUIS3Region string
 var k8sUIS3Endpoint string
 var k8sUIS3Prefix string
-var k8sUIS3Secret string
+var k8sUIS3AccessKey string
+var k8sUIS3SecretKey string
+var k8sUIS3SessionToken string
 var k8sKubeconfig string
 var runtimeListen string
 var runtimePublicListen string
@@ -95,7 +97,9 @@ func init() {
 	DaemonCommand.Flags().StringVar(&k8sUIS3Region, "k8s-ui-s3-region", "", "S3 region for published UI packages (default: DRUID_K8S_UI_S3_REGION)")
 	DaemonCommand.Flags().StringVar(&k8sUIS3Endpoint, "k8s-ui-s3-endpoint", "", "Optional S3-compatible endpoint for UI packages (default: DRUID_K8S_UI_S3_ENDPOINT)")
 	DaemonCommand.Flags().StringVar(&k8sUIS3Prefix, "k8s-ui-s3-prefix", "", "Optional S3 key prefix for UI packages (default: DRUID_K8S_UI_S3_PREFIX)")
-	DaemonCommand.Flags().StringVar(&k8sUIS3Secret, "k8s-ui-s3-credentials-secret", "", "Kubernetes secret with AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (default: DRUID_K8S_UI_S3_CREDENTIALS_SECRET)")
+	DaemonCommand.Flags().StringVar(&k8sUIS3AccessKey, "k8s-ui-s3-access-key", "", "S3 access key for published UI packages (default: DRUID_K8S_UI_S3_ACCESS_KEY)")
+	DaemonCommand.Flags().StringVar(&k8sUIS3SecretKey, "k8s-ui-s3-secret-key", "", "S3 secret key for published UI packages (default: DRUID_K8S_UI_S3_SECRET_KEY)")
+	DaemonCommand.Flags().StringVar(&k8sUIS3SessionToken, "k8s-ui-s3-session-token", "", "Optional S3 session token for published UI packages (default: DRUID_K8S_UI_S3_SESSION_TOKEN)")
 	DaemonCommand.Flags().StringVar(&k8sKubeconfig, "k8s-kubeconfig", "", "Kubernetes kubeconfig path for out-of-cluster runtime access (default: DRUID_K8S_KUBECONFIG, KUBECONFIG, or ~/.kube/config)")
 }
 
@@ -115,7 +119,10 @@ func runRuntimeDaemon() error {
 		UIS3Region:        k8sUIS3Region,
 		UIS3Endpoint:      k8sUIS3Endpoint,
 		UIS3Prefix:        k8sUIS3Prefix,
-		UIS3Secret:        k8sUIS3Secret,
+		UIS3AccessKey:     k8sUIS3AccessKey,
+		UIS3SecretKey:     k8sUIS3SecretKey,
+		UIS3SessionToken:  k8sUIS3SessionToken,
+		InternalToken:     runtimeInternalToken,
 	}
 	dockerConfig := runtimedocker.Config{WorkerImage: dockerWorkerImage, Storage: dockerStorage, BindRoot: dockerBindRoot, VolumePrefix: dockerVolumePrefix, UIBind: dockerUIBind, UIPublicURL: dockerUIPublicURL}
 	logManager := services.NewLogManager()

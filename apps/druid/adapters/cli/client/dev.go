@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"mime"
@@ -130,7 +131,7 @@ func runDevServer() error {
 	if devDaemonToken == "" {
 		devDaemonToken = os.Getenv("DRUID_INTERNAL_TOKEN")
 	}
-	auth := devAuth{runtimeID: devRuntimeID, ownerID: devOwnerID}
+	auth := devAuth{runtimeID: devRuntimeID, ownerID: devOwnerID, internalToken: devDaemonToken}
 	if devAuthJWKSURL != "" {
 		auth.user, err = coreservices.NewAuthorizer([]string{devAuthJWKSURL}, "")
 		if err != nil {
@@ -161,10 +162,11 @@ func runDevServer() error {
 }
 
 type devAuth struct {
-	user      ports.AuthorizerServiceInterface
-	runtime   ports.AuthorizerServiceInterface
-	runtimeID string
-	ownerID   string
+	user          ports.AuthorizerServiceInterface
+	runtime       ports.AuthorizerServiceInterface
+	runtimeID     string
+	ownerID       string
+	internalToken string
 }
 
 func newDevApp(root string, broadcast *domain.BroadcastChannel, queue *devTriggerQueue, authOpt ...devAuth) *fiber.App {
@@ -190,6 +192,7 @@ func newDevApp(root string, broadcast *domain.BroadcastChannel, queue *devTrigge
 	})
 	app.Use(server.authMiddleware)
 	devapi.RegisterHandlers(app, server)
+	app.Get("/internal/v1/ui/*", server.GetInternalUIPackage)
 	webdavHandler := adaptor.HTTPHandler(&webdav.Handler{
 		Prefix:     "/webdav",
 		FileSystem: webdav.Dir(root),
@@ -223,6 +226,13 @@ func (s devServer) authMiddleware(c *fiber.Ctx) error {
 	if c.Path() == "/health" || c.Method() == fiber.MethodOptions {
 		return c.Next()
 	}
+	if strings.HasPrefix(c.Path(), "/internal/v1/ui/") {
+		token := strings.TrimPrefix(c.Get("Authorization"), "Bearer ")
+		if s.auth.internalToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(s.auth.internalToken)) != 1 {
+			return fiber.NewError(fiber.StatusUnauthorized, "invalid internal token")
+		}
+		return c.Next()
+	}
 	if s.auth.user == nil && s.auth.runtime == nil {
 		return c.Next()
 	}
@@ -250,6 +260,15 @@ func (s devServer) authMiddleware(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "missing or invalid token")
 	}
 	return c.Next()
+}
+
+func (s devServer) GetInternalUIPackage(c *fiber.Ctx) error {
+	path := filepath.ToSlash(filepath.Clean(strings.TrimPrefix(c.Params("*"), "/")))
+	if path == "." || strings.HasPrefix(path, "../") || filepath.Ext(path) != ".wasm" ||
+		(!strings.HasPrefix(path, "private/") && !strings.HasPrefix(path, "public/")) {
+		return fiber.ErrNotFound
+	}
+	return s.sendFile(c, path)
 }
 
 func (s devServer) GetFile(c *fiber.Ctx, params devapi.GetFileParams) error {

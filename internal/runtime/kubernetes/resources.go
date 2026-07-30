@@ -256,6 +256,7 @@ func devStatefulSetSpec(namespace string, root string, pvc string, image string,
 	labels := baseLabels(pvc)
 	labels[labelProcedure] = "dev"
 	replicas := int32(1)
+	runAsRoot := int64(0)
 	args := []string{"dev", "--root", action.MountPath, "--listen", action.Listen, "--runtime-id", action.RuntimeID, "--daemon-url", action.DaemonURL}
 	if action.DaemonToken != "" {
 		args = append(args, "--daemon-token", action.DaemonToken)
@@ -282,8 +283,9 @@ func devStatefulSetSpec(namespace string, root string, pvc string, image string,
 			Command:         []string{"druid"},
 			Args:            args,
 			ImagePullPolicy: corev1.PullIfNotPresent,
+			SecurityContext:  &corev1.SecurityContext{RunAsUser: &runAsRoot},
 			Ports:           []corev1.ContainerPort{{Name: "webdav", ContainerPort: 8084}},
-			VolumeMounts:    []corev1.VolumeMount{{Name: "data", MountPath: action.MountPath}},
+			VolumeMounts:    []corev1.VolumeMount{{Name: "data", MountPath: action.MountPath, SubPath: domain.RuntimeDataDir}},
 		}},
 		Volumes: []corev1.Volume{pvcVolume("data", pvc)},
 	}

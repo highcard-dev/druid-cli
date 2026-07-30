@@ -12,6 +12,7 @@ import (
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/nat"
+	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 )
 
@@ -87,7 +88,7 @@ func (b *Backend) ensureUIPackageServer(ctx context.Context) error {
 }
 
 func (b *Backend) copyUIPackage(ctx context.Context, action ports.RuntimeUIPackageAction) (string, error) {
-	rootMount, err := DockerMount(action.RootRef, "/scroll", true, "")
+	rootMount, err := DockerMount(action.RootRef, "/scroll", true, domain.RuntimeDataDir)
 	if err != nil {
 		return "", err
 	}
