@@ -80,7 +80,6 @@ type RuntimeCommand struct {
 	GlobalPorts             []domain.Port
 	Routing                 []domain.RuntimeRouteAssignment
 	ProcedureEnv            map[string]map[string]string
-	SnapshotProgress        *domain.SnapshotProgress
 	ProcedureStatusObserver func(procedure string, status domain.ScrollLockStatus, exitCode *int)
 }
 

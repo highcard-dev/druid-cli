@@ -64,73 +64,18 @@ func TestWorkerCallbackTracksPullProgress(t *testing.T) {
 	if progress, ok := manager.Progress("scroll-a"); !ok || progress != 0 {
 		t.Fatalf("initial progress = %v, %v; want 0, true", progress, ok)
 	}
-	if err := manager.ReportProgress("scroll-a", "wrong-token", 42.3); err == nil {
+	if err := manager.ReportProgress("scroll-a", "wrong-token", 42); err == nil {
 		t.Fatal("invalid progress token should fail")
 	}
-	if err := manager.ReportProgress("scroll-a", token, 42.3); err != nil {
+	if err := manager.ReportProgress("scroll-a", token, 42); err != nil {
 		t.Fatal(err)
 	}
-	if progress, ok := manager.Progress("scroll-a"); !ok || progress != 42.3 {
-		t.Fatalf("reported progress = %v, %v; want 42.3, true", progress, ok)
+	if progress, ok := manager.Progress("scroll-a"); !ok || progress != 42 {
+		t.Fatalf("reported progress = %v, %v; want 42, true", progress, ok)
 	}
 
 	manager.Cancel("scroll-a")
 	if _, ok := manager.Progress("scroll-a"); ok {
 		t.Fatal("cancelled progress should be removed")
-	}
-}
-
-func TestWorkerCallbackReadsTrackedSnapshotProgress(t *testing.T) {
-	manager := NewWorkerCallbackManager()
-	progress := manager.TrackSnapshotProgress("scroll-a")
-	if again := manager.TrackSnapshotProgress("scroll-a"); again != progress {
-		t.Fatal("tracking the same runtime replaced SnapshotProgress")
-	}
-	progress.StorePercentage(43.5)
-
-	if got, ok := manager.Progress("scroll-a"); !ok || got != 43.5 {
-		t.Fatalf("progress = %v, %v; want 43.5, true", got, ok)
-	}
-
-	manager.ClearSnapshotProgress("scroll-a", progress)
-	if _, ok := manager.Progress("scroll-a"); !ok {
-		t.Fatal("clearing one tracker removed another tracker's SnapshotProgress")
-	}
-	manager.ClearSnapshotProgress("scroll-a", progress)
-	if _, ok := manager.Progress("scroll-a"); ok {
-		t.Fatal("cleared SnapshotProgress should be removed")
-	}
-}
-
-func TestWorkerCallbackKeepsTrackedSnapshotAcrossWorkerLifecycle(t *testing.T) {
-	manager := NewWorkerCallbackManager()
-	progress := manager.TrackSnapshotProgress("scroll-a")
-	token, _, err := manager.Register("scroll-a")
-	if err != nil {
-		t.Fatal(err)
-	}
-	manager.mu.Lock()
-	registered := manager.progress["scroll-a"].snapshot
-	manager.mu.Unlock()
-	if registered != progress {
-		t.Fatal("worker registration replaced tracked SnapshotProgress")
-	}
-	if err := manager.ReportProgress("scroll-a", token, 42.3); err != nil {
-		t.Fatal(err)
-	}
-	if got := progress.Percentage(); got != 42.3 {
-		t.Fatalf("tracked percentage = %v; want 42.3", got)
-	}
-	if err := manager.Complete("scroll-a", token, ports.RuntimeWorkerResult{}); err != nil {
-		t.Fatal(err)
-	}
-
-	progress.StorePercentage(43.5)
-	if got, ok := manager.Progress("scroll-a"); !ok || got != 43.5 {
-		t.Fatalf("progress after worker completion = %v, %v; want 43.5, true", got, ok)
-	}
-	manager.ClearSnapshotProgress("scroll-a", progress)
-	if _, ok := manager.Progress("scroll-a"); ok {
-		t.Fatal("cleared tracked progress should be removed")
 	}
 }

@@ -108,7 +108,7 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 			continue
 		}
 		command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusRunning, nil)
-		exitCode, err := b.runJobProcedure(command.ScrollID, command.Name, procedureName, resourceName, procedure, command.Root, command.GlobalPorts, env, portUse, command.SnapshotProgress)
+		exitCode, err := b.runJobProcedure(command.ScrollID, command.Name, procedureName, resourceName, procedure, command.Root, command.GlobalPorts, env, portUse)
 		if err != nil {
 			if exitCode != nil && *exitCode != 0 && procedure.IgnoreFailure {
 				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, exitCode)
@@ -138,7 +138,7 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 	return nil, nil
 }
 
-func (b *Backend) runJobProcedure(scrollID string, commandName string, procedureName string, resourceName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, env map[string]string, portUse map[string]int, progress *domain.SnapshotProgress) (*int, error) {
+func (b *Backend) runJobProcedure(scrollID string, commandName string, procedureName string, resourceName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, env map[string]string, portUse map[string]int) (*int, error) {
 	if procedure.IsSignal() {
 		logger.Log().Info("Running Kubernetes signal procedure", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("target", procedure.Target), zap.String("signal", procedure.Signal))
 		if err := b.Signal(procedureName, procedure.Target, procedure.Signal, root); err != nil {
@@ -196,7 +196,7 @@ func (b *Backend) runJobProcedure(scrollID string, commandName string, procedure
 	if err == nil {
 		streamStarted = true
 		logger.Log().Debug("Streaming Kubernetes job procedure logs", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.String("job", jobName), zap.String("pod", podName), zap.String("console_id", consoleID))
-		go b.streamPodLogs(ctx, namespace, podName, output, progress)
+		go b.streamPodLogs(ctx, namespace, podName, output)
 	} else {
 		logger.Log().Warn("Could not find Kubernetes job pod before wait; console logs may be empty", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.String("job", jobName), zap.Error(err))
 	}
@@ -301,7 +301,7 @@ func (b *Backend) ensurePersistentProcedure(ctx context.Context, scrollID string
 			return
 		}
 		logger.Log().Debug("Streaming Kubernetes persistent procedure logs", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.String("pod", podName))
-		b.streamPodLogs(context.Background(), namespace, podName, output, nil)
+		b.streamPodLogs(context.Background(), namespace, podName, output)
 	}()
 	return nil
 }

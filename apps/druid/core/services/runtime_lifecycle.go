@@ -13,9 +13,6 @@ func (s *RuntimeSupervisor) DeleteWithPolicy(id string, purgeData bool) error {
 	s.mu.Unlock()
 	if session != nil {
 		session.stopDeploymentQueue()
-		if s.workerCallbacks != nil {
-			s.workerCallbacks.ClearSnapshotProgress(id, session.snapshotProgress)
-		}
 	}
 
 	runtimeScroll, err := s.store.GetScroll(id)
@@ -62,9 +59,6 @@ func (s *RuntimeSupervisor) Stop(id string) (*domain.RuntimeScroll, error) {
 	if err := session.StopRuntime(); err != nil {
 		session.markError(err)
 		return nil, err
-	}
-	if s.workerCallbacks != nil {
-		s.workerCallbacks.ClearSnapshotProgress(id, session.snapshotProgress)
 	}
 	session.stopDeploymentQueue()
 	return s.store.GetScroll(id)

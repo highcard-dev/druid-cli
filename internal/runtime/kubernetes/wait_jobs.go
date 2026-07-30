@@ -14,7 +14,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
-	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"go.uber.org/zap"
 )
@@ -254,86 +253,48 @@ func (b *Backend) podLogs(ctx context.Context, namespace string, podName string)
 	return logs, nil
 }
 
-func (b *Backend) streamPodLogs(ctx context.Context, namespace string, podName string, output chan<- string, progress *domain.SnapshotProgress) {
+func (b *Backend) streamPodLogs(ctx context.Context, namespace string, podName string, output chan<- string) {
 	defer close(output)
-	stream, err := b.openPodLogStream(ctx, namespace, podName)
-	if err != nil {
-		output <- fmt.Sprintf("failed to stream pod logs: %v", err)
-		return
+	var stream io.ReadCloser
+	deadline := time.Now().Add(30 * time.Second)
+	logger.Log().Debug("Opening Kubernetes follow log stream", zap.String("namespace", namespace), zap.String("pod", podName))
+	for {
+		req := b.client.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{Follow: true})
+		var err error
+		stream, err = req.Stream(ctx)
+		if err == nil {
+			logger.Log().Debug("Kubernetes follow log stream opened", zap.String("namespace", namespace), zap.String("pod", podName))
+			break
+		}
+		if !strings.Contains(err.Error(), "ContainerCreating") &&
+			!strings.Contains(err.Error(), "PodInitializing") &&
+			!strings.Contains(err.Error(), "not available") {
+			logger.Log().Warn("Failed to stream Kubernetes pod logs", zap.String("namespace", namespace), zap.String("pod", podName), zap.Error(err))
+			output <- fmt.Sprintf("failed to stream pod logs: %v", err)
+			return
+		}
+		if time.Now().After(deadline) {
+			logger.Log().Warn("Timed out opening Kubernetes pod log stream", zap.String("namespace", namespace), zap.String("pod", podName), zap.Error(err))
+			output <- fmt.Sprintf("failed to stream pod logs: %v", err)
+			return
+		}
+		logger.Log().Debug("Kubernetes pod logs not ready yet", zap.String("namespace", namespace), zap.String("pod", podName), zap.Error(err))
+		select {
+		case <-ctx.Done():
+			logger.Log().Warn("Context cancelled while opening Kubernetes pod logs", zap.String("namespace", namespace), zap.String("pod", podName), zap.Error(ctx.Err()))
+			output <- fmt.Sprintf("failed to stream pod logs: %v", ctx.Err())
+			return
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
 	defer stream.Close()
-	var progressDone chan struct{}
-	if progress != nil {
-		progressDone = make(chan struct{})
-		go func() {
-			defer close(progressDone)
-			b.streamPodProgress(ctx, namespace, podName, progress)
-		}()
-	}
 	scanner := bufio.NewScanner(stream)
 	for scanner.Scan() {
-		line := scanner.Text()
-		if progress != nil && strings.HasPrefix(line, snapshotProgressPrefix) {
-			continue
-		}
-		output <- line
-	}
-	if progressDone != nil {
-		<-progressDone
+		output <- scanner.Text()
 	}
 	if err := scanner.Err(); err != nil {
 		logger.Log().Warn("Kubernetes pod log stream ended with scanner error", zap.String("namespace", namespace), zap.String("pod", podName), zap.Error(err))
 		return
 	}
 	logger.Log().Debug("Kubernetes pod log stream ended", zap.String("namespace", namespace), zap.String("pod", podName))
-}
-
-func (b *Backend) openPodLogStream(ctx context.Context, namespace string, podName string) (io.ReadCloser, error) {
-	deadline := time.Now().Add(30 * time.Second)
-	logger.Log().Debug("Opening Kubernetes follow log stream", zap.String("namespace", namespace), zap.String("pod", podName))
-	for {
-		req := b.client.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{Follow: true})
-		stream, err := req.Stream(ctx)
-		if err == nil {
-			logger.Log().Debug("Kubernetes follow log stream opened", zap.String("namespace", namespace), zap.String("pod", podName))
-			return stream, nil
-		}
-		if !strings.Contains(err.Error(), "ContainerCreating") &&
-			!strings.Contains(err.Error(), "PodInitializing") &&
-			!strings.Contains(err.Error(), "not available") {
-			logger.Log().Warn("Failed to stream Kubernetes pod logs", zap.String("namespace", namespace), zap.String("pod", podName), zap.Error(err))
-			return nil, err
-		}
-		if time.Now().After(deadline) {
-			logger.Log().Warn("Timed out opening Kubernetes pod log stream", zap.String("namespace", namespace), zap.String("pod", podName), zap.Error(err))
-			return nil, err
-		}
-		logger.Log().Debug("Kubernetes pod logs not ready yet", zap.String("namespace", namespace), zap.String("pod", podName), zap.Error(err))
-		select {
-		case <-ctx.Done():
-			logger.Log().Warn("Context cancelled while opening Kubernetes pod logs", zap.String("namespace", namespace), zap.String("pod", podName), zap.Error(ctx.Err()))
-			return nil, ctx.Err()
-		case <-time.After(500 * time.Millisecond):
-		}
-	}
-}
-
-func (b *Backend) streamPodProgress(ctx context.Context, namespace string, podName string, progress *domain.SnapshotProgress) {
-	stream, err := b.openPodLogStream(ctx, namespace, podName)
-	if err != nil {
-		logger.Log().Warn("Failed to stream Kubernetes pod progress", zap.String("namespace", namespace), zap.String("pod", podName), zap.Error(err))
-		return
-	}
-	defer stream.Close()
-	if err := readSnapshotProgress(stream, progress); err != nil {
-		logger.Log().Warn("Kubernetes pod progress stream ended with scanner error", zap.String("namespace", namespace), zap.String("pod", podName), zap.Error(err))
-	}
-}
-
-func readSnapshotProgress(input io.Reader, progress *domain.SnapshotProgress) error {
-	scanner := bufio.NewScanner(input)
-	for scanner.Scan() {
-		observeSnapshotProgress(scanner.Text(), progress)
-	}
-	return scanner.Err()
 }
