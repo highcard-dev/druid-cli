@@ -53,3 +53,29 @@ func TestWorkerCallbackRejectsUnknownRuntime(t *testing.T) {
 		t.Fatal("unknown runtime should fail")
 	}
 }
+
+func TestWorkerCallbackTracksPullProgress(t *testing.T) {
+	manager := NewWorkerCallbackManager()
+	token, _, err := manager.Register("scroll-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if progress, ok := manager.Progress("scroll-a"); !ok || progress != 0 {
+		t.Fatalf("initial progress = %v, %v; want 0, true", progress, ok)
+	}
+	if err := manager.ReportProgress("scroll-a", "wrong-token", 42); err == nil {
+		t.Fatal("invalid progress token should fail")
+	}
+	if err := manager.ReportProgress("scroll-a", token, 42); err != nil {
+		t.Fatal(err)
+	}
+	if progress, ok := manager.Progress("scroll-a"); !ok || progress != 42 {
+		t.Fatalf("reported progress = %v, %v; want 42, true", progress, ok)
+	}
+
+	manager.Cancel("scroll-a")
+	if _, ok := manager.Progress("scroll-a"); ok {
+		t.Fatal("cancelled progress should be removed")
+	}
+}

@@ -170,7 +170,7 @@ func runRuntimeDaemon() error {
 	websocketHandler.SetAllowUnauthenticatedPublic(runtimeAllowUnauthenticatedPublic)
 	handlers := runtimehandlers.RouteHandlers{
 		Server: runtimehandlers.NewRuntimeServer(
-			runtimehandlers.NewHealthHandler(),
+			runtimehandlers.NewHealthHandlerWithProgress(callbacks.Progress),
 			scrollHandler,
 		),
 		Websocket: websocketHandler,
@@ -206,7 +206,9 @@ func runRuntimeDaemon() error {
 	if callbackListener != nil {
 		callbackApp = fiber.New(fiber.Config{DisableStartupMessage: true, ErrorHandler: runtimehandlers.ErrorHandler})
 		callbackApp.Use(runtimehandlers.RequestLogger)
-		callbackapi.RegisterHandlers(callbackApp, runtimeCallbackHandler{callbacks: callbacks})
+		callbackHandler := runtimeCallbackHandler{callbacks: callbacks}
+		callbackapi.RegisterHandlers(callbackApp, callbackHandler)
+		callbackApp.Post("/internal/v1/workers/:runtime_id/progress", callbackHandler.ReportProgress)
 	}
 	return listenRuntimeHTTP(managementApp, publicApp, callbackApp, callbackListener, runtime.Store.StateDir())
 }

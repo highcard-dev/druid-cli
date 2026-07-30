@@ -11,6 +11,23 @@ type runtimeCallbackHandler struct {
 	callbacks *appservices.WorkerCallbackManager
 }
 
+func (h runtimeCallbackHandler) ReportProgress(c *fiber.Ctx) error {
+	var report struct {
+		Token      string `json:"token"`
+		Percentage *int64 `json:"percentage"`
+	}
+	if err := c.BodyParser(&report); err != nil || report.Percentage == nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid progress report")
+	}
+	if *report.Percentage < 0 || *report.Percentage > 100 {
+		return fiber.NewError(fiber.StatusBadRequest, "percentage must be between 0 and 100")
+	}
+	if err := h.callbacks.ReportProgress(c.Params("runtime_id"), report.Token, *report.Percentage); err != nil {
+		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
 func (h runtimeCallbackHandler) CompleteWorker(c *fiber.Ctx, runtimeID callbackapi.Runtime) error {
 	var result callbackapi.WorkerResult
 	if err := c.BodyParser(&result); err != nil {

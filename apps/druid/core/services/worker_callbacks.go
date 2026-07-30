@@ -10,8 +10,9 @@ import (
 )
 
 type WorkerCallbackManager struct {
-	mu      sync.Mutex
-	actions map[string]workerCallbackAction
+	mu       sync.Mutex
+	actions  map[string]workerCallbackAction
+	progress map[string]int64
 }
 
 type workerCallbackAction struct {
@@ -20,7 +21,10 @@ type workerCallbackAction struct {
 }
 
 func NewWorkerCallbackManager() *WorkerCallbackManager {
-	return &WorkerCallbackManager{actions: map[string]workerCallbackAction{}}
+	return &WorkerCallbackManager{
+		actions:  map[string]workerCallbackAction{},
+		progress: map[string]int64{},
+	}
 }
 
 func (m *WorkerCallbackManager) Register(runtimeID string) (string, <-chan ports.RuntimeWorkerResult, error) {
@@ -36,6 +40,7 @@ func (m *WorkerCallbackManager) Register(runtimeID string) (string, <-chan ports
 		return "", nil, fmt.Errorf("worker action already pending for runtime %s", runtimeID)
 	}
 	m.actions[runtimeID] = workerCallbackAction{token: token, result: ch}
+	m.progress[runtimeID] = 0
 	m.mu.Unlock()
 	return token, ch, nil
 }
@@ -43,7 +48,29 @@ func (m *WorkerCallbackManager) Register(runtimeID string) (string, <-chan ports
 func (m *WorkerCallbackManager) Cancel(runtimeID string) {
 	m.mu.Lock()
 	delete(m.actions, runtimeID)
+	delete(m.progress, runtimeID)
 	m.mu.Unlock()
+}
+
+func (m *WorkerCallbackManager) ReportProgress(runtimeID string, token string, percentage int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	action, ok := m.actions[runtimeID]
+	if !ok {
+		return fmt.Errorf("unknown or completed worker action")
+	}
+	if token == "" || token != action.token {
+		return fmt.Errorf("invalid worker token")
+	}
+	m.progress[runtimeID] = max(0, min(100, percentage))
+	return nil
+}
+
+func (m *WorkerCallbackManager) Progress(runtimeID string) (float64, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	progress, ok := m.progress[runtimeID]
+	return float64(progress), ok
 }
 
 func (m *WorkerCallbackManager) Complete(runtimeID string, token string, result ports.RuntimeWorkerResult) error {
@@ -58,6 +85,7 @@ func (m *WorkerCallbackManager) Complete(runtimeID string, token string, result 
 		return fmt.Errorf("invalid worker token")
 	}
 	delete(m.actions, runtimeID)
+	delete(m.progress, runtimeID)
 	m.mu.Unlock()
 	action.result <- result
 	close(action.result)

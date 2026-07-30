@@ -1,13 +1,16 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/highcard-dev/daemon/internal/callbackapi"
@@ -65,6 +68,10 @@ func runWorkerPull(action ports.RuntimeWorkerAction) ports.RuntimeWorkerResult {
 	if root == "" {
 		root = "/scroll"
 	}
+	progress := domain.NewSnapshotProgress()
+	stopProgress := startWorkerProgressReporter(action, progress, time.Second)
+	defer stopProgress()
+
 	oci := registry.NewOciClient(loadWorkerRegistryStore())
 	digest, err := oci.ResolveDigest(action.Artifact)
 	if err == nil {
@@ -72,11 +79,11 @@ func runWorkerPull(action ports.RuntimeWorkerAction) ports.RuntimeWorkerResult {
 	}
 	switch action.Mode {
 	case ports.RuntimeWorkerModeUpdate:
-		err = pullWorkerUpdate(root, action.Artifact, oci)
+		err = pullWorkerUpdate(root, action.Artifact, oci, progress)
 	case ports.RuntimeWorkerModeRestore:
-		err = pullWorkerRestore(root, action.Artifact, oci)
+		err = pullWorkerRestore(root, action.Artifact, oci, progress)
 	default:
-		err = pullWorkerCreate(root, action.Artifact, oci)
+		err = pullWorkerCreate(root, action.Artifact, oci, progress)
 	}
 	if err != nil {
 		result.Error = err.Error()
@@ -115,7 +122,7 @@ func loadWorkerRegistryStore() *registry.CredentialStore {
 	return registry.NewCredentialStore(config.Registries)
 }
 
-func pullWorkerCreate(root string, artifact string, oci ports.OciRegistryInterface) error {
+func pullWorkerCreate(root string, artifact string, oci ports.OciRegistryInterface, progress *domain.SnapshotProgress) error {
 	if err := os.MkdirAll(root, 0755); err != nil {
 		return err
 	}
@@ -137,16 +144,16 @@ func pullWorkerCreate(root string, artifact string, oci ports.OciRegistryInterfa
 		}
 		return copyPath(artifact, root)
 	}
-	return oci.PullSelective(root, artifact, true, nil)
+	return oci.PullSelective(root, artifact, true, progress)
 }
 
-func pullWorkerUpdate(root string, artifact string, oci ports.OciRegistryInterface) error {
+func pullWorkerUpdate(root string, artifact string, oci ports.OciRegistryInterface, progress *domain.SnapshotProgress) error {
 	tmp, err := os.MkdirTemp("", "druid-worker-update-*")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(tmp)
-	if err := coreservices.MaterializeScrollArtifact(artifact, tmp, oci, true); err != nil {
+	if err := coreservices.MaterializeScrollArtifactWithProgress(artifact, tmp, oci, true, progress); err != nil {
 		return err
 	}
 	scrollYAML, err := os.ReadFile(filepath.Join(tmp, "scroll.yaml"))
@@ -162,13 +169,13 @@ func pullWorkerUpdate(root string, artifact string, oci ports.OciRegistryInterfa
 	return mergePulledRoot(tmp, root, skipData)
 }
 
-func pullWorkerRestore(root string, artifact string, oci ports.OciRegistryInterface) error {
+func pullWorkerRestore(root string, artifact string, oci ports.OciRegistryInterface, progress *domain.SnapshotProgress) error {
 	tmp, err := os.MkdirTemp("", "druid-worker-restore-*")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(tmp)
-	if err := coreservices.MaterializeScrollArtifact(artifact, tmp, oci, true); err != nil {
+	if err := coreservices.MaterializeScrollArtifactWithProgress(artifact, tmp, oci, true, progress); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(root, 0755); err != nil {
@@ -311,6 +318,62 @@ func copyPath(src string, dst string) error {
 	defer out.Close()
 	_, err = io.Copy(out, in)
 	return err
+}
+
+func startWorkerProgressReporter(action ports.RuntimeWorkerAction, progress *domain.SnapshotProgress, interval time.Duration) func() {
+	if action.CallbackURL == "" || action.CallbackToken == "" || progress == nil {
+		return func() {}
+	}
+	suffix := "/internal/v1/workers/" + action.RuntimeID + "/complete"
+	baseURL := strings.TrimSuffix(action.CallbackURL, suffix)
+	if baseURL == action.CallbackURL {
+		return func() {}
+	}
+	progressURL := baseURL + "/internal/v1/workers/" + action.RuntimeID + "/progress"
+	client := &http.Client{Timeout: 3 * time.Second}
+	done := make(chan struct{})
+	var wait sync.WaitGroup
+	wait.Add(1)
+	go func() {
+		defer wait.Done()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		lastPercentage := int64(-1)
+		report := func() {
+			percentage := progress.Percentage.Load()
+			if percentage == lastPercentage {
+				return
+			}
+			body, _ := json.Marshal(struct {
+				Token      string `json:"token"`
+				Percentage int64  `json:"percentage"`
+			}{action.CallbackToken, percentage})
+			request, _ := http.NewRequest(http.MethodPost, progressURL, bytes.NewReader(body))
+			request.Header.Set("Content-Type", "application/json")
+			response, err := client.Do(request)
+			if err == nil {
+				response.Body.Close()
+				if response.StatusCode < http.StatusBadRequest {
+					lastPercentage = percentage
+				}
+			}
+		}
+		report()
+		for {
+			select {
+			case <-ticker.C:
+				report()
+			case <-done:
+				report()
+				return
+			}
+		}
+	}()
+	var once sync.Once
+	return func() {
+		once.Do(func() { close(done) })
+		wait.Wait()
+	}
 }
 
 func reportWorkerResult(action ports.RuntimeWorkerAction, result ports.RuntimeWorkerResult) error {
