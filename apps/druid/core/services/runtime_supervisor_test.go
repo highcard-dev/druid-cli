@@ -530,7 +530,7 @@ func TestRuntimeSupervisorCreateGeneratesIDWhenNameOmitted(t *testing.T) {
 	if backend.action.RuntimeID != runtimeScroll.ID || backend.action.RootRef != backend.RootRef(runtimeScroll.ID, "") {
 		t.Fatalf("worker action = %#v scroll = %#v", backend.action, runtimeScroll)
 	}
-	if backend.action.Mode != ports.RuntimeWorkerModeCreate || backend.action.CallbackToken == "" {
+	if backend.action.Mode != ports.RuntimeWorkerModeCreate || backend.action.TokenFile == "" {
 		t.Fatalf("worker action = %#v", backend.action)
 	}
 	if runtimeScroll.ArtifactDigest != "sha256:generated" || runtimeScroll.Status != domain.RuntimeScrollStatusCreated {
@@ -559,7 +559,7 @@ func TestRuntimeSupervisorCreateUsesPullWorkerBeforeStateMutation(t *testing.T) 
 	if backend.action.RootRef != backend.RootRef("worker-scroll", "") || backend.action.MountPath != "/scroll" {
 		t.Fatalf("worker root = %#v, want %s mounted at /scroll", backend.action, backend.RootRef("worker-scroll", ""))
 	}
-	if backend.action.CallbackToken == "" || !strings.Contains(backend.action.CallbackURL, "/internal/v1/workers/worker-scroll/complete") {
+	if backend.action.TokenFile == "" || !strings.Contains(backend.action.CallbackURL, "/internal/v1/workers/worker-scroll/complete") {
 		t.Fatalf("callback action = %#v", backend.action)
 	}
 	if runtimeScroll.ArtifactDigest != "sha256:worker" {
@@ -1204,6 +1204,10 @@ func (f *fakeWorkerBackend) StartDev(ctx context.Context, action ports.RuntimeDe
 
 func (f *fakeWorkerBackend) StopDev(ctx context.Context, root string) error { return nil }
 
+func (f *fakeWorkerBackend) DevStatus(ctx context.Context, root string) (ports.RuntimeDevStatus, error) {
+	return ports.RuntimeDevStatusReady, nil
+}
+
 func (f *fakeWorkerBackend) Attach(commandName string, data string) error {
 	return nil
 }
@@ -1238,7 +1242,7 @@ func (f *fakeWorkerBackend) SpawnPullWorker(ctx context.Context, action ports.Ru
 	if f.callbacks == nil {
 		return nil
 	}
-	return f.callbacks.Complete(action.RuntimeID, action.CallbackToken, ports.RuntimeWorkerResult{
+	return f.callbacks.Complete(action.RuntimeID, ports.RuntimeWorkerResult{
 		ScrollYAML:     f.scrollYAML,
 		ArtifactDigest: f.digest,
 	})

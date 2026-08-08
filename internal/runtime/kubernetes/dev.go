@@ -3,6 +3,9 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -24,6 +27,9 @@ func (b *Backend) StartDev(ctx context.Context, action ports.RuntimeDevAction) e
 	if action.Listen == "" {
 		action.Listen = ":8084"
 	}
+	if action.TokenFile == "" {
+		action.TokenFile = workloadTokenPath
+	}
 	namespace, pvc, err := parseRef(action.RootRef)
 	if err != nil {
 		logger.Log().Error("Kubernetes dev root ref invalid", zap.String("runtime_id", action.RuntimeID), zap.String("root_ref", action.RootRef), zap.Error(err))
@@ -43,7 +49,10 @@ func (b *Backend) StartDev(ctx context.Context, action ports.RuntimeDevAction) e
 		zap.Strings("commands", action.HotReloadCommands),
 		zap.String("image", b.config.PullImage),
 	)
-	sts := devStatefulSetSpec(namespace, action.RootRef, pvc, b.config.PullImage, action, b.config.RegistrySecret)
+	if err := b.ensureRuntimeServiceAccount(ctx, namespace, runtimeDevServiceAccount); err != nil {
+		return err
+	}
+	sts := devStatefulSetSpec(namespace, action.RootRef, pvc, b.config.PullImage, action, b.config.RegistrySecret, b.config.ServiceAccountAudience)
 	existing, err := b.client.AppsV1().StatefulSets(namespace).Get(ctx, sts.Name, metav1.GetOptions{})
 	switch {
 	case apierrors.IsNotFound(err):
@@ -93,6 +102,52 @@ func (b *Backend) StopDev(ctx context.Context, root string) error {
 		logger.Log().Warn("Failed to delete Kubernetes dev Service", zap.String("namespace", namespace), zap.String("service", serviceName), zap.Error(err))
 	}
 	return nil
+}
+
+func (b *Backend) DevStatus(ctx context.Context, root string) (ports.RuntimeDevStatus, error) {
+	namespace, _, err := parseRef(root)
+	if err != nil {
+		return ports.RuntimeDevStatusUnhealthy, err
+	}
+	name := devStatefulSetName(root)
+	statefulSet, err := b.client.AppsV1().StatefulSets(namespace).Get(ctx, name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return ports.RuntimeDevStatusDisabled, nil
+	}
+	if err != nil {
+		return ports.RuntimeDevStatusUnhealthy, err
+	}
+	if statefulSet.Status.ReadyReplicas < 1 {
+		return ports.RuntimeDevStatusStarting, nil
+	}
+	if _, err := b.client.CoreV1().Services(namespace).Get(ctx, serviceName(root, "dev", "webdav"), metav1.GetOptions{}); err != nil {
+		return ports.RuntimeDevStatusUnhealthy, err
+	}
+	response, err := b.devRequest(ctx, namespace, root, http.MethodGet, "/health", nil)
+	if err != nil {
+		return ports.RuntimeDevStatusUnhealthy, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return ports.RuntimeDevStatusUnhealthy, nil
+	}
+	return ports.RuntimeDevStatusReady, nil
+}
+
+func (b *Backend) devRequest(ctx context.Context, namespace string, root string, method string, endpoint string, body io.Reader) (*http.Response, error) {
+	if b.restConfig == nil || b.httpClient == nil {
+		return nil, fmt.Errorf("kubernetes service proxy is unavailable")
+	}
+	service := serviceName(root, "dev", "webdav")
+	proxyURL := strings.TrimRight(b.restConfig.Host, "/") + "/api/v1/namespaces/" + namespace + "/services/http:" + service + ":8084/proxy" + endpoint
+	request, err := http.NewRequestWithContext(ctx, method, proxyURL, body)
+	if err != nil {
+		return nil, err
+	}
+	if body != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	return b.httpClient.Do(request)
 }
 
 func (b *Backend) reconcileService(ctx context.Context, service *corev1.Service) error {

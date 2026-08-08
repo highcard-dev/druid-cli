@@ -1,7 +1,6 @@
 package services
 
 import (
-	"context"
 	"fmt"
 	"sync"
 
@@ -22,14 +21,9 @@ type RuntimeSession struct {
 	queue             map[string]*runtimeQueueItem
 	workWg            sync.WaitGroup
 	notifierChan      []chan []string
-	devWatchPaths     []string
-	devCommands       []string
 	devDaemonURL      string
-	devDaemonToken    string
 	devAuthJWKSURL    string
 	devRuntimeJWKSURL string
-	devWatchBridge    *domain.BroadcastChannel
-	devWatchCancel    context.CancelFunc
 
 	mu      sync.Mutex
 	queueMu sync.Mutex

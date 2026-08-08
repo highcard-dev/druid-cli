@@ -44,12 +44,16 @@ func TestDevServerWebDAVReadWriteAndCallback(t *testing.T) {
 		_, _ = w.Write([]byte(`{"id":"smoke"}`))
 	}))
 	defer daemon.Close()
-	oldURL, oldToken, oldRuntimeID := devDaemonURL, devDaemonToken, devRuntimeID
+	oldURL, oldTokenFile, oldRuntimeID := devDaemonURL, devDaemonTokenFile, devRuntimeID
 	devDaemonURL = daemon.URL
-	devDaemonToken = "secret"
+	tokenFile := filepath.Join(root, "token")
+	if err := os.WriteFile(tokenFile, []byte("secret"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	devDaemonTokenFile = tokenFile
 	devRuntimeID = "smoke"
 	t.Cleanup(func() {
-		devDaemonURL, devDaemonToken, devRuntimeID = oldURL, oldToken, oldRuntimeID
+		devDaemonURL, devDaemonTokenFile, devRuntimeID = oldURL, oldTokenFile, oldRuntimeID
 	})
 
 	broadcast := domain.NewHub()
@@ -192,6 +196,36 @@ func TestDevServerFileAuth(t *testing.T) {
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusOK || string(body) != "typed" {
 		t.Fatalf("runtime-token GET status=%d body=%q", res.StatusCode, body)
+	}
+}
+
+func TestDevServerInternalUIPackageRequiresDaemonToken(t *testing.T) {
+	root := t.TempDir()
+	packagePath := filepath.Join(root, "data", "private", "dist")
+	if err := os.MkdirAll(packagePath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(packagePath, "app.wasm"), []byte("wasm"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	app := newDevApp(root, domain.NewHub(), &devTriggerQueue{}, devAuth{internalToken: "internal-token"})
+
+	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/internal/v1/ui/private/dist/app.wasm", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusUnauthorized)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/internal/v1/ui/private/dist/app.wasm", nil)
+	request.Header.Set("Authorization", "Bearer internal-token")
+	response, err = app.Test(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
 	}
 }
 

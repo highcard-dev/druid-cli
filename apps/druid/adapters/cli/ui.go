@@ -1,20 +1,14 @@
 package cli
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awscfg "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/highcard-dev/daemon/internal/uipackage"
 	"github.com/spf13/cobra"
 )
 
@@ -99,30 +93,9 @@ func publishUIPackageToS3(ctx context.Context) (string, error) {
 		}
 		return "", err
 	}
-	sum := sha256.Sum256(data)
-	hash := hex.EncodeToString(sum[:])
-	cfg, err := awscfg.LoadDefaultConfig(ctx, awscfg.WithRegion(uiPublishRegion))
-	if err != nil {
-		return "", err
-	}
-	client := s3.NewFromConfig(cfg, func(options *s3.Options) {
-		if uiPublishEndpoint != "" {
-			options.BaseEndpoint = aws.String(uiPublishEndpoint)
-			options.UsePathStyle = true
-		}
+	return uipackage.Upload(ctx, data, uipackage.S3Config{
+		Bucket: uiPublishBucket, Region: uiPublishRegion, Endpoint: uiPublishEndpoint, KeyPrefix: uiPublishKeyPrefix,
 	})
-	key := path.Join(strings.Trim(uiPublishKeyPrefix, "/"), hash, "app.wasm")
-	_, err = client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:       aws.String(uiPublishBucket),
-		Key:          aws.String(key),
-		Body:         bytes.NewReader(data),
-		ContentType:  aws.String("application/wasm"),
-		CacheControl: aws.String("public, max-age=31536000, immutable"),
-	})
-	if err != nil {
-		return "", err
-	}
-	return hash, nil
 }
 
 func cleanUIPackageSource(source string) (string, error) {

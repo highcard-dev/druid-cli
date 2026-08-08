@@ -38,9 +38,6 @@ func (b *Backend) StartDev(ctx context.Context, action ports.RuntimeDevAction) e
 		"--runtime-id", action.RuntimeID,
 		"--daemon-url", action.DaemonURL,
 	}
-	if action.DaemonToken != "" {
-		args = append(args, "--daemon-token", action.DaemonToken)
-	}
 	if action.OwnerID != "" {
 		args = append(args, "--owner-id", action.OwnerID)
 	}
@@ -104,4 +101,24 @@ func (b *Backend) StopDev(ctx context.Context, root string) error {
 		return err
 	}
 	return nil
+}
+
+func (b *Backend) DevStatus(ctx context.Context, root string) (ports.RuntimeDevStatus, error) {
+	if root == "" {
+		return ports.RuntimeDevStatusUnhealthy, fmt.Errorf("runtime root is required")
+	}
+	inspect, err := b.client.ContainerInspect(ctx, ContainerName(root, "dev"))
+	if cerrdefs.IsNotFound(err) {
+		return ports.RuntimeDevStatusDisabled, nil
+	}
+	if err != nil {
+		return ports.RuntimeDevStatusUnhealthy, err
+	}
+	if inspect.State == nil || !inspect.State.Running {
+		return ports.RuntimeDevStatusStarting, nil
+	}
+	if err := b.devHealth(ctx, root); err != nil {
+		return ports.RuntimeDevStatusUnhealthy, nil
+	}
+	return ports.RuntimeDevStatusReady, nil
 }

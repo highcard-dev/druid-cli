@@ -135,7 +135,7 @@ func (c *OpenAPIClient) DeleteScroll(ctx context.Context, id string) (*api.Delet
 }
 
 func (c *OpenAPIClient) RunScrollCommand(ctx context.Context, id string, command string) (*api.RuntimeScroll, error) {
-	res, err := c.client.RunScrollCommandWithResponse(ctx, id, command)
+	res, err := c.client.RunScrollCommandWithResponse(ctx, id, command, nil)
 	if err != nil {
 		return nil, err
 	}

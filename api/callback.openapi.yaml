@@ -27,7 +27,7 @@ paths:
         '400':
           description: Invalid worker result
         '401':
-          description: Invalid worker token or unknown action
+          description: Invalid workload identity
 components:
   parameters:
     Runtime:
@@ -39,10 +39,7 @@ components:
   schemas:
     WorkerResult:
       type: object
-      required: [token]
       properties:
-        token:
-          type: string
         scroll_yaml:
           type: string
         artifact_digest:

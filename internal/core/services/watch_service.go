@@ -239,7 +239,7 @@ func (uds *WatchService) addWatchPath(path string) error {
 			}
 			return uds.watcher.Add(walkPath)
 		}
-		return nil
+		return uds.watcher.Add(walkPath)
 	})
 }
 
@@ -371,7 +371,11 @@ func (uds *WatchService) runHotReloadCommand() {
 	for {
 		for _, key := range commands {
 			broadcastEvent("build-started")
-			uds.queueManager.AddTempItemWithWait(key)
+			if err := uds.queueManager.AddTempItemWithWait(key); err != nil {
+				logger.Log().Error("Hot reload build failed", zap.String("command", key), zap.Error(err))
+				broadcastEvent("build-failed")
+				continue
+			}
 			broadcastEvent("build-ended")
 		}
 

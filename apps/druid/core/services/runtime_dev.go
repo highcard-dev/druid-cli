@@ -3,15 +3,9 @@ package services
 import (
 	"context"
 	"fmt"
-	"net/url"
-	"strings"
-	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
-	"github.com/highcard-dev/daemon/internal/utils/logger"
-	"go.uber.org/zap"
 	"gopkg.in/yaml.v2"
 )
 
@@ -21,8 +15,8 @@ type DevWatchRequest struct {
 }
 
 type DevWatchStatus struct {
-	Enabled      bool     `json:"enabled"`
-	WatchedPaths []string `json:"watchedPaths"`
+	Status  ports.RuntimeDevStatus `json:"status"`
+	Enabled bool                   `json:"enabled"`
 }
 
 func (s *RuntimeSupervisor) AddCommand(id string, command string, instruction *domain.CommandInstructionSet) error {
@@ -54,7 +48,7 @@ func (s *RuntimeSupervisor) DevWatchStatus(id string) (DevWatchStatus, error) {
 	if err != nil {
 		return DevWatchStatus{}, err
 	}
-	return session.DevWatchStatus(), nil
+	return session.DevWatchStatus(context.Background())
 }
 
 func (s *RuntimeSupervisor) SubscribeDevWatch(id string) (chan *[]byte, func(), error) {
@@ -104,8 +98,6 @@ func (s *RuntimeSession) EnableDevWatch(request DevWatchRequest) (DevWatchStatus
 	root := s.runtimeScroll.Root
 	id := s.runtimeScroll.ID
 	routing := append([]domain.RuntimeRouteAssignment(nil), s.runtimeScroll.Routing...)
-	s.devWatchPaths = append([]string(nil), request.WatchPaths...)
-	s.devCommands = append([]string(nil), request.HotReloadCommands...)
 	s.mu.Unlock()
 
 	if s.devDaemonURL == "" {
@@ -121,55 +113,41 @@ func (s *RuntimeSession) EnableDevWatch(request DevWatchRequest) (DevWatchStatus
 		HotReloadCommands: request.HotReloadCommands,
 		Routing:           routing,
 		DaemonURL:         s.devDaemonURL,
-		DaemonToken:       s.devDaemonToken,
+		TokenFile:         "/var/run/secrets/druid-cli/token",
 		AuthJWKSURL:       s.devAuthJWKSURL,
 		RuntimeJWKSURL:    s.devRuntimeJWKSURL,
 	}); err != nil {
 		return DevWatchStatus{}, err
 	}
-	s.startDevWatchBridge(routing)
-	return s.DevWatchStatus(), nil
+	return s.DevWatchStatus(context.Background())
 }
 
 func (s *RuntimeSession) DisableDevWatch() (DevWatchStatus, error) {
 	s.mu.Lock()
 	root := s.runtimeScroll.Root
-	s.devWatchPaths = nil
-	s.devCommands = nil
-	if s.devWatchCancel != nil {
-		s.devWatchCancel()
-		s.devWatchCancel = nil
-	}
-	if s.devWatchBridge != nil {
-		s.devWatchBridge.Close()
-		s.devWatchBridge = nil
-	}
 	s.mu.Unlock()
 	if err := s.runtimeBackend.StopDev(context.Background(), root); err != nil {
 		return DevWatchStatus{}, err
 	}
-	return s.DevWatchStatus(), nil
+	return s.DevWatchStatus(context.Background())
 }
 
-func (s *RuntimeSession) DevWatchStatus() DevWatchStatus {
+func (s *RuntimeSession) DevWatchStatus(ctx context.Context) (DevWatchStatus, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.devWatchPaths) == 0 {
-		return DevWatchStatus{Enabled: false, WatchedPaths: []string{}}
+	root := s.runtimeScroll.Root
+	s.mu.Unlock()
+	status, err := s.runtimeBackend.DevStatus(ctx, root)
+	if err != nil {
+		return DevWatchStatus{}, err
 	}
-	return DevWatchStatus{Enabled: true, WatchedPaths: append([]string(nil), s.devWatchPaths...)}
+	return DevWatchStatus{Status: status, Enabled: status == ports.RuntimeDevStatusReady}, nil
 }
 
 func (s *RuntimeSession) SubscribeDevWatch() chan *[]byte {
 	if s.watchService != nil {
 		return s.watchService.Subscribe()
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.devWatchBridge == nil {
-		return nil
-	}
-	return s.devWatchBridge.Subscribe()
+	return nil
 }
 
 func (s *RuntimeSession) UnsubscribeDevWatch(ch chan *[]byte) {
@@ -177,106 +155,4 @@ func (s *RuntimeSession) UnsubscribeDevWatch(ch chan *[]byte) {
 		s.watchService.Unsubscribe(ch)
 		return
 	}
-	s.mu.Lock()
-	bridge := s.devWatchBridge
-	s.mu.Unlock()
-	if bridge != nil {
-		bridge.Unsubscribe(ch)
-	}
-}
-
-func (s *RuntimeSession) startDevWatchBridge(routing []domain.RuntimeRouteAssignment) {
-	bridgeURL := devWatchBridgeURL(routing)
-	if bridgeURL == "" {
-		return
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	bridge := domain.NewHub()
-	s.mu.Lock()
-	if s.devWatchCancel != nil {
-		s.devWatchCancel()
-	}
-	if s.devWatchBridge != nil {
-		s.devWatchBridge.Close()
-	}
-	s.devWatchCancel = cancel
-	s.devWatchBridge = bridge
-	runtimeID := s.runtimeScroll.ID
-	s.mu.Unlock()
-	go bridge.Run()
-	go func() {
-		defer bridge.Close()
-		backoff := time.Second
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-			conn, _, err := websocket.DefaultDialer.Dial(bridgeURL, nil)
-			if err != nil {
-				logger.Log().Warn("Failed to connect dev watch bridge", zap.String("runtime_id", runtimeID), zap.String("url", bridgeURL), zap.Error(err))
-				if !sleepDevWatchBridge(ctx, backoff) {
-					return
-				}
-				if backoff < 30*time.Second {
-					backoff *= 2
-				}
-				continue
-			}
-			backoff = time.Second
-			for {
-				_, msg, err := conn.ReadMessage()
-				if err != nil {
-					_ = conn.Close()
-					break
-				}
-				copyMsg := append([]byte(nil), msg...)
-				bridge.Broadcast(copyMsg)
-			}
-		}
-	}()
-}
-
-func sleepDevWatchBridge(ctx context.Context, delay time.Duration) bool {
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
-	}
-}
-
-func devWatchBridgeURL(routing []domain.RuntimeRouteAssignment) string {
-	for _, assignment := range routing {
-		if assignment.PortName != "webdav" && assignment.Name != "webdav" {
-			continue
-		}
-		base := strings.TrimRight(assignment.URL, "/")
-		if base == "" {
-			host := assignment.Host
-			if host == "" {
-				host = assignment.ExternalIP
-			}
-			if host == "" || assignment.PublicPort == 0 {
-				continue
-			}
-			base = fmt.Sprintf("http://%s:%d", host, assignment.PublicPort)
-		}
-		parsed, err := url.Parse(base)
-		if err != nil {
-			continue
-		}
-		switch parsed.Scheme {
-		case "https":
-			parsed.Scheme = "wss"
-		default:
-			parsed.Scheme = "ws"
-		}
-		parsed.Path = strings.TrimRight(parsed.Path, "/") + "/ws/v1/watch/notify"
-		return parsed.String()
-	}
-	return ""
 }

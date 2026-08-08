@@ -218,6 +218,12 @@ type UpdateScrollRequest struct {
 	RegistryCredentials *[]RegistryCredential `json:"registry_credentials,omitempty"`
 }
 
+// RunScrollCommandParams defines parameters for RunScrollCommand.
+type RunScrollCommandParams struct {
+	// Sync Wait for the requested command to complete before responding.
+	Sync *bool `form:"sync,omitempty" json:"sync,omitempty"`
+}
+
 // PublishScrollUIPackageParamsScope defines parameters for PublishScrollUIPackage.
 type PublishScrollUIPackageParamsScope string
 
@@ -343,7 +349,7 @@ type ClientInterface interface {
 	BackupScroll(ctx context.Context, id string, body BackupScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RunScrollCommand request
-	RunScrollCommand(ctx context.Context, id string, command string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	RunScrollCommand(ctx context.Context, id string, command string, params *RunScrollCommandParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetScrollConfig request
 	GetScrollConfig(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -513,8 +519,8 @@ func (c *Client) BackupScroll(ctx context.Context, id string, body BackupScrollJ
 	return c.Client.Do(req)
 }
 
-func (c *Client) RunScrollCommand(ctx context.Context, id string, command string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewRunScrollCommandRequest(c.Server, id, command)
+func (c *Client) RunScrollCommand(ctx context.Context, id string, command string, params *RunScrollCommandParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRunScrollCommandRequest(c.Server, id, command, params)
 	if err != nil {
 		return nil, err
 	}
@@ -979,7 +985,7 @@ func NewBackupScrollRequestWithBody(server string, id string, contentType string
 }
 
 // NewRunScrollCommandRequest generates requests for RunScrollCommand
-func NewRunScrollCommandRequest(server string, id string, command string) (*http.Request, error) {
+func NewRunScrollCommandRequest(server string, id string, command string, params *RunScrollCommandParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -1009,6 +1015,28 @@ func NewRunScrollCommandRequest(server string, id string, command string) (*http
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Sync != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "sync", runtime.ParamLocationQuery, *params.Sync); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("POST", queryURL.String(), nil)
@@ -1591,7 +1619,7 @@ type ClientWithResponsesInterface interface {
 	BackupScrollWithResponse(ctx context.Context, id string, body BackupScrollJSONRequestBody, reqEditors ...RequestEditorFn) (*BackupScrollResponse, error)
 
 	// RunScrollCommandWithResponse request
-	RunScrollCommandWithResponse(ctx context.Context, id string, command string, reqEditors ...RequestEditorFn) (*RunScrollCommandResponse, error)
+	RunScrollCommandWithResponse(ctx context.Context, id string, command string, params *RunScrollCommandParams, reqEditors ...RequestEditorFn) (*RunScrollCommandResponse, error)
 
 	// GetScrollConfigWithResponse request
 	GetScrollConfigWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollConfigResponse, error)
@@ -2192,8 +2220,8 @@ func (c *ClientWithResponses) BackupScrollWithResponse(ctx context.Context, id s
 }
 
 // RunScrollCommandWithResponse request returning *RunScrollCommandResponse
-func (c *ClientWithResponses) RunScrollCommandWithResponse(ctx context.Context, id string, command string, reqEditors ...RequestEditorFn) (*RunScrollCommandResponse, error) {
-	rsp, err := c.RunScrollCommand(ctx, id, command, reqEditors...)
+func (c *ClientWithResponses) RunScrollCommandWithResponse(ctx context.Context, id string, command string, params *RunScrollCommandParams, reqEditors ...RequestEditorFn) (*RunScrollCommandResponse, error) {
+	rsp, err := c.RunScrollCommand(ctx, id, command, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -2927,7 +2955,7 @@ type ServerInterface interface {
 	BackupScroll(c *fiber.Ctx, id string) error
 	// Run runtime scroll command
 	// (POST /api/v1/scrolls/{id}/commands/{command})
-	RunScrollCommand(c *fiber.Ctx, id string, command string) error
+	RunScrollCommand(c *fiber.Ctx, id string, command string, params RunScrollCommandParams) error
 	// Get parsed scroll config
 	// (GET /api/v1/scrolls/{id}/config)
 	GetScrollConfig(c *fiber.Ctx, id string) error
@@ -3069,7 +3097,23 @@ func (siw *ServerInterfaceWrapper) RunScrollCommand(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter command: %w", err).Error())
 	}
 
-	return siw.Handler.RunScrollCommand(c, id, command)
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RunScrollCommandParams
+
+	var query url.Values
+	query, err = url.ParseQuery(string(c.Request().URI().QueryString()))
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for query string: %w", err).Error())
+	}
+
+	// ------------- Optional query parameter "sync" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "sync", query, &params.Sync)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter sync: %w", err).Error())
+	}
+
+	return siw.Handler.RunScrollCommand(c, id, command, params)
 }
 
 // GetScrollConfig operation middleware
@@ -3356,53 +3400,54 @@ func RegisterHandlersWithOptions(router fiber.Router, si ServerInterface, option
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

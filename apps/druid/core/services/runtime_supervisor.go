@@ -24,7 +24,6 @@ type RuntimeSupervisor struct {
 	workerCallbacks   *WorkerCallbackManager
 	workerCallbackURL string
 	workerDaemonURL   string
-	internalToken     string
 	authJWKSURL       string
 	runtimeJWKSURL    string
 	workerTimeout     time.Duration
@@ -59,9 +58,8 @@ func (s *RuntimeSupervisor) SetWorkerTimeout(timeout time.Duration) {
 	s.workerTimeout = timeout
 }
 
-func (s *RuntimeSupervisor) SetDevWorkerConfig(daemonURL string, internalToken string, authJWKSURL string, runtimeJWKSURL string) {
+func (s *RuntimeSupervisor) SetDevWorkerConfig(daemonURL string, authJWKSURL string, runtimeJWKSURL string) {
 	s.workerDaemonURL = strings.TrimRight(daemonURL, "/")
-	s.internalToken = internalToken
 	s.authJWKSURL = authJWKSURL
 	s.runtimeJWKSURL = runtimeJWKSURL
 }

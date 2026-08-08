@@ -6,6 +6,9 @@ metadata:
   labels:
     {{- include "druid-cli.labels" . | nindent 4 }}
 rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]

@@ -19,6 +19,18 @@ func (s *RuntimeSupervisor) RunWithContext(ctx context.Context, id string, comma
 	return session.RunWithContext(ctx, command)
 }
 
+// RunAndWait waits for the requested command rather than every command in the runtime queue.
+func (s *RuntimeSupervisor) RunAndWait(id string, command string) (*domain.RuntimeScroll, error) {
+	session, err := s.sessionFor(id)
+	if err != nil {
+		return nil, err
+	}
+	if err := session.AddTempItemWithWait(command); err != nil {
+		return nil, err
+	}
+	return s.store.GetScroll(id)
+}
+
 func (s *RuntimeSupervisor) Ports(id string) ([]domain.RuntimePortStatus, error) {
 	session, err := s.sessionFor(id)
 	if err != nil {

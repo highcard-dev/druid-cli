@@ -2,8 +2,11 @@ package client
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"io"
 	"mime"
 	"net/http"
 	"os"
@@ -34,7 +37,7 @@ var devRoot string
 var devListen string
 var devRuntimeID string
 var devDaemonURL string
-var devDaemonToken string
+var devDaemonTokenFile string
 var devOwnerID string
 var devAuthJWKSURL string
 var devRuntimeJWKSURL string
@@ -107,7 +110,7 @@ func init() {
 	DevCommand.Flags().StringVar(&devListen, "listen", ":8084", "Dev server listen address")
 	DevCommand.Flags().StringVar(&devRuntimeID, "runtime-id", "", "Runtime id")
 	DevCommand.Flags().StringVar(&devDaemonURL, "daemon-url", "", "Daemon management API URL")
-	DevCommand.Flags().StringVar(&devDaemonToken, "daemon-token", "", "Daemon management token")
+	DevCommand.Flags().StringVar(&devDaemonTokenFile, "daemon-token-file", "", "Projected ServiceAccount token file for daemon requests")
 	DevCommand.Flags().StringVar(&devOwnerID, "owner-id", "", "Runtime owner id for customer-facing auth")
 	DevCommand.Flags().StringVar(&devAuthJWKSURL, "auth-jwks-url", "", "JWKS URL for customer JWTs")
 	DevCommand.Flags().StringVar(&devRuntimeJWKSURL, "runtime-jwks-url", "", "JWKS URL for short-lived runtime tokens")
@@ -126,9 +129,6 @@ func runDevServer() error {
 	}
 	if devDaemonURL == "" {
 		devDaemonURL = os.Getenv("DRUID_DAEMON_URL")
-	}
-	if devDaemonToken == "" {
-		devDaemonToken = os.Getenv("DRUID_INTERNAL_TOKEN")
 	}
 	auth := devAuth{runtimeID: devRuntimeID, ownerID: devOwnerID}
 	if devAuthJWKSURL != "" {
@@ -161,10 +161,11 @@ func runDevServer() error {
 }
 
 type devAuth struct {
-	user      ports.AuthorizerServiceInterface
-	runtime   ports.AuthorizerServiceInterface
-	runtimeID string
-	ownerID   string
+	user          ports.AuthorizerServiceInterface
+	runtime       ports.AuthorizerServiceInterface
+	runtimeID     string
+	ownerID       string
+	internalToken string
 }
 
 func newDevApp(root string, broadcast *domain.BroadcastChannel, queue *devTriggerQueue, authOpt ...devAuth) *fiber.App {
@@ -190,6 +191,14 @@ func newDevApp(root string, broadcast *domain.BroadcastChannel, queue *devTrigge
 	})
 	app.Use(server.authMiddleware)
 	devapi.RegisterHandlers(app, server)
+	// The legacy daemon-to-dev publish endpoints are only registered when a
+	// caller supplies a verifier. Kubernetes publishing is being moved to the
+	// dev agent's projected-token flow; never leave an unauthenticated endpoint.
+	if auth.internalToken != "" {
+		app.Get("/internal/v1/ui/info", server.GetInternalUIPackageInfo)
+		app.Post("/internal/v1/ui/publish", server.PublishInternalUIPackage)
+		app.Get("/internal/v1/ui/*", server.GetInternalUIPackage)
+	}
 	webdavHandler := adaptor.HTTPHandler(&webdav.Handler{
 		Prefix:     "/webdav",
 		FileSystem: webdav.Dir(root),
@@ -223,6 +232,13 @@ func (s devServer) authMiddleware(c *fiber.Ctx) error {
 	if c.Path() == "/health" || c.Method() == fiber.MethodOptions {
 		return c.Next()
 	}
+	if strings.HasPrefix(c.Path(), "/internal/v1/ui/") {
+		token := strings.TrimPrefix(c.Get("Authorization"), "Bearer ")
+		if s.auth.internalToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(s.auth.internalToken)) != 1 {
+			return fiber.NewError(fiber.StatusUnauthorized, "invalid internal token")
+		}
+		return c.Next()
+	}
 	if s.auth.user == nil && s.auth.runtime == nil {
 		return c.Next()
 	}
@@ -250,6 +266,97 @@ func (s devServer) authMiddleware(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "missing or invalid token")
 	}
 	return c.Next()
+}
+
+func (s devServer) GetInternalUIPackage(c *fiber.Ctx) error {
+	path, err := internalUIPackagePath(c.Params("*"))
+	if err != nil {
+		return fiber.ErrNotFound
+	}
+	return s.sendFile(c, filepath.ToSlash(filepath.Join(domain.RuntimeDataDir, path)))
+}
+
+func internalUIPackagePath(raw string) (string, error) {
+	path := filepath.ToSlash(filepath.Clean(strings.TrimPrefix(raw, "/")))
+	if path == "." || strings.HasPrefix(path, "../") || filepath.Ext(path) != ".wasm" ||
+		(!strings.HasPrefix(path, "private/") && !strings.HasPrefix(path, "public/")) {
+		return "", fmt.Errorf("invalid UI package path")
+	}
+	return path, nil
+}
+
+func (s devServer) GetInternalUIPackageInfo(c *fiber.Ctx) error {
+	path, err := internalUIPackagePath(c.Query("path"))
+	if err != nil {
+		return fiber.ErrNotFound
+	}
+	file, err := os.Open(filepath.Join(s.root, domain.RuntimeDataDir, filepath.FromSlash(path)))
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return err
+	}
+	return c.JSON(fiber.Map{"path": path, "sha256": fmt.Sprintf("%x", hash.Sum(nil)), "size": info.Size()})
+}
+
+func (s devServer) PublishInternalUIPackage(c *fiber.Ctx) error {
+	var request struct {
+		Path   string `json:"path"`
+		SHA256 string `json:"sha256"`
+		Size   int64  `json:"size"`
+		URL    string `json:"url"`
+	}
+	if err := c.BodyParser(&request); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+	path, err := internalUIPackagePath(request.Path)
+	if err != nil || request.URL == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid UI package upload request")
+	}
+	file, err := os.Open(filepath.Join(s.root, domain.RuntimeDataDir, filepath.FromSlash(path)))
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return err
+	}
+	actualHash := fmt.Sprintf("%x", hash.Sum(nil))
+	if actualHash != request.SHA256 || info.Size() != request.Size {
+		return fiber.NewError(fiber.StatusConflict, "UI package changed before upload")
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	httpRequest, err := http.NewRequestWithContext(c.UserContext(), http.MethodPut, request.URL, file)
+	if err != nil {
+		return err
+	}
+	httpRequest.ContentLength = request.Size
+	httpRequest.Header.Set("Content-Type", "application/wasm")
+	httpRequest.Header.Set("Cache-Control", "public, max-age=31536000, immutable")
+	response, err := http.DefaultClient.Do(httpRequest)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		return fiber.NewError(fiber.StatusBadGateway, fmt.Sprintf("UI package upload failed: %s", strings.TrimSpace(string(body))))
+	}
+	return c.SendStatus(fiber.StatusNoContent)
 }
 
 func (s devServer) GetFile(c *fiber.Ctx, params devapi.GetFileParams) error {
@@ -365,10 +472,11 @@ func (q *devTriggerQueue) Trigger() error {
 	for _, command := range q.commands {
 		q.broadcastEvent("build-started")
 		err := q.runCommand(command)
-		q.broadcastEvent("build-ended")
 		if err != nil {
+			q.broadcastEvent("build-failed")
 			return err
 		}
+		q.broadcastEvent("build-ended")
 	}
 	return nil
 }
@@ -386,15 +494,20 @@ func (q *devTriggerQueue) runCommand(command string) error {
 		return fmt.Errorf("dev daemon URL is required to run %s", command)
 	}
 	client, err := api.NewClientWithResponses(devDaemonURL, api.WithRequestEditorFn(func(ctx context.Context, req *http.Request) error {
-		if devDaemonToken != "" {
-			req.Header.Set("Authorization", "Bearer "+devDaemonToken)
+		if devDaemonTokenFile != "" {
+			token, err := os.ReadFile(devDaemonTokenFile)
+			if err != nil {
+				return fmt.Errorf("read daemon token: %w", err)
+			}
+			req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
 		}
 		return nil
 	}))
 	if err != nil {
 		return err
 	}
-	res, err := client.RunScrollCommandWithResponse(context.Background(), devRuntimeID, command)
+	sync := true
+	res, err := client.RunScrollCommandWithResponse(context.Background(), devRuntimeID, command, &api.RunScrollCommandParams{Sync: &sync})
 	if err != nil {
 		return err
 	}

@@ -26,7 +26,6 @@ type WorkerResult struct {
 	ArtifactDigest *string `json:"artifact_digest,omitempty"`
 	Error          *string `json:"error,omitempty"`
 	ScrollYaml     *string `json:"scroll_yaml,omitempty"`
-	Token          string  `json:"token"`
 }
 
 // Runtime defines model for Runtime.
@@ -346,15 +345,14 @@ func RegisterHandlersWithOptions(router fiber.Router, si ServerInterface, option
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/4RTsW4bMQz9FYHteIicNtNtbbpkK7J0CAyDlmhHsU5SKZ4Dw7h/LySdawc9oJtNPr53",
-	"5Hs6g4lDioGCZOjPkJBxICGu/57HIG6g8tMF6CGhvEIHAUsNuHU3zkIHTL9Hx2ShFx6pg2xeacAyKadU",
-	"0FnYhT1M03RpVolfkQ/Ez5RHL/UDOCZicVS7yOJ2aGRj3Z6yLNB1QMyRFzvZcPR+c8LBL/YlHigsfeLt",
-	"Oi8zbN1dYHH7RkbaJi7sYmGwlA27JC6WOz0FIQ7olUHvt2gO6tvPJzVmsmp7Uu915awwWGXpqDLxkTjf",
-	"QQfixBeJHzw6q/7SPN7QQAcF3YRWd/d3q7JKTBQwOejhay111at6Q+1mGn2817O2Pl/Nm3SJgCepPqfY",
-	"zlxcwLLOk4UeHmdEc6uyX3PycobPTDvo4ZO+pklfIfqSo2ndLktZvkd7KjomBqFQJTEl70wV1W85Vmeu",
-	"MVqSmHOkP4Ro+uhfiWMt5BRDbrH6snr417RGoriyKDSGkpAtx31YrZY8PqJ3dnZzHmvo+/+ia6RUZDWG",
-	"Q4jvQaGpwPo4xmFAPt1cXaFKFKwL+8v8DO9AcF8cgFaHdXteLVDVmZE99KDr6Wfw+fKA56FpPf0JAAD/",
-	"/0i8QQ4HBAAA",
+	"H4sIAAAAAAAC/3xTsW7bMBD9FeLaUQidNpO2Nl2yFVk6FIZxJs8OE4pkjycXgqB/L0jKtYMa3ezj43u8",
+	"955mMHFIMVCQDP0MCRkHEuL673kM4gYqP12AHhLKC3QQsMyA2+nOWeiA6dfomCz0wiN1kM0LDVhuypQK",
+	"Ogu7cIRlWc6HVeJH5DfiZ8qjl/oAjolYHNVTZHEHNLKz7khZbtB1QMyRb55kw9H73YSDv/WQ7jyJ+1cy",
+	"0p7mwiEWsKVs2CVxsSz+FIQ4oFcGvd+jeVNfvj+pMZNV+0n9rjtkhcEqSyeViU/E+Q46ECe+SHzj0Vn1",
+	"l+bxigY6KOgmtLm7v9uUt8dEAZODHj7XUVfNr6Zot9Lo071etfV8SWPRJVNPUoNLsflWbMWyzpOFHh5X",
+	"RLO/sl+C/znDR6YD9PBBX+qhLxB9LsaybclTlq/RTkXHxCAUqiSm5J2povo1l/3mq17ckliLod+1ouby",
+	"vl91kFMMufXk0+bh39AaieLKotAYSkK2mPuw2dzK+ITe2TXN9VpD3/8f7SNa5SwFcTLVYuVxGJCnK6MV",
+	"qkTBunA8C6CpVB0IHovp0OawbZ9I61ANY2QPPejq9gqezx/hemnZLn8CAAD//+gup1vLAwAA",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

@@ -99,6 +99,10 @@ func (f fakeBackend) StartDev(ctx context.Context, action ports.RuntimeDevAction
 
 func (f fakeBackend) StopDev(ctx context.Context, root string) error { return nil }
 
+func (f fakeBackend) DevStatus(ctx context.Context, root string) (ports.RuntimeDevStatus, error) {
+	return ports.RuntimeDevStatusDisabled, nil
+}
+
 func (f fakeBackend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 	return nil, nil
 }

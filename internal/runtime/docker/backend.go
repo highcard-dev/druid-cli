@@ -21,13 +21,19 @@ type Backend struct {
 }
 
 type Config struct {
-	WorkerImage  string
-	Network      string
-	Storage      string
-	BindRoot     string
-	VolumePrefix string
-	UIBind       string
-	UIPublicURL  string
+	WorkerImage       string
+	Network           string
+	Storage           string
+	BindRoot          string
+	VolumePrefix      string
+	UIS3Bucket        string
+	UIS3PublicBaseURL string
+	UIS3Region        string
+	UIS3Endpoint      string
+	UIS3Prefix        string
+	UIS3AccessKey     string
+	UIS3SecretKey     string
+	UIS3SessionToken  string
 }
 
 func (c Config) WithDefaults() Config {
@@ -52,19 +58,38 @@ func (c Config) WithDefaults() Config {
 	if c.VolumePrefix == "" {
 		c.VolumePrefix = "druid"
 	}
-	if c.UIBind == "" {
-		c.UIBind = os.Getenv("DRUID_DOCKER_UI_BIND")
+	if c.UIS3Bucket == "" {
+		c.UIS3Bucket = os.Getenv("DRUID_DOCKER_UI_S3_BUCKET")
 	}
-	if c.UIBind == "" {
-		c.UIBind = "127.0.0.1:8085"
+	if c.UIS3PublicBaseURL == "" {
+		c.UIS3PublicBaseURL = os.Getenv("DRUID_DOCKER_UI_S3_PUBLIC_BASE_URL")
 	}
-	if c.UIPublicURL == "" {
-		c.UIPublicURL = os.Getenv("DRUID_DOCKER_UI_PUBLIC_URL")
+	if c.UIS3Region == "" {
+		c.UIS3Region = os.Getenv("DRUID_DOCKER_UI_S3_REGION")
 	}
-	if c.UIPublicURL == "" {
-		c.UIPublicURL = "http://" + c.UIBind
+	if c.UIS3Endpoint == "" {
+		c.UIS3Endpoint = os.Getenv("DRUID_DOCKER_UI_S3_ENDPOINT")
+	}
+	if c.UIS3Prefix == "" {
+		c.UIS3Prefix = os.Getenv("DRUID_DOCKER_UI_S3_PREFIX")
+	}
+	if c.UIS3AccessKey == "" {
+		c.UIS3AccessKey = os.Getenv("DRUID_DOCKER_UI_S3_ACCESS_KEY")
+	}
+	if c.UIS3SecretKey == "" {
+		c.UIS3SecretKey = os.Getenv("DRUID_DOCKER_UI_S3_SECRET_KEY")
+	}
+	if c.UIS3SessionToken == "" {
+		c.UIS3SessionToken = os.Getenv("DRUID_DOCKER_UI_S3_SESSION_TOKEN")
 	}
 	return c
+}
+
+func (c Config) ValidateForUIPublishing() error {
+	if c.UIS3Bucket == "" || c.UIS3PublicBaseURL == "" || c.UIS3Region == "" || c.UIS3AccessKey == "" || c.UIS3SecretKey == "" {
+		return fmt.Errorf("docker UI publishing requires S3 bucket, public URL, region, access key, and secret key configuration")
+	}
+	return nil
 }
 
 func New(consoleManager ports.ConsoleManagerInterface) (*Backend, error) {
