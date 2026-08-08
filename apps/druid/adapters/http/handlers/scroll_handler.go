@@ -180,10 +180,17 @@ func (h *ScrollHandler) UpdateScroll(c *fiber.Ctx, id string) error {
 	return c.JSON(runtimeScroll)
 }
 
-func (h *ScrollHandler) RunScrollCommand(c *fiber.Ctx, id string, command string) error {
+func (h *ScrollHandler) RunScrollCommand(c *fiber.Ctx, id string, command string, params api.RunScrollCommandParams) error {
 	runtimeScroll, err := h.getScroll(id)
 	if err != nil {
 		return err
+	}
+	if params.Sync != nil && *params.Sync {
+		updated, err := h.supervisor.RunAndWait(runtimeScroll.ID, command)
+		if err != nil {
+			return err
+		}
+		return c.JSON(updated)
 	}
 	updated, err := h.supervisor.RunWithContext(c.UserContext(), runtimeScroll.ID, command)
 	if err != nil {

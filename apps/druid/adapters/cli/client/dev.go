@@ -472,10 +472,11 @@ func (q *devTriggerQueue) Trigger() error {
 	for _, command := range q.commands {
 		q.broadcastEvent("build-started")
 		err := q.runCommand(command)
-		q.broadcastEvent("build-ended")
 		if err != nil {
+			q.broadcastEvent("build-failed")
 			return err
 		}
+		q.broadcastEvent("build-ended")
 	}
 	return nil
 }
@@ -505,7 +506,8 @@ func (q *devTriggerQueue) runCommand(command string) error {
 	if err != nil {
 		return err
 	}
-	res, err := client.RunScrollCommandWithResponse(context.Background(), devRuntimeID, command)
+	sync := true
+	res, err := client.RunScrollCommandWithResponse(context.Background(), devRuntimeID, command, &api.RunScrollCommandParams{Sync: &sync})
 	if err != nil {
 		return err
 	}
