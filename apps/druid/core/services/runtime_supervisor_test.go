@@ -1204,6 +1204,10 @@ func (f *fakeWorkerBackend) StartDev(ctx context.Context, action ports.RuntimeDe
 
 func (f *fakeWorkerBackend) StopDev(ctx context.Context, root string) error { return nil }
 
+func (f *fakeWorkerBackend) DevStatus(ctx context.Context, root string) (ports.RuntimeDevStatus, error) {
+	return ports.RuntimeDevStatusReady, nil
+}
+
 func (f *fakeWorkerBackend) Attach(commandName string, data string) error {
 	return nil
 }

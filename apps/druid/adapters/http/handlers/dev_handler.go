@@ -58,7 +58,7 @@ func (h *ScrollHandler) EnableDaemonWatch(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(api.DevWatchResponse{Status: "enabled", Enabled: status.Enabled, WatchedPaths: status.WatchedPaths})
+	return c.JSON(api.DevWatchResponse{Status: string(status.Status), Enabled: status.Enabled})
 }
 
 func (h *ScrollHandler) DisableDaemonWatch(c *fiber.Ctx) error {
@@ -66,7 +66,7 @@ func (h *ScrollHandler) DisableDaemonWatch(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(api.DevWatchResponse{Status: "disabled", Enabled: status.Enabled, WatchedPaths: status.WatchedPaths})
+	return c.JSON(api.DevWatchResponse{Status: string(status.Status), Enabled: status.Enabled})
 }
 
 func (h *WebsocketHandler) WatchNotifications(c *websocket.Conn) {

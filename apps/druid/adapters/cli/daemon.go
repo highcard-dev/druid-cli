@@ -53,8 +53,14 @@ var dockerWorkerImage string
 var dockerStorage string
 var dockerBindRoot string
 var dockerVolumePrefix string
-var dockerUIBind string
-var dockerUIPublicURL string
+var dockerUIS3Bucket string
+var dockerUIS3PublicBaseURL string
+var dockerUIS3Region string
+var dockerUIS3Endpoint string
+var dockerUIS3Prefix string
+var dockerUIS3AccessKey string
+var dockerUIS3SecretKey string
+var dockerUIS3SessionToken string
 
 var DaemonCommand = &cobra.Command{
 	Use:     "daemon",
@@ -84,8 +90,14 @@ func init() {
 	DaemonCommand.Flags().StringVar(&dockerStorage, "docker-storage", "", "Docker runtime storage mode: volume or bind (default: DRUID_DOCKER_STORAGE or volume)")
 	DaemonCommand.Flags().StringVar(&dockerBindRoot, "docker-bind-root", "", "Host root for Docker bind storage (default: DRUID_DOCKER_BIND_ROOT)")
 	DaemonCommand.Flags().StringVar(&dockerVolumePrefix, "docker-volume-prefix", "", "Docker volume name prefix (default: DRUID_DOCKER_VOLUME_PREFIX or druid)")
-	DaemonCommand.Flags().StringVar(&dockerUIBind, "docker-ui-bind", "", "Docker UI package static server bind address (default: DRUID_DOCKER_UI_BIND or 127.0.0.1:8085)")
-	DaemonCommand.Flags().StringVar(&dockerUIPublicURL, "docker-ui-public-url", "", "Public base URL for Docker UI packages (default: DRUID_DOCKER_UI_PUBLIC_URL or http://127.0.0.1:8085)")
+	DaemonCommand.Flags().StringVar(&dockerUIS3Bucket, "docker-ui-s3-bucket", "", "S3 bucket for published Docker UI packages (default: DRUID_DOCKER_UI_S3_BUCKET)")
+	DaemonCommand.Flags().StringVar(&dockerUIS3PublicBaseURL, "docker-ui-s3-public-base-url", "", "Public base URL for published Docker UI packages (default: DRUID_DOCKER_UI_S3_PUBLIC_BASE_URL)")
+	DaemonCommand.Flags().StringVar(&dockerUIS3Region, "docker-ui-s3-region", "", "S3 region for published Docker UI packages (default: DRUID_DOCKER_UI_S3_REGION)")
+	DaemonCommand.Flags().StringVar(&dockerUIS3Endpoint, "docker-ui-s3-endpoint", "", "Optional S3-compatible endpoint for published Docker UI packages (default: DRUID_DOCKER_UI_S3_ENDPOINT)")
+	DaemonCommand.Flags().StringVar(&dockerUIS3Prefix, "docker-ui-s3-prefix", "", "Optional S3 key prefix for published Docker UI packages (default: DRUID_DOCKER_UI_S3_PREFIX)")
+	DaemonCommand.Flags().StringVar(&dockerUIS3AccessKey, "docker-ui-s3-access-key", "", "S3 access key for published Docker UI packages (default: DRUID_DOCKER_UI_S3_ACCESS_KEY)")
+	DaemonCommand.Flags().StringVar(&dockerUIS3SecretKey, "docker-ui-s3-secret-key", "", "S3 secret key for published Docker UI packages (default: DRUID_DOCKER_UI_S3_SECRET_KEY)")
+	DaemonCommand.Flags().StringVar(&dockerUIS3SessionToken, "docker-ui-s3-session-token", "", "Optional S3 session token for published Docker UI packages (default: DRUID_DOCKER_UI_S3_SESSION_TOKEN)")
 	DaemonCommand.Flags().StringVar(&runtimeStateDir, "state-dir", "", "Runtime state directory (default: ~/.druid/runtime)")
 	DaemonCommand.Flags().StringVar(&runtimeBackendName, "runtime", "docker", "Default runtime backend. Valid values: docker, kubernetes")
 	DaemonCommand.Flags().StringVar(&k8sNamespace, "k8s-namespace", "", "Kubernetes namespace for runtime resources (default: service account namespace or DRUID_K8S_NAMESPACE)")
@@ -124,7 +136,7 @@ func runRuntimeDaemon() error {
 		UIS3SessionToken:  k8sUIS3SessionToken,
 		InternalToken:     runtimeInternalToken,
 	}
-	dockerConfig := runtimedocker.Config{WorkerImage: dockerWorkerImage, Storage: dockerStorage, BindRoot: dockerBindRoot, VolumePrefix: dockerVolumePrefix, UIBind: dockerUIBind, UIPublicURL: dockerUIPublicURL}
+	dockerConfig := runtimedocker.Config{WorkerImage: dockerWorkerImage, Storage: dockerStorage, BindRoot: dockerBindRoot, VolumePrefix: dockerVolumePrefix, UIS3Bucket: dockerUIS3Bucket, UIS3PublicBaseURL: dockerUIS3PublicBaseURL, UIS3Region: dockerUIS3Region, UIS3Endpoint: dockerUIS3Endpoint, UIS3Prefix: dockerUIS3Prefix, UIS3AccessKey: dockerUIS3AccessKey, UIS3SecretKey: dockerUIS3SecretKey, UIS3SessionToken: dockerUIS3SessionToken, InternalToken: runtimeInternalToken}
 	logManager := services.NewLogManager()
 	consoleService := services.NewConsoleManager(logManager)
 	runtime, err := runtimebackend.NewRuntime(runtimeBackendName, consoleService, runtimeStateDir, runtimebackend.WithKubernetesConfig(kubernetesConfig), runtimebackend.WithDockerConfig(dockerConfig))

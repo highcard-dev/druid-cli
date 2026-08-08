@@ -2,9 +2,11 @@ package client
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"io"
 	"mime"
 	"net/http"
 	"os"
@@ -192,6 +194,8 @@ func newDevApp(root string, broadcast *domain.BroadcastChannel, queue *devTrigge
 	})
 	app.Use(server.authMiddleware)
 	devapi.RegisterHandlers(app, server)
+	app.Get("/internal/v1/ui/info", server.GetInternalUIPackageInfo)
+	app.Post("/internal/v1/ui/publish", server.PublishInternalUIPackage)
 	app.Get("/internal/v1/ui/*", server.GetInternalUIPackage)
 	webdavHandler := adaptor.HTTPHandler(&webdav.Handler{
 		Prefix:     "/webdav",
@@ -263,12 +267,94 @@ func (s devServer) authMiddleware(c *fiber.Ctx) error {
 }
 
 func (s devServer) GetInternalUIPackage(c *fiber.Ctx) error {
-	path := filepath.ToSlash(filepath.Clean(strings.TrimPrefix(c.Params("*"), "/")))
-	if path == "." || strings.HasPrefix(path, "../") || filepath.Ext(path) != ".wasm" ||
-		(!strings.HasPrefix(path, "private/") && !strings.HasPrefix(path, "public/")) {
+	path, err := internalUIPackagePath(c.Params("*"))
+	if err != nil {
 		return fiber.ErrNotFound
 	}
 	return s.sendFile(c, filepath.ToSlash(filepath.Join(domain.RuntimeDataDir, path)))
+}
+
+func internalUIPackagePath(raw string) (string, error) {
+	path := filepath.ToSlash(filepath.Clean(strings.TrimPrefix(raw, "/")))
+	if path == "." || strings.HasPrefix(path, "../") || filepath.Ext(path) != ".wasm" ||
+		(!strings.HasPrefix(path, "private/") && !strings.HasPrefix(path, "public/")) {
+		return "", fmt.Errorf("invalid UI package path")
+	}
+	return path, nil
+}
+
+func (s devServer) GetInternalUIPackageInfo(c *fiber.Ctx) error {
+	path, err := internalUIPackagePath(c.Query("path"))
+	if err != nil {
+		return fiber.ErrNotFound
+	}
+	file, err := os.Open(filepath.Join(s.root, domain.RuntimeDataDir, filepath.FromSlash(path)))
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return err
+	}
+	return c.JSON(fiber.Map{"path": path, "sha256": fmt.Sprintf("%x", hash.Sum(nil)), "size": info.Size()})
+}
+
+func (s devServer) PublishInternalUIPackage(c *fiber.Ctx) error {
+	var request struct {
+		Path   string `json:"path"`
+		SHA256 string `json:"sha256"`
+		Size   int64  `json:"size"`
+		URL    string `json:"url"`
+	}
+	if err := c.BodyParser(&request); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+	path, err := internalUIPackagePath(request.Path)
+	if err != nil || request.URL == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid UI package upload request")
+	}
+	file, err := os.Open(filepath.Join(s.root, domain.RuntimeDataDir, filepath.FromSlash(path)))
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return err
+	}
+	actualHash := fmt.Sprintf("%x", hash.Sum(nil))
+	if actualHash != request.SHA256 || info.Size() != request.Size {
+		return fiber.NewError(fiber.StatusConflict, "UI package changed before upload")
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	httpRequest, err := http.NewRequestWithContext(c.UserContext(), http.MethodPut, request.URL, file)
+	if err != nil {
+		return err
+	}
+	httpRequest.ContentLength = request.Size
+	httpRequest.Header.Set("Content-Type", "application/wasm")
+	httpRequest.Header.Set("Cache-Control", "public, max-age=31536000, immutable")
+	response, err := http.DefaultClient.Do(httpRequest)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		return fiber.NewError(fiber.StatusBadGateway, fmt.Sprintf("UI package upload failed: %s", strings.TrimSpace(string(body))))
+	}
+	return c.SendStatus(fiber.StatusNoContent)
 }
 
 func (s devServer) GetFile(c *fiber.Ctx, params devapi.GetFileParams) error {

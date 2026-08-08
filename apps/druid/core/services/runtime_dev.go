@@ -21,8 +21,8 @@ type DevWatchRequest struct {
 }
 
 type DevWatchStatus struct {
-	Enabled      bool     `json:"enabled"`
-	WatchedPaths []string `json:"watchedPaths"`
+	Status  ports.RuntimeDevStatus `json:"status"`
+	Enabled bool                   `json:"enabled"`
 }
 
 func (s *RuntimeSupervisor) AddCommand(id string, command string, instruction *domain.CommandInstructionSet) error {
@@ -54,7 +54,7 @@ func (s *RuntimeSupervisor) DevWatchStatus(id string) (DevWatchStatus, error) {
 	if err != nil {
 		return DevWatchStatus{}, err
 	}
-	return session.DevWatchStatus(), nil
+	return session.DevWatchStatus(context.Background())
 }
 
 func (s *RuntimeSupervisor) SubscribeDevWatch(id string) (chan *[]byte, func(), error) {
@@ -104,8 +104,6 @@ func (s *RuntimeSession) EnableDevWatch(request DevWatchRequest) (DevWatchStatus
 	root := s.runtimeScroll.Root
 	id := s.runtimeScroll.ID
 	routing := append([]domain.RuntimeRouteAssignment(nil), s.runtimeScroll.Routing...)
-	s.devWatchPaths = append([]string(nil), request.WatchPaths...)
-	s.devCommands = append([]string(nil), request.HotReloadCommands...)
 	s.mu.Unlock()
 
 	if s.devDaemonURL == "" {
@@ -128,14 +126,12 @@ func (s *RuntimeSession) EnableDevWatch(request DevWatchRequest) (DevWatchStatus
 		return DevWatchStatus{}, err
 	}
 	s.startDevWatchBridge(routing)
-	return s.DevWatchStatus(), nil
+	return s.DevWatchStatus(context.Background())
 }
 
 func (s *RuntimeSession) DisableDevWatch() (DevWatchStatus, error) {
 	s.mu.Lock()
 	root := s.runtimeScroll.Root
-	s.devWatchPaths = nil
-	s.devCommands = nil
 	if s.devWatchCancel != nil {
 		s.devWatchCancel()
 		s.devWatchCancel = nil
@@ -148,16 +144,18 @@ func (s *RuntimeSession) DisableDevWatch() (DevWatchStatus, error) {
 	if err := s.runtimeBackend.StopDev(context.Background(), root); err != nil {
 		return DevWatchStatus{}, err
 	}
-	return s.DevWatchStatus(), nil
+	return s.DevWatchStatus(context.Background())
 }
 
-func (s *RuntimeSession) DevWatchStatus() DevWatchStatus {
+func (s *RuntimeSession) DevWatchStatus(ctx context.Context) (DevWatchStatus, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.devWatchPaths) == 0 {
-		return DevWatchStatus{Enabled: false, WatchedPaths: []string{}}
+	root := s.runtimeScroll.Root
+	s.mu.Unlock()
+	status, err := s.runtimeBackend.DevStatus(ctx, root)
+	if err != nil {
+		return DevWatchStatus{}, err
 	}
-	return DevWatchStatus{Enabled: true, WatchedPaths: append([]string(nil), s.devWatchPaths...)}
+	return DevWatchStatus{Status: status, Enabled: status == ports.RuntimeDevStatusReady}, nil
 }
 
 func (s *RuntimeSession) SubscribeDevWatch() chan *[]byte {

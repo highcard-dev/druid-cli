@@ -301,6 +301,21 @@ func (mr *MockRuntimeBackendInterfaceMockRecorder) DeleteRuntime(root, purgeData
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteRuntime", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).DeleteRuntime), root, purgeData)
 }
 
+// DevStatus mocks base method.
+func (m *MockRuntimeBackendInterface) DevStatus(ctx context.Context, root string) (ports.RuntimeDevStatus, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DevStatus", ctx, root)
+	ret0, _ := ret[0].(ports.RuntimeDevStatus)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DevStatus indicates an expected call of DevStatus.
+func (mr *MockRuntimeBackendInterfaceMockRecorder) DevStatus(ctx, root any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DevStatus", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).DevStatus), ctx, root)
+}
+
 // ExpectedPorts mocks base method.
 func (m *MockRuntimeBackendInterface) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
 	m.ctrl.T.Helper()

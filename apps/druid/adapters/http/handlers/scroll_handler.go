@@ -243,6 +243,7 @@ func (h *ScrollHandler) GetDaemonScroll(c *fiber.Ctx) error {
 func (h *ScrollHandler) RunDaemonCommand(c *fiber.Ctx) error {
 	var request struct {
 		Command string `json:"command"`
+		Sync    bool   `json:"sync"`
 	}
 	if err := c.BodyParser(&request); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
@@ -250,7 +251,13 @@ func (h *ScrollHandler) RunDaemonCommand(c *fiber.Ctx) error {
 	if request.Command == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "command is required")
 	}
-	if _, err := h.supervisor.RunWithContext(c.UserContext(), c.Params("id"), request.Command); err != nil {
+	var err error
+	if request.Sync {
+		_, err = h.supervisor.RunAndWait(c.Params("id"), request.Command)
+	} else {
+		_, err = h.supervisor.RunWithContext(c.UserContext(), c.Params("id"), request.Command)
+	}
+	if err != nil {
 		return err
 	}
 	return c.SendStatus(fiber.StatusOK)

@@ -239,7 +239,7 @@ func (uds *WatchService) addWatchPath(path string) error {
 			}
 			return uds.watcher.Add(walkPath)
 		}
-		return nil
+		return uds.watcher.Add(walkPath)
 	})
 }
 

@@ -21,7 +21,6 @@ import (
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	coreservices "github.com/highcard-dev/daemon/internal/core/services"
-	"github.com/highcard-dev/daemon/internal/uipackage"
 )
 
 func setStatsReader(backend *Backend, nodeName string, summary *nodeStatsSummary, err error) {
@@ -134,44 +133,6 @@ func TestDevStatefulSetMountsRuntimeRootAsScrollRoot(t *testing.T) {
 	}
 	if user := statefulSet.Spec.Template.Spec.Containers[0].SecurityContext.RunAsUser; user == nil || *user != 0 {
 		t.Fatalf("dev server must run as root to edit runtime files, got %#v", user)
-	}
-}
-
-func TestPublishUIPackageFetchesFromDevServiceAndUploadsFromDaemon(t *testing.T) {
-	root := ref("druid", "druid-ui-data")
-	client := fake.NewSimpleClientset(&appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{
-		Name: devStatefulSetName(root), Namespace: "druid",
-	}})
-	backend := NewWithClient(Config{
-		PullImage:         "druid:local",
-		UIS3Bucket:        "druid-ui",
-		UIS3PublicBaseURL: "http://127.0.0.1:9000/druid-ui",
-		UIS3Region:        "us-east-1",
-		UIS3AccessKey:     "druid",
-		UIS3SecretKey:     "druidpassword",
-		InternalToken:     "internal-token",
-	}, nil, client)
-	backend.uiPackageFetcher = func(_ context.Context, namespace string, service string, source string, token string) ([]byte, error) {
-		if namespace != "druid" || service != serviceName(root, "dev", "webdav") || source != "private/dist/app.wasm" || token != "internal-token" {
-			t.Fatalf("fetch = namespace=%q service=%q source=%q token=%q", namespace, service, source, token)
-		}
-		return []byte("wasm"), nil
-	}
-	backend.uiPackageUploader = func(_ context.Context, content []byte, config uipackage.S3Config) (string, error) {
-		if string(content) != "wasm" || config.Bucket != "druid-ui" || config.AccessKey != "druid" || config.SecretKey != "druidpassword" {
-			t.Fatalf("upload content=%q config=%#v", content, config)
-		}
-		return "content-hash", nil
-	}
-
-	result, err := backend.PublishUIPackage(context.Background(), ports.RuntimeUIPackageAction{
-		RuntimeID: "ui", RootRef: root, Scope: domain.RuntimeUIPackageScopePrivate, SourcePath: "private/dist/app.wasm",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.URL != "http://127.0.0.1:9000/druid-ui/druid/ui/private/content-hash/app.wasm" {
-		t.Fatalf("url = %q", result.URL)
 	}
 }
 

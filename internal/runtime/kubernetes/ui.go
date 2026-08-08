@@ -1,16 +1,15 @@
 package kubernetes
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"path"
 	"strings"
-
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/uipackage"
@@ -20,109 +19,95 @@ func (b *Backend) PublishUIPackage(ctx context.Context, action ports.RuntimeUIPa
 	if err := b.config.ValidateForUIPublishing(); err != nil {
 		return ports.RuntimeUIPackageResult{}, err
 	}
-	namespace, pvc, err := parseRef(action.RootRef)
+	namespace, _, err := parseRef(action.RootRef)
 	if err != nil {
 		return ports.RuntimeUIPackageResult{}, err
 	}
-	temporaryDevServer, err := b.ensureUIPackageDevServer(ctx, namespace, pvc, action)
+	status, err := b.DevStatus(ctx, action.RootRef)
 	if err != nil {
 		return ports.RuntimeUIPackageResult{}, err
 	}
-	if temporaryDevServer {
-		defer b.StopDev(context.Background(), action.RootRef)
+	if status != ports.RuntimeDevStatusReady {
+		return ports.RuntimeUIPackageResult{}, fmt.Errorf("Druid Developer Mode must be ready before publishing a UI package (current status: %s)", status)
 	}
-	content, err := b.fetchUIPackage(ctx, namespace, action.RootRef, action.SourcePath)
+	info, err := b.uiPackageInfo(ctx, namespace, action.RootRef, action.SourcePath)
 	if err != nil {
 		return ports.RuntimeUIPackageResult{}, err
 	}
 	keyPrefix := strings.Trim(strings.Trim(b.config.UIS3Prefix, "/")+"/"+namespace+"/"+action.RuntimeID+"/"+string(action.Scope), "/")
-	hash, err := b.uploadUIPackage(ctx, content, uipackage.S3Config{
-		Bucket:       b.config.UIS3Bucket,
-		Region:       b.config.UIS3Region,
-		Endpoint:     b.config.UIS3Endpoint,
-		KeyPrefix:    keyPrefix,
-		AccessKey:    b.config.UIS3AccessKey,
-		SecretKey:    b.config.UIS3SecretKey,
-		SessionToken: b.config.UIS3SessionToken,
-	})
+	config := uipackage.S3Config{
+		Bucket:         b.config.UIS3Bucket,
+		Region:         b.config.UIS3Region,
+		Endpoint:       b.config.UIS3Endpoint,
+		VerifyEndpoint: b.config.UIS3DaemonEndpoint,
+		KeyPrefix:      keyPrefix,
+		AccessKey:      b.config.UIS3AccessKey,
+		SecretKey:      b.config.UIS3SecretKey,
+		SessionToken:   b.config.UIS3SessionToken,
+	}
+	uploadURL, err := uipackage.PresignPut(ctx, info.SHA256, config)
 	if err != nil {
 		return ports.RuntimeUIPackageResult{}, err
 	}
-	if hash == "" {
-		return ports.RuntimeUIPackageResult{}, fmt.Errorf("ui package upload did not return a content hash")
+	if err := b.publishUIPackage(ctx, namespace, action.RootRef, info, uploadURL); err != nil {
+		return ports.RuntimeUIPackageResult{}, err
 	}
-	key := path.Join(keyPrefix, hash, "app.wasm")
+	if err := uipackage.Verify(ctx, info.SHA256, info.Size, config); err != nil {
+		return ports.RuntimeUIPackageResult{}, fmt.Errorf("verify uploaded UI package: %w", err)
+	}
+	key := path.Join(keyPrefix, info.SHA256, "app.wasm")
 	return ports.RuntimeUIPackageResult{
 		URL:    strings.TrimRight(b.config.UIS3PublicBaseURL, "/") + "/" + key,
 		Path:   action.SourcePath,
-		SHA256: hash,
+		SHA256: info.SHA256,
 	}, nil
 }
 
-func (b *Backend) ensureUIPackageDevServer(ctx context.Context, namespace string, pvc string, action ports.RuntimeUIPackageAction) (bool, error) {
-	name := devStatefulSetName(action.RootRef)
-	_, err := b.client.AppsV1().StatefulSets(namespace).Get(ctx, name, metav1.GetOptions{})
-	if err == nil {
-		return false, nil
-	}
-	if !apierrors.IsNotFound(err) {
-		return false, err
-	}
-	devAction := ports.RuntimeDevAction{
-		RuntimeID:   action.RuntimeID,
-		RootRef:     action.RootRef,
-		MountPath:   "/scroll",
-		Listen:      ":8084",
-		DaemonToken: b.config.InternalToken,
-	}
-	server := devStatefulSetSpec(namespace, action.RootRef, pvc, b.config.PullImage, devAction, b.config.RegistrySecret)
-	if _, err := b.client.AppsV1().StatefulSets(namespace).Create(ctx, server, metav1.CreateOptions{}); err != nil {
-		return false, err
-	}
-	if err := b.reconcileService(ctx, devServiceSpec(namespace, action.RootRef, pvc)); err != nil {
-		_ = b.StopDev(context.Background(), action.RootRef)
-		return false, err
-	}
-	if err := b.waitForStatefulSet(ctx, namespace, name); err != nil {
-		_ = b.StopDev(context.Background(), action.RootRef)
-		return false, err
-	}
-	return true, nil
+type uiPackageInfo struct {
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256"`
+	Size   int64  `json:"size"`
 }
 
-func (b *Backend) fetchUIPackage(ctx context.Context, namespace string, root string, sourcePath string) ([]byte, error) {
-	service := serviceName(root, "dev", "webdav")
-	if b.uiPackageFetcher != nil {
-		return b.uiPackageFetcher(ctx, namespace, service, sourcePath, b.config.InternalToken)
-	}
-	if b.restConfig == nil || b.httpClient == nil {
-		return nil, fmt.Errorf("kubernetes service proxy is unavailable")
-	}
-	segments := strings.Split(sourcePath, "/")
-	for index := range segments {
-		segments[index] = url.PathEscape(segments[index])
-	}
-	proxyURL := strings.TrimRight(b.restConfig.Host, "/") + "/api/v1/namespaces/" + namespace + "/services/http:" + service + ":8084/proxy/internal/v1/ui/" + strings.Join(segments, "/")
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, proxyURL, nil)
+func (b *Backend) uiPackageInfo(ctx context.Context, namespace string, root string, sourcePath string) (uiPackageInfo, error) {
+	endpoint := "/internal/v1/ui/info?path=" + url.QueryEscape(sourcePath)
+	response, err := b.devRequest(ctx, namespace, root, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return nil, err
-	}
-	request.Header.Set("Authorization", "Bearer "+b.config.InternalToken)
-	response, err := b.httpClient.Do(request)
-	if err != nil {
-		return nil, err
+		return uiPackageInfo{}, err
 	}
 	defer response.Body.Close()
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+	if response.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
-		return nil, fmt.Errorf("dev service returned %s: %s", response.Status, strings.TrimSpace(string(body)))
+		return uiPackageInfo{}, fmt.Errorf("dev service returned %s: %s", response.Status, strings.TrimSpace(string(body)))
 	}
-	return io.ReadAll(response.Body)
+	var info uiPackageInfo
+	if err := json.NewDecoder(response.Body).Decode(&info); err != nil {
+		return uiPackageInfo{}, err
+	}
+	if info.Path != sourcePath || info.SHA256 == "" || info.Size < 0 {
+		return uiPackageInfo{}, fmt.Errorf("dev service returned invalid UI package metadata")
+	}
+	return info, nil
 }
 
-func (b *Backend) uploadUIPackage(ctx context.Context, content []byte, config uipackage.S3Config) (string, error) {
-	if b.uiPackageUploader != nil {
-		return b.uiPackageUploader(ctx, content, config)
+func (b *Backend) publishUIPackage(ctx context.Context, namespace string, root string, info uiPackageInfo, uploadURL string) error {
+	body, err := json.Marshal(struct {
+		Path   string `json:"path"`
+		SHA256 string `json:"sha256"`
+		Size   int64  `json:"size"`
+		URL    string `json:"url"`
+	}{Path: info.Path, SHA256: info.SHA256, Size: info.Size, URL: uploadURL})
+	if err != nil {
+		return err
 	}
-	return uipackage.Upload(ctx, content, config)
+	response, err := b.devRequest(ctx, namespace, root, http.MethodPost, "/internal/v1/ui/publish", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		message, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		return fmt.Errorf("dev service upload failed: %s", strings.TrimSpace(string(message)))
+	}
+	return nil
 }

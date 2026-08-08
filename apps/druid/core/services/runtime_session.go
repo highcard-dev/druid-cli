@@ -22,8 +22,6 @@ type RuntimeSession struct {
 	queue             map[string]*runtimeQueueItem
 	workWg            sync.WaitGroup
 	notifierChan      []chan []string
-	devWatchPaths     []string
-	devCommands       []string
 	devDaemonURL      string
 	devDaemonToken    string
 	devAuthJWKSURL    string

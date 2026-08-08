@@ -40,6 +40,7 @@ type RuntimeBackendInterface interface {
 	RootRef(id string, namespace string) string
 	StartDev(ctx context.Context, action RuntimeDevAction) error
 	StopDev(ctx context.Context, root string) error
+	DevStatus(ctx context.Context, root string) (RuntimeDevStatus, error)
 	RunCommand(command RuntimeCommand) (*int, error)
 	PublishUIPackage(ctx context.Context, action RuntimeUIPackageAction) (RuntimeUIPackageResult, error)
 	ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error)
@@ -51,6 +52,15 @@ type RuntimeBackendInterface interface {
 	Attach(commandName string, data string) error
 	Signal(commandName string, target string, signal string, root string) error
 }
+
+type RuntimeDevStatus string
+
+const (
+	RuntimeDevStatusDisabled  RuntimeDevStatus = "disabled"
+	RuntimeDevStatusStarting  RuntimeDevStatus = "starting"
+	RuntimeDevStatusReady     RuntimeDevStatus = "ready"
+	RuntimeDevStatusUnhealthy RuntimeDevStatus = "unhealthy"
+)
 
 type RuntimeWorkerCallbackConfig struct {
 	Listen string

@@ -13,23 +13,20 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/highcard-dev/daemon/internal/core/ports"
-	"github.com/highcard-dev/daemon/internal/uipackage"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"go.uber.org/zap"
 )
 
 type Backend struct {
-	client            k8sclient.Interface
-	restConfig        *rest.Config
-	httpClient        *http.Client
-	consoleManager    ports.ConsoleManagerInterface
-	config            Config
-	statsReader       nodeStatsReader
-	jobLogRunner      func(context.Context, *batchv1.Job) ([]byte, error)
-	uiPackageFetcher  func(context.Context, string, string, string, string) ([]byte, error)
-	uiPackageUploader func(context.Context, []byte, uipackage.S3Config) (string, error)
-	jobExitMu         sync.Mutex
-	jobExits          map[string]recentJobExit
+	client         k8sclient.Interface
+	restConfig     *rest.Config
+	httpClient     *http.Client
+	consoleManager ports.ConsoleManagerInterface
+	config         Config
+	statsReader    nodeStatsReader
+	jobLogRunner   func(context.Context, *batchv1.Job) ([]byte, error)
+	jobExitMu      sync.Mutex
+	jobExits       map[string]recentJobExit
 }
 
 type recentJobExit struct {

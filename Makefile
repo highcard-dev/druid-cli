@@ -15,7 +15,8 @@ DRUID_WATCH_ARGS ?= daemon --runtime kubernetes --listen 127.0.0.1:8081 --public
 export DRUID_K8S_UI_S3_BUCKET ?= druid-ui
 export DRUID_K8S_UI_S3_PUBLIC_BASE_URL ?= http://127.0.0.1:9000/druid-ui
 export DRUID_K8S_UI_S3_REGION ?= us-east-1
-export DRUID_K8S_UI_S3_ENDPOINT ?= http://127.0.0.1:9000
+export DRUID_K8S_UI_S3_ENDPOINT ?= http://host.docker.internal:9000
+export DRUID_K8S_UI_S3_DAEMON_ENDPOINT ?= http://127.0.0.1:9000
 export DRUID_K8S_UI_S3_ACCESS_KEY ?= druid
 export DRUID_K8S_UI_S3_SECRET_KEY ?= druidpassword
 

@@ -40,9 +40,6 @@ func (b *Backend) DeleteRuntime(root string, purgeData bool) error {
 	if err := b.StopRuntime(root); err != nil {
 		return err
 	}
-	if err := b.deleteUIPackages(context.Background(), runtimeID(root)); err != nil {
-		return err
-	}
 	if purgeData {
 		ref, err := ParseRootRef(root)
 		if err != nil {

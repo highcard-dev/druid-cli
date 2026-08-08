@@ -3,197 +3,153 @@ package docker
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"path"
 	"strings"
 
-	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/pkg/stdcopy"
-	"github.com/docker/go-connections/nat"
-	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
+	"github.com/highcard-dev/daemon/internal/uipackage"
 )
 
-const uiPackagePort = "8085/tcp"
+type uiPackageInfo struct {
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256"`
+	Size   int64  `json:"size"`
+}
 
 func (b *Backend) PublishUIPackage(ctx context.Context, action ports.RuntimeUIPackageAction) (ports.RuntimeUIPackageResult, error) {
-	if b.config.WorkerImage == "" {
-		return ports.RuntimeUIPackageResult{}, fmt.Errorf("docker ui publishing requires --docker-worker-image or DRUID_DOCKER_WORKER_IMAGE")
+	if err := b.config.ValidateForUIPublishing(); err != nil {
+		return ports.RuntimeUIPackageResult{}, err
 	}
 	if action.RuntimeID == "" || action.RootRef == "" || action.SourcePath == "" {
 		return ports.RuntimeUIPackageResult{}, fmt.Errorf("ui package publish requires runtime id, root, and source path")
 	}
-	if err := b.pullImage(ctx, b.config.WorkerImage); err != nil {
-		return ports.RuntimeUIPackageResult{}, err
-	}
-	if err := b.ensureUIPackageServer(ctx); err != nil {
-		return ports.RuntimeUIPackageResult{}, err
-	}
-	hash, err := b.copyUIPackage(ctx, action)
+	status, err := b.DevStatus(ctx, action.RootRef)
 	if err != nil {
 		return ports.RuntimeUIPackageResult{}, err
 	}
-	base := strings.TrimRight(b.config.WithDefaults().UIPublicURL, "/")
+	if status != ports.RuntimeDevStatusReady {
+		return ports.RuntimeUIPackageResult{}, fmt.Errorf("Druid Developer Mode must be ready before publishing a UI package (current status: %s)", status)
+	}
+	info, err := b.uiPackageInfo(ctx, action.RootRef, action.SourcePath)
+	if err != nil {
+		return ports.RuntimeUIPackageResult{}, err
+	}
+	keyPrefix := strings.Trim(strings.Trim(b.config.UIS3Prefix, "/")+"/docker/"+action.RuntimeID+"/"+string(action.Scope), "/")
+	config := uipackage.S3Config{
+		Bucket: b.config.UIS3Bucket, Region: b.config.UIS3Region, Endpoint: b.config.UIS3Endpoint,
+		KeyPrefix: keyPrefix, AccessKey: b.config.UIS3AccessKey, SecretKey: b.config.UIS3SecretKey, SessionToken: b.config.UIS3SessionToken,
+	}
+	uploadURL, err := uipackage.PresignPut(ctx, info.SHA256, config)
+	if err != nil {
+		return ports.RuntimeUIPackageResult{}, err
+	}
+	if err := b.publishUIPackage(ctx, action.RootRef, info, uploadURL); err != nil {
+		return ports.RuntimeUIPackageResult{}, err
+	}
+	if err := uipackage.Verify(ctx, info.SHA256, info.Size, config); err != nil {
+		return ports.RuntimeUIPackageResult{}, fmt.Errorf("verify uploaded UI package: %w", err)
+	}
 	return ports.RuntimeUIPackageResult{
-		URL:    fmt.Sprintf("%s/%s/%s/%s/app.wasm", base, sanitizeContainerName(action.RuntimeID), action.Scope, hash),
-		Path:   action.SourcePath,
-		SHA256: hash,
+		URL:  strings.TrimRight(b.config.UIS3PublicBaseURL, "/") + "/" + path.Join(keyPrefix, info.SHA256, "app.wasm"),
+		Path: action.SourcePath, SHA256: info.SHA256,
 	}, nil
 }
 
-func (b *Backend) ensureUIPackageServer(ctx context.Context) error {
-	name := b.uiPackageServerName()
-	existing, err := b.client.ContainerList(ctx, container.ListOptions{
-		All:     true,
-		Filters: filters.NewArgs(filters.Arg("name", "^/"+name+"$")),
-	})
+func (b *Backend) uiPackageInfo(ctx context.Context, root string, sourcePath string) (uiPackageInfo, error) {
+	response, err := b.devRequest(ctx, root, http.MethodGet, "/internal/v1/ui/info?path="+url.QueryEscape(sourcePath), nil)
+	if err != nil {
+		return uiPackageInfo{}, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		return uiPackageInfo{}, fmt.Errorf("dev container returned %s: %s", response.Status, strings.TrimSpace(string(body)))
+	}
+	var info uiPackageInfo
+	if err := json.NewDecoder(response.Body).Decode(&info); err != nil {
+		return uiPackageInfo{}, err
+	}
+	if info.Path != sourcePath || info.SHA256 == "" || info.Size < 0 {
+		return uiPackageInfo{}, fmt.Errorf("dev container returned invalid UI package metadata")
+	}
+	return info, nil
+}
+
+func (b *Backend) publishUIPackage(ctx context.Context, root string, info uiPackageInfo, uploadURL string) error {
+	body, err := json.Marshal(struct {
+		Path   string `json:"path"`
+		SHA256 string `json:"sha256"`
+		Size   int64  `json:"size"`
+		URL    string `json:"url"`
+	}{info.Path, info.SHA256, info.Size, uploadURL})
 	if err != nil {
 		return err
 	}
-	if len(existing) > 0 {
-		if existing[0].State == "running" {
-			return nil
-		}
-		_ = b.client.ContainerRemove(ctx, existing[0].ID, container.RemoveOptions{Force: true})
-	}
-	hostConfig := &container.HostConfig{
-		Mounts: []mount.Mount{b.uiPackagesMount("/packages", true)},
-		PortBindings: nat.PortMap{
-			uiPackagePort: []nat.PortBinding{{HostIP: hostFromBind(b.config.UIBind), HostPort: portFromBind(b.config.UIBind)}},
-		},
-		ExtraHosts: dockerExtraHosts(),
-	}
-	if b.config.Network != "" {
-		hostConfig.NetworkMode = container.NetworkMode(b.config.Network)
-	}
-	created, err := b.client.ContainerCreate(ctx, &container.Config{
-		Image:        b.config.WorkerImage,
-		Entrypoint:   []string{"druid"},
-		Cmd:          []string{"ui", "serve", "--root", "/packages", "--listen", ":8085"},
-		ExposedPorts: nat.PortSet{uiPackagePort: struct{}{}},
-		Labels: map[string]string{
-			"druid.role": "ui-packages",
-		},
-	}, hostConfig, nil, nil, name)
+	response, err := b.devRequest(ctx, root, http.MethodPost, "/internal/v1/ui/publish", bytes.NewReader(body))
 	if err != nil {
-		return dockerSetupError(err)
+		return err
 	}
-	if err := b.client.ContainerStart(ctx, created.ID, container.StartOptions{}); err != nil {
-		_ = b.client.ContainerRemove(context.Background(), created.ID, container.RemoveOptions{Force: true})
-		return dockerSetupError(err)
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		message, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		return fmt.Errorf("dev container upload failed: %s", strings.TrimSpace(string(message)))
 	}
 	return nil
 }
 
-func (b *Backend) copyUIPackage(ctx context.Context, action ports.RuntimeUIPackageAction) (string, error) {
-	rootMount, err := DockerMount(action.RootRef, "/scroll", true, domain.RuntimeDataDir)
+func (b *Backend) devURL(ctx context.Context, root string) (string, error) {
+	inspect, err := b.client.ContainerInspect(ctx, ContainerName(root, "dev"))
 	if err != nil {
 		return "", err
 	}
-	command := fmt.Sprintf(
-		`set -eu; src="/scroll/%s"; test -f "$src" || { echo "UI package not found at %s; run the build command first" >&2; exit 66; }; sha="$(sha256sum "$src" | awk '{print $1}')"; dst="/packages/%s/%s/$sha"; mkdir -p "$dst"; cp "$src" "$dst/app.wasm"; printf '%%s' "$sha"`,
-		action.SourcePath,
-		action.SourcePath,
-		sanitizeContainerName(action.RuntimeID),
-		action.Scope,
-	)
-	output, err := b.runUIPackageCommand(ctx, []mount.Mount{rootMount, b.uiPackagesMount("/packages", false)}, []string{"sh", "-c", command})
-	if err != nil {
-		return "", err
+	bindings := inspect.NetworkSettings.Ports["8084/tcp"]
+	if len(bindings) == 0 || bindings[0].HostPort == "" {
+		return "", fmt.Errorf("dev container has no WebDAV port binding")
 	}
-	hash := strings.TrimSpace(string(output))
-	if hash == "" {
-		return "", fmt.Errorf("ui package helper did not return a content hash")
+	host := bindings[0].HostIP
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
 	}
-	return hash, nil
+	return "http://" + net.JoinHostPort(host, bindings[0].HostPort), nil
 }
 
-func (b *Backend) deleteUIPackages(ctx context.Context, runtimeID string) error {
-	if runtimeID == "" || b.config.WorkerImage == "" {
-		return nil
+func (b *Backend) devRequest(ctx context.Context, root string, method string, endpoint string, body io.Reader) (*http.Response, error) {
+	baseURL, err := b.devURL(ctx, root)
+	if err != nil {
+		return nil, err
 	}
-	if err := b.pullImage(ctx, b.config.WorkerImage); err != nil {
+	request, err := http.NewRequestWithContext(ctx, method, baseURL+endpoint, body)
+	if err != nil {
+		return nil, err
+	}
+	if b.config.InternalToken != "" {
+		request.Header.Set("Authorization", "Bearer "+b.config.InternalToken)
+	}
+	if body != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	return http.DefaultClient.Do(request)
+}
+
+func (b *Backend) devHealth(ctx context.Context, root string) error {
+	response, err := b.devRequest(ctx, root, http.MethodGet, "/health", nil)
+	if err != nil {
 		return err
 	}
-	_, err := b.runUIPackageCommand(ctx, []mount.Mount{b.uiPackagesMount("/packages", false)}, []string{"rm", "-rf", "/packages/" + sanitizeContainerName(runtimeID)})
-	return err
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("dev container health returned %s", response.Status)
+	}
+	return nil
 }
 
-func (b *Backend) runUIPackageCommand(ctx context.Context, mounts []mount.Mount, command []string) ([]byte, error) {
-	name := fmt.Sprintf("druid-ui-helper-%s", rootHash(strings.Join(command, " ")))
-	created, err := b.client.ContainerCreate(ctx, &container.Config{
-		Image:      b.config.WorkerImage,
-		User:       "0",
-		Entrypoint: []string{command[0]},
-		Cmd:        command[1:],
-		Labels: map[string]string{
-			"druid.role": "ui-helper",
-		},
-	}, &container.HostConfig{Mounts: mounts, ExtraHosts: dockerExtraHosts()}, nil, nil, name)
-	if cerrdefs.IsConflict(err) {
-		_ = b.client.ContainerRemove(ctx, name, container.RemoveOptions{Force: true})
-		created, err = b.client.ContainerCreate(ctx, &container.Config{
-			Image:      b.config.WorkerImage,
-			User:       "0",
-			Entrypoint: []string{command[0]},
-			Cmd:        command[1:],
-			Labels:     map[string]string{"druid.role": "ui-helper"},
-		}, &container.HostConfig{Mounts: mounts, ExtraHosts: dockerExtraHosts()}, nil, nil, name)
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer b.client.ContainerRemove(context.Background(), created.ID, container.RemoveOptions{Force: true})
-	if err := b.client.ContainerStart(ctx, created.ID, container.StartOptions{}); err != nil {
-		return nil, err
-	}
-	statusCh, errCh := b.client.ContainerWait(ctx, created.ID, container.WaitConditionNotRunning)
-	var statusCode int64
-	select {
-	case err := <-errCh:
-		if err != nil {
-			return nil, err
-		}
-	case status := <-statusCh:
-		statusCode = status.StatusCode
-	}
-	logs, err := b.client.ContainerLogs(context.Background(), created.ID, container.LogsOptions{ShowStdout: true, ShowStderr: true})
-	if err != nil {
-		return nil, err
-	}
-	defer logs.Close()
-	var output bytes.Buffer
-	if _, err := stdcopy.StdCopy(&output, &output, logs); err != nil {
-		return nil, err
-	}
-	if statusCode != 0 {
-		return output.Bytes(), fmt.Errorf("ui package helper exited with %d: %s", statusCode, strings.TrimSpace(output.String()))
-	}
-	return output.Bytes(), nil
-}
-
-func (b *Backend) uiPackagesMount(target string, readOnly bool) mount.Mount {
-	return mount.Mount{Type: mount.TypeVolume, Source: sanitizeVolumePart(b.config.VolumePrefix + "-ui-packages"), Target: target, ReadOnly: readOnly}
-}
-
-func (b *Backend) uiPackageServerName() string {
-	return sanitizeContainerName(b.config.VolumePrefix + "-ui-packages")
-}
-
-func hostFromBind(bind string) string {
-	host, _, ok := strings.Cut(bind, ":")
-	if !ok || host == "" {
-		return "127.0.0.1"
-	}
-	return host
-}
-
-func portFromBind(bind string) string {
-	_, port, ok := strings.Cut(bind, ":")
-	if !ok || port == "" {
-		return "8085"
-	}
-	return port
+func (b *Backend) devContainer(ctx context.Context, root string) (container.InspectResponse, error) {
+	return b.client.ContainerInspect(ctx, ContainerName(root, "dev"))
 }
