@@ -38,9 +38,6 @@ func (b *Backend) StartDev(ctx context.Context, action ports.RuntimeDevAction) e
 		"--runtime-id", action.RuntimeID,
 		"--daemon-url", action.DaemonURL,
 	}
-	if action.DaemonToken != "" {
-		args = append(args, "--daemon-token", action.DaemonToken)
-	}
 	if action.OwnerID != "" {
 		args = append(args, "--owner-id", action.OwnerID)
 	}

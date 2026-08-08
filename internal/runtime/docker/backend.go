@@ -34,7 +34,6 @@ type Config struct {
 	UIS3AccessKey     string
 	UIS3SecretKey     string
 	UIS3SessionToken  string
-	InternalToken     string
 }
 
 func (c Config) WithDefaults() Config {
@@ -82,9 +81,6 @@ func (c Config) WithDefaults() Config {
 	}
 	if c.UIS3SessionToken == "" {
 		c.UIS3SessionToken = os.Getenv("DRUID_DOCKER_UI_S3_SESSION_TOKEN")
-	}
-	if c.InternalToken == "" {
-		c.InternalToken = os.Getenv("DRUID_INTERNAL_TOKEN")
 	}
 	return c
 }

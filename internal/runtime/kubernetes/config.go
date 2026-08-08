@@ -11,23 +11,24 @@ const (
 )
 
 type Config struct {
-	Namespace          string
-	StorageClass       string
-	PullImage          string
-	RegistrySecret     string
-	RegistryPlainHTTP  bool
-	HelperImage        string
-	Kubeconfig         string
-	UIS3Bucket         string
-	UIS3PublicBaseURL  string
-	UIS3Region         string
-	UIS3Endpoint       string
-	UIS3DaemonEndpoint string
-	UIS3Prefix         string
-	UIS3AccessKey      string
-	UIS3SecretKey      string
-	UIS3SessionToken   string
-	InternalToken      string
+	Namespace              string
+	StorageClass           string
+	PullImage              string
+	RegistrySecret         string
+	RegistryPlainHTTP      bool
+	HelperImage            string
+	Kubeconfig             string
+	UIS3Bucket             string
+	UIS3PublicBaseURL      string
+	UIS3Region             string
+	UIS3Endpoint           string
+	UIS3DaemonEndpoint     string
+	UIS3Prefix             string
+	UIS3AccessKey          string
+	UIS3SecretKey          string
+	UIS3SessionToken       string
+	ServiceAccountAudience string
+	OperatorServiceAccount string
 }
 
 func (c Config) WithDefaults() Config {
@@ -82,8 +83,14 @@ func (c Config) WithDefaults() Config {
 	if c.UIS3SessionToken == "" {
 		c.UIS3SessionToken = os.Getenv("DRUID_K8S_UI_S3_SESSION_TOKEN")
 	}
-	if c.InternalToken == "" {
-		c.InternalToken = os.Getenv("DRUID_INTERNAL_TOKEN")
+	if c.ServiceAccountAudience == "" {
+		c.ServiceAccountAudience = os.Getenv("DRUID_K8S_SERVICE_ACCOUNT_AUDIENCE")
+	}
+	if c.ServiceAccountAudience == "" {
+		c.ServiceAccountAudience = "druid-cli"
+	}
+	if c.OperatorServiceAccount == "" {
+		c.OperatorServiceAccount = os.Getenv("DRUID_K8S_OPERATOR_SERVICE_ACCOUNT")
 	}
 	return c
 }

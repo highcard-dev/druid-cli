@@ -37,7 +37,7 @@ var devRoot string
 var devListen string
 var devRuntimeID string
 var devDaemonURL string
-var devDaemonToken string
+var devDaemonTokenFile string
 var devOwnerID string
 var devAuthJWKSURL string
 var devRuntimeJWKSURL string
@@ -110,7 +110,7 @@ func init() {
 	DevCommand.Flags().StringVar(&devListen, "listen", ":8084", "Dev server listen address")
 	DevCommand.Flags().StringVar(&devRuntimeID, "runtime-id", "", "Runtime id")
 	DevCommand.Flags().StringVar(&devDaemonURL, "daemon-url", "", "Daemon management API URL")
-	DevCommand.Flags().StringVar(&devDaemonToken, "daemon-token", "", "Daemon management token")
+	DevCommand.Flags().StringVar(&devDaemonTokenFile, "daemon-token-file", "", "Projected ServiceAccount token file for daemon requests")
 	DevCommand.Flags().StringVar(&devOwnerID, "owner-id", "", "Runtime owner id for customer-facing auth")
 	DevCommand.Flags().StringVar(&devAuthJWKSURL, "auth-jwks-url", "", "JWKS URL for customer JWTs")
 	DevCommand.Flags().StringVar(&devRuntimeJWKSURL, "runtime-jwks-url", "", "JWKS URL for short-lived runtime tokens")
@@ -130,10 +130,7 @@ func runDevServer() error {
 	if devDaemonURL == "" {
 		devDaemonURL = os.Getenv("DRUID_DAEMON_URL")
 	}
-	if devDaemonToken == "" {
-		devDaemonToken = os.Getenv("DRUID_INTERNAL_TOKEN")
-	}
-	auth := devAuth{runtimeID: devRuntimeID, ownerID: devOwnerID, internalToken: devDaemonToken}
+	auth := devAuth{runtimeID: devRuntimeID, ownerID: devOwnerID}
 	if devAuthJWKSURL != "" {
 		auth.user, err = coreservices.NewAuthorizer([]string{devAuthJWKSURL}, "")
 		if err != nil {
@@ -194,9 +191,14 @@ func newDevApp(root string, broadcast *domain.BroadcastChannel, queue *devTrigge
 	})
 	app.Use(server.authMiddleware)
 	devapi.RegisterHandlers(app, server)
-	app.Get("/internal/v1/ui/info", server.GetInternalUIPackageInfo)
-	app.Post("/internal/v1/ui/publish", server.PublishInternalUIPackage)
-	app.Get("/internal/v1/ui/*", server.GetInternalUIPackage)
+	// The legacy daemon-to-dev publish endpoints are only registered when a
+	// caller supplies a verifier. Kubernetes publishing is being moved to the
+	// dev agent's projected-token flow; never leave an unauthenticated endpoint.
+	if auth.internalToken != "" {
+		app.Get("/internal/v1/ui/info", server.GetInternalUIPackageInfo)
+		app.Post("/internal/v1/ui/publish", server.PublishInternalUIPackage)
+		app.Get("/internal/v1/ui/*", server.GetInternalUIPackage)
+	}
 	webdavHandler := adaptor.HTTPHandler(&webdav.Handler{
 		Prefix:     "/webdav",
 		FileSystem: webdav.Dir(root),
@@ -491,8 +493,12 @@ func (q *devTriggerQueue) runCommand(command string) error {
 		return fmt.Errorf("dev daemon URL is required to run %s", command)
 	}
 	client, err := api.NewClientWithResponses(devDaemonURL, api.WithRequestEditorFn(func(ctx context.Context, req *http.Request) error {
-		if devDaemonToken != "" {
-			req.Header.Set("Authorization", "Bearer "+devDaemonToken)
+		if devDaemonTokenFile != "" {
+			token, err := os.ReadFile(devDaemonTokenFile)
+			if err != nil {
+				return fmt.Errorf("read daemon token: %w", err)
+			}
+			req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
 		}
 		return nil
 	}))

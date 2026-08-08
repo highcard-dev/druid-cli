@@ -41,10 +41,8 @@ func TestChartRendersDefaultAndCustomValues(t *testing.T) {
 	}
 
 	customManifest := helmTemplate(t,
-		"--set", "auth.enabled=true",
 		"--set", "auth.jwksUrl=https://auth.example.test/.well-known/jwks.json",
 		"--set", "auth.publicJwksUrl=https://runtime.example.test/.well-known/jwks.json",
-		"--set", "auth.existingSecret=druid-runtime-token",
 		"--set", "runtime.namespaces.mode=all",
 		"--set", "runtime.storageClass=local-path",
 		"--set", "runtime.registryPlainHTTP=true",
@@ -59,8 +57,7 @@ func TestChartRendersDefaultAndCustomValues(t *testing.T) {
 	for _, want := range []string{
 		"kind: ClusterRole",
 		"kind: ClusterRoleBinding",
-		"name: DRUID_INTERNAL_TOKEN",
-		"name: \"druid-runtime-token\"",
+		"resources: [\"tokenreviews\"]",
 		"--auth-jwks-url=https://auth.example.test/.well-known/jwks.json",
 		"--public-jwks-url=https://runtime.example.test/.well-known/jwks.json",
 		"value: \"registry.local/druid-cli:e2e\"",

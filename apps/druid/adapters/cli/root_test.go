@@ -22,10 +22,13 @@ func TestDaemonCommandExposesRuntimeListeners(t *testing.T) {
 			t.Fatalf("druid daemon should not expose --%s", name)
 		}
 	}
-	for _, name := range []string{"socket", "listen", "public-listen", "internal-token", "worker-callback-listen", "worker-callback-url", "docker-storage", "docker-bind-root", "docker-volume-prefix"} {
+	for _, name := range []string{"socket", "listen", "public-listen", "worker-callback-listen", "worker-callback-url", "docker-storage", "docker-bind-root", "docker-volume-prefix"} {
 		if flag := DaemonCommand.Flags().Lookup(name); flag == nil {
 			t.Fatalf("druid daemon should expose --%s", name)
 		}
+	}
+	if flag := DaemonCommand.Flags().Lookup("internal-token"); flag != nil {
+		t.Fatal("druid daemon must not expose --internal-token")
 	}
 }
 

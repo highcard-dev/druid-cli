@@ -126,7 +126,7 @@ func TestDevStatefulSetMountsRuntimeRootAsScrollRoot(t *testing.T) {
 	root := ref("druid", "druid-ui-data")
 	statefulSet := devStatefulSetSpec("druid", root, "druid-ui-data", "druid:local", ports.RuntimeDevAction{
 		RuntimeID: "ui", RootRef: root, MountPath: "/scroll", Listen: ":8084",
-	}, "registry-secret")
+	}, "registry-secret", "druid-cli")
 	mount := statefulSet.Spec.Template.Spec.Containers[0].VolumeMounts[0]
 	if mount.MountPath != "/scroll" || mount.SubPath != "" {
 		t.Fatalf("mount = %#v, want the runtime root at /scroll", mount)
@@ -245,14 +245,14 @@ func TestProcedureStatefulSetSpecBuildsPersistentWorkload(t *testing.T) {
 
 func TestWorkerPullJobSpecRunsDruidWorkerPull(t *testing.T) {
 	action := ports.RuntimeWorkerAction{
-		Mode:          ports.RuntimeWorkerModeUpdate,
-		RuntimeID:     "deployment-123",
-		Artifact:      "registry.local/lab:2.0",
-		MountPath:     "/scroll",
-		CallbackURL:   "http://druid-cli:8083/internal/v1/workers/deployment-123/complete",
-		CallbackToken: "secret-token",
+		Mode:        ports.RuntimeWorkerModeUpdate,
+		RuntimeID:   "deployment-123",
+		Artifact:    "registry.local/lab:2.0",
+		MountPath:   "/scroll",
+		CallbackURL: "http://druid-cli:8083/internal/v1/workers/deployment-123/complete",
+		TokenFile:   "token-file",
 	}
-	job := workerPullJobSpec("druid", "worker-pull", "runtime-pvc", "druid-cli:test", action, "pull-secret", "runtime-registry", true)
+	job := workerPullJobSpec("druid", "worker-pull", "runtime-pvc", "druid-cli:test", action, "pull-secret", "runtime-registry", true, "druid-cli")
 	container := job.Spec.Template.Spec.Containers[0]
 	command := strings.Join(container.Command, " ")
 	for _, want := range []string{"druid --config /tmp/druid-registry.json", "worker pull", "--mode update", "--runtime-id deployment-123", "--callback-url", "chown -R 1000:1000"} {
@@ -267,7 +267,7 @@ func TestWorkerPullJobSpecRunsDruidWorkerPull(t *testing.T) {
 	for _, item := range container.Env {
 		env[item.Name] = item.Value
 	}
-	if env["DRUID_WORKER_TOKEN"] != "secret-token" || env["DRUID_REGISTRY_PLAIN_HTTP"] != "true" {
+	if env["DRUID_WORKER_TOKEN_FILE"] != "token-file" || env["DRUID_REGISTRY_PLAIN_HTTP"] != "true" {
 		t.Fatalf("env = %#v", container.Env)
 	}
 	if env[workerPullRootEnvName] != "/scroll" {
@@ -296,14 +296,14 @@ func TestSpawnPullWorkerCreateUsesFinalPVCAndWorkerJob(t *testing.T) {
 		return nil, nil
 	}
 	action := ports.RuntimeWorkerAction{
-		Mode:          ports.RuntimeWorkerModeCreate,
-		RuntimeID:     "deployment-123",
-		Artifact:      "registry.local/lab:1.0",
-		Storage:       "25Gi",
-		RootRef:       ref("games", dataPVCName("deployment-123")),
-		MountPath:     "/scroll",
-		CallbackURL:   "http://druid-cli:8083/internal/v1/workers/deployment-123/complete",
-		CallbackToken: "secret-token",
+		Mode:        ports.RuntimeWorkerModeCreate,
+		RuntimeID:   "deployment-123",
+		Artifact:    "registry.local/lab:1.0",
+		Storage:     "25Gi",
+		RootRef:     ref("games", dataPVCName("deployment-123")),
+		MountPath:   "/scroll",
+		CallbackURL: "http://druid-cli:8083/internal/v1/workers/deployment-123/complete",
+		TokenFile:   "token-file",
 	}
 	if err := backend.SpawnPullWorker(context.Background(), action); err != nil {
 		t.Fatal(err)

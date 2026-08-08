@@ -27,6 +27,9 @@ func (b *Backend) StartDev(ctx context.Context, action ports.RuntimeDevAction) e
 	if action.Listen == "" {
 		action.Listen = ":8084"
 	}
+	if action.TokenFile == "" {
+		action.TokenFile = workloadTokenPath
+	}
 	namespace, pvc, err := parseRef(action.RootRef)
 	if err != nil {
 		logger.Log().Error("Kubernetes dev root ref invalid", zap.String("runtime_id", action.RuntimeID), zap.String("root_ref", action.RootRef), zap.Error(err))
@@ -46,7 +49,10 @@ func (b *Backend) StartDev(ctx context.Context, action ports.RuntimeDevAction) e
 		zap.Strings("commands", action.HotReloadCommands),
 		zap.String("image", b.config.PullImage),
 	)
-	sts := devStatefulSetSpec(namespace, action.RootRef, pvc, b.config.PullImage, action, b.config.RegistrySecret)
+	if err := b.ensureRuntimeServiceAccount(ctx, namespace, runtimeDevServiceAccount); err != nil {
+		return err
+	}
+	sts := devStatefulSetSpec(namespace, action.RootRef, pvc, b.config.PullImage, action, b.config.RegistrySecret, b.config.ServiceAccountAudience)
 	existing, err := b.client.AppsV1().StatefulSets(namespace).Get(ctx, sts.Name, metav1.GetOptions{})
 	switch {
 	case apierrors.IsNotFound(err):
@@ -137,9 +143,6 @@ func (b *Backend) devRequest(ctx context.Context, namespace string, root string,
 	request, err := http.NewRequestWithContext(ctx, method, proxyURL, body)
 	if err != nil {
 		return nil, err
-	}
-	if b.config.InternalToken != "" {
-		request.Header.Set("Authorization", "Bearer "+b.config.InternalToken)
 	}
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")

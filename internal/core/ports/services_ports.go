@@ -72,6 +72,21 @@ type RuntimeWorkerCallbackBackend interface {
 	WorkerCallbackAfterListen(config RuntimeWorkerCallbackConfig) (RuntimeWorkerCallbackConfig, error)
 }
 
+// RuntimeWorkloadIdentity is the verified Kubernetes identity of a Druid
+// managed pod. RuntimeID comes exclusively from labels on the live pod.
+type RuntimeWorkloadIdentity struct {
+	Namespace      string
+	ServiceAccount string
+	PodName        string
+	PodUID         string
+	RuntimeID      string
+	Kind           string
+}
+
+type RuntimeWorkloadAuthenticator interface {
+	AuthenticateWorkload(ctx context.Context, token string) (RuntimeWorkloadIdentity, error)
+}
+
 type RuntimeScrollStore interface {
 	StateDir() string
 	Root(id string) string
@@ -135,7 +150,7 @@ type RuntimeWorkerAction struct {
 	RootRef             string
 	MountPath           string
 	CallbackURL         string
-	CallbackToken       string
+	TokenFile           string
 	RegistryCredentials []domain.RegistryCredential
 }
 
@@ -154,7 +169,7 @@ type RuntimeDevAction struct {
 	HotReloadCommands []string
 	Routing           []domain.RuntimeRouteAssignment
 	DaemonURL         string
-	DaemonToken       string
+	TokenFile         string
 	OwnerID           string
 	AuthJWKSURL       string
 	RuntimeJWKSURL    string

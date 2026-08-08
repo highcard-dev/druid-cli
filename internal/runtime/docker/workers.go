@@ -155,7 +155,7 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 			"--callback-url", action.CallbackURL,
 		},
 		Env: dockerWorkerEnv([]string{
-			"DRUID_WORKER_TOKEN=" + action.CallbackToken,
+			"DRUID_WORKER_TOKEN_FILE=" + action.TokenFile,
 			"DRUID_RUNTIME_REGISTRY_CONFIG_JSON=" + string(registryConfig),
 		}),
 		Labels: map[string]string{

@@ -23,7 +23,6 @@ type RuntimeSession struct {
 	workWg            sync.WaitGroup
 	notifierChan      []chan []string
 	devDaemonURL      string
-	devDaemonToken    string
 	devAuthJWKSURL    string
 	devRuntimeJWKSURL string
 	devWatchBridge    *domain.BroadcastChannel

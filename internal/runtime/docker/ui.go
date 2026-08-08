@@ -129,9 +129,6 @@ func (b *Backend) devRequest(ctx context.Context, root string, method string, en
 	if err != nil {
 		return nil, err
 	}
-	if b.config.InternalToken != "" {
-		request.Header.Set("Authorization", "Bearer "+b.config.InternalToken)
-	}
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}

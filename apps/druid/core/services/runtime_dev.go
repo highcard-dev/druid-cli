@@ -119,7 +119,7 @@ func (s *RuntimeSession) EnableDevWatch(request DevWatchRequest) (DevWatchStatus
 		HotReloadCommands: request.HotReloadCommands,
 		Routing:           routing,
 		DaemonURL:         s.devDaemonURL,
-		DaemonToken:       s.devDaemonToken,
+		TokenFile:         "/var/run/secrets/druid-cli/token",
 		AuthJWKSURL:       s.devAuthJWKSURL,
 		RuntimeJWKSURL:    s.devRuntimeJWKSURL,
 	}); err != nil {

@@ -38,9 +38,10 @@ var k8sUIS3AccessKey string
 var k8sUIS3SecretKey string
 var k8sUIS3SessionToken string
 var k8sKubeconfig string
+var k8sServiceAccountAudience string
+var k8sOperatorServiceAccount string
 var runtimeListen string
 var runtimePublicListen string
-var runtimeInternalToken string
 var runtimeAllowUnauthenticatedPublic bool
 var runtimeAllowUnauthenticatedManagement bool
 var runtimeWorkerTimeout time.Duration
@@ -77,9 +78,8 @@ func init() {
 	DaemonCommand.Flags().StringVar(&runtimeSocket, "socket", utils.DefaultRuntimeSocketPath(), "Runtime daemon Unix socket path")
 	DaemonCommand.Flags().StringVar(&runtimeListen, "listen", "", "Optional management HTTP listen address, for example :8081")
 	DaemonCommand.Flags().StringVar(&runtimePublicListen, "public-listen", "", "Optional public dashboard HTTP listen address, for example :8082")
-	DaemonCommand.Flags().StringVar(&runtimeInternalToken, "internal-token", "", "Optional bearer token required for management HTTP API requests")
 	DaemonCommand.Flags().BoolVar(&runtimeAllowUnauthenticatedPublic, "unsafe-allow-unauthenticated-public", false, "Allow unauthenticated public HTTP routes without --auth-jwks-url")
-	DaemonCommand.Flags().BoolVar(&runtimeAllowUnauthenticatedManagement, "unsafe-allow-unauthenticated-management", false, "Allow unauthenticated management HTTP routes without --internal-token")
+	DaemonCommand.Flags().BoolVar(&runtimeAllowUnauthenticatedManagement, "unsafe-allow-unauthenticated-management", false, "Allow unauthenticated management HTTP routes; local Docker development only")
 	DaemonCommand.Flags().DurationVar(&runtimeWorkerTimeout, "worker-timeout", 20*time.Minute, "Maximum time for runtime materialization workers")
 	DaemonCommand.Flags().StringVar(&runtimeWorkerCallbackListen, "worker-callback-listen", "", "Optional internal worker callback listen address, for example :8083")
 	DaemonCommand.Flags().StringVar(&runtimeWorkerCallbackURL, "worker-callback-url", "", "URL workers use to call back to this daemon")
@@ -113,6 +113,8 @@ func init() {
 	DaemonCommand.Flags().StringVar(&k8sUIS3SecretKey, "k8s-ui-s3-secret-key", "", "S3 secret key for published UI packages (default: DRUID_K8S_UI_S3_SECRET_KEY)")
 	DaemonCommand.Flags().StringVar(&k8sUIS3SessionToken, "k8s-ui-s3-session-token", "", "Optional S3 session token for published UI packages (default: DRUID_K8S_UI_S3_SESSION_TOKEN)")
 	DaemonCommand.Flags().StringVar(&k8sKubeconfig, "k8s-kubeconfig", "", "Kubernetes kubeconfig path for out-of-cluster runtime access (default: DRUID_K8S_KUBECONFIG, KUBECONFIG, or ~/.kube/config)")
+	DaemonCommand.Flags().StringVar(&k8sServiceAccountAudience, "k8s-service-account-audience", "", "Audience required for Druid workload ServiceAccount tokens")
+	DaemonCommand.Flags().StringVar(&k8sOperatorServiceAccount, "k8s-operator-service-account", "", "Allowed deployment-operator ServiceAccount as namespace/name")
 }
 
 func runRuntimeDaemon() error {
@@ -121,22 +123,23 @@ func runRuntimeDaemon() error {
 		return err
 	}
 	kubernetesConfig := runtimekubernetes.Config{
-		Namespace:         k8sNamespace,
-		StorageClass:      k8sStorageClass,
-		PullImage:         k8sPullImage,
-		RegistrySecret:    k8sRegistrySecret,
-		Kubeconfig:        k8sKubeconfig,
-		UIS3Bucket:        k8sUIS3Bucket,
-		UIS3PublicBaseURL: k8sUIS3PublicBaseURL,
-		UIS3Region:        k8sUIS3Region,
-		UIS3Endpoint:      k8sUIS3Endpoint,
-		UIS3Prefix:        k8sUIS3Prefix,
-		UIS3AccessKey:     k8sUIS3AccessKey,
-		UIS3SecretKey:     k8sUIS3SecretKey,
-		UIS3SessionToken:  k8sUIS3SessionToken,
-		InternalToken:     runtimeInternalToken,
+		Namespace:              k8sNamespace,
+		StorageClass:           k8sStorageClass,
+		PullImage:              k8sPullImage,
+		RegistrySecret:         k8sRegistrySecret,
+		Kubeconfig:             k8sKubeconfig,
+		UIS3Bucket:             k8sUIS3Bucket,
+		UIS3PublicBaseURL:      k8sUIS3PublicBaseURL,
+		UIS3Region:             k8sUIS3Region,
+		UIS3Endpoint:           k8sUIS3Endpoint,
+		UIS3Prefix:             k8sUIS3Prefix,
+		UIS3AccessKey:          k8sUIS3AccessKey,
+		UIS3SecretKey:          k8sUIS3SecretKey,
+		UIS3SessionToken:       k8sUIS3SessionToken,
+		ServiceAccountAudience: k8sServiceAccountAudience,
+		OperatorServiceAccount: k8sOperatorServiceAccount,
 	}
-	dockerConfig := runtimedocker.Config{WorkerImage: dockerWorkerImage, Storage: dockerStorage, BindRoot: dockerBindRoot, VolumePrefix: dockerVolumePrefix, UIS3Bucket: dockerUIS3Bucket, UIS3PublicBaseURL: dockerUIS3PublicBaseURL, UIS3Region: dockerUIS3Region, UIS3Endpoint: dockerUIS3Endpoint, UIS3Prefix: dockerUIS3Prefix, UIS3AccessKey: dockerUIS3AccessKey, UIS3SecretKey: dockerUIS3SecretKey, UIS3SessionToken: dockerUIS3SessionToken, InternalToken: runtimeInternalToken}
+	dockerConfig := runtimedocker.Config{WorkerImage: dockerWorkerImage, Storage: dockerStorage, BindRoot: dockerBindRoot, VolumePrefix: dockerVolumePrefix, UIS3Bucket: dockerUIS3Bucket, UIS3PublicBaseURL: dockerUIS3PublicBaseURL, UIS3Region: dockerUIS3Region, UIS3Endpoint: dockerUIS3Endpoint, UIS3Prefix: dockerUIS3Prefix, UIS3AccessKey: dockerUIS3AccessKey, UIS3SecretKey: dockerUIS3SecretKey, UIS3SessionToken: dockerUIS3SessionToken}
 	logManager := services.NewLogManager()
 	consoleService := services.NewConsoleManager(logManager)
 	runtime, err := runtimebackend.NewRuntime(runtimeBackendName, consoleService, runtimeStateDir, runtimebackend.WithKubernetesConfig(kubernetesConfig), runtimebackend.WithDockerConfig(dockerConfig))
@@ -172,7 +175,7 @@ func runRuntimeDaemon() error {
 	runtimeWorkerCallbackListen = callbackConfig.Listen
 	runtimeWorkerCallbackURL = callbackConfig.URL
 	supervisor.SetWorkerCallbacks(callbacks, runtimeWorkerCallbackURL)
-	supervisor.SetDevWorkerConfig(runtimeWorkerDaemonURL, runtimeInternalToken, runtimeAuthJWKSURL, runtimePublicJWKSURL)
+	supervisor.SetDevWorkerConfig(runtimeWorkerDaemonURL, runtimeAuthJWKSURL, runtimePublicJWKSURL)
 	if err := supervisor.Start(); err != nil {
 		return err
 	}
@@ -197,22 +200,8 @@ func runRuntimeDaemon() error {
 
 	managementApp := fiber.New(fiber.Config{DisableStartupMessage: true, ErrorHandler: runtimehandlers.ErrorHandler})
 	managementApp.Use(runtimehandlers.RequestLogger)
-	if runtimeInternalToken != "" {
-		managementApp.Use(func(c *fiber.Ctx) error {
-			path := c.Path()
-			if path == "/health" || path == "/api/v1/health" {
-				return c.Next()
-			}
-			token := strings.TrimPrefix(c.Get("Authorization"), "Bearer ")
-			if token == "" {
-				token = c.Get("X-Druid-Internal-Token")
-			}
-			if token != runtimeInternalToken {
-				return fiber.NewError(fiber.StatusUnauthorized, "invalid internal runtime token")
-			}
-			return c.Next()
-		})
-	}
+	workloadAuthenticator, _ := runtime.Backend.(ports.RuntimeWorkloadAuthenticator)
+	managementApp.Use(workloadIdentityMiddleware(workloadAuthenticator, runtimeAllowUnauthenticatedManagement))
 	runtimehandlers.RegisterManagementRoutes(managementApp, handlers)
 
 	var publicApp *fiber.App
@@ -225,7 +214,8 @@ func runRuntimeDaemon() error {
 	if callbackListener != nil {
 		callbackApp = fiber.New(fiber.Config{DisableStartupMessage: true, ErrorHandler: runtimehandlers.ErrorHandler})
 		callbackApp.Use(runtimehandlers.RequestLogger)
-		callbackapi.RegisterHandlers(callbackApp, runtimeCallbackHandler{callbacks: callbacks})
+		callbackApp.Use(workloadIdentityMiddleware(workloadAuthenticator, runtimeAllowUnauthenticatedManagement))
+		callbackapi.RegisterHandlers(callbackApp, runtimeCallbackHandler{callbacks: callbacks, allowUnauthenticated: runtimeAllowUnauthenticatedManagement})
 	}
 	return listenRuntimeHTTP(managementApp, publicApp, callbackApp, callbackListener, runtime.Store.StateDir())
 }
@@ -245,9 +235,6 @@ func loadRuntimeDaemonEnv() {
 	}
 	if runtimePublicJWKSURL == "" {
 		runtimePublicJWKSURL = os.Getenv("DRUID_PUBLIC_JWKS_URL")
-	}
-	if runtimeInternalToken == "" {
-		runtimeInternalToken = os.Getenv("DRUID_INTERNAL_TOKEN")
 	}
 	if !runtimeAllowUnauthenticatedPublic {
 		runtimeAllowUnauthenticatedPublic = envBool("DRUID_UNSAFE_ALLOW_UNAUTHENTICATED_PUBLIC")
@@ -278,13 +265,45 @@ func validateRuntimeDaemonAuthConfig() error {
 	if runtimePublicListen != "" && runtimeAuthJWKSURL == "" && !runtimeAllowUnauthenticatedPublic {
 		return fmt.Errorf("public listener %s requires --auth-jwks-url or --unsafe-allow-unauthenticated-public", runtimePublicListen)
 	}
-	if runtimeListen != "" && runtimeInternalToken == "" && !runtimeAllowUnauthenticatedManagement {
-		return fmt.Errorf("management listener %s requires --internal-token or --unsafe-allow-unauthenticated-management", runtimeListen)
+	if runtimeListen != "" && runtimeBackendName != "kubernetes" && !runtimeAllowUnauthenticatedManagement {
+		return fmt.Errorf("management listener %s requires Kubernetes workload identity or --unsafe-allow-unauthenticated-management for local Docker development", runtimeListen)
+	}
+	if runtimeListen != "" && runtimeBackendName == "kubernetes" && strings.TrimSpace(k8sOperatorServiceAccount) == "" {
+		return fmt.Errorf("Kubernetes management listener requires --k8s-operator-service-account")
 	}
 	if runtimeWorkerTimeout <= 0 {
 		return fmt.Errorf("worker timeout must be greater than zero")
 	}
 	return nil
+}
+
+func workloadIdentityMiddleware(authenticator ports.RuntimeWorkloadAuthenticator, allowUnsafe bool) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if c.Path() == "/health" || c.Path() == "/api/v1/health" || allowUnsafe {
+			return c.Next()
+		}
+		if authenticator == nil {
+			return fiber.NewError(fiber.StatusUnauthorized, "workload identity authentication is unavailable")
+		}
+		token := strings.TrimSpace(strings.TrimPrefix(c.Get("Authorization"), "Bearer "))
+		identity, err := authenticator.AuthenticateWorkload(c.Context(), token)
+		if err != nil {
+			return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		}
+		if identity.Kind == "operator" {
+			c.Locals("druid-workload-identity", identity)
+			return c.Next()
+		}
+		if identity.Kind == "dev" && c.Method() == fiber.MethodPost && strings.HasPrefix(c.Path(), "/api/v1/scrolls/"+identity.RuntimeID+"/commands/") {
+			c.Locals("druid-workload-identity", identity)
+			return c.Next()
+		}
+		if identity.Kind == "worker" && strings.HasPrefix(c.Path(), "/internal/v1/workers/"+identity.RuntimeID+"/") {
+			c.Locals("druid-workload-identity", identity)
+			return c.Next()
+		}
+		return fiber.NewError(fiber.StatusForbidden, "workload identity is not authorized for this request")
+	}
 }
 
 func openWorkerCallbackListener(listen string) (net.Listener, error) {

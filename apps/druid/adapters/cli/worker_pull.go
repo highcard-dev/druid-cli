@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,8 +32,8 @@ var WorkerPullCommand = &cobra.Command{
 		if workerPullAction.Mode == "" {
 			workerPullAction.Mode = ports.RuntimeWorkerModeCreate
 		}
-		if workerPullAction.CallbackToken == "" {
-			workerPullAction.CallbackToken = os.Getenv("DRUID_WORKER_TOKEN")
+		if workerPullAction.TokenFile == "" {
+			workerPullAction.TokenFile = os.Getenv("DRUID_WORKER_TOKEN_FILE")
 		}
 		result := runWorkerPull(workerPullAction)
 		if result.Error != "" {
@@ -49,7 +50,7 @@ func init() {
 	WorkerPullCommand.Flags().StringVar(&workerPullAction.RuntimeID, "runtime-id", "", "Runtime scroll id")
 	WorkerPullCommand.Flags().StringVar(&workerPullAction.MountPath, "root", "/scroll", "Mounted runtime root path")
 	WorkerPullCommand.Flags().StringVar(&workerPullAction.CallbackURL, "callback-url", "", "Daemon worker callback URL")
-	WorkerPullCommand.Flags().StringVar(&workerPullAction.CallbackToken, "callback-token", "", "One-time worker callback token")
+	WorkerPullCommand.Flags().StringVar(&workerPullAction.TokenFile, "callback-token-file", "", "Projected ServiceAccount token file for callbacks")
 	WorkerPullCommand.Flags().StringVar(&workerPullMode, "mode", string(ports.RuntimeWorkerModeCreate), "Pull mode: create, update, or restore")
 	WorkerPullCommand.MarkFlagRequired("artifact")
 	WorkerPullCommand.MarkFlagRequired("runtime-id")
@@ -335,11 +336,17 @@ func reportWorkerResult(action ports.RuntimeWorkerAction, result ports.RuntimeWo
 		ArtifactDigest: workerString(result.ArtifactDigest),
 		Error:          workerString(result.Error),
 		ScrollYaml:     workerString(result.ScrollYAML),
-		Token:          action.CallbackToken,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	res, err := client.CompleteWorkerWithResponse(ctx, action.RuntimeID, body)
+	res, err := client.CompleteWorkerWithResponse(ctx, action.RuntimeID, body, func(_ context.Context, request *http.Request) error {
+		token, err := os.ReadFile(action.TokenFile)
+		if err != nil {
+			return fmt.Errorf("read worker token: %w", err)
+		}
+		request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
+		return nil
+	})
 	if err != nil {
 		return err
 	}
