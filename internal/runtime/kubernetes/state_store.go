@@ -19,20 +19,21 @@ import (
 const (
 	runtimeStateComponent = "runtime-state"
 
-	configMapKeyID             = "id"
-	configMapKeyOwnerID        = "owner_id"
-	configMapKeyArtifact       = "artifact"
-	configMapKeyArtifactDigest = "artifact_digest"
-	configMapKeyRoot           = "root"
-	configMapKeyScrollName     = "scroll_name"
-	configMapKeyScrollYAML     = "scroll_yaml"
-	configMapKeyStatus         = "status"
-	configMapKeyLastError      = "last_error"
-	configMapKeyCreatedAt      = "created_at"
-	configMapKeyUpdatedAt      = "updated_at"
-	configMapKeyProceduresJSON = "procedures_json"
-	configMapKeyRoutingJSON    = "routing_json"
-	configMapKeyUIPackagesJSON = "ui_packages_json"
+	configMapKeyID                     = "id"
+	configMapKeyOwnerID                = "owner_id"
+	configMapKeyArtifact               = "artifact"
+	configMapKeyArtifactDigest         = "artifact_digest"
+	configMapKeyRoot                   = "root"
+	configMapKeyScrollName             = "scroll_name"
+	configMapKeyScrollYAML             = "scroll_yaml"
+	configMapKeyStatus                 = "status"
+	configMapKeyLastError              = "last_error"
+	configMapKeyCreatedAt              = "created_at"
+	configMapKeyUpdatedAt              = "updated_at"
+	configMapKeyProceduresJSON         = "procedures_json"
+	configMapKeyRoutingJSON            = "routing_json"
+	configMapKeyUIPackagesJSON         = "ui_packages_json"
+	configMapKeyUIPackagePublishesJSON = "ui_package_publishes_json"
 )
 
 type ConfigMapStateStore struct {
@@ -165,6 +166,10 @@ func runtimeScrollConfigMap(namespace string, scroll *domain.RuntimeScroll) (*co
 	if err != nil {
 		return nil, err
 	}
+	uiPackagePublishes, err := json.Marshal(scroll.UIPackagePublishes)
+	if err != nil {
+		return nil, err
+	}
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      scrollConfigMapName(scroll.ID),
@@ -177,20 +182,21 @@ func runtimeScrollConfigMap(namespace string, scroll *domain.RuntimeScroll) (*co
 			},
 		},
 		Data: map[string]string{
-			configMapKeyID:             scroll.ID,
-			configMapKeyOwnerID:        scroll.OwnerID,
-			configMapKeyArtifact:       scroll.Artifact,
-			configMapKeyArtifactDigest: scroll.ArtifactDigest,
-			configMapKeyRoot:           scroll.Root,
-			configMapKeyScrollName:     scroll.ScrollName,
-			configMapKeyScrollYAML:     scroll.ScrollYAML,
-			configMapKeyStatus:         string(scroll.Status),
-			configMapKeyLastError:      scroll.LastError,
-			configMapKeyCreatedAt:      formatRuntimeTime(scroll.CreatedAt),
-			configMapKeyUpdatedAt:      formatRuntimeTime(scroll.UpdatedAt),
-			configMapKeyProceduresJSON: string(procedures),
-			configMapKeyRoutingJSON:    string(routing),
-			configMapKeyUIPackagesJSON: string(uiPackages),
+			configMapKeyID:                     scroll.ID,
+			configMapKeyOwnerID:                scroll.OwnerID,
+			configMapKeyArtifact:               scroll.Artifact,
+			configMapKeyArtifactDigest:         scroll.ArtifactDigest,
+			configMapKeyRoot:                   scroll.Root,
+			configMapKeyScrollName:             scroll.ScrollName,
+			configMapKeyScrollYAML:             scroll.ScrollYAML,
+			configMapKeyStatus:                 string(scroll.Status),
+			configMapKeyLastError:              scroll.LastError,
+			configMapKeyCreatedAt:              formatRuntimeTime(scroll.CreatedAt),
+			configMapKeyUpdatedAt:              formatRuntimeTime(scroll.UpdatedAt),
+			configMapKeyProceduresJSON:         string(procedures),
+			configMapKeyRoutingJSON:            string(routing),
+			configMapKeyUIPackagesJSON:         string(uiPackages),
+			configMapKeyUIPackagePublishesJSON: string(uiPackagePublishes),
 		},
 	}, nil
 }
@@ -221,25 +227,34 @@ func runtimeScrollFromConfigMap(configMap *corev1.ConfigMap) (*domain.RuntimeScr
 	if err := json.Unmarshal([]byte(uiPackagesJSON), &uiPackages); err != nil {
 		return nil, err
 	}
+	uiPackagePublishesJSON := data[configMapKeyUIPackagePublishesJSON]
+	if uiPackagePublishesJSON == "" {
+		uiPackagePublishesJSON = "{}"
+	}
+	uiPackagePublishes := map[domain.RuntimeUIPackageScope]domain.UIPackagePublish{}
+	if err := json.Unmarshal([]byte(uiPackagePublishesJSON), &uiPackagePublishes); err != nil {
+		return nil, err
+	}
 	id := data[configMapKeyID]
 	if id == "" {
 		id = configMap.Labels[labelScrollID]
 	}
 	scroll := &domain.RuntimeScroll{
-		ID:             id,
-		OwnerID:        data[configMapKeyOwnerID],
-		Artifact:       data[configMapKeyArtifact],
-		ArtifactDigest: data[configMapKeyArtifactDigest],
-		Root:           data[configMapKeyRoot],
-		ScrollName:     data[configMapKeyScrollName],
-		ScrollYAML:     data[configMapKeyScrollYAML],
-		Status:         domain.RuntimeScrollStatus(data[configMapKeyStatus]),
-		LastError:      data[configMapKeyLastError],
-		Routing:        routing,
-		UIPackages:     uiPackages,
-		CreatedAt:      parseRuntimeTime(data[configMapKeyCreatedAt]),
-		UpdatedAt:      parseRuntimeTime(data[configMapKeyUpdatedAt]),
-		Procedures:     procedures,
+		ID:                 id,
+		OwnerID:            data[configMapKeyOwnerID],
+		Artifact:           data[configMapKeyArtifact],
+		ArtifactDigest:     data[configMapKeyArtifactDigest],
+		Root:               data[configMapKeyRoot],
+		ScrollName:         data[configMapKeyScrollName],
+		ScrollYAML:         data[configMapKeyScrollYAML],
+		Status:             domain.RuntimeScrollStatus(data[configMapKeyStatus]),
+		LastError:          data[configMapKeyLastError],
+		Routing:            routing,
+		UIPackages:         uiPackages,
+		UIPackagePublishes: uiPackagePublishes,
+		CreatedAt:          parseRuntimeTime(data[configMapKeyCreatedAt]),
+		UpdatedAt:          parseRuntimeTime(data[configMapKeyUpdatedAt]),
+		Procedures:         procedures,
 	}
 	if scroll.Status == "" {
 		scroll.Status = domain.RuntimeScrollStatusCreated

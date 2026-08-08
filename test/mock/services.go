@@ -345,19 +345,34 @@ func (mr *MockRuntimeBackendInterfaceMockRecorder) Name() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Name", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).Name))
 }
 
-// PublishUIPackage mocks base method.
-func (m *MockRuntimeBackendInterface) PublishUIPackage(ctx context.Context, action ports.RuntimeUIPackageAction) (ports.RuntimeUIPackageResult, error) {
+// PrepareUIPackageUpload mocks base method.
+func (m *MockRuntimeBackendInterface) PrepareUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PublishUIPackage", ctx, action)
+	ret := m.ctrl.Call(m, "PrepareUIPackageUpload", ctx, action)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PrepareUIPackageUpload indicates an expected call of PrepareUIPackageUpload.
+func (mr *MockRuntimeBackendInterfaceMockRecorder) PrepareUIPackageUpload(ctx, action any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PrepareUIPackageUpload", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).PrepareUIPackageUpload), ctx, action)
+}
+
+// CompleteUIPackageUpload mocks base method.
+func (m *MockRuntimeBackendInterface) CompleteUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CompleteUIPackageUpload", ctx, action)
 	ret0, _ := ret[0].(ports.RuntimeUIPackageResult)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// PublishUIPackage indicates an expected call of PublishUIPackage.
-func (mr *MockRuntimeBackendInterfaceMockRecorder) PublishUIPackage(ctx, action any) *gomock.Call {
+// CompleteUIPackageUpload indicates an expected call of CompleteUIPackageUpload.
+func (mr *MockRuntimeBackendInterfaceMockRecorder) CompleteUIPackageUpload(ctx, action any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishUIPackage", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).PublishUIPackage), ctx, action)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteUIPackageUpload", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).CompleteUIPackageUpload), ctx, action)
 }
 
 // RootRef mocks base method.

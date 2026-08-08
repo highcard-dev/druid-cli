@@ -22,7 +22,6 @@ type Config struct {
 	UIS3PublicBaseURL      string
 	UIS3Region             string
 	UIS3Endpoint           string
-	UIS3DaemonEndpoint     string
 	UIS3Prefix             string
 	UIS3AccessKey          string
 	UIS3SecretKey          string
@@ -68,9 +67,6 @@ func (c Config) WithDefaults() Config {
 	if c.UIS3Endpoint == "" {
 		c.UIS3Endpoint = os.Getenv("DRUID_K8S_UI_S3_ENDPOINT")
 	}
-	if c.UIS3DaemonEndpoint == "" {
-		c.UIS3DaemonEndpoint = os.Getenv("DRUID_K8S_UI_S3_DAEMON_ENDPOINT")
-	}
 	if c.UIS3Prefix == "" {
 		c.UIS3Prefix = os.Getenv("DRUID_K8S_UI_S3_PREFIX")
 	}
@@ -115,9 +111,6 @@ func (c Config) ValidateForMaterialization() error {
 }
 
 func (c Config) ValidateForUIPublishing() error {
-	if c.PullImage == "" {
-		return fmt.Errorf("kubernetes pull image is required for UI publishing; set --k8s-pull-image or DRUID_K8S_PULL_IMAGE")
-	}
 	if c.UIS3Bucket == "" || c.UIS3PublicBaseURL == "" || c.UIS3Region == "" || c.UIS3AccessKey == "" || c.UIS3SecretKey == "" {
 		return fmt.Errorf("kubernetes UI publishing requires S3 bucket, public URL, region, access key, and secret key configuration")
 	}

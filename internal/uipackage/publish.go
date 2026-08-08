@@ -29,7 +29,7 @@ type S3Config struct {
 	VerifyEndpoint string
 }
 
-func checksumFromHash(hash string) (string, error) {
+func ChecksumSHA256(hash string) (string, error) {
 	sum, err := hex.DecodeString(hash)
 	if err != nil || len(sum) != sha256.Size {
 		return "", fmt.Errorf("invalid UI package SHA-256")
@@ -58,7 +58,7 @@ func PresignPut(ctx context.Context, hash string, config S3Config) (string, erro
 	if config.Bucket == "" || config.Region == "" || hash == "" {
 		return "", fmt.Errorf("ui package S3 bucket, region, and hash are required")
 	}
-	checksum, err := checksumFromHash(hash)
+	checksum, err := ChecksumSHA256(hash)
 	if err != nil {
 		return "", err
 	}
@@ -81,7 +81,7 @@ func PresignPut(ctx context.Context, hash string, config S3Config) (string, erro
 
 // Verify confirms the dev agent stored the exact checksum and expected size.
 func Verify(ctx context.Context, hash string, size int64, config S3Config) error {
-	checksum, err := checksumFromHash(hash)
+	checksum, err := ChecksumSHA256(hash)
 	if err != nil {
 		return err
 	}

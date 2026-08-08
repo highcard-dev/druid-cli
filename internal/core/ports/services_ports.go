@@ -42,7 +42,8 @@ type RuntimeBackendInterface interface {
 	StopDev(ctx context.Context, root string) error
 	DevStatus(ctx context.Context, root string) (RuntimeDevStatus, error)
 	RunCommand(command RuntimeCommand) (*int, error)
-	PublishUIPackage(ctx context.Context, action RuntimeUIPackageAction) (RuntimeUIPackageResult, error)
+	PrepareUIPackageUpload(ctx context.Context, action RuntimeUIPackageUploadAction) (string, error)
+	CompleteUIPackageUpload(ctx context.Context, action RuntimeUIPackageUploadAction) (RuntimeUIPackageResult, error)
 	ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error)
 	RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error)
 	StopRuntime(root string) error
@@ -114,11 +115,12 @@ func (c RuntimeCommand) ObserveProcedureStatus(procedure string, status domain.S
 	}
 }
 
-type RuntimeUIPackageAction struct {
-	RuntimeID  string
-	RootRef    string
-	Scope      domain.RuntimeUIPackageScope
-	SourcePath string
+type RuntimeUIPackageUploadAction struct {
+	RuntimeID string
+	RootRef   string
+	Scope     domain.RuntimeUIPackageScope
+	SHA256    string
+	Size      int64
 }
 
 type RuntimeUIPackageResult struct {

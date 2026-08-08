@@ -279,7 +279,11 @@ func validateRuntimeDaemonAuthConfig() error {
 
 func workloadIdentityMiddleware(authenticator ports.RuntimeWorkloadAuthenticator, allowUnsafe bool) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		if c.Path() == "/health" || c.Path() == "/api/v1/health" || allowUnsafe {
+		if c.Path() == "/health" || c.Path() == "/api/v1/health" {
+			return c.Next()
+		}
+		if allowUnsafe {
+			c.Locals("druid-workload-identity", ports.RuntimeWorkloadIdentity{Kind: "dev", RuntimeID: strings.TrimSpace(c.Get("X-Druid-Runtime-ID")), PodUID: "unsafe-local"})
 			return c.Next()
 		}
 		if authenticator == nil {
@@ -294,7 +298,7 @@ func workloadIdentityMiddleware(authenticator ports.RuntimeWorkloadAuthenticator
 			c.Locals("druid-workload-identity", identity)
 			return c.Next()
 		}
-		if identity.Kind == "dev" && c.Method() == fiber.MethodPost && strings.HasPrefix(c.Path(), "/api/v1/scrolls/"+identity.RuntimeID+"/commands/") {
+		if identity.Kind == "dev" && c.Method() == fiber.MethodPost && (strings.HasPrefix(c.Path(), "/api/v1/scrolls/"+identity.RuntimeID+"/commands/") || strings.HasPrefix(c.Path(), "/internal/v1/ui/publishes/")) {
 			c.Locals("druid-workload-identity", identity)
 			return c.Next()
 		}

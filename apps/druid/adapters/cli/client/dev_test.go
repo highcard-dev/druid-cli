@@ -199,36 +199,6 @@ func TestDevServerFileAuth(t *testing.T) {
 	}
 }
 
-func TestDevServerInternalUIPackageRequiresDaemonToken(t *testing.T) {
-	root := t.TempDir()
-	packagePath := filepath.Join(root, "data", "private", "dist")
-	if err := os.MkdirAll(packagePath, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(packagePath, "app.wasm"), []byte("wasm"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	app := newDevApp(root, domain.NewHub(), &devTriggerQueue{}, devAuth{internalToken: "internal-token"})
-
-	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/internal/v1/ui/private/dist/app.wasm", nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if response.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusUnauthorized)
-	}
-
-	request := httptest.NewRequest(http.MethodGet, "/internal/v1/ui/private/dist/app.wasm", nil)
-	request.Header.Set("Authorization", "Bearer internal-token")
-	response, err = app.Test(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
-	}
-}
-
 type devTestAuth struct{}
 
 func (devTestAuth) CheckHeader(c *fiber.Ctx) (*ports.AuthContext, error) {

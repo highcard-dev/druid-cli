@@ -45,7 +45,7 @@ func TestNormalizeUIPackageRequestRejectsInvalidPaths(t *testing.T) {
 	}
 }
 
-func TestPublishUIPackagePersistsMetadata(t *testing.T) {
+func TestPublishUIPackageCreatesPendingRequest(t *testing.T) {
 	store := newTestStateStore(t)
 	if err := store.CreateScroll(&domain.RuntimeScroll{
 		ID:         "ui-scroll",
@@ -62,17 +62,45 @@ func TestPublishUIPackagePersistsMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkg := updated.UIPackages[domain.RuntimeUIPackageScopePrivate]
-	if !strings.Contains(pkg.URL, "/ui-scroll/private/") {
-		t.Fatalf("url = %q, want private package URL", pkg.URL)
+	request := updated.UIPackagePublishes[domain.RuntimeUIPackageScopePrivate]
+	if request.Status != domain.UIPackagePublishPending || request.Path != "private/dist/app.wasm" || request.ID == "" {
+		t.Fatalf("publish request = %#v", request)
 	}
-	if pkg.Path != "private/dist/app.wasm" {
-		t.Fatalf("path = %q", pkg.Path)
-	}
-	if pkg.SHA256 != "sha256" {
-		t.Fatalf("sha = %q", pkg.SHA256)
-	}
-	if pkg.UpdatedAt.IsZero() {
+	if request.UpdatedAt.IsZero() || request.ExpiresAt.IsZero() {
 		t.Fatal("updated_at should be set")
+	}
+}
+
+func TestUIPackagePublishOnlyCompletesForClaimingWorkload(t *testing.T) {
+	store := newTestStateStore(t)
+	if err := store.CreateScroll(&domain.RuntimeScroll{ID: "ui-scroll", Root: "runtime://ui-scroll", ScrollName: "ui-scroll", ScrollYAML: "name: ui-scroll\n"}); err != nil {
+		t.Fatal(err)
+	}
+	supervisor := NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), &fakeWorkerBackend{})
+	created, err := supervisor.PublishUIPackage("ui-scroll", "private", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := created.UIPackagePublishes[domain.RuntimeUIPackageScopePrivate]
+	claimed, err := supervisor.ClaimUIPackagePublish("ui-scroll", "pod-a")
+	if err != nil || claimed == nil || claimed.ID != request.ID {
+		t.Fatalf("claim = %#v, %v", claimed, err)
+	}
+	digest := strings.Repeat("a", 64)
+	if _, err := supervisor.PrepareUIPackagePublish("ui-scroll", request.ID, "pod-b", digest, 42); err == nil {
+		t.Fatal("different workload must not prepare the claimed publish")
+	}
+	if _, err := supervisor.PrepareUIPackagePublish("ui-scroll", request.ID, "pod-a", digest, 42); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := supervisor.CompleteUIPackagePublish("ui-scroll", request.ID, "pod-a", strings.Repeat("b", 64), 42); err == nil {
+		t.Fatal("completion must match the prepared checksum")
+	}
+	completed, err := supervisor.CompleteUIPackagePublish("ui-scroll", request.ID, "pod-a", digest, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if packageInfo := completed.UIPackages[domain.RuntimeUIPackageScopePrivate]; packageInfo.SHA256 != digest || packageInfo.Path != "private/dist/app.wasm" {
+		t.Fatalf("package = %#v", packageInfo)
 	}
 }

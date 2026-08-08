@@ -38,6 +38,10 @@ func RegisterManagementRoutes(app *fiber.App, handlers RouteHandlers) {
 		})
 	}
 	api.RegisterHandlersWithOptions(app, handlers.Server, api.FiberServerOptions{})
+	app.Post("/internal/v1/ui/publishes/claim", handlers.Server.ClaimUIPackagePublish)
+	app.Post("/internal/v1/ui/publishes/:requestID/prepare", handlers.Server.PrepareUIPackagePublish)
+	app.Post("/internal/v1/ui/publishes/:requestID/complete", handlers.Server.CompleteUIPackagePublish)
+	app.Post("/internal/v1/ui/publishes/:requestID/fail", handlers.Server.FailUIPackagePublish)
 	app.Get("/health", handlers.Server.GetHealthAuth)
 	app.Get("/ws/v1/scrolls/:id/consoles/:console", websocket.New(handlers.Websocket.AttachConsole))
 	app.Get("/ws/v1/scrolls/:id/watch/notify", websocket.New(handlers.Websocket.WatchNotifications))
