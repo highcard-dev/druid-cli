@@ -268,7 +268,7 @@ func validateRuntimeDaemonAuthConfig() error {
 	if runtimeListen != "" && runtimeBackendName != "kubernetes" && !runtimeAllowUnauthenticatedManagement {
 		return fmt.Errorf("management listener %s requires Kubernetes workload identity or --unsafe-allow-unauthenticated-management for local Docker development", runtimeListen)
 	}
-	if runtimeListen != "" && runtimeBackendName == "kubernetes" && strings.TrimSpace(k8sOperatorServiceAccount) == "" {
+	if runtimeListen != "" && runtimeBackendName == "kubernetes" && !runtimeAllowUnauthenticatedManagement && strings.TrimSpace(k8sOperatorServiceAccount) == "" {
 		return fmt.Errorf("Kubernetes management listener requires --k8s-operator-service-account")
 	}
 	if runtimeWorkerTimeout <= 0 {
