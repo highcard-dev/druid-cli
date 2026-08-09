@@ -46,6 +46,51 @@ commands:
 	}
 }
 
+func TestRuntimeSessionRepairsLegacyNilCommands(t *testing.T) {
+	store := newTestStateStore(t)
+	runtimeScroll := &domain.RuntimeScroll{
+		ID:         "legacy-null-command",
+		Artifact:   "local",
+		Root:       t.TempDir(),
+		ScrollName: "legacy-null-command",
+		ScrollYAML: `name: cached
+desc: Cached scroll
+version: 0.1.0
+app_version: "1.0"
+serve: start
+commands:
+  start:
+    run: restart
+    procedures:
+      - image: alpine:3.20
+        command: ["true"]
+  stale_command: null
+`,
+	}
+	if err := store.CreateScroll(runtimeScroll); err != nil {
+		t.Fatal(err)
+	}
+
+	session, err := NewRuntimeSession(store, runtimeScroll, &fakeWorkerBackend{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.scrollService.GetCommand("start"); err != nil {
+		t.Fatalf("preserved command: %v", err)
+	}
+	if _, err := session.scrollService.GetCommand("stale_command"); err == nil {
+		t.Fatal("legacy null command was not removed")
+	}
+
+	persisted, err := store.GetScroll(runtimeScroll.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(persisted.ScrollYAML, "stale_command") {
+		t.Fatalf("persisted scroll YAML still contains repaired command: %s", persisted.ScrollYAML)
+	}
+}
+
 func TestRuntimeSessionHydrateAutoStartsServeWithoutPreviousStatus(t *testing.T) {
 	session := newRuntimeSessionForTest(t, map[string]domain.LockStatus{}, cachedScrollYAML("start"))
 
