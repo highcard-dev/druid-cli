@@ -92,6 +92,18 @@ func (b *Backend) ensureRuntimeServiceAccount(ctx context.Context, namespace str
 	return err
 }
 
+// ensureRuntimeServiceAccounts provisions the fixed identities used by Druid
+// runtime workloads. Create plus AlreadyExists is an atomic existence check,
+// so concurrent deployment startup cannot race between a separate get/create.
+func (b *Backend) ensureRuntimeServiceAccounts(ctx context.Context, namespace string) error {
+	for _, name := range []string{runtimeDevServiceAccount, runtimeWorkerServiceAccount} {
+		if err := b.ensureRuntimeServiceAccount(ctx, namespace, name); err != nil {
+			return fmt.Errorf("ensure runtime service account %q: %w", name, err)
+		}
+	}
+	return nil
+}
+
 func (b *Backend) isOperatorServiceAccount(namespace string, serviceAccount string) bool {
 	expected := strings.TrimSpace(b.config.OperatorServiceAccount)
 	if expected == "" {

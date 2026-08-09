@@ -49,7 +49,9 @@ func (b *Backend) StartDev(ctx context.Context, action ports.RuntimeDevAction) e
 		zap.Strings("commands", action.HotReloadCommands),
 		zap.String("image", b.config.PullImage),
 	)
-	if err := b.ensureRuntimeServiceAccount(ctx, namespace, runtimeDevServiceAccount); err != nil {
+	// Keep this idempotent bootstrap for deployments created before the first
+	// materialization completed.
+	if err := b.ensureRuntimeServiceAccounts(ctx, namespace); err != nil {
 		return err
 	}
 	sts := devStatefulSetSpec(namespace, action.RootRef, pvc, b.config.PullImage, action, b.config.RegistrySecret, b.config.ServiceAccountAudience)
