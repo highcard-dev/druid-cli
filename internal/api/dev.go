@@ -12,6 +12,6 @@ type DevWatchResponse struct {
 }
 
 type DevWatchStatus struct {
-	Enabled      bool     `json:"enabled"`
-	WatchedPaths []string `json:"watchedPaths"`
+	Status  string `json:"status"`
+	Enabled bool   `json:"enabled"`
 }

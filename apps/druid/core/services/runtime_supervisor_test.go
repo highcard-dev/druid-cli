@@ -530,7 +530,7 @@ func TestRuntimeSupervisorCreateGeneratesIDWhenNameOmitted(t *testing.T) {
 	if backend.action.RuntimeID != runtimeScroll.ID || backend.action.RootRef != backend.RootRef(runtimeScroll.ID, "") {
 		t.Fatalf("worker action = %#v scroll = %#v", backend.action, runtimeScroll)
 	}
-	if backend.action.Mode != ports.RuntimeWorkerModeCreate || backend.action.CallbackToken == "" {
+	if backend.action.Mode != ports.RuntimeWorkerModeCreate {
 		t.Fatalf("worker action = %#v", backend.action)
 	}
 	if runtimeScroll.ArtifactDigest != "sha256:generated" || runtimeScroll.Status != domain.RuntimeScrollStatusCreated {
@@ -559,7 +559,7 @@ func TestRuntimeSupervisorCreateUsesPullWorkerBeforeStateMutation(t *testing.T) 
 	if backend.action.RootRef != backend.RootRef("worker-scroll", "") || backend.action.MountPath != "/scroll" {
 		t.Fatalf("worker root = %#v, want %s mounted at /scroll", backend.action, backend.RootRef("worker-scroll", ""))
 	}
-	if backend.action.CallbackToken == "" || !strings.Contains(backend.action.CallbackURL, "/internal/v1/workers/worker-scroll/complete") {
+	if !strings.Contains(backend.action.CallbackURL, "/internal/v1/workers/worker-scroll/complete") {
 		t.Fatalf("callback action = %#v", backend.action)
 	}
 	if runtimeScroll.ArtifactDigest != "sha256:worker" {
@@ -1186,8 +1186,12 @@ func (f *fakeWorkerBackend) RunCommand(command ports.RuntimeCommand) (*int, erro
 	return nil, nil
 }
 
-func (f *fakeWorkerBackend) PublishUIPackage(ctx context.Context, action ports.RuntimeUIPackageAction) (ports.RuntimeUIPackageResult, error) {
-	return ports.RuntimeUIPackageResult{URL: "http://packages/" + action.RuntimeID + "/" + string(action.Scope) + "/app.wasm", Path: action.SourcePath, SHA256: "sha256"}, nil
+func (f *fakeWorkerBackend) PrepareUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (string, error) {
+	return "http://uploads/" + action.RuntimeID + "/" + string(action.Scope), nil
+}
+
+func (f *fakeWorkerBackend) CompleteUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageResult, error) {
+	return ports.RuntimeUIPackageResult{URL: "http://packages/" + action.RuntimeID + "/" + string(action.Scope) + "/app.wasm", SHA256: strings.Repeat("a", 64)}, nil
 }
 
 func (f *fakeWorkerBackend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
@@ -1203,6 +1207,10 @@ func (f *fakeWorkerBackend) StartDev(ctx context.Context, action ports.RuntimeDe
 }
 
 func (f *fakeWorkerBackend) StopDev(ctx context.Context, root string) error { return nil }
+
+func (f *fakeWorkerBackend) DevStatus(ctx context.Context, root string) (ports.RuntimeDevStatus, error) {
+	return ports.RuntimeDevStatusReady, nil
+}
 
 func (f *fakeWorkerBackend) Attach(commandName string, data string) error {
 	return nil
@@ -1238,7 +1246,7 @@ func (f *fakeWorkerBackend) SpawnPullWorker(ctx context.Context, action ports.Ru
 	if f.callbacks == nil {
 		return nil
 	}
-	return f.callbacks.Complete(action.RuntimeID, action.CallbackToken, ports.RuntimeWorkerResult{
+	return f.callbacks.Complete(action.RuntimeID, ports.RuntimeWorkerResult{
 		ScrollYAML:     f.scrollYAML,
 		ArtifactDigest: f.digest,
 	})

@@ -40,8 +40,10 @@ type RuntimeBackendInterface interface {
 	RootRef(id string, namespace string) string
 	StartDev(ctx context.Context, action RuntimeDevAction) error
 	StopDev(ctx context.Context, root string) error
+	DevStatus(ctx context.Context, root string) (RuntimeDevStatus, error)
 	RunCommand(command RuntimeCommand) (*int, error)
-	PublishUIPackage(ctx context.Context, action RuntimeUIPackageAction) (RuntimeUIPackageResult, error)
+	PrepareUIPackageUpload(ctx context.Context, action RuntimeUIPackageUploadAction) (string, error)
+	CompleteUIPackageUpload(ctx context.Context, action RuntimeUIPackageUploadAction) (RuntimeUIPackageResult, error)
 	ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error)
 	RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error)
 	StopRuntime(root string) error
@@ -52,6 +54,15 @@ type RuntimeBackendInterface interface {
 	Signal(commandName string, target string, signal string, root string) error
 }
 
+type RuntimeDevStatus string
+
+const (
+	RuntimeDevStatusDisabled  RuntimeDevStatus = "disabled"
+	RuntimeDevStatusStarting  RuntimeDevStatus = "starting"
+	RuntimeDevStatusReady     RuntimeDevStatus = "ready"
+	RuntimeDevStatusUnhealthy RuntimeDevStatus = "unhealthy"
+)
+
 type RuntimeWorkerCallbackConfig struct {
 	Listen string
 	URL    string
@@ -60,6 +71,21 @@ type RuntimeWorkerCallbackConfig struct {
 type RuntimeWorkerCallbackBackend interface {
 	WorkerCallbackDefaults(config RuntimeWorkerCallbackConfig) RuntimeWorkerCallbackConfig
 	WorkerCallbackAfterListen(config RuntimeWorkerCallbackConfig) (RuntimeWorkerCallbackConfig, error)
+}
+
+// RuntimeWorkloadIdentity is the verified Kubernetes identity of a Druid
+// managed pod. RuntimeID comes exclusively from labels on the live pod.
+type RuntimeWorkloadIdentity struct {
+	Namespace      string
+	ServiceAccount string
+	PodName        string
+	PodUID         string
+	RuntimeID      string
+	Kind           string
+}
+
+type RuntimeWorkloadAuthenticator interface {
+	AuthenticateWorkload(ctx context.Context, token string) (RuntimeWorkloadIdentity, error)
 }
 
 type RuntimeScrollStore interface {
@@ -89,11 +115,11 @@ func (c RuntimeCommand) ObserveProcedureStatus(procedure string, status domain.S
 	}
 }
 
-type RuntimeUIPackageAction struct {
-	RuntimeID  string
-	RootRef    string
-	Scope      domain.RuntimeUIPackageScope
-	SourcePath string
+type RuntimeUIPackageUploadAction struct {
+	RuntimeID string
+	RootRef   string
+	Scope     domain.RuntimeUIPackageScope
+	RequestID string
 }
 
 type RuntimeUIPackageResult struct {
@@ -125,7 +151,7 @@ type RuntimeWorkerAction struct {
 	RootRef             string
 	MountPath           string
 	CallbackURL         string
-	CallbackToken       string
+	TokenFile           string
 	RegistryCredentials []domain.RegistryCredential
 }
 
@@ -144,7 +170,7 @@ type RuntimeDevAction struct {
 	HotReloadCommands []string
 	Routing           []domain.RuntimeRouteAssignment
 	DaemonURL         string
-	DaemonToken       string
+	TokenFile         string
 	OwnerID           string
 	AuthJWKSURL       string
 	RuntimeJWKSURL    string

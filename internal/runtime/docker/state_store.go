@@ -89,7 +89,6 @@ func (s *StateStore) CreateScroll(scroll *domain.RuntimeScroll) error {
 	if err != nil {
 		return err
 	}
-
 	_, err = db.Exec(`
 			INSERT INTO scrolls (id, owner_id, artifact, artifact_digest, root, scroll_name, scroll_yaml, status, last_error, created_at, updated_at, procedures_json, routing_json, ui_packages_json)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

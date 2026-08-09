@@ -44,12 +44,16 @@ func TestDevServerWebDAVReadWriteAndCallback(t *testing.T) {
 		_, _ = w.Write([]byte(`{"id":"smoke"}`))
 	}))
 	defer daemon.Close()
-	oldURL, oldToken, oldRuntimeID := devDaemonURL, devDaemonToken, devRuntimeID
+	oldURL, oldTokenFile, oldRuntimeID := devDaemonURL, devDaemonTokenFile, devRuntimeID
 	devDaemonURL = daemon.URL
-	devDaemonToken = "secret"
+	tokenFile := filepath.Join(root, "token")
+	if err := os.WriteFile(tokenFile, []byte("secret"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	devDaemonTokenFile = tokenFile
 	devRuntimeID = "smoke"
 	t.Cleanup(func() {
-		devDaemonURL, devDaemonToken, devRuntimeID = oldURL, oldToken, oldRuntimeID
+		devDaemonURL, devDaemonTokenFile, devRuntimeID = oldURL, oldTokenFile, oldRuntimeID
 	})
 
 	broadcast := domain.NewHub()

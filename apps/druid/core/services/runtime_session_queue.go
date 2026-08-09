@@ -18,6 +18,7 @@ type runtimeQueueItem struct {
 	rememberDone bool
 	runRequested bool
 	restartCount uint
+	procedureEnv map[string]map[string]string
 }
 
 func (s *RuntimeSession) AddTempItem(cmd string) error {
@@ -30,6 +31,12 @@ func (s *RuntimeSession) AddForcedItem(cmd string) error {
 
 func (s *RuntimeSession) AddTempItemWithWait(cmd string) error {
 	return s.addQueueItem(cmd, coreservices.AddItemOptions{Wait: true})
+}
+
+// AddTempItemWithWaitEnv queues a one-shot command with request-scoped
+// procedure values. They remain in memory and are never written to scroll.yml.
+func (s *RuntimeSession) AddTempItemWithWaitEnv(cmd string, procedureEnv map[string]map[string]string) error {
+	return s.addQueueItemWithEnv(cmd, coreservices.AddItemOptions{Wait: true, Force: true}, procedureEnv)
 }
 
 func (s *RuntimeSession) RememberDoneItem(cmd string) {
@@ -46,6 +53,10 @@ func (s *RuntimeSession) RememberDoneItem(cmd string) {
 }
 
 func (s *RuntimeSession) addQueueItem(cmd string, options coreservices.AddItemOptions) error {
+	return s.addQueueItemWithEnv(cmd, options, nil)
+}
+
+func (s *RuntimeSession) addQueueItemWithEnv(cmd string, options coreservices.AddItemOptions, procedureEnv map[string]map[string]string) error {
 	logger.Log().Debug("Running command", zap.String("cmd", cmd))
 
 	command, err := s.scrollService.GetCommand(cmd)
@@ -72,7 +83,7 @@ func (s *RuntimeSession) addQueueItem(cmd string, options coreservices.AddItemOp
 	if options.Wait {
 		doneChan = make(chan struct{})
 	}
-	item = &runtimeQueueItem{doneChan: doneChan}
+	item = &runtimeQueueItem{doneChan: doneChan, procedureEnv: procedureEnv}
 	s.queue[cmd] = item
 	s.setQueueStatusLocked(cmd, item, domain.ScrollLockStatusWaiting, nil)
 	s.queueMu.Unlock()
@@ -241,7 +252,7 @@ func (s *RuntimeSession) RunQueue() {
 			}()
 
 			startedAt := time.Now()
-			err := s.runCommand(c)
+			err := s.runCommand(c, i.procedureEnv)
 			isRestartMode := runMode == domain.RunModeRestart
 
 			if err != nil {

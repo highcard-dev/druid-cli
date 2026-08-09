@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
+	"github.com/highcard-dev/daemon/internal/core/ports"
 	coreservices "github.com/highcard-dev/daemon/internal/core/services"
 )
 
@@ -30,13 +31,7 @@ func TestNormalizeUIPackageRequestDefaults(t *testing.T) {
 }
 
 func TestNormalizeUIPackageRequestRejectsInvalidPaths(t *testing.T) {
-	tests := []string{
-		"data/private/dist/app.wasm",
-		"data/public/dist/app.wasm",
-		"../private/dist/app.wasm",
-		"private/dist/app.js",
-	}
-	for _, path := range tests {
+	for _, path := range []string{"data/private/dist/app.wasm", "data/public/dist/app.wasm", "../private/dist/app.wasm", "private/dist/app.js", "public/dist/app.wasm"} {
 		t.Run(path, func(t *testing.T) {
 			if _, _, err := normalizeUIPackageRequest("private", path); err == nil {
 				t.Fatal("expected error")
@@ -45,34 +40,39 @@ func TestNormalizeUIPackageRequestRejectsInvalidPaths(t *testing.T) {
 	}
 }
 
-func TestPublishUIPackagePersistsMetadata(t *testing.T) {
+func TestPublishUIPackageRunsOneShotCommandWithEphemeralURL(t *testing.T) {
 	store := newTestStateStore(t)
 	if err := store.CreateScroll(&domain.RuntimeScroll{
-		ID:         "ui-scroll",
-		Root:       "runtime://ui-scroll",
-		ScrollName: "ui-scroll",
-		ScrollYAML: "name: ui-scroll\n",
-		Status:     domain.RuntimeScrollStatusCreated,
+		ID: "ui-scroll", Root: "runtime://ui-scroll", ScrollName: "cached", ScrollYAML: cachedScrollYAML(""),
 	}); err != nil {
 		t.Fatal(err)
 	}
-	supervisor := NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), &fakeWorkerBackend{})
+	var command ports.RuntimeCommand
+	backend := &fakeWorkerBackend{runCommand: func(got ports.RuntimeCommand) (*int, error) {
+		command = got
+		return nil, nil
+	}}
+	supervisor := NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), backend)
 
 	updated, err := supervisor.PublishUIPackage("ui-scroll", "private", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkg := updated.UIPackages[domain.RuntimeUIPackageScopePrivate]
-	if !strings.Contains(pkg.URL, "/ui-scroll/private/") {
-		t.Fatalf("url = %q, want private package URL", pkg.URL)
+	if got := updated.UIPackages[domain.RuntimeUIPackageScopePrivate]; got.Path != "private/dist/app.wasm" || got.SHA256 != strings.Repeat("a", 64) {
+		t.Fatalf("package = %#v", got)
 	}
-	if pkg.Path != "private/dist/app.wasm" {
-		t.Fatalf("path = %q", pkg.Path)
+	if command.Name != "ui_publish_private" || command.Command == nil || len(command.Command.Procedures) != 1 {
+		t.Fatalf("command = %#v", command)
 	}
-	if pkg.SHA256 != "sha256" {
-		t.Fatalf("sha = %q", pkg.SHA256)
+	if got := command.Command.Procedures[0].Image; got != uiPublishImage {
+		t.Fatalf("image = %q, want %q", got, uiPublishImage)
 	}
-	if pkg.UpdatedAt.IsZero() {
-		t.Fatal("updated_at should be set")
+	procedure := domain.ProcedureName(command.Name, 0, command.Command.Procedures[0])
+	values := command.ProcedureEnv[procedure]
+	if values["DRUID_UI_SOURCE"] != "private/dist/app.wasm" || !strings.HasPrefix(values["DRUID_UI_UPLOAD_URL"], "http://uploads/ui-scroll/private") {
+		t.Fatalf("procedure env = %#v", values)
+	}
+	if strings.Contains(strings.Join(command.Command.Procedures[0].Command, " "), values["DRUID_UI_UPLOAD_URL"]) {
+		t.Fatal("upload URL must not be persisted in command arguments")
 	}
 }

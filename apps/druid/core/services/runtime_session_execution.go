@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func (s *RuntimeSession) runCommand(cmd string) error {
+func (s *RuntimeSession) runCommand(cmd string, extraEnv ...map[string]map[string]string) error {
 	command, err := s.scrollService.GetCommand(cmd)
 	if err != nil {
 		return err
@@ -49,6 +49,18 @@ func (s *RuntimeSession) runCommand(cmd string) error {
 	if err != nil {
 		s.setCommandProcedureStatus(cmd, command, domain.ScrollLockStatusError, nil)
 		return err
+	}
+	var extraProcedureEnv map[string]map[string]string
+	if len(extraEnv) > 0 {
+		extraProcedureEnv = extraEnv[0]
+	}
+	for procedure, values := range extraProcedureEnv {
+		if procedureEnv[procedure] == nil {
+			procedureEnv[procedure] = map[string]string{}
+		}
+		for key, value := range values {
+			procedureEnv[procedure][key] = value
+		}
 	}
 
 	exitCode, err := s.runtimeBackend.RunCommand(ports.RuntimeCommand{

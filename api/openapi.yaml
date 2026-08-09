@@ -552,6 +552,13 @@ paths:
           required: true
           schema:
             type: string
+        - name: sync
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Wait for the requested command to complete before responding.
       responses:
         '200':
           description: Updated runtime scroll

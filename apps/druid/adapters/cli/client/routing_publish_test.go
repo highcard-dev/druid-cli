@@ -214,5 +214,5 @@ func (f *fakeRoutingDaemon) DisableWatch(ctx context.Context, id string) (*api.D
 }
 
 func (f *fakeRoutingDaemon) WatchStatus(ctx context.Context, id string) (*api.DevWatchStatus, error) {
-	return &api.DevWatchStatus{Enabled: false, WatchedPaths: []string{}}, nil
+	return &api.DevWatchStatus{Status: "disabled", Enabled: false}, nil
 }

@@ -29,6 +29,9 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 	if action.MountPath == "" {
 		action.MountPath = "/scroll"
 	}
+	if action.TokenFile == "" {
+		action.TokenFile = workloadTokenPath
+	}
 	namespace, pvc, err := parseRef(action.RootRef)
 	if err != nil {
 		logger.Log().Error("Kubernetes pull worker root ref invalid", zap.String("runtime_id", action.RuntimeID), zap.String("root_ref", action.RootRef), zap.Error(err))
@@ -56,13 +59,16 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 			return err
 		}
 	}
+	if err := b.ensureRuntimeServiceAccount(ctx, namespace, runtimeWorkerServiceAccount); err != nil {
+		return err
+	}
 	registryConfigSecret, cleanupRegistryConfig, err := b.createRegistryConfigSecret(ctx, namespace, action.Artifact+action.RuntimeID, action.RegistryCredentials)
 	if err != nil {
 		logger.Log().Error("Failed to create registry config secret for pull worker", zap.String("runtime_id", action.RuntimeID), zap.String("namespace", namespace), zap.Error(err))
 		return err
 	}
 	defer cleanupRegistryConfig()
-	job := workerPullJobSpec(namespace, jobName("worker-pull", action.RootRef, shortHash(string(action.Mode)+action.Artifact)), pvc, b.config.PullImage, action, b.config.RegistrySecret, registryConfigSecret, b.config.RegistryPlainHTTP)
+	job := workerPullJobSpec(namespace, jobName("worker-pull", action.RootRef, shortHash(string(action.Mode)+action.Artifact)), pvc, b.config.PullImage, action, b.config.RegistrySecret, registryConfigSecret, b.config.RegistryPlainHTTP, b.config.ServiceAccountAudience)
 	setJobDeadlineFromContext(ctx, job)
 	logger.Log().Debug("Kubernetes pull worker job built", zap.String("runtime_id", action.RuntimeID), zap.String("namespace", namespace), zap.String("job", job.Name))
 	if err := b.runHelperJob(ctx, job); err != nil {

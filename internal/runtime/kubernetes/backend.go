@@ -3,6 +3,7 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 type Backend struct {
 	client         k8sclient.Interface
 	restConfig     *rest.Config
+	httpClient     *http.Client
 	consoleManager ports.ConsoleManagerInterface
 	config         Config
 	statsReader    nodeStatsReader
@@ -56,10 +58,15 @@ func New(config Config, consoleManager ports.ConsoleManagerInterface) (*Backend,
 	if _, err := client.Discovery().ServerVersion(); err != nil {
 		return nil, fmt.Errorf("kubernetes API unavailable: %w", err)
 	}
+	httpClient, err := rest.HTTPClientFor(restConfig)
+	if err != nil {
+		return nil, fmt.Errorf("kubernetes HTTP client unavailable: %w", err)
+	}
 	logger.Log().Info("Using Kubernetes backend settings", zap.String("source", source), zap.String("namespace", config.Namespace))
 	backend := &Backend{
 		client:         client,
 		restConfig:     restConfig,
+		httpClient:     httpClient,
 		consoleManager: consoleManager,
 		config:         config,
 		jobExits:       make(map[string]recentJobExit),

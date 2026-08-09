@@ -8,7 +8,8 @@ import (
 )
 
 type runtimeCallbackHandler struct {
-	callbacks *appservices.WorkerCallbackManager
+	callbacks            *appservices.WorkerCallbackManager
+	allowUnauthenticated bool
 }
 
 func (h runtimeCallbackHandler) CompleteWorker(c *fiber.Ctx, runtimeID callbackapi.Runtime) error {
@@ -26,8 +27,14 @@ func (h runtimeCallbackHandler) CompleteWorker(c *fiber.Ctx, runtimeID callbacka
 	if result.Error != nil {
 		runtimeResult.Error = *result.Error
 	}
-	if err := h.callbacks.Complete(string(runtimeID), result.Token, runtimeResult); err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+	if !h.allowUnauthenticated {
+		identity, ok := c.Locals("druid-workload-identity").(ports.RuntimeWorkloadIdentity)
+		if !ok || identity.Kind != "worker" || identity.RuntimeID != string(runtimeID) {
+			return fiber.NewError(fiber.StatusForbidden, "worker identity does not match runtime")
+		}
+	}
+	if err := h.callbacks.Complete(string(runtimeID), runtimeResult); err != nil {
+		return fiber.NewError(fiber.StatusConflict, err.Error())
 	}
 	return c.SendStatus(fiber.StatusNoContent)
 }

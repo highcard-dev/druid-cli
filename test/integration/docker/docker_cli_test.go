@@ -36,6 +36,7 @@ func TestDockerBackendCLIComplexLifecycle(t *testing.T) {
 		"--docker-bind-root", filepath.Join(stateDir, "scrolls"),
 		"--worker-callback-listen", fmt.Sprintf(":%d", callbackPort),
 		"--worker-callback-url", fmt.Sprintf("http://%s:%d", containerHost, callbackPort),
+		"--unsafe-allow-unauthenticated-management",
 	}, nil)
 	t.Cleanup(func() {
 		if t.Failed() {
@@ -183,6 +184,7 @@ func TestDockerBackendColdstarterFrontsRuntime(t *testing.T) {
 		"--docker-bind-root", filepath.Join(stateDir, "scrolls"),
 		"--worker-callback-listen", fmt.Sprintf(":%d", callbackPort),
 		"--worker-callback-url", fmt.Sprintf("http://%s:%d", containerHost, callbackPort),
+		"--unsafe-allow-unauthenticated-management",
 	}, nil)
 	t.Cleanup(func() {
 		if t.Failed() {

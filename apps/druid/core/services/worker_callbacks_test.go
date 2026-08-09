@@ -7,17 +7,14 @@ import (
 	"github.com/highcard-dev/daemon/internal/core/ports"
 )
 
-func TestWorkerCallbackValidatesTokenAndRejectsReplay(t *testing.T) {
+func TestWorkerCallbackCompletesOnceAndRejectsReplay(t *testing.T) {
 	manager := NewWorkerCallbackManager()
-	token, resultCh, err := manager.Register("scroll-a")
+	resultCh, err := manager.Register("scroll-a")
 	if err != nil {
 		t.Fatal(err)
 	}
 	result := ports.RuntimeWorkerResult{ScrollYAML: "name: scroll-a\n"}
-	if err := manager.Complete("scroll-a", "wrong-token", result); err == nil {
-		t.Fatal("invalid token should fail")
-	}
-	if err := manager.Complete("scroll-a", token, result); err != nil {
+	if err := manager.Complete("scroll-a", result); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -28,28 +25,28 @@ func TestWorkerCallbackValidatesTokenAndRejectsReplay(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("callback result was not delivered")
 	}
-	if err := manager.Complete("scroll-a", token, result); err == nil {
+	if err := manager.Complete("scroll-a", result); err == nil {
 		t.Fatal("replayed callback should fail")
 	}
 }
 
 func TestWorkerCallbackRejectsDuplicatePendingRuntime(t *testing.T) {
 	manager := NewWorkerCallbackManager()
-	if _, _, err := manager.Register("scroll-a"); err != nil {
+	if _, err := manager.Register("scroll-a"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := manager.Register("scroll-a"); err == nil {
+	if _, err := manager.Register("scroll-a"); err == nil {
 		t.Fatal("duplicate pending action should fail")
 	}
 }
 
 func TestWorkerCallbackRejectsUnknownRuntime(t *testing.T) {
 	manager := NewWorkerCallbackManager()
-	token, _, err := manager.Register("scroll-a")
+	_, err := manager.Register("scroll-a")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.Complete("scroll-b", token, ports.RuntimeWorkerResult{}); err == nil {
+	if err := manager.Complete("scroll-b", ports.RuntimeWorkerResult{}); err == nil {
 		t.Fatal("unknown runtime should fail")
 	}
 }

@@ -34,7 +34,7 @@ var devRoot string
 var devListen string
 var devRuntimeID string
 var devDaemonURL string
-var devDaemonToken string
+var devDaemonTokenFile string
 var devOwnerID string
 var devAuthJWKSURL string
 var devRuntimeJWKSURL string
@@ -107,7 +107,7 @@ func init() {
 	DevCommand.Flags().StringVar(&devListen, "listen", ":8084", "Dev server listen address")
 	DevCommand.Flags().StringVar(&devRuntimeID, "runtime-id", "", "Runtime id")
 	DevCommand.Flags().StringVar(&devDaemonURL, "daemon-url", "", "Daemon management API URL")
-	DevCommand.Flags().StringVar(&devDaemonToken, "daemon-token", "", "Daemon management token")
+	DevCommand.Flags().StringVar(&devDaemonTokenFile, "daemon-token-file", "", "Projected ServiceAccount token file for daemon requests")
 	DevCommand.Flags().StringVar(&devOwnerID, "owner-id", "", "Runtime owner id for customer-facing auth")
 	DevCommand.Flags().StringVar(&devAuthJWKSURL, "auth-jwks-url", "", "JWKS URL for customer JWTs")
 	DevCommand.Flags().StringVar(&devRuntimeJWKSURL, "runtime-jwks-url", "", "JWKS URL for short-lived runtime tokens")
@@ -126,9 +126,6 @@ func runDevServer() error {
 	}
 	if devDaemonURL == "" {
 		devDaemonURL = os.Getenv("DRUID_DAEMON_URL")
-	}
-	if devDaemonToken == "" {
-		devDaemonToken = os.Getenv("DRUID_INTERNAL_TOKEN")
 	}
 	auth := devAuth{runtimeID: devRuntimeID, ownerID: devOwnerID}
 	if devAuthJWKSURL != "" {
@@ -155,7 +152,6 @@ func runDevServer() error {
 	if err := watch.StartWatching(root, devWatchPaths...); err != nil {
 		return err
 	}
-
 	app := newDevApp(root, broadcast, queue, auth)
 	return app.Listen(devListen)
 }
@@ -365,10 +361,11 @@ func (q *devTriggerQueue) Trigger() error {
 	for _, command := range q.commands {
 		q.broadcastEvent("build-started")
 		err := q.runCommand(command)
-		q.broadcastEvent("build-ended")
 		if err != nil {
+			q.broadcastEvent("build-failed")
 			return err
 		}
+		q.broadcastEvent("build-ended")
 	}
 	return nil
 }
@@ -386,15 +383,20 @@ func (q *devTriggerQueue) runCommand(command string) error {
 		return fmt.Errorf("dev daemon URL is required to run %s", command)
 	}
 	client, err := api.NewClientWithResponses(devDaemonURL, api.WithRequestEditorFn(func(ctx context.Context, req *http.Request) error {
-		if devDaemonToken != "" {
-			req.Header.Set("Authorization", "Bearer "+devDaemonToken)
+		if devDaemonTokenFile != "" {
+			token, err := os.ReadFile(devDaemonTokenFile)
+			if err != nil {
+				return fmt.Errorf("read daemon token: %w", err)
+			}
+			req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
 		}
 		return nil
 	}))
 	if err != nil {
 		return err
 	}
-	res, err := client.RunScrollCommandWithResponse(context.Background(), devRuntimeID, command)
+	sync := true
+	res, err := client.RunScrollCommandWithResponse(context.Background(), devRuntimeID, command, &api.RunScrollCommandParams{Sync: &sync})
 	if err != nil {
 		return err
 	}

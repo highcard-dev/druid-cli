@@ -69,8 +69,10 @@ auth:
   enabled: false
   jwksUrl: ""
   publicJwksUrl: ""
-  existingSecret: ""
-  tokenKey: token
+
+workloadIdentity:
+  audience: druid-cli
+  operatorServiceAccount: operator-system/druid-deployment-operator-controller-manager
 
 resources: {}
 
