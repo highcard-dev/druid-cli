@@ -43,7 +43,7 @@ func TestNormalizeUIPackageRequestRejectsInvalidPaths(t *testing.T) {
 func TestPublishUIPackageRunsOneShotCommandWithEphemeralURL(t *testing.T) {
 	store := newTestStateStore(t)
 	if err := store.CreateScroll(&domain.RuntimeScroll{
-		ID: "ui-scroll", Root: "runtime://ui-scroll", ScrollName: "ui-scroll", ScrollYAML: "name: ui-scroll\ndescription: UI package test\n",
+		ID: "ui-scroll", Root: "runtime://ui-scroll", ScrollName: "cached", ScrollYAML: cachedScrollYAML(""),
 	}); err != nil {
 		t.Fatal(err)
 	}
