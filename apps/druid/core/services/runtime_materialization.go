@@ -37,7 +37,6 @@ func (s *RuntimeSupervisor) runPullWorker(ctx context.Context, runtimeService po
 		RootRef:             root,
 		MountPath:           "/scroll",
 		CallbackURL:         callbackURL,
-		TokenFile:           "/var/run/secrets/druid-cli/token",
 		RegistryCredentials: registryCredentials,
 	}
 	if err := runtimeService.SpawnPullWorker(waitCtx, action); err != nil {

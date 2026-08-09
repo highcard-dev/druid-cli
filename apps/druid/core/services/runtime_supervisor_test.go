@@ -530,7 +530,7 @@ func TestRuntimeSupervisorCreateGeneratesIDWhenNameOmitted(t *testing.T) {
 	if backend.action.RuntimeID != runtimeScroll.ID || backend.action.RootRef != backend.RootRef(runtimeScroll.ID, "") {
 		t.Fatalf("worker action = %#v scroll = %#v", backend.action, runtimeScroll)
 	}
-	if backend.action.Mode != ports.RuntimeWorkerModeCreate || backend.action.TokenFile == "" {
+	if backend.action.Mode != ports.RuntimeWorkerModeCreate {
 		t.Fatalf("worker action = %#v", backend.action)
 	}
 	if runtimeScroll.ArtifactDigest != "sha256:generated" || runtimeScroll.Status != domain.RuntimeScrollStatusCreated {
@@ -559,7 +559,7 @@ func TestRuntimeSupervisorCreateUsesPullWorkerBeforeStateMutation(t *testing.T) 
 	if backend.action.RootRef != backend.RootRef("worker-scroll", "") || backend.action.MountPath != "/scroll" {
 		t.Fatalf("worker root = %#v, want %s mounted at /scroll", backend.action, backend.RootRef("worker-scroll", ""))
 	}
-	if backend.action.TokenFile == "" || !strings.Contains(backend.action.CallbackURL, "/internal/v1/workers/worker-scroll/complete") {
+	if !strings.Contains(backend.action.CallbackURL, "/internal/v1/workers/worker-scroll/complete") {
 		t.Fatalf("callback action = %#v", backend.action)
 	}
 	if runtimeScroll.ArtifactDigest != "sha256:worker" {

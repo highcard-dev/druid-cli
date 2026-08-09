@@ -340,6 +340,9 @@ func reportWorkerResult(action ports.RuntimeWorkerAction, result ports.RuntimeWo
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	res, err := client.CompleteWorkerWithResponse(ctx, action.RuntimeID, body, func(_ context.Context, request *http.Request) error {
+		if action.TokenFile == "" {
+			return nil
+		}
 		token, err := os.ReadFile(action.TokenFile)
 		if err != nil {
 			return fmt.Errorf("read worker token: %w", err)

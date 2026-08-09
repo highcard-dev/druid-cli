@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
+	"github.com/highcard-dev/daemon/internal/core/ports"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/spf13/cobra"
 	"oras.land/oras-go/v2/registry/remote"
@@ -27,6 +30,43 @@ func TestWorkerPullCommandRequiresRuntimeID(t *testing.T) {
 	}
 	if got := flag.Annotations[cobra.BashCompOneRequiredFlag]; len(got) != 1 || got[0] != "true" {
 		t.Fatalf("runtime-id required annotation = %#v, want true", got)
+	}
+}
+
+func TestReportWorkerResultUsesTokenOnlyWhenProvided(t *testing.T) {
+	tests := []struct {
+		name      string
+		tokenFile string
+		wantAuth  string
+	}{
+		{name: "unsafe local", wantAuth: ""},
+		{name: "projected token", tokenFile: "token", wantAuth: "Bearer projected-token"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var authorization string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				authorization = request.Header.Get("Authorization")
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer server.Close()
+
+			tokenFile := ""
+			if tt.tokenFile != "" {
+				tokenFile = filepath.Join(t.TempDir(), "token")
+				mustWrite(t, tokenFile, "projected-token\n")
+			}
+			if err := reportWorkerResult(ports.RuntimeWorkerAction{
+				RuntimeID:   "runtime-a",
+				CallbackURL: server.URL + "/internal/v1/workers/runtime-a/complete",
+				TokenFile:   tokenFile,
+			}, ports.RuntimeWorkerResult{}); err != nil {
+				t.Fatal(err)
+			}
+			if authorization != tt.wantAuth {
+				t.Fatalf("Authorization = %q, want %q", authorization, tt.wantAuth)
+			}
+		})
 	}
 }
 
