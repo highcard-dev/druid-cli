@@ -393,13 +393,13 @@ func (h *ScrollHandler) PrepareDaemonUIPackageUpload(c *fiber.Ctx) error {
 	if !ok || identity.Kind != "ui-publish" || identity.RuntimeID != c.Params("id") {
 		return fiber.NewError(fiber.StatusForbidden, "UI publish workload identity is not authorized")
 	}
-	url, err := h.supervisor.PrepareUIPackageUpload(
+	capability, err := h.supervisor.PrepareUIPackageUpload(
 		c.Params("id"), c.Params("scope"), c.FormValue("request_id"), c.FormValue("sha256"), c.FormValue("content_md5"),
 	)
 	if err != nil {
 		return err
 	}
-	return c.SendString(url)
+	return c.SendString(capability.UploadURL + "\n" + capability.VerifyURL)
 }
 
 func (h *ScrollHandler) BackupScroll(c *fiber.Ctx, id string) error {

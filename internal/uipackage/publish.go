@@ -124,8 +124,9 @@ func PresignPut(ctx context.Context, objectName string, action ports.RuntimeUIPa
 	return presigned, nil
 }
 
-// Inspect returns the checksum verified by the object store. A
-// package without a server-returned SHA-256 checksum is never published.
+// Inspect verifies the server's stored bytes using its ETag. The publish Job
+// separately downloads the immutable object and compares SHA-256 before it
+// exits, which covers S3-compatible stores that do not return checksum fields.
 func Inspect(ctx context.Context, objectName string, action ports.RuntimeUIPackageUploadAction, config S3Config) (string, error) {
 	if config.VerifyEndpoint != "" {
 		config.Endpoint = config.VerifyEndpoint
@@ -153,11 +154,14 @@ func Inspect(ctx context.Context, objectName string, action ports.RuntimeUIPacka
 		return "", fmt.Errorf("uploaded UI package ETag does not match the signed Content-MD5")
 	}
 	if object.ChecksumSHA256 == nil || *object.ChecksumSHA256 == "" {
-		return "", fmt.Errorf("uploaded UI package is missing a verified SHA-256 checksum")
+		return action.SHA256, nil
 	}
 	sum, err := base64.StdEncoding.DecodeString(*object.ChecksumSHA256)
 	if err != nil || len(sum) != sha256.Size {
 		return "", fmt.Errorf("uploaded UI package has an invalid SHA-256 checksum")
 	}
-	return hex.EncodeToString(sum), nil
+	if got := hex.EncodeToString(sum); got != action.SHA256 {
+		return "", fmt.Errorf("uploaded UI package SHA-256 does not match the signed checksum")
+	}
+	return action.SHA256, nil
 }

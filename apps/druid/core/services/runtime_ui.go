@@ -17,36 +17,39 @@ import (
 // PrepareUIPackageUpload binds a one-shot S3 capability to digests calculated
 // by the authenticated publish Job. The pending request was created by the
 // owner-authorized publish action and is removed when that action completes.
-func (s *RuntimeSupervisor) PrepareUIPackageUpload(id string, scope string, requestID string, sha256 string, contentMD5 string) (string, error) {
+func (s *RuntimeSupervisor) PrepareUIPackageUpload(id string, scope string, requestID string, sha256 string, contentMD5 string) (ports.RuntimeUIPackageUploadCapability, error) {
 	uiScope, _, err := normalizeUIPackageRequest(scope, "")
 	if err != nil {
-		return "", err
+		return ports.RuntimeUIPackageUploadCapability{}, err
 	}
 	if sum, err := hex.DecodeString(sha256); err != nil || len(sum) != 32 {
-		return "", fmt.Errorf("invalid UI package SHA-256")
+		return ports.RuntimeUIPackageUploadCapability{}, fmt.Errorf("invalid UI package SHA-256")
 	}
 	if sum, err := base64.StdEncoding.DecodeString(contentMD5); err != nil || len(sum) != 16 {
-		return "", fmt.Errorf("invalid UI package Content-MD5")
+		return ports.RuntimeUIPackageUploadCapability{}, fmt.Errorf("invalid UI package Content-MD5")
 	}
 	s.mu.Lock()
 	action, ok := s.uiPublishes[requestID]
 	if !ok || action.RuntimeID != id || action.Scope != uiScope || action.SHA256 != "" || action.ContentMD5 != "" {
 		s.mu.Unlock()
-		return "", fmt.Errorf("unknown or already prepared UI package upload")
+		return ports.RuntimeUIPackageUploadCapability{}, fmt.Errorf("unknown or already prepared UI package upload")
 	}
 	action.SHA256 = sha256
 	action.ContentMD5 = contentMD5
 	s.uiPublishes[requestID] = action
 	s.mu.Unlock()
 
-	url, err := s.runtimeBackend.PrepareUIPackageUpload(context.Background(), action)
+	capability, err := s.runtimeBackend.PrepareUIPackageUpload(context.Background(), action)
 	if err != nil {
 		s.mu.Lock()
 		delete(s.uiPublishes, requestID)
 		s.mu.Unlock()
-		return "", err
+		return ports.RuntimeUIPackageUploadCapability{}, err
 	}
-	return url, nil
+	if capability.UploadURL == "" || capability.VerifyURL == "" {
+		return ports.RuntimeUIPackageUploadCapability{}, fmt.Errorf("UI package upload capability is incomplete")
+	}
+	return capability, nil
 }
 
 const (
@@ -159,12 +162,15 @@ cp "$source" "$artifact"
 source="$artifact"
 sha256="$(sha256sum "$source" | awk '{print $1}')"
 content_md5="$(md5sum "$source" | awk '{print $1}' | xxd -r -p | base64 | tr -d '\n')"
-url="$(curl --fail --silent --show-error --request POST \
+capability="$(curl --fail --silent --show-error --request POST \
   --header "Authorization: Bearer $(cat "$token_file")" \
   --data-urlencode "request_id=$request_id" \
   --data-urlencode "sha256=$sha256" \
   --data-urlencode "content_md5=$content_md5" \
   "$prepare_url")"
+url="$(printf '%s\n' "$capability" | sed -n '1p')"
+verify_url="$(printf '%s\n' "$capability" | sed -n '2p')"
+test -n "$url" && test -n "$verify_url"
 curl --fail --silent --show-error --request PUT --upload-file "$source" \
   --header "Content-Type: application/wasm" \
   --header "Cache-Control: public, max-age=31536000, immutable" \
@@ -172,6 +178,11 @@ curl --fail --silent --show-error --request PUT --upload-file "$source" \
   --header "x-amz-checksum-sha256: $(printf '%s' "$sha256" | xxd -r -p | base64 | tr -d '\n')" \
   --header "Content-MD5: $content_md5" \
   "$url"
+for attempt in 1 2 3 4 5; do
+  actual_sha256="$(curl --fail --silent --show-error --retry 3 "$verify_url" | sha256sum | awk '{print $1}')" && [ "$actual_sha256" = "$sha256" ] && break
+  [ "$attempt" = 5 ] && echo "uploaded UI package SHA-256 verification failed" >&2 && exit 1
+  sleep 1
+done
 `},
 		}},
 	}

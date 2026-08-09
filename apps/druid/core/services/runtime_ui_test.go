@@ -82,4 +82,8 @@ func TestPublishUIPackageRunsOneShotCommandWithEphemeralURL(t *testing.T) {
 	if strings.Contains(strings.Join(command.Command.Procedures[0].Command, " "), "http://uploads/") {
 		t.Fatal("upload URL must not be persisted in command arguments")
 	}
+	script := strings.Join(command.Command.Procedures[0].Command, " ")
+	if !strings.Contains(script, "verify_url=") || !strings.Contains(script, "uploaded UI package SHA-256 verification failed") {
+		t.Fatal("publish command must verify the uploaded public object before completion")
+	}
 }

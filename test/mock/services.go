@@ -361,10 +361,10 @@ func (mr *MockRuntimeBackendInterfaceMockRecorder) Name() *gomock.Call {
 }
 
 // PrepareUIPackageUpload mocks base method.
-func (m *MockRuntimeBackendInterface) PrepareUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (string, error) {
+func (m *MockRuntimeBackendInterface) PrepareUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageUploadCapability, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "PrepareUIPackageUpload", ctx, action)
-	ret0, _ := ret[0].(string)
+	ret0, _ := ret[0].(ports.RuntimeUIPackageUploadCapability)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

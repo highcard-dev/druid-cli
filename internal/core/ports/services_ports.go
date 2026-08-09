@@ -42,7 +42,7 @@ type RuntimeBackendInterface interface {
 	StopDev(ctx context.Context, root string) error
 	DevStatus(ctx context.Context, root string) (RuntimeDevStatus, error)
 	RunCommand(command RuntimeCommand) (*int, error)
-	PrepareUIPackageUpload(ctx context.Context, action RuntimeUIPackageUploadAction) (string, error)
+	PrepareUIPackageUpload(ctx context.Context, action RuntimeUIPackageUploadAction) (RuntimeUIPackageUploadCapability, error)
 	CompleteUIPackageUpload(ctx context.Context, action RuntimeUIPackageUploadAction) (RuntimeUIPackageResult, error)
 	ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error)
 	RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error)
@@ -122,6 +122,13 @@ type RuntimeUIPackageUploadAction struct {
 	RequestID  string
 	SHA256     string
 	ContentMD5 string
+}
+
+// RuntimeUIPackageUploadCapability exposes a short-lived upload URL and the
+// immutable public object URL that the Job verifies after upload.
+type RuntimeUIPackageUploadCapability struct {
+	UploadURL string
+	VerifyURL string
 }
 
 type RuntimeUIPackageResult struct {
