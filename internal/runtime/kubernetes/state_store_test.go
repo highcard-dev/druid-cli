@@ -105,6 +105,53 @@ func TestConfigMapStateStoreMissingScrollReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestConfigMapStateStorePreservesUIPackageScopesFromStaleUpdate(t *testing.T) {
+	store := NewConfigMapStateStoreWithClient("druid", fake.NewSimpleClientset())
+	scroll := &domain.RuntimeScroll{
+		ID:         "ui-packages",
+		Artifact:   "local",
+		Root:       ref("druid", "druid-ui-packages-data"),
+		ScrollName: "ui-packages",
+		ScrollYAML: "name: ui-packages\n",
+	}
+	if err := store.CreateScroll(scroll); err != nil {
+		t.Fatal(err)
+	}
+
+	stale, err := store.GetScroll(scroll.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateUpdate, err := store.GetScroll(scroll.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateUpdate.UIPackages = domain.RuntimeUIPackages{
+		domain.RuntimeUIPackageScopePrivate: {Path: "private/dist/app.wasm", SHA256: "private"},
+	}
+	if err := store.UpdateScroll(privateUpdate); err != nil {
+		t.Fatal(err)
+	}
+
+	stale.UIPackages = domain.RuntimeUIPackages{
+		domain.RuntimeUIPackageScopePublic: {Path: "public/dist/app.wasm", SHA256: "public"},
+	}
+	if err := store.UpdateScroll(stale); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := store.GetScroll(scroll.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.UIPackages[domain.RuntimeUIPackageScopePrivate].SHA256 != "private" {
+		t.Fatalf("private package = %#v", got.UIPackages[domain.RuntimeUIPackageScopePrivate])
+	}
+	if got.UIPackages[domain.RuntimeUIPackageScopePublic].SHA256 != "public" {
+		t.Fatalf("public package = %#v", got.UIPackages[domain.RuntimeUIPackageScopePublic])
+	}
+}
+
 func TestConfigMapStateStoreDerivesKubernetesRoots(t *testing.T) {
 	store := NewConfigMapStateStoreWithClient("druid", fake.NewSimpleClientset())
 	want := "k8s://druid/druid-container-lab-data"
