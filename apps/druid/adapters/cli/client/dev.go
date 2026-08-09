@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"mime"
 	"net/http"
@@ -140,9 +139,7 @@ func runDevServer() error {
 			return err
 		}
 	}
-	broadcast := domain.NewHub()
-	go broadcast.Run()
-	queue := &devTriggerQueue{broadcast: broadcast, commands: append([]string(nil), devCommands...)}
+	queue := &devTriggerQueue{}
 	watch := coreservices.NewDevService(queue, devScrollService{commands: devCommands})
 	if len(devCommands) > 0 {
 		if err := watch.SetHotReloadCommands(devCommands); err != nil {
@@ -152,7 +149,7 @@ func runDevServer() error {
 	if err := watch.StartWatching(root, devWatchPaths...); err != nil {
 		return err
 	}
-	app := newDevApp(root, broadcast, queue, auth)
+	app := newDevApp(root, watch, auth)
 	return app.Listen(devListen)
 }
 
@@ -163,7 +160,7 @@ type devAuth struct {
 	ownerID   string
 }
 
-func newDevApp(root string, broadcast *domain.BroadcastChannel, queue *devTriggerQueue, authOpt ...devAuth) *fiber.App {
+func newDevApp(root string, watch ports.WatchServiceInterface, authOpt ...devAuth) *fiber.App {
 	auth := devAuth{}
 	if len(authOpt) > 0 {
 		auth = authOpt[0]
@@ -174,7 +171,7 @@ func newDevApp(root string, broadcast *domain.BroadcastChannel, queue *devTrigge
 		ErrorHandler:          runtimehandlers.ErrorHandler,
 	})
 	app.Use(runtimehandlers.RequestLogger)
-	server := devServer{root: root, broadcast: broadcast, queue: queue, auth: auth}
+	server := devServer{root: root, watch: watch, auth: auth}
 	app.Use(func(c *fiber.Ctx) error {
 		c.Set("Access-Control-Allow-Origin", "*")
 		c.Set("Access-Control-Allow-Methods", "GET,HEAD,PUT,OPTIONS,PROPFIND,MKCOL,MOVE,COPY,DELETE")
@@ -192,25 +189,15 @@ func newDevApp(root string, broadcast *domain.BroadcastChannel, queue *devTrigge
 		LockSystem: webdav.NewMemLS(),
 	})
 	app.All("/webdav/*", func(c *fiber.Ctx) error {
-		if err := webdavHandler(c); err != nil {
-			return err
-		}
-		switch c.Method() {
-		case fiber.MethodPut, "DELETE", "MKCOL", "MOVE", "COPY":
-			if c.Response().StatusCode() < fiber.StatusBadRequest {
-				server.queue.Trigger()
-			}
-		}
-		return nil
+		return webdavHandler(c)
 	})
 	return app
 }
 
 type devServer struct {
-	root      string
-	broadcast *domain.BroadcastChannel
-	queue     *devTriggerQueue
-	auth      devAuth
+	root  string
+	watch ports.WatchServiceInterface
+	auth  devAuth
 }
 
 func (s devServer) GetHealth(c *fiber.Ctx) error { return c.SendString("ok") }
@@ -269,11 +256,11 @@ func (s devServer) PutFile(c *fiber.Ctx, params devapi.PutFileParams) error {
 func (s devServer) WatchNotifications(c *fiber.Ctx) error {
 	return websocket.New(func(conn *websocket.Conn) {
 		defer conn.Close()
-		sub := s.broadcast.Subscribe()
+		sub := s.watch.Subscribe()
 		if sub == nil {
 			return
 		}
-		defer s.broadcast.Unsubscribe(sub)
+		defer s.watch.Unsubscribe(sub)
 		ping := time.NewTicker(30 * time.Second)
 		defer ping.Stop()
 		for {
@@ -327,7 +314,6 @@ func (s devServer) writeFile(c *fiber.Ctx, raw string) error {
 	if err := os.WriteFile(fullPath, c.Body(), 0644); err != nil {
 		return err
 	}
-	s.queue.Trigger()
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
@@ -344,35 +330,14 @@ func devFilePath(root string, raw string) (string, error) {
 	return full, nil
 }
 
-type devTriggerQueue struct {
-	broadcast *domain.BroadcastChannel
-	commands  []string
-}
+type devTriggerQueue struct{}
 
-func (q *devTriggerQueue) AddTempItem(string) error { return q.Trigger() }
+func (q *devTriggerQueue) AddTempItem(string) error { return nil }
 func (q *devTriggerQueue) AddTempItemWithWait(command string) error {
 	return q.runCommand(command)
 }
 func (q *devTriggerQueue) GetQueue() map[string]domain.ScrollLockStatus {
 	return nil
-}
-
-func (q *devTriggerQueue) Trigger() error {
-	for _, command := range q.commands {
-		q.broadcastEvent("build-started")
-		err := q.runCommand(command)
-		if err != nil {
-			q.broadcastEvent("build-failed")
-			return err
-		}
-		q.broadcastEvent("build-ended")
-	}
-	return nil
-}
-
-func (q *devTriggerQueue) broadcastEvent(name string) {
-	data, _ := json.Marshal(map[string]any{"command_key": name, "timestamp": time.Now()})
-	q.broadcast.Broadcast(data)
 }
 
 func (q *devTriggerQueue) runCommand(command string) error {

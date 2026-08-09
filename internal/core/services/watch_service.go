@@ -123,7 +123,7 @@ func (uds *WatchService) StartWatching(basePath string, paths ...string) error {
 	}
 
 	// Start the event processing goroutine
-	go uds.processEvents()
+	go uds.processEvents(uds.ctx, watcher)
 
 	// Start the broadcast hub
 	go uds.broadcastChannel.Run()
@@ -244,7 +244,7 @@ func (uds *WatchService) addWatchPath(path string) error {
 }
 
 // processEvents handles file system events and broadcasts them to subscribers
-func (uds *WatchService) processEvents() {
+func (uds *WatchService) processEvents(ctx context.Context, watcher *fsnotify.Watcher) {
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Log().Error("File watcher panic recovered", zap.Any("error", r))
@@ -253,11 +253,11 @@ func (uds *WatchService) processEvents() {
 
 	for {
 		select {
-		case <-uds.ctx.Done():
+		case <-ctx.Done():
 			logger.Log().Info("File watcher context cancelled")
 			return
 
-		case event, ok := <-uds.watcher.Events:
+		case event, ok := <-watcher.Events:
 			if !ok {
 				logger.Log().Info("File watcher events channel closed")
 				return
@@ -268,7 +268,7 @@ func (uds *WatchService) processEvents() {
 			}
 			uds.handleFileEvent(event)
 
-		case err, ok := <-uds.watcher.Errors:
+		case err, ok := <-watcher.Errors:
 			if !ok {
 				logger.Log().Info("File watcher errors channel closed")
 				return
