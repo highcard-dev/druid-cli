@@ -44,6 +44,7 @@ func RegisterManagementRoutes(app *fiber.App, handlers RouteHandlers) {
 	app.Get("/api/v1/scrolls/:id/dev/status", handlers.Server.GetDaemonWatchStatus)
 	app.Post("/api/v1/scrolls/:id/dev/enable", handlers.Server.EnableDaemonWatch)
 	app.Post("/api/v1/scrolls/:id/dev/disable", handlers.Server.DisableDaemonWatch)
+	app.Post("/api/v1/scrolls/:id/ui/packages/:scope/prepare", handlers.Server.PrepareDaemonUIPackageUpload)
 }
 
 func RegisterPublicRoutes(app *fiber.App, handlers RouteHandlers) {

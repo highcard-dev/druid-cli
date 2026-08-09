@@ -116,10 +116,12 @@ func (c RuntimeCommand) ObserveProcedureStatus(procedure string, status domain.S
 }
 
 type RuntimeUIPackageUploadAction struct {
-	RuntimeID string
-	RootRef   string
-	Scope     domain.RuntimeUIPackageScope
-	RequestID string
+	RuntimeID  string
+	RootRef    string
+	Scope      domain.RuntimeUIPackageScope
+	RequestID  string
+	SHA256     string
+	ContentMD5 string
 }
 
 type RuntimeUIPackageResult struct {

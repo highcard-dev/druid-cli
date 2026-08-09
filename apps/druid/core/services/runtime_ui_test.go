@@ -48,11 +48,18 @@ func TestPublishUIPackageRunsOneShotCommandWithEphemeralURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	var command ports.RuntimeCommand
+	var supervisor *RuntimeSupervisor
 	backend := &fakeWorkerBackend{runCommand: func(got ports.RuntimeCommand) (*int, error) {
 		command = got
+		procedure := domain.ProcedureName(got.Name, 0, got.Command.Procedures[0])
+		values := got.ProcedureEnv[procedure]
+		if _, err := supervisor.PrepareUIPackageUpload("ui-scroll", "private", values["DRUID_UI_REQUEST_ID"], strings.Repeat("a", 64), "AAAAAAAAAAAAAAAAAAAAAA=="); err != nil {
+			return nil, err
+		}
 		return nil, nil
 	}}
-	supervisor := NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), backend)
+	supervisor = NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), backend)
+	supervisor.SetDevWorkerConfig("http://daemon", "", "")
 
 	updated, err := supervisor.PublishUIPackage("ui-scroll", "private", "")
 	if err != nil {
@@ -69,10 +76,10 @@ func TestPublishUIPackageRunsOneShotCommandWithEphemeralURL(t *testing.T) {
 	}
 	procedure := domain.ProcedureName(command.Name, 0, command.Command.Procedures[0])
 	values := command.ProcedureEnv[procedure]
-	if values["DRUID_UI_SOURCE"] != "private/dist/app.wasm" || !strings.HasPrefix(values["DRUID_UI_UPLOAD_URL"], "http://uploads/ui-scroll/private") {
+	if values["DRUID_UI_SOURCE"] != "private/dist/app.wasm" || values["DRUID_UI_REQUEST_ID"] == "" || values["DRUID_UI_PREPARE_URL"] != "http://daemon/api/v1/scrolls/ui-scroll/ui/packages/private/prepare" {
 		t.Fatalf("procedure env = %#v", values)
 	}
-	if strings.Contains(strings.Join(command.Command.Procedures[0].Command, " "), values["DRUID_UI_UPLOAD_URL"]) {
+	if strings.Contains(strings.Join(command.Command.Procedures[0].Command, " "), "http://uploads/") {
 		t.Fatal("upload URL must not be persisted in command arguments")
 	}
 }

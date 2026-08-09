@@ -18,7 +18,7 @@ func (b *Backend) PrepareUIPackageUpload(ctx context.Context, action ports.Runti
 	if err != nil {
 		return "", err
 	}
-	return uipackage.PresignPut(ctx, uiPackageObjectName(action), b.uiPackageS3Config(namespace, action))
+	return uipackage.PresignPut(ctx, uiPackageObjectName(action), action, b.uiPackageS3Config(namespace, action))
 }
 
 func (b *Backend) CompleteUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageResult, error) {
@@ -31,7 +31,7 @@ func (b *Backend) CompleteUIPackageUpload(ctx context.Context, action ports.Runt
 	}
 	config := b.uiPackageS3Config(namespace, action)
 	objectName := uiPackageObjectName(action)
-	sha256, err := uipackage.Inspect(ctx, objectName, config)
+	sha256, err := uipackage.Inspect(ctx, objectName, action, config)
 	if err != nil {
 		return ports.RuntimeUIPackageResult{}, fmt.Errorf("verify uploaded UI package: %w", err)
 	}

@@ -16,6 +16,23 @@ func TestRootCommandExposesRuntimeAndOCICommands(t *testing.T) {
 	}
 }
 
+func TestUIPackagePreparePathRequiresExactRuntimeAndScope(t *testing.T) {
+	for _, test := range []struct {
+		path string
+		want bool
+	}{
+		{"/api/v1/scrolls/runtime-a/ui/packages/private/prepare", true},
+		{"/api/v1/scrolls/runtime-a/ui/packages/public/prepare", true},
+		{"/api/v1/scrolls/runtime-b/ui/packages/private/prepare", false},
+		{"/api/v1/scrolls/runtime-a/ui/packages/private/prepare/extra", false},
+		{"/api/v1/scrolls/runtime-a/ui/packages/admin/prepare", false},
+	} {
+		if got := isUIPackagePreparePath(test.path, "runtime-a"); got != test.want {
+			t.Fatalf("isUIPackagePreparePath(%q) = %t, want %t", test.path, got, test.want)
+		}
+	}
+}
+
 func TestDaemonCommandExposesRuntimeListeners(t *testing.T) {
 	for _, name := range []string{"tcp", "port"} {
 		if flag := DaemonCommand.Flags().Lookup(name); flag != nil {

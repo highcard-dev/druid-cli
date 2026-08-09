@@ -31,6 +31,38 @@ func TestAuthenticateWorkloadRequiresBoundDruidDevPod(t *testing.T) {
 	}
 }
 
+func TestAuthenticateWorkloadAcceptsOnlyDruidUIPublishJob(t *testing.T) {
+	client := k8sfake.NewSimpleClientset(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "publish-0", Namespace: "games", UID: types.UID("pod-uid"), Labels: map[string]string{
+			labelManagedBy: "druid", labelRuntimeID: "runtime-a", labelCommand: "ui-publish-private", labelProcedure: "ui-publish-private-0",
+		}},
+		Spec: corev1.PodSpec{ServiceAccountName: runtimeDevServiceAccount},
+	})
+	client.PrependReactor("create", "tokenreviews", tokenReviewReactor(runtimeDevServiceAccount, "games", "publish-0", "pod-uid", true))
+	backend := NewWithClient(Config{Namespace: "games", OperatorServiceAccount: "operator-system/operator"}, nil, client)
+	identity, err := backend.AuthenticateWorkload(context.Background(), "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.Kind != "ui-publish" || identity.RuntimeID != "runtime-a" {
+		t.Fatalf("identity = %#v", identity)
+	}
+}
+
+func TestAuthenticateWorkloadRejectsUnrelatedDevServiceAccountPod(t *testing.T) {
+	client := k8sfake.NewSimpleClientset(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "other-0", Namespace: "games", UID: types.UID("pod-uid"), Labels: map[string]string{
+			labelManagedBy: "druid", labelRuntimeID: "runtime-a", labelCommand: "ui-publish-private", labelProcedure: "different-procedure",
+		}},
+		Spec: corev1.PodSpec{ServiceAccountName: runtimeDevServiceAccount},
+	})
+	client.PrependReactor("create", "tokenreviews", tokenReviewReactor(runtimeDevServiceAccount, "games", "other-0", "pod-uid", true))
+	backend := NewWithClient(Config{Namespace: "games", OperatorServiceAccount: "operator-system/operator"}, nil, client)
+	if _, err := backend.AuthenticateWorkload(context.Background(), "token"); err == nil {
+		t.Fatal("unrelated Druid dev service account pod was accepted")
+	}
+}
+
 func TestAuthenticateWorkloadRejectsWrongAudienceOrDeletedPod(t *testing.T) {
 	client := k8sfake.NewSimpleClientset()
 	client.PrependReactor("create", "tokenreviews", tokenReviewReactor(runtimeWorkerServiceAccount, "games", "worker-0", "pod-uid", false))

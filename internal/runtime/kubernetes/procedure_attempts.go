@@ -134,7 +134,7 @@ func (b *Backend) createOrReuseProcedureJob(ctx context.Context, namespace strin
 		return active, nil
 	}
 	name := procedureAttemptName(baseName, nextAttempt)
-	job, err := procedureJobSpec(namespace, root, commandName, procedureName, name, nextAttempt, procedure, env, b.config.RegistrySecret)
+	job, err := procedureJobSpec(namespace, root, commandName, procedureName, name, nextAttempt, procedure, env, b.config.RegistrySecret, b.config.ServiceAccountAudience)
 	if err != nil {
 		return nil, err
 	}
