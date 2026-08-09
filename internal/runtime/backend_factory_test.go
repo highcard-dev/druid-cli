@@ -107,8 +107,8 @@ func (f fakeBackend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 	return nil, nil
 }
 
-func (f fakeBackend) PrepareUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (string, error) {
-	return "", nil
+func (f fakeBackend) PrepareUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageUploadCapability, error) {
+	return ports.RuntimeUIPackageUploadCapability{}, nil
 }
 
 func (f fakeBackend) CompleteUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageResult, error) {

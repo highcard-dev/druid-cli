@@ -10,15 +10,20 @@ import (
 	"github.com/highcard-dev/daemon/internal/uipackage"
 )
 
-func (b *Backend) PrepareUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (string, error) {
+func (b *Backend) PrepareUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageUploadCapability, error) {
 	if err := b.config.ValidateForUIPublishing(); err != nil {
-		return "", err
+		return ports.RuntimeUIPackageUploadCapability{}, err
 	}
 	namespace, _, err := parseRef(action.RootRef)
 	if err != nil {
-		return "", err
+		return ports.RuntimeUIPackageUploadCapability{}, err
 	}
-	return uipackage.PresignPut(ctx, uiPackageObjectName(action), action, b.uiPackageS3Config(namespace, action))
+	config := b.uiPackageS3Config(namespace, action)
+	uploadURL, err := uipackage.PresignPut(ctx, uiPackageObjectName(action), action, config)
+	if err != nil {
+		return ports.RuntimeUIPackageUploadCapability{}, err
+	}
+	return ports.RuntimeUIPackageUploadCapability{UploadURL: uploadURL, VerifyURL: b.uiPackagePublicURL(config, action)}, nil
 }
 
 func (b *Backend) CompleteUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageResult, error) {
@@ -36,9 +41,13 @@ func (b *Backend) CompleteUIPackageUpload(ctx context.Context, action ports.Runt
 		return ports.RuntimeUIPackageResult{}, fmt.Errorf("verify uploaded UI package: %w", err)
 	}
 	return ports.RuntimeUIPackageResult{
-		URL:    strings.TrimRight(b.config.UIS3PublicBaseURL, "/") + "/" + path.Join(config.KeyPrefix, objectName),
+		URL:    b.uiPackagePublicURL(config, action),
 		SHA256: sha256,
 	}, nil
+}
+
+func (b *Backend) uiPackagePublicURL(config uipackage.S3Config, action ports.RuntimeUIPackageUploadAction) string {
+	return strings.TrimRight(b.config.UIS3PublicBaseURL, "/") + "/" + path.Join(config.KeyPrefix, uiPackageObjectName(action))
 }
 
 func uiPackageObjectName(action ports.RuntimeUIPackageUploadAction) string {
