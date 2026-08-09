@@ -21,19 +21,20 @@ type Backend struct {
 }
 
 type Config struct {
-	WorkerImage       string
-	Network           string
-	Storage           string
-	BindRoot          string
-	VolumePrefix      string
-	UIS3Bucket        string
-	UIS3PublicBaseURL string
-	UIS3Region        string
-	UIS3Endpoint      string
-	UIS3Prefix        string
-	UIS3AccessKey     string
-	UIS3SecretKey     string
-	UIS3SessionToken  string
+	WorkerImage        string
+	Network            string
+	Storage            string
+	BindRoot           string
+	VolumePrefix       string
+	UIS3Bucket         string
+	UIS3PublicBaseURL  string
+	UIS3Region         string
+	UIS3Endpoint       string
+	UIS3DaemonEndpoint string
+	UIS3Prefix         string
+	UIS3AccessKey      string
+	UIS3SecretKey      string
+	UIS3SessionToken   string
 }
 
 func (c Config) WithDefaults() Config {
@@ -69,6 +70,9 @@ func (c Config) WithDefaults() Config {
 	}
 	if c.UIS3Endpoint == "" {
 		c.UIS3Endpoint = os.Getenv("DRUID_DOCKER_UI_S3_ENDPOINT")
+	}
+	if c.UIS3DaemonEndpoint == "" {
+		c.UIS3DaemonEndpoint = os.Getenv("DRUID_DOCKER_UI_S3_DAEMON_ENDPOINT")
 	}
 	if c.UIS3Prefix == "" {
 		c.UIS3Prefix = os.Getenv("DRUID_DOCKER_UI_S3_PREFIX")

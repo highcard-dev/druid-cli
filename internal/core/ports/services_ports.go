@@ -119,8 +119,7 @@ type RuntimeUIPackageUploadAction struct {
 	RuntimeID string
 	RootRef   string
 	Scope     domain.RuntimeUIPackageScope
-	SHA256    string
-	Size      int64
+	RequestID string
 }
 
 type RuntimeUIPackageResult struct {

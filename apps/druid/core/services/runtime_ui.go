@@ -2,13 +2,12 @@ package services
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 )
@@ -16,18 +15,18 @@ import (
 const (
 	defaultPrivateUIPackagePath = "private/dist/app.wasm"
 	defaultPublicUIPackagePath  = "public/dist/app.wasm"
-	uiPublishTTL                = 10 * time.Minute
-	maxUIPackageSize            = 256 << 20
+	uiPublishImage              = "curlimages/curl:8.12.1"
 )
 
-// PublishUIPackage creates durable work for the authenticated dev workload.
-// It deliberately does not ask the daemon to read from the workload.
+// PublishUIPackage runs the same one-shot command lifecycle as other runtime
+// actions. The URL is an expiring, exact-object capability and is never
+// persisted in the deployment definition.
 func (s *RuntimeSupervisor) PublishUIPackage(id string, scope string, sourcePath string) (*domain.RuntimeScroll, error) {
 	runtimeScroll, err := s.store.GetScroll(id)
 	if err != nil {
 		return nil, err
 	}
-	uiScope, path, err := normalizeUIPackageRequest(scope, sourcePath)
+	uiScope, sourcePath, err := normalizeUIPackageRequest(scope, sourcePath)
 	if err != nil {
 		return nil, err
 	}
@@ -38,133 +37,79 @@ func (s *RuntimeSupervisor) PublishUIPackage(id string, scope string, sourcePath
 	if status != ports.RuntimeDevStatusReady {
 		return nil, fmt.Errorf("Druid Developer Mode must be ready before publishing a UI package (current status: %s)", status)
 	}
-	requestID, err := newUIPackagePublishID()
-	if err != nil {
-		return nil, err
-	}
-	now := time.Now().UTC()
-	if runtimeScroll.UIPackagePublishes == nil {
-		runtimeScroll.UIPackagePublishes = map[domain.RuntimeUIPackageScope]domain.UIPackagePublish{}
-	}
-	runtimeScroll.UIPackagePublishes[uiScope] = domain.UIPackagePublish{
-		ID: requestID, Scope: uiScope, Path: path, Status: domain.UIPackagePublishPending,
-		ExpiresAt: now.Add(uiPublishTTL), UpdatedAt: now,
-	}
-	if err := s.store.UpdateScroll(runtimeScroll); err != nil {
-		return nil, err
-	}
-	return s.store.GetScroll(id)
-}
 
-func (s *RuntimeSupervisor) ClaimUIPackagePublish(id, podUID string) (*domain.UIPackagePublish, error) {
-	runtimeScroll, err := s.store.GetScroll(id)
+	action := ports.RuntimeUIPackageUploadAction{
+		RuntimeID: runtimeScroll.ID,
+		RootRef:   runtimeScroll.Root,
+		Scope:     uiScope,
+		RequestID: uuid.NewString(),
+	}
+	uploadURL, err := s.runtimeBackend.PrepareUIPackageUpload(context.Background(), action)
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now().UTC()
-	for scope, request := range runtimeScroll.UIPackagePublishes {
-		if request.Status == domain.UIPackagePublishCompleted || request.Status == domain.UIPackagePublishFailed {
-			continue
-		}
-		if !now.Before(request.ExpiresAt) {
-			request.Status = domain.UIPackagePublishFailed
-			request.Error = "publish request expired"
-			request.UpdatedAt = now
-			runtimeScroll.UIPackagePublishes[scope] = request
-			continue
-		}
-		if request.Status == domain.UIPackagePublishPending || request.ClaimPod == podUID {
-			request.Status = domain.UIPackagePublishClaimed
-			request.ClaimPod = podUID
-			request.UpdatedAt = now
-			runtimeScroll.UIPackagePublishes[scope] = request
-			if err := s.store.UpdateScroll(runtimeScroll); err != nil {
-				return nil, err
-			}
-			return &request, nil
-		}
-	}
-	if err := s.store.UpdateScroll(runtimeScroll); err != nil {
-		return nil, err
-	}
-	return nil, nil
-}
 
-func (s *RuntimeSupervisor) PrepareUIPackagePublish(id, requestID, podUID, sha256 string, size int64) (string, error) {
-	runtimeScroll, request, err := s.activeUIPackagePublish(id, requestID, podUID)
-	if err != nil {
-		return "", err
-	}
-	if !validUIPackageDigest(sha256) || size <= 0 || size > maxUIPackageSize {
-		return "", fmt.Errorf("invalid UI package hash or size")
-	}
-	request.SHA256 = sha256
-	request.Size = size
-	request.UpdatedAt = time.Now().UTC()
-	runtimeScroll.UIPackagePublishes[request.Scope] = *request
-	if err := s.store.UpdateScroll(runtimeScroll); err != nil {
-		return "", err
-	}
-	return s.runtimeBackend.PrepareUIPackageUpload(context.Background(), ports.RuntimeUIPackageUploadAction{
-		RuntimeID: runtimeScroll.ID, RootRef: runtimeScroll.Root, Scope: request.Scope, SHA256: sha256, Size: size,
-	})
-}
-
-func (s *RuntimeSupervisor) CompleteUIPackagePublish(id, requestID, podUID, sha256 string, size int64) (*domain.RuntimeScroll, error) {
-	runtimeScroll, request, err := s.activeUIPackagePublish(id, requestID, podUID)
+	commandName := "ui_publish_" + string(uiScope)
+	command := uiPublishCommand()
+	session, err := s.sessionFor(runtimeScroll.ID)
 	if err != nil {
 		return nil, err
 	}
-	if request.SHA256 != sha256 || request.Size != size {
-		return nil, fmt.Errorf("UI package completion does not match prepared upload")
+	if err := session.AddCommand(commandName, command); err != nil {
+		return nil, err
 	}
-	result, err := s.runtimeBackend.CompleteUIPackageUpload(context.Background(), ports.RuntimeUIPackageUploadAction{
-		RuntimeID: runtimeScroll.ID, RootRef: runtimeScroll.Root, Scope: request.Scope, SHA256: sha256, Size: size,
-	})
+	procedureName := domain.ProcedureName(commandName, 0, command.Procedures[0])
+	if err := session.AddTempItemWithWaitEnv(commandName, map[string]map[string]string{
+		procedureName: {
+			"DRUID_UI_SOURCE":     sourcePath,
+			"DRUID_UI_UPLOAD_URL": uploadURL,
+		},
+	}); err != nil {
+		return nil, err
+	}
+
+	result, err := s.runtimeBackend.CompleteUIPackageUpload(context.Background(), action)
+	if err != nil {
+		return nil, fmt.Errorf("verify uploaded UI package: %w", err)
+	}
+	runtimeScroll, err = s.store.GetScroll(id)
 	if err != nil {
 		return nil, err
 	}
 	if runtimeScroll.UIPackages == nil {
 		runtimeScroll.UIPackages = domain.RuntimeUIPackages{}
 	}
-	now := time.Now().UTC()
-	runtimeScroll.UIPackages[request.Scope] = domain.RuntimeUIPackage{URL: result.URL, Path: request.Path, SHA256: result.SHA256, UpdatedAt: now}
-	request.Status = domain.UIPackagePublishCompleted
-	request.UpdatedAt = now
-	runtimeScroll.UIPackagePublishes[request.Scope] = *request
+	runtimeScroll.UIPackages[uiScope] = domain.RuntimeUIPackage{
+		URL: result.URL, Path: sourcePath, SHA256: result.SHA256, UpdatedAt: time.Now().UTC(),
+	}
 	if err := s.store.UpdateScroll(runtimeScroll); err != nil {
 		return nil, err
 	}
 	return s.store.GetScroll(id)
 }
 
-func (s *RuntimeSupervisor) FailUIPackagePublish(id, requestID, podUID, message string) error {
-	runtimeScroll, request, err := s.activeUIPackagePublish(id, requestID, podUID)
-	if err != nil {
-		return err
+func uiPublishCommand() *domain.CommandInstructionSet {
+	return &domain.CommandInstructionSet{
+		Run: domain.RunModeOnce,
+		Procedures: []*domain.Procedure{{
+			Image:      uiPublishImage,
+			WorkingDir: "/app/resources/deployment",
+			Mounts:     []domain.Mount{{Path: "/app/resources/deployment"}},
+			Command: []string{"sh", "-ec", `
+source="${DRUID_UI_SOURCE:?DRUID_UI_SOURCE is required}"
+url="${DRUID_UI_UPLOAD_URL:?DRUID_UI_UPLOAD_URL is required}"
+case "$source" in private/*.wasm|public/*.wasm) ;; *) echo "invalid UI package path" >&2; exit 1;; esac
+test -f "$source" && test -s "$source"
+checksum="$(sha256sum "$source" | awk '{print $1}' | xxd -r -p | base64 -w 0)"
+curl --fail --silent --show-error --request PUT --upload-file "$source" \
+  --header "Content-Type: application/wasm" \
+  --header "Cache-Control: public, max-age=31536000, immutable" \
+  --header "x-amz-sdk-checksum-algorithm: SHA256" \
+  --header "x-amz-checksum-sha256: $checksum" \
+  "$url"
+`},
+		}},
 	}
-	request.Status = domain.UIPackagePublishFailed
-	request.Error = strings.TrimSpace(message)
-	request.UpdatedAt = time.Now().UTC()
-	runtimeScroll.UIPackagePublishes[request.Scope] = *request
-	return s.store.UpdateScroll(runtimeScroll)
-}
-
-func (s *RuntimeSupervisor) activeUIPackagePublish(id, requestID, podUID string) (*domain.RuntimeScroll, *domain.UIPackagePublish, error) {
-	runtimeScroll, err := s.store.GetScroll(id)
-	if err != nil {
-		return nil, nil, err
-	}
-	for _, request := range runtimeScroll.UIPackagePublishes {
-		if request.ID != requestID {
-			continue
-		}
-		if request.Status != domain.UIPackagePublishClaimed || request.ClaimPod != podUID || !time.Now().UTC().Before(request.ExpiresAt) {
-			return nil, nil, fmt.Errorf("UI package publish request is not active for this workload")
-		}
-		return runtimeScroll, &request, nil
-	}
-	return nil, nil, fmt.Errorf("UI package publish request not found")
 }
 
 func (s *RuntimeSupervisor) UIPackages(id string) (domain.RuntimeUIPackages, error) {
@@ -201,20 +146,4 @@ func normalizeUIPackageRequest(scope string, sourcePath string) (domain.RuntimeU
 		return "", "", fmt.Errorf("ui package path must point to a %s .wasm file", uiScope)
 	}
 	return uiScope, cleaned, nil
-}
-
-func newUIPackagePublishID() (string, error) {
-	value := make([]byte, 16)
-	if _, err := rand.Read(value); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(value), nil
-}
-
-func validUIPackageDigest(value string) bool {
-	if len(value) != 64 {
-		return false
-	}
-	_, err := hex.DecodeString(value)
-	return err == nil
 }

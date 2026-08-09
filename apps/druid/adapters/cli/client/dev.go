@@ -2,10 +2,8 @@ package client
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"io"
 	"mime"
 	"net/http"
 	"os"
@@ -23,7 +21,6 @@ import (
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	coreservices "github.com/highcard-dev/daemon/internal/core/services"
 	"github.com/highcard-dev/daemon/internal/devapi"
-	"github.com/highcard-dev/daemon/internal/uipackage"
 	"github.com/spf13/cobra"
 	"golang.org/x/net/webdav"
 )
@@ -155,8 +152,6 @@ func runDevServer() error {
 	if err := watch.StartWatching(root, devWatchPaths...); err != nil {
 		return err
 	}
-	go runUIPackagePublishLoop(root, devDaemonURL, devDaemonTokenFile)
-
 	app := newDevApp(root, broadcast, queue, auth)
 	return app.Listen(devListen)
 }
@@ -251,169 +246,6 @@ func (s devServer) authMiddleware(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "missing or invalid token")
 	}
 	return c.Next()
-}
-
-type uiPublishRequest struct {
-	ID   string `json:"id"`
-	Path string `json:"path"`
-}
-
-func runUIPackagePublishLoop(root string, daemonURL string, tokenFile string) {
-	if strings.TrimSpace(daemonURL) == "" {
-		return
-	}
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for {
-		if err := processUIPackagePublish(root, daemonURL, tokenFile); err != nil {
-			fmt.Fprintf(os.Stderr, "druid dev UI publish: %v\n", err)
-		}
-		<-ticker.C
-	}
-}
-
-func processUIPackagePublish(root string, daemonURL string, tokenFile string) error {
-	response, err := devDaemonRequest(context.Background(), daemonURL, tokenFile, http.MethodPost, "/internal/v1/ui/publishes/claim", nil)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	if response.StatusCode == http.StatusNoContent {
-		return nil
-	}
-	if response.StatusCode != http.StatusOK {
-		return daemonResponseError(response)
-	}
-	var request uiPublishRequest
-	if err := json.NewDecoder(response.Body).Decode(&request); err != nil {
-		return err
-	}
-	if request.ID == "" || request.Path == "" {
-		return fmt.Errorf("daemon returned invalid UI publish request")
-	}
-	return fulfillUIPackagePublish(root, daemonURL, tokenFile, request)
-}
-
-func fulfillUIPackagePublish(root string, daemonURL string, tokenFile string, request uiPublishRequest) error {
-	fail := func(cause error) error {
-		body, _ := json.Marshal(fiber.Map{"error": cause.Error()})
-		response, failErr := devDaemonRequest(context.Background(), daemonURL, tokenFile, http.MethodPost, "/internal/v1/ui/publishes/"+request.ID+"/fail", body)
-		if failErr == nil {
-			response.Body.Close()
-		}
-		if failErr != nil {
-			return fmt.Errorf("%v; report publish failure: %w", cause, failErr)
-		}
-		return cause
-	}
-	file, size, digest, err := openUIPackage(root, request.Path)
-	if err != nil {
-		return fail(err)
-	}
-	defer file.Close()
-	body, err := json.Marshal(fiber.Map{"sha256": digest, "size": size})
-	if err != nil {
-		return fail(err)
-	}
-	prepare, err := devDaemonRequest(context.Background(), daemonURL, tokenFile, http.MethodPost, "/internal/v1/ui/publishes/"+request.ID+"/prepare", body)
-	if err != nil {
-		return fail(err)
-	}
-	defer prepare.Body.Close()
-	if prepare.StatusCode != http.StatusOK {
-		return fail(daemonResponseError(prepare))
-	}
-	var prepared struct {
-		URL string `json:"url"`
-	}
-	if err := json.NewDecoder(prepare.Body).Decode(&prepared); err != nil || prepared.URL == "" {
-		if err == nil {
-			err = fmt.Errorf("daemon returned empty upload URL")
-		}
-		return fail(err)
-	}
-	checksum, err := uipackage.ChecksumSHA256(digest)
-	if err != nil {
-		return fail(err)
-	}
-	upload, err := http.NewRequestWithContext(context.Background(), http.MethodPut, prepared.URL, file)
-	if err != nil {
-		return fail(err)
-	}
-	upload.ContentLength = size
-	upload.Header.Set("Content-Type", "application/wasm")
-	upload.Header.Set("Cache-Control", "public, max-age=31536000, immutable")
-	upload.Header.Set("x-amz-checksum-sha256", checksum)
-	uploadResponse, err := http.DefaultClient.Do(upload)
-	if err != nil {
-		return fail(err)
-	}
-	defer uploadResponse.Body.Close()
-	if uploadResponse.StatusCode < http.StatusOK || uploadResponse.StatusCode >= http.StatusMultipleChoices {
-		return fail(fmt.Errorf("UI package upload returned %s", uploadResponse.Status))
-	}
-	complete, err := devDaemonRequest(context.Background(), daemonURL, tokenFile, http.MethodPost, "/internal/v1/ui/publishes/"+request.ID+"/complete", body)
-	if err != nil {
-		return fail(err)
-	}
-	defer complete.Body.Close()
-	if complete.StatusCode != http.StatusOK {
-		return fail(daemonResponseError(complete))
-	}
-	return nil
-}
-
-func openUIPackage(root string, requestedPath string) (*os.File, int64, string, error) {
-	path := filepath.ToSlash(filepath.Clean(strings.TrimPrefix(requestedPath, "/")))
-	if filepath.Ext(path) != ".wasm" || (!strings.HasPrefix(path, "private/") && !strings.HasPrefix(path, "public/")) {
-		return nil, 0, "", fmt.Errorf("invalid UI package path")
-	}
-	file, err := os.Open(filepath.Join(root, domain.RuntimeDataDir, filepath.FromSlash(path)))
-	if err != nil {
-		return nil, 0, "", err
-	}
-	info, err := file.Stat()
-	if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > 256<<20 {
-		file.Close()
-		if err == nil {
-			err = fmt.Errorf("invalid UI package file")
-		}
-		return nil, 0, "", err
-	}
-	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		file.Close()
-		return nil, 0, "", err
-	}
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		file.Close()
-		return nil, 0, "", err
-	}
-	return file, info.Size(), fmt.Sprintf("%x", hash.Sum(nil)), nil
-}
-
-func devDaemonRequest(ctx context.Context, daemonURL string, tokenFile string, method string, endpoint string, body []byte) (*http.Response, error) {
-	request, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(daemonURL, "/")+endpoint, strings.NewReader(string(body)))
-	if err != nil {
-		return nil, err
-	}
-	if tokenFile != "" {
-		token, err := os.ReadFile(tokenFile)
-		if err != nil {
-			return nil, fmt.Errorf("read projected daemon token: %w", err)
-		}
-		request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
-	}
-	request.Header.Set("X-Druid-Runtime-ID", devRuntimeID)
-	if body != nil {
-		request.Header.Set("Content-Type", "application/json")
-	}
-	return http.DefaultClient.Do(request)
-}
-
-func daemonResponseError(response *http.Response) error {
-	body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
-	return fmt.Errorf("daemon returned %s: %s", response.Status, strings.TrimSpace(string(body)))
 }
 
 func (s devServer) GetFile(c *fiber.Ctx, params devapi.GetFileParams) error {

@@ -298,7 +298,7 @@ func workloadIdentityMiddleware(authenticator ports.RuntimeWorkloadAuthenticator
 			c.Locals("druid-workload-identity", identity)
 			return c.Next()
 		}
-		if identity.Kind == "dev" && c.Method() == fiber.MethodPost && (strings.HasPrefix(c.Path(), "/api/v1/scrolls/"+identity.RuntimeID+"/commands/") || strings.HasPrefix(c.Path(), "/internal/v1/ui/publishes/")) {
+		if identity.Kind == "dev" && c.Method() == fiber.MethodPost && strings.HasPrefix(c.Path(), "/api/v1/scrolls/"+identity.RuntimeID+"/commands/") {
 			c.Locals("druid-workload-identity", identity)
 			return c.Next()
 		}

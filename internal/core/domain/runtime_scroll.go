@@ -21,21 +21,20 @@ const (
 )
 
 type RuntimeScroll struct {
-	ID                 string                                     `json:"id"`
-	OwnerID            string                                     `json:"owner_id,omitempty"`
-	Artifact           string                                     `json:"artifact"`
-	ArtifactDigest     string                                     `json:"artifact_digest,omitempty"`
-	Root               string                                     `json:"root"`
-	ScrollName         string                                     `json:"scroll_name"`
-	ScrollYAML         string                                     `json:"-"`
-	Status             RuntimeScrollStatus                        `json:"status"`
-	LastError          string                                     `json:"last_error,omitempty"`
-	Routing            []RuntimeRouteAssignment                   `json:"routing,omitempty"`
-	UIPackages         RuntimeUIPackages                          `json:"ui_packages,omitempty"`
-	UIPackagePublishes map[RuntimeUIPackageScope]UIPackagePublish `json:"ui_package_publishes,omitempty"`
-	CreatedAt          time.Time                                  `json:"created_at"`
-	UpdatedAt          time.Time                                  `json:"updated_at"`
-	Procedures         ProcedureStatusMap                         `json:"procedures,omitempty"`
+	ID             string                   `json:"id"`
+	OwnerID        string                   `json:"owner_id,omitempty"`
+	Artifact       string                   `json:"artifact"`
+	ArtifactDigest string                   `json:"artifact_digest,omitempty"`
+	Root           string                   `json:"root"`
+	ScrollName     string                   `json:"scroll_name"`
+	ScrollYAML     string                   `json:"-"`
+	Status         RuntimeScrollStatus      `json:"status"`
+	LastError      string                   `json:"last_error,omitempty"`
+	Routing        []RuntimeRouteAssignment `json:"routing,omitempty"`
+	UIPackages     RuntimeUIPackages        `json:"ui_packages,omitempty"`
+	CreatedAt      time.Time                `json:"created_at"`
+	UpdatedAt      time.Time                `json:"updated_at"`
+	Procedures     ProcedureStatusMap       `json:"procedures,omitempty"`
 }
 
 type RuntimeState struct {
@@ -77,28 +76,4 @@ type RuntimeUIPackage struct {
 	Path      string    `json:"path"`
 	SHA256    string    `json:"sha256"`
 	UpdatedAt time.Time `json:"updated_at"`
-}
-
-type UIPackagePublishStatus string
-
-const (
-	UIPackagePublishPending   UIPackagePublishStatus = "pending"
-	UIPackagePublishClaimed   UIPackagePublishStatus = "claimed"
-	UIPackagePublishCompleted UIPackagePublishStatus = "completed"
-	UIPackagePublishFailed    UIPackagePublishStatus = "failed"
-)
-
-// UIPackagePublish is durable work owned by a Druid dev workload. The daemon
-// never reads package bytes from that workload.
-type UIPackagePublish struct {
-	ID        string                 `json:"id"`
-	Scope     RuntimeUIPackageScope  `json:"scope"`
-	Path      string                 `json:"path"`
-	Status    UIPackagePublishStatus `json:"status"`
-	ClaimPod  string                 `json:"claim_pod,omitempty"`
-	SHA256    string                 `json:"sha256,omitempty"`
-	Size      int64                  `json:"size,omitempty"`
-	ExpiresAt time.Time              `json:"expires_at"`
-	UpdatedAt time.Time              `json:"updated_at"`
-	Error     string                 `json:"error,omitempty"`
 }

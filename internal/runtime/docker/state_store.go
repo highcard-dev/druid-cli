@@ -34,8 +34,7 @@ const scrollsTableSQL = `
 			updated_at TEXT NOT NULL,
 			procedures_json TEXT NOT NULL DEFAULT '{}',
 			routing_json TEXT NOT NULL DEFAULT '[]',
-			ui_packages_json TEXT NOT NULL DEFAULT '{}',
-			ui_package_publishes_json TEXT NOT NULL DEFAULT '{}'
+			ui_packages_json TEXT NOT NULL DEFAULT '{}'
 		)
 	`
 
@@ -90,15 +89,10 @@ func (s *StateStore) CreateScroll(scroll *domain.RuntimeScroll) error {
 	if err != nil {
 		return err
 	}
-	uiPackagePublishes, err := json.Marshal(scroll.UIPackagePublishes)
-	if err != nil {
-		return err
-	}
-
 	_, err = db.Exec(`
-			INSERT INTO scrolls (id, owner_id, artifact, artifact_digest, root, scroll_name, scroll_yaml, status, last_error, created_at, updated_at, procedures_json, routing_json, ui_packages_json, ui_package_publishes_json)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, scroll.ID, scroll.OwnerID, scroll.Artifact, scroll.ArtifactDigest, scroll.Root, scroll.ScrollName, scroll.ScrollYAML, scroll.Status, scroll.LastError, formatTime(scroll.CreatedAt), formatTime(scroll.UpdatedAt), string(procedures), string(routing), string(uiPackages), string(uiPackagePublishes))
+			INSERT INTO scrolls (id, owner_id, artifact, artifact_digest, root, scroll_name, scroll_yaml, status, last_error, created_at, updated_at, procedures_json, routing_json, ui_packages_json)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, scroll.ID, scroll.OwnerID, scroll.Artifact, scroll.ArtifactDigest, scroll.Root, scroll.ScrollName, scroll.ScrollYAML, scroll.Status, scroll.LastError, formatTime(scroll.CreatedAt), formatTime(scroll.UpdatedAt), string(procedures), string(routing), string(uiPackages))
 	if err != nil {
 		return fmt.Errorf("create runtime scroll %s: %w", scroll.ID, err)
 	}
@@ -113,7 +107,7 @@ func (s *StateStore) ListScrolls() ([]*domain.RuntimeScroll, error) {
 	defer db.Close()
 
 	rows, err := db.Query(`
-			SELECT id, owner_id, artifact, artifact_digest, root, scroll_name, scroll_yaml, status, last_error, created_at, updated_at, procedures_json, routing_json, ui_packages_json, ui_package_publishes_json
+			SELECT id, owner_id, artifact, artifact_digest, root, scroll_name, scroll_yaml, status, last_error, created_at, updated_at, procedures_json, routing_json, ui_packages_json
 			FROM scrolls
 			ORDER BY id
 		`)
@@ -141,7 +135,7 @@ func (s *StateStore) GetScroll(id string) (*domain.RuntimeScroll, error) {
 	defer db.Close()
 
 	row := db.QueryRow(`
-			SELECT id, owner_id, artifact, artifact_digest, root, scroll_name, scroll_yaml, status, last_error, created_at, updated_at, procedures_json, routing_json, ui_packages_json, ui_package_publishes_json
+			SELECT id, owner_id, artifact, artifact_digest, root, scroll_name, scroll_yaml, status, last_error, created_at, updated_at, procedures_json, routing_json, ui_packages_json
 			FROM scrolls
 			WHERE id = ?
 		`, id)
@@ -172,15 +166,11 @@ func (s *StateStore) UpdateScroll(scroll *domain.RuntimeScroll) error {
 	if err != nil {
 		return err
 	}
-	uiPackagePublishes, err := json.Marshal(scroll.UIPackagePublishes)
-	if err != nil {
-		return err
-	}
 	res, err := db.Exec(`
 		UPDATE scrolls
-			SET owner_id = ?, artifact = ?, artifact_digest = ?, root = ?, scroll_name = ?, scroll_yaml = ?, status = ?, last_error = ?, updated_at = ?, procedures_json = ?, routing_json = ?, ui_packages_json = ?, ui_package_publishes_json = ?
+			SET owner_id = ?, artifact = ?, artifact_digest = ?, root = ?, scroll_name = ?, scroll_yaml = ?, status = ?, last_error = ?, updated_at = ?, procedures_json = ?, routing_json = ?, ui_packages_json = ?
 			WHERE id = ?
-		`, scroll.OwnerID, scroll.Artifact, scroll.ArtifactDigest, scroll.Root, scroll.ScrollName, scroll.ScrollYAML, scroll.Status, scroll.LastError, formatTime(scroll.UpdatedAt), string(procedures), string(routing), string(uiPackages), string(uiPackagePublishes), scroll.ID)
+		`, scroll.OwnerID, scroll.Artifact, scroll.ArtifactDigest, scroll.Root, scroll.ScrollName, scroll.ScrollYAML, scroll.Status, scroll.LastError, formatTime(scroll.UpdatedAt), string(procedures), string(routing), string(uiPackages), scroll.ID)
 	if err != nil {
 		return err
 	}
@@ -275,10 +265,6 @@ func (s *StateStore) open() (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
-	if err := ensureColumn(db, "scrolls", "ui_package_publishes_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
-		db.Close()
-		return nil, err
-	}
 	return db, nil
 }
 
@@ -346,8 +332,7 @@ func scanRuntimeScroll(scanner runtimeScrollScanner) (*domain.RuntimeScroll, err
 	var proceduresJSON string
 	var routingJSON string
 	var uiPackagesJSON string
-	var uiPackagePublishesJSON string
-	if err := scanner.Scan(&scroll.ID, &scroll.OwnerID, &scroll.Artifact, &scroll.ArtifactDigest, &scroll.Root, &scroll.ScrollName, &scroll.ScrollYAML, &status, &lastError, &createdAt, &updatedAt, &proceduresJSON, &routingJSON, &uiPackagesJSON, &uiPackagePublishesJSON); err != nil {
+	if err := scanner.Scan(&scroll.ID, &scroll.OwnerID, &scroll.Artifact, &scroll.ArtifactDigest, &scroll.Root, &scroll.ScrollName, &scroll.ScrollYAML, &status, &lastError, &createdAt, &updatedAt, &proceduresJSON, &routingJSON, &uiPackagesJSON); err != nil {
 		return nil, err
 	}
 	scroll.Status = domain.RuntimeScrollStatus(status)
@@ -373,12 +358,6 @@ func scanRuntimeScroll(scanner runtimeScrollScanner) (*domain.RuntimeScroll, err
 		uiPackagesJSON = "{}"
 	}
 	if err := json.Unmarshal([]byte(uiPackagesJSON), &scroll.UIPackages); err != nil {
-		return nil, err
-	}
-	if uiPackagePublishesJSON == "" {
-		uiPackagePublishesJSON = "{}"
-	}
-	if err := json.Unmarshal([]byte(uiPackagePublishesJSON), &scroll.UIPackagePublishes); err != nil {
 		return nil, err
 	}
 	return &scroll, nil

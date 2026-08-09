@@ -1191,7 +1191,7 @@ func (f *fakeWorkerBackend) PrepareUIPackageUpload(ctx context.Context, action p
 }
 
 func (f *fakeWorkerBackend) CompleteUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageResult, error) {
-	return ports.RuntimeUIPackageResult{URL: "http://packages/" + action.RuntimeID + "/" + string(action.Scope) + "/app.wasm", SHA256: action.SHA256}, nil
+	return ports.RuntimeUIPackageResult{URL: "http://packages/" + action.RuntimeID + "/" + string(action.Scope) + "/app.wasm", SHA256: strings.Repeat("a", 64)}, nil
 }
 
 func (f *fakeWorkerBackend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
