@@ -60,6 +60,33 @@ func TestAuthenticateWorkloadRejectsCrossRuntimeLabel(t *testing.T) {
 	}
 }
 
+func TestEnsureRuntimeServiceAccountsCreatesBothAndIsIdempotent(t *testing.T) {
+	client := k8sfake.NewSimpleClientset()
+	backend := NewWithClient(Config{Namespace: "games"}, nil, client)
+
+	if err := backend.ensureRuntimeServiceAccounts(context.Background(), "games"); err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.ensureRuntimeServiceAccounts(context.Background(), "games"); err != nil {
+		t.Fatal(err)
+	}
+	accounts, err := client.CoreV1().ServiceAccounts("games").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(accounts.Items) != 2 {
+		t.Fatalf("service accounts = %#v, want two", accounts.Items)
+	}
+	for _, account := range accounts.Items {
+		if account.Labels[labelManagedBy] != "druid" || account.Labels[labelComponent] != "workload-identity" {
+			t.Fatalf("service account labels = %#v", account.Labels)
+		}
+		if account.AutomountServiceAccountToken == nil || *account.AutomountServiceAccountToken {
+			t.Fatalf("service account automount = %#v, want false", account.AutomountServiceAccountToken)
+		}
+	}
+}
+
 func tokenReviewReactor(serviceAccount, namespace, podName, podUID string, authenticated bool) k8stesting.ReactionFunc {
 	return func(k8stesting.Action) (bool, runtime.Object, error) {
 		return true, &authv1.TokenReview{Status: authv1.TokenReviewStatus{

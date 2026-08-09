@@ -53,14 +53,16 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 		zap.Bool("registry_plain_http", b.config.RegistryPlainHTTP),
 		zap.Bool("has_registry_credentials", len(action.RegistryCredentials) > 0),
 	)
+	// A deployment obtains both workload identities as part of its first
+	// materialization, before creating any runtime resources.
+	if err := b.ensureRuntimeServiceAccounts(ctx, namespace); err != nil {
+		return err
+	}
 	if action.Mode == ports.RuntimeWorkerModeCreate {
 		if err := b.ensurePVC(ctx, namespace, pvc, action.Storage); err != nil {
 			logger.Log().Error("Failed to ensure runtime PVC for pull worker", zap.String("runtime_id", action.RuntimeID), zap.String("namespace", namespace), zap.String("pvc", pvc), zap.Error(err))
 			return err
 		}
-	}
-	if err := b.ensureRuntimeServiceAccount(ctx, namespace, runtimeWorkerServiceAccount); err != nil {
-		return err
 	}
 	registryConfigSecret, cleanupRegistryConfig, err := b.createRegistryConfigSecret(ctx, namespace, action.Artifact+action.RuntimeID, action.RegistryCredentials)
 	if err != nil {

@@ -318,6 +318,13 @@ func TestSpawnPullWorkerCreateUsesFinalPVCAndWorkerJob(t *testing.T) {
 	if got := pvcs.Items[0].Spec.Resources.Requests.Storage().String(); got != "25Gi" {
 		t.Fatalf("pvc storage = %s, want 25Gi", got)
 	}
+	accounts, err := client.CoreV1().ServiceAccounts("games").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(accounts.Items) != 2 {
+		t.Fatalf("service accounts = %#v, want both runtime identities", accounts.Items)
+	}
 	if len(jobs) != 1 {
 		t.Fatalf("jobs = %d, want 1", len(jobs))
 	}
