@@ -131,6 +131,11 @@ func (s *ConfigMapStateStore) UpdateScroll(scroll *domain.RuntimeScroll) error {
 	if err != nil {
 		return err
 	}
+	currentScroll, err := runtimeScrollFromConfigMap(current)
+	if err != nil {
+		return err
+	}
+	scroll.UIPackages = mergeUIPackages(currentScroll.UIPackages, scroll.UIPackages)
 	scroll.UpdatedAt = time.Now().UTC()
 	next, err := runtimeScrollConfigMap(s.namespace, scroll)
 	if err != nil {
@@ -142,6 +147,18 @@ func (s *ConfigMapStateStore) UpdateScroll(scroll *domain.RuntimeScroll) error {
 		return domain.ErrRuntimeScrollNotFound
 	}
 	return err
+}
+
+// Preserve package scopes recorded by a concurrent command-status update.
+func mergeUIPackages(current, next domain.RuntimeUIPackages) domain.RuntimeUIPackages {
+	merged := make(domain.RuntimeUIPackages, len(current)+len(next))
+	for scope, pkg := range current {
+		merged[scope] = pkg
+	}
+	for scope, pkg := range next {
+		merged[scope] = pkg
+	}
+	return merged
 }
 
 func (s *ConfigMapStateStore) DeleteScroll(id string) error {
