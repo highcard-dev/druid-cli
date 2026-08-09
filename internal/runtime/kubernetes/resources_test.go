@@ -122,6 +122,59 @@ func TestProcedureJobSpecBuildsDeterministicMountsAndLabels(t *testing.T) {
 	}
 }
 
+func TestPinPodToRuntimeNodeUsesRunningPVCConsumer(t *testing.T) {
+	root := ref("druid", "druid-static-web-data")
+	runtimePod := runningProcedurePod("druid", root, "start", "start", 1, "runtime-pod", "start-job")
+	runtimePod.Spec.Volumes = []corev1.Volume{pvcVolume("data", "druid-static-web-data")}
+	client := fake.NewSimpleClientset(runtimePod)
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+
+	podSpec := corev1.PodSpec{}
+	if err := backend.pinPodToRuntimeNode(context.Background(), "druid", "druid-static-web-data", &podSpec); err != nil {
+		t.Fatal(err)
+	}
+	if got := podSpec.NodeSelector[corev1.LabelHostname]; got != "node-a" {
+		t.Fatalf("node selector = %q, want node-a", got)
+	}
+}
+
+func TestPinPodToRuntimeNodeIgnoresInactiveOrUnrelatedPods(t *testing.T) {
+	root := ref("druid", "druid-static-web-data")
+	inactive := runningProcedurePod("druid", root, "start", "start", 1, "inactive", "start-job")
+	inactive.Status.Phase = corev1.PodSucceeded
+	inactive.Spec.Volumes = []corev1.Volume{pvcVolume("data", "druid-static-web-data")}
+	unrelated := runningProcedurePod("druid", root, "start", "start", 2, "unrelated", "other-job")
+	unrelated.Name = "unrelated-pod"
+	unrelated.Spec.Volumes = []corev1.Volume{pvcVolume("data", "another-pvc")}
+	client := fake.NewSimpleClientset(inactive, unrelated)
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+
+	podSpec := corev1.PodSpec{}
+	if err := backend.pinPodToRuntimeNode(context.Background(), "druid", "druid-static-web-data", &podSpec); err != nil {
+		t.Fatal(err)
+	}
+	if len(podSpec.NodeSelector) != 0 {
+		t.Fatalf("node selector = %#v, want no selector", podSpec.NodeSelector)
+	}
+}
+
+func TestCreateOrReuseProcedureJobPinsToRuntimePVCNode(t *testing.T) {
+	root := ref("druid", "druid-static-web-data")
+	runtimePod := runningProcedurePod("druid", root, "start", "start", 1, "runtime-pod", "start-job")
+	runtimePod.Spec.Volumes = []corev1.Volume{pvcVolume("data", "druid-static-web-data")}
+	client := fake.NewSimpleClientset(runtimePod)
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	procedure := &domain.Procedure{Image: "alpine:3.20", Command: []string{"true"}}
+
+	job, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "build", "build", "build-job", procedure, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := job.Spec.Template.Spec.NodeSelector[corev1.LabelHostname]; got != "node-a" {
+		t.Fatalf("node selector = %q, want node-a", got)
+	}
+}
+
 func TestDevStatefulSetMountsRuntimeRootAsScrollRoot(t *testing.T) {
 	root := ref("druid", "druid-ui-data")
 	statefulSet := devStatefulSetSpec("druid", root, "druid-ui-data", "druid:local", ports.RuntimeDevAction{

@@ -55,6 +55,9 @@ func (b *Backend) StartDev(ctx context.Context, action ports.RuntimeDevAction) e
 		return err
 	}
 	sts := devStatefulSetSpec(namespace, action.RootRef, pvc, b.config.PullImage, action, b.config.RegistrySecret, b.config.ServiceAccountAudience)
+	if err := b.pinPodToRuntimeNode(ctx, namespace, pvc, &sts.Spec.Template.Spec); err != nil {
+		return err
+	}
 	existing, err := b.client.AppsV1().StatefulSets(namespace).Get(ctx, sts.Name, metav1.GetOptions{})
 	switch {
 	case apierrors.IsNotFound(err):
