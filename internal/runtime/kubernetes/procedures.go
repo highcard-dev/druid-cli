@@ -232,7 +232,7 @@ func (b *Backend) ensurePersistentProcedure(ctx context.Context, scrollID string
 		logger.Log().Error("Failed to reconcile Kubernetes persistent procedure Services", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.Error(err))
 		return err
 	}
-	namespace, _, err := parseRef(root)
+	namespace, pvc, err := parseRef(root)
 	if err != nil {
 		logger.Log().Error("Kubernetes persistent procedure root ref invalid", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("root", root), zap.Error(err))
 		return err
@@ -240,6 +240,9 @@ func (b *Backend) ensurePersistentProcedure(ctx context.Context, scrollID string
 	statefulSet, err := procedureStatefulSetSpec(namespace, root, commandName, procedureName, resourceName, procedure, env, b.config.RegistrySecret)
 	if err != nil {
 		logger.Log().Error("Failed to build Kubernetes persistent procedure StatefulSet", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.Error(err))
+		return err
+	}
+	if err := b.pinPodToRuntimeNode(ctx, namespace, pvc, &statefulSet.Spec.Template.Spec); err != nil {
 		return err
 	}
 	logger.Log().Info("Reconciling Kubernetes persistent procedure",
