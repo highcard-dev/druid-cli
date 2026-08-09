@@ -1,18 +1,22 @@
 package client
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/highcard-dev/daemon/internal/core/domain"
+	"github.com/gorilla/websocket"
 	"github.com/highcard-dev/daemon/internal/core/ports"
+	coreservices "github.com/highcard-dev/daemon/internal/core/services"
 )
 
 func TestDevCommandExposesFlags(t *testing.T) {
@@ -31,7 +35,7 @@ func TestDevServerWebDAVReadWriteAndCallback(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "data"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	runCalls := 0
+	runCalls := make(chan struct{}, 4)
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/scrolls/smoke/commands/build" {
 			t.Fatalf("unexpected daemon path %s", r.URL.Path)
@@ -39,7 +43,7 @@ func TestDevServerWebDAVReadWriteAndCallback(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer secret" {
 			t.Fatalf("missing daemon token")
 		}
-		runCalls++
+		runCalls <- struct{}{}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"id":"smoke"}`))
 	}))
@@ -56,9 +60,22 @@ func TestDevServerWebDAVReadWriteAndCallback(t *testing.T) {
 		devDaemonURL, devDaemonTokenFile, devRuntimeID = oldURL, oldTokenFile, oldRuntimeID
 	})
 
-	broadcast := domain.NewHub()
-	go broadcast.Run()
-	app := newDevApp(root, broadcast, &devTriggerQueue{broadcast: broadcast, commands: []string{"build"}})
+	queue := &devTriggerQueue{}
+	watch := coreservices.NewDevService(queue, devScrollService{commands: []string{"build"}})
+	if err := watch.SetHotReloadCommands([]string{"build"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := watch.StartWatching(root, "private"); err != nil {
+		t.Fatal(err)
+	}
+	defer watch.StopWatching()
+	// Starting Developer Mode always builds once before it begins watching edits.
+	select {
+	case <-runCalls:
+	case <-time.After(time.Second):
+		t.Fatal("initial build did not run")
+	}
+	app := newDevApp(root, watch)
 
 	req := httptest.NewRequest(http.MethodPut, "/webdav/private/config.json", strings.NewReader(`{"ok":true}`))
 	res, err := app.Test(req)
@@ -68,8 +85,10 @@ func TestDevServerWebDAVReadWriteAndCallback(t *testing.T) {
 	if res.StatusCode != http.StatusNoContent && res.StatusCode != http.StatusCreated {
 		t.Fatalf("PUT status = %d", res.StatusCode)
 	}
-	if runCalls != 1 {
-		t.Fatalf("runCalls = %d, want 1", runCalls)
+	select {
+	case <-runCalls:
+	case <-time.After(time.Second):
+		t.Fatal("file change did not run a rebuild")
 	}
 	if got, err := os.ReadFile(filepath.Join(root, "private/config.json")); err != nil || string(got) != `{"ok":true}` {
 		t.Fatalf("written file = %q, err = %v", got, err)
@@ -151,6 +170,79 @@ func TestDevServerWebDAVReadWriteAndCallback(t *testing.T) {
 	}
 }
 
+func TestDevServerWebsocketReceivesWatcherBuildEvents(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "private", "src"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	builds := make(chan struct{}, 4)
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		builds <- struct{}{}
+		_, _ = w.Write([]byte(`{"id":"smoke"}`))
+	}))
+	defer daemon.Close()
+	oldURL, oldTokenFile, oldRuntimeID := devDaemonURL, devDaemonTokenFile, devRuntimeID
+	devDaemonURL, devDaemonTokenFile, devRuntimeID = daemon.URL, "", "smoke"
+	t.Cleanup(func() {
+		devDaemonURL, devDaemonTokenFile, devRuntimeID = oldURL, oldTokenFile, oldRuntimeID
+	})
+
+	queue := &devTriggerQueue{}
+	watch := coreservices.NewDevService(queue, devScrollService{commands: []string{"build"}})
+	if err := watch.SetHotReloadCommands([]string{"build"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := watch.StartWatching(root, "private/src"); err != nil {
+		t.Fatal(err)
+	}
+	defer watch.StopWatching()
+	select {
+	case <-builds:
+	case <-time.After(time.Second):
+		t.Fatal("initial build did not run")
+	}
+
+	app := newDevApp(root, watch)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	go func() { _ = app.Listener(listener) }()
+	defer app.Shutdown()
+
+	ws, _, err := websocket.DefaultDialer.Dial("ws://"+listener.Addr().String()+"/ws/v1/watch/notify", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	if err := os.WriteFile(filepath.Join(root, "private", "src", "app.tsx"), []byte("export {}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := ws.SetReadDeadline(deadline); err != nil {
+			t.Fatal(err)
+		}
+		_, data, err := ws.ReadMessage()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var event struct {
+			CommandKey string `json:"command_key"`
+		}
+		if err := json.Unmarshal(data, &event); err != nil {
+			continue
+		}
+		if event.CommandKey == "build-ended" {
+			return
+		}
+	}
+	t.Fatal("websocket did not receive build-ended")
+}
+
 func TestDevFilePathRejectsTraversal(t *testing.T) {
 	if _, err := devFilePath(t.TempDir(), "../escape"); err == nil {
 		t.Fatal("expected traversal to be rejected")
@@ -159,9 +251,12 @@ func TestDevFilePathRejectsTraversal(t *testing.T) {
 
 func TestDevServerFileAuth(t *testing.T) {
 	root := t.TempDir()
-	broadcast := domain.NewHub()
-	go broadcast.Run()
-	app := newDevApp(root, broadcast, &devTriggerQueue{broadcast: broadcast}, devAuth{
+	watch := coreservices.NewDevService(&devTriggerQueue{}, devScrollService{})
+	if err := watch.StartWatching(root, "."); err != nil {
+		t.Fatal(err)
+	}
+	defer watch.StopWatching()
+	app := newDevApp(root, watch, devAuth{
 		user:      devTestAuth{},
 		runtime:   devTestAuth{},
 		runtimeID: "smoke",
