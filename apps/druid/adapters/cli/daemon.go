@@ -283,7 +283,12 @@ func workloadIdentityMiddleware(authenticator ports.RuntimeWorkloadAuthenticator
 			return c.Next()
 		}
 		if allowUnsafe {
-			c.Locals("druid-workload-identity", ports.RuntimeWorkloadIdentity{Kind: "dev", RuntimeID: strings.TrimSpace(c.Get("X-Druid-Runtime-ID")), PodUID: "unsafe-local"})
+			runtimeID := strings.TrimSpace(c.Get("X-Druid-Runtime-ID"))
+			kind := "dev"
+			if isUIPackagePreparePath(c.Path(), runtimeID) {
+				kind = "ui-publish"
+			}
+			c.Locals("druid-workload-identity", ports.RuntimeWorkloadIdentity{Kind: kind, RuntimeID: runtimeID, PodUID: "unsafe-local"})
 			return c.Next()
 		}
 		if authenticator == nil {
@@ -302,12 +307,25 @@ func workloadIdentityMiddleware(authenticator ports.RuntimeWorkloadAuthenticator
 			c.Locals("druid-workload-identity", identity)
 			return c.Next()
 		}
+		if identity.Kind == "ui-publish" && c.Method() == fiber.MethodPost && isUIPackagePreparePath(c.Path(), identity.RuntimeID) {
+			c.Locals("druid-workload-identity", identity)
+			return c.Next()
+		}
 		if identity.Kind == "worker" && strings.HasPrefix(c.Path(), "/internal/v1/workers/"+identity.RuntimeID+"/") {
 			c.Locals("druid-workload-identity", identity)
 			return c.Next()
 		}
 		return fiber.NewError(fiber.StatusForbidden, "workload identity is not authorized for this request")
 	}
+}
+
+func isUIPackagePreparePath(requestPath string, runtimeID string) bool {
+	prefix := "/api/v1/scrolls/" + runtimeID + "/ui/packages/"
+	if runtimeID == "" || !strings.HasPrefix(requestPath, prefix) {
+		return false
+	}
+	parts := strings.Split(strings.TrimPrefix(requestPath, prefix), "/")
+	return len(parts) == 2 && (parts[0] == "private" || parts[0] == "public") && parts[1] == "prepare"
 }
 
 func openWorkerCallbackListener(listen string) (net.Listener, error) {

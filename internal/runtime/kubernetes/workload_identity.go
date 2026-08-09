@@ -60,10 +60,16 @@ func (b *Backend) AuthenticateWorkload(ctx context.Context, token string) (ports
 	}
 	switch serviceAccount {
 	case runtimeDevServiceAccount:
-		if pod.Labels[labelManagedBy] != "druid" || pod.Labels[labelProcedure] != "dev" || identity.RuntimeID == "" {
+		if pod.Labels[labelManagedBy] != "druid" || identity.RuntimeID == "" {
 			return ports.RuntimeWorkloadIdentity{}, fmt.Errorf("invalid Druid dev workload")
 		}
-		identity.Kind = "dev"
+		if pod.Labels[labelProcedure] == "dev" {
+			identity.Kind = "dev"
+		} else if pod.Labels[labelProcedure] == "ui-publish-private-0" || pod.Labels[labelProcedure] == "ui-publish-public-0" {
+			identity.Kind = "ui-publish"
+		} else {
+			return ports.RuntimeWorkloadIdentity{}, fmt.Errorf("invalid Druid dev workload")
+		}
 	case runtimeWorkerServiceAccount:
 		if pod.Labels[labelManagedBy] != "druid" || pod.Labels[labelComponent] != "worker-pull" || identity.RuntimeID == "" {
 			return ports.RuntimeWorkloadIdentity{}, fmt.Errorf("invalid Druid worker workload")

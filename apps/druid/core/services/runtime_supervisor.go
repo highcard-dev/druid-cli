@@ -28,8 +28,9 @@ type RuntimeSupervisor struct {
 	runtimeJWKSURL    string
 	workerTimeout     time.Duration
 
-	mu       sync.Mutex
-	sessions map[string]*RuntimeSession
+	mu          sync.Mutex
+	sessions    map[string]*RuntimeSession
+	uiPublishes map[string]ports.RuntimeUIPackageUploadAction
 }
 
 func NewRuntimeSupervisor(
@@ -43,6 +44,7 @@ func NewRuntimeSupervisor(
 		runtimeBackend: runtimeBackend,
 		workerTimeout:  20 * time.Minute,
 		sessions:       map[string]*RuntimeSession{},
+		uiPublishes:    map[string]ports.RuntimeUIPackageUploadAction{},
 	}
 }
 

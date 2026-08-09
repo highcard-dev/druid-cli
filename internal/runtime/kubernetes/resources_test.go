@@ -95,7 +95,7 @@ func TestProcedureJobSpecBuildsDeterministicMountsAndLabels(t *testing.T) {
 		Mounts: []domain.Mount{{Path: "/work", SubPath: "cache"}},
 	}
 
-	job, err := procedureJobSpec("druid", ref("druid", "druid-static-web-data"), "start", "start", "static-web-start-0", 1, procedure, procedure.Env, "registry-secret")
+	job, err := procedureJobSpec("druid", ref("druid", "druid-static-web-data"), "start", "start", "static-web-start-0", 1, procedure, procedure.Env, "registry-secret", "druid-cli")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestProcedureJobSpecUsesProvidedRuntimeEnv(t *testing.T) {
 	}
 	job, err := procedureJobSpec("druid", ref("druid", "druid-static-web-data"), "start", "start", "static-web-start-0", 1, procedure, map[string]string{
 		"DRUID_PORT_HTTP": "8080",
-	}, "registry-secret")
+	}, "registry-secret", "druid-cli")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,12 +208,35 @@ func TestProcedureJobSpecUsesProvidedRuntimeEnv(t *testing.T) {
 	}
 }
 
+func TestUIPublishProcedureJobUsesProjectedDevIdentity(t *testing.T) {
+	procedure := &domain.Procedure{Image: "curlimages/curl:8.12.1", Command: []string{"true"}}
+	job, err := procedureJobSpec("druid", ref("druid", "druid-ui-data"), "ui_publish_private", "ui_publish_private.0", "ui-publish-private-0", 1, procedure, nil, "registry-secret", "druid-cli")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pod := job.Spec.Template.Spec
+	if pod.ServiceAccountName != runtimeDevServiceAccount || pod.AutomountServiceAccountToken == nil || *pod.AutomountServiceAccountToken {
+		t.Fatalf("publish pod identity = %#v", pod)
+	}
+	if len(pod.Volumes) != 2 || pod.Volumes[1].Projected == nil || len(pod.Volumes[1].Projected.Sources) != 1 {
+		t.Fatalf("publish pod volumes = %#v", pod.Volumes)
+	}
+	token := pod.Volumes[1].Projected.Sources[0].ServiceAccountToken
+	if token == nil || token.Audience != "druid-cli" || token.Path != "token" || token.ExpirationSeconds == nil || *token.ExpirationSeconds != 600 {
+		t.Fatalf("publish token projection = %#v", token)
+	}
+	mounts := pod.Containers[0].VolumeMounts
+	if len(mounts) != 1 || mounts[0].MountPath != "/var/run/secrets/druid-cli" || !mounts[0].ReadOnly {
+		t.Fatalf("publish token mount = %#v", mounts)
+	}
+}
+
 func TestProcedureJobSpecDoesNotAddReadinessProbe(t *testing.T) {
 	procedure := &domain.Procedure{
 		Image:         "itzg/minecraft-server",
 		ExpectedPorts: []domain.ExpectedPort{{Name: "main"}},
 	}
-	job, err := procedureJobSpec("druid", ref("druid", "druid-minecraft-data"), "start", "start", "minecraft-start-0", 1, procedure, nil, "registry-secret")
+	job, err := procedureJobSpec("druid", ref("druid", "druid-minecraft-data"), "start", "start", "minecraft-start-0", 1, procedure, nil, "registry-secret", "druid-cli")
 	if err != nil {
 		t.Fatal(err)
 	}

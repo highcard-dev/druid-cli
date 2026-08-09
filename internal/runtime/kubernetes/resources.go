@@ -179,7 +179,7 @@ func helperJobSpec(namespace string, jobName string, pvc string, image string, c
 	}
 }
 
-func procedureJobSpec(namespace string, root string, commandName string, procedureName string, resourceName string, attempt int, procedure *domain.Procedure, env map[string]string, registrySecret string) (*batchv1.Job, error) {
+func procedureJobSpec(namespace string, root string, commandName string, procedureName string, resourceName string, attempt int, procedure *domain.Procedure, env map[string]string, registrySecret string, tokenAudience string) (*batchv1.Job, error) {
 	_, pvc, err := parseRef(root)
 	if err != nil {
 		return nil, err
@@ -208,6 +208,13 @@ func procedureJobSpec(namespace string, root string, commandName string, procedu
 		RestartPolicy: corev1.RestartPolicyNever,
 		Containers:    []corev1.Container{container},
 		Volumes:       []corev1.Volume{pvcVolume("data", pvc)},
+	}
+	if commandName == "ui_publish_private" || commandName == "ui_publish_public" {
+		podSpec.ServiceAccountName = runtimeDevServiceAccount
+		podSpec.AutomountServiceAccountToken = ptrBool(false)
+		volumes, mounts := workloadTokenVolume(tokenAudience)
+		podSpec.Volumes = append(podSpec.Volumes, volumes...)
+		podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, mounts...)
 	}
 	if registrySecret != "" {
 		podSpec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: registrySecret}}
