@@ -317,6 +317,41 @@ func TestWatchService_RunsHotReloadCommandOnStartAndFileChange(t *testing.T) {
 	waitForRunCount(t, ran, &mu, &runCount, 2)
 }
 
+func TestWatchService_DebouncesAtomicSaveEvents(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	var mu sync.Mutex
+	runCount := 0
+	ran := make(chan struct{}, 10)
+	queueManager := mock_ports.NewMockQueueManagerInterface(ctrl)
+	queueManager.EXPECT().AddTempItemWithWait("build").DoAndReturn(func(string) error {
+		mu.Lock()
+		runCount++
+		mu.Unlock()
+		ran <- struct{}{}
+		return nil
+	}).AnyTimes()
+
+	watchService := &WatchService{
+		isWatching:        true,
+		ctx:               context.Background(),
+		hotReloadCommands: []string{"build"},
+		queueManager:      queueManager,
+	}
+	watchService.scheduleHotReload()
+	watchService.scheduleHotReload()
+	watchService.scheduleHotReload()
+
+	waitForRunCount(t, ran, &mu, &runCount, 1)
+	time.Sleep(hotReloadDebounce * 2)
+	mu.Lock()
+	defer mu.Unlock()
+	if runCount != 1 {
+		t.Fatalf("hot reload runs = %d, want one debounced run", runCount)
+	}
+}
+
 func waitForRunCount(t *testing.T, ran <-chan struct{}, mu *sync.Mutex, runCount *int, want int) {
 	t.Helper()
 	deadline := time.After(2 * time.Second)

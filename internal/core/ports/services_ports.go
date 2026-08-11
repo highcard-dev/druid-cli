@@ -54,6 +54,12 @@ type RuntimeBackendInterface interface {
 	Signal(commandName string, target string, signal string, root string) error
 }
 
+// RuntimeCommandStopper is implemented by backends that can remove one
+// command's workloads without stopping the rest of the runtime.
+type RuntimeCommandStopper interface {
+	StopCommand(root string, command string) error
+}
+
 type RuntimeDevStatus string
 
 const (

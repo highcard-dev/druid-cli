@@ -19,6 +19,9 @@ func TestStateStorePersistsProcedureStatuses(t *testing.T) {
 		Root:       "/tmp/root",
 		ScrollName: "test",
 		ScrollYAML: "name: test\n",
+		ReservedPorts: []domain.RuntimePortReservation{
+			{Name: "ssh", Port: 2222, Protocol: "tcp", Command: "ssh", Procedure: "ssh"},
+		},
 		Procedures: domain.ProcedureStatusMap{
 			"start": {
 				"start.0": {
@@ -59,6 +62,9 @@ func TestStateStorePersistsProcedureStatuses(t *testing.T) {
 	}
 	if got.ScrollYAML != "name: test\n" {
 		t.Fatalf("scroll yaml = %q, want cached yaml", got.ScrollYAML)
+	}
+	if len(got.ReservedPorts) != 1 || got.ReservedPorts[0].Name != "ssh" {
+		t.Fatalf("reserved ports = %#v, want ssh", got.ReservedPorts)
 	}
 }
 

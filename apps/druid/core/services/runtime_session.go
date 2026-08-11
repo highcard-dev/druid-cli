@@ -54,7 +54,7 @@ func NewRuntimeSession(
 		}
 	}
 	scrollYAML := []byte(runtimeScroll.ScrollYAML)
-	scrollService, err := coreservices.NewCachedScrollService(runtimeScroll.Root, scrollYAML)
+	scrollService, err := coreservices.NewCachedScrollServiceWithPorts(runtimeScroll.Root, scrollYAML, reservedRuntimePorts(runtimeScroll.ReservedPorts))
 	if err != nil {
 		return nil, err
 	}

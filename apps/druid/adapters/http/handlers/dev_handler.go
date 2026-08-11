@@ -39,6 +39,13 @@ func (h *ScrollHandler) AddDaemonCommand(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
+func (h *ScrollHandler) RemoveDaemonCommand(c *fiber.Ctx) error {
+	if err := h.supervisor.RemoveCommand(c.Params("id"), c.Params("command")); err != nil {
+		return err
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
 func (h *ScrollHandler) GetDaemonWatchStatus(c *fiber.Ctx) error {
 	status, err := h.supervisor.DevWatchStatus(c.Params("id"))
 	if err != nil {

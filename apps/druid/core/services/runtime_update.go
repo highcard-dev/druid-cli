@@ -83,7 +83,14 @@ func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeSc
 	runtimeScroll.ScrollName = scroll.Name
 	runtimeScroll.ScrollYAML = string(materialized.ScrollYAML)
 	runtimeScroll.Procedures = domain.ProcedureStatusMap{}
-	runtimeScroll.Routing = preserveRoutingAssignments(existingRouting, scroll.Ports)
+	ports, err := mergeRuntimePorts(scroll.Ports, runtimeScroll.ReservedPorts)
+	if err != nil {
+		runtimeScroll.Status = domain.RuntimeScrollStatusError
+		runtimeScroll.LastError = err.Error()
+		_ = s.store.UpdateScroll(runtimeScroll)
+		return nil, err
+	}
+	runtimeScroll.Routing = preserveRoutingAssignments(existingRouting, ports)
 	runtimeScroll.LastError = ""
 	if wasRunning || runtimeScroll.Status == domain.RuntimeScrollStatusStopped {
 		runtimeScroll.Status = domain.RuntimeScrollStatusStopped

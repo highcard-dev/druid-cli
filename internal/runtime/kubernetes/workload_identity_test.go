@@ -34,7 +34,7 @@ func TestAuthenticateWorkloadRequiresBoundDruidDevPod(t *testing.T) {
 func TestAuthenticateWorkloadAcceptsOnlyDruidUIPublishJob(t *testing.T) {
 	client := k8sfake.NewSimpleClientset(&corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "publish-0", Namespace: "games", UID: types.UID("pod-uid"), Labels: map[string]string{
-			labelManagedBy: "druid", labelRuntimeID: "runtime-a", labelCommand: "ui-publish-private", labelProcedure: "ui-publish-private-0",
+			labelManagedBy: "druid", labelRuntimeID: "runtime-a", labelCommand: "ui-publish-private-012345abcdef", labelProcedure: "ui-publish-private-012345abcdef-0",
 		}},
 		Spec: corev1.PodSpec{ServiceAccountName: runtimeDevServiceAccount},
 	})
