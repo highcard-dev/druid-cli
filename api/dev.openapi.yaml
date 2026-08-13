@@ -61,7 +61,8 @@ paths:
     put:
       operationId: putFile
       tags: [files]
-      summary: Write a file into the runtime root
+      summary: Write a file into the runtime root; an optional If-Match SHA-256 ETag serializes Druid-managed writes
+      description: Stop workloads that can rewrite the same configuration path before saving; external filesystem writers do not participate in HTTP ETag coordination.
       parameters:
         - $ref: '#/components/parameters/FilePath'
       requestBody:
@@ -79,6 +80,8 @@ paths:
           description: File written
         '400':
           $ref: '#/components/responses/BadRequest'
+        '412':
+          description: File contents no longer match If-Match
     options:
       operationId: optionsFile
       tags: [files]
