@@ -212,12 +212,18 @@ func runRuntimeDaemon() error {
 	}
 	var callbackApp *fiber.App
 	if callbackListener != nil {
+		callbackAllowUnsafe := workerCallbackAllowsUnsafeFallback(workloadAuthenticator, runtimeAllowUnauthenticatedManagement)
 		callbackApp = fiber.New(fiber.Config{DisableStartupMessage: true, ErrorHandler: runtimehandlers.ErrorHandler})
 		callbackApp.Use(runtimehandlers.RequestLogger)
-		callbackApp.Use(workloadIdentityMiddleware(workloadAuthenticator, runtimeAllowUnauthenticatedManagement))
-		callbackapi.RegisterHandlers(callbackApp, runtimeCallbackHandler{callbacks: callbacks, allowUnauthenticated: runtimeAllowUnauthenticatedManagement})
+		callbackApp.Use(workloadIdentityMiddleware(workloadAuthenticator, callbackAllowUnsafe))
+		callbackapi.RegisterHandlers(callbackApp, runtimeCallbackHandler{callbacks: callbacks, allowUnauthenticated: callbackAllowUnsafe})
+		runtimehandlers.RegisterWorkerRoutes(callbackApp, handlers)
 	}
 	return listenRuntimeHTTP(managementApp, publicApp, callbackApp, callbackListener, runtime.Store.StateDir())
+}
+
+func workerCallbackAllowsUnsafeFallback(authenticator ports.RuntimeWorkloadAuthenticator, allowUnsafeManagement bool) bool {
+	return allowUnsafeManagement && authenticator == nil
 }
 
 func loadRuntimeDaemonEnv() {

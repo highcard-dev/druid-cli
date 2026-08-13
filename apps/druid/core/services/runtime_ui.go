@@ -166,7 +166,7 @@ func uiPublishCommand() *domain.CommandInstructionSet {
 		Procedures: []*domain.Procedure{{
 			Image:      uiPublishImage,
 			WorkingDir: "/app/resources/deployment",
-			Mounts:     []domain.Mount{{Path: "/app/resources/deployment"}},
+			Mounts:     []domain.Mount{{Path: "/app/resources/deployment", SubPath: ".", ReadOnly: true}},
 			Command: []string{"sh", "-ec", `
 source="${DRUID_UI_SOURCE:?DRUID_UI_SOURCE is required}"
 prepare_url="${DRUID_UI_PREPARE_URL:?DRUID_UI_PREPARE_URL is required}"

@@ -231,6 +231,26 @@ func TestUIPublishProcedureJobUsesProjectedDevIdentity(t *testing.T) {
 	}
 }
 
+func TestUIPublishProcedureJobCanMountReadOnlyPVCRoot(t *testing.T) {
+	procedure := &domain.Procedure{
+		Image:   "curlimages/curl:8.12.1",
+		Command: []string{"true"},
+		Mounts: []domain.Mount{{
+			Path:     "/app/resources/deployment",
+			SubPath:  ".",
+			ReadOnly: true,
+		}},
+	}
+	job, err := procedureJobSpec("druid", ref("druid", "druid-ui-data"), "ui_publish_private", "ui_publish_private.0", "ui-publish-private-0", 1, procedure, nil, "registry-secret", "druid-cli")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mounts := job.Spec.Template.Spec.Containers[0].VolumeMounts
+	if len(mounts) != 2 || mounts[0].MountPath != "/app/resources/deployment" || mounts[0].SubPath != "." || !mounts[0].ReadOnly {
+		t.Fatalf("UI publish PVC mount = %#v, want read-only root mount", mounts)
+	}
+}
+
 func TestProcedureJobSpecDoesNotAddReadinessProbe(t *testing.T) {
 	procedure := &domain.Procedure{
 		Image:         "itzg/minecraft-server",

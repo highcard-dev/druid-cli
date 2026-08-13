@@ -74,6 +74,10 @@ func TestPublishUIPackageRunsOneShotCommandWithEphemeralURL(t *testing.T) {
 	if got := command.Command.Procedures[0].Image; got != uiPublishImage {
 		t.Fatalf("image = %q, want %q", got, uiPublishImage)
 	}
+	mounts := command.Command.Procedures[0].Mounts
+	if len(mounts) != 1 || mounts[0].Path != "/app/resources/deployment" || mounts[0].SubPath != "." || !mounts[0].ReadOnly {
+		t.Fatalf("UI publish mount = %#v, want read-only PVC root", mounts)
+	}
 	procedure := domain.ProcedureName(command.Name, 0, command.Command.Procedures[0])
 	values := command.ProcedureEnv[procedure]
 	if values["DRUID_UI_SOURCE"] != "private/dist/app.wasm" || values["DRUID_UI_REQUEST_ID"] == "" || values["DRUID_UI_PREPARE_URL"] != "http://daemon/api/v1/scrolls/ui-scroll/ui/packages/private/prepare" {

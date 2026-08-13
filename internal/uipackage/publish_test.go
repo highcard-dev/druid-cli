@@ -52,3 +52,22 @@ func TestPresignPutRejectsInvalidDigests(t *testing.T) {
 		t.Fatal("invalid digest action was accepted")
 	}
 }
+
+func TestPresignGetIssuesShortLivedObjectCapability(t *testing.T) {
+	presigned, err := PresignGet(context.Background(), "request/app.wasm", S3Config{
+		Bucket: "druid-ui", Region: "fsn1", Endpoint: "https://s3.example.test", AccessKey: "access", SecretKey: "secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := url.Parse(presigned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Host != "s3.example.test" || parsed.Path != "/druid-ui/request/app.wasm" {
+		t.Fatalf("presigned object URL = %s", parsed.String())
+	}
+	if got := parsed.Query().Get("X-Amz-Expires"); got != "300" {
+		t.Fatalf("signature expiry = %q, want 300 seconds", got)
+	}
+}
