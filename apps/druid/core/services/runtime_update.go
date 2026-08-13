@@ -33,9 +33,6 @@ func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeSc
 	s.mu.Unlock()
 	if session != nil {
 		session.stopDeploymentQueue()
-		if s.workerCallbacks != nil {
-			s.workerCallbacks.ClearSnapshotProgress(runtimeScroll.ID, session.snapshotProgress)
-		}
 	}
 
 	if wasRunning {

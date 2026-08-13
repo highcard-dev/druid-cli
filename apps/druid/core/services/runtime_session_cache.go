@@ -53,18 +53,12 @@ func (s *RuntimeSupervisor) startSession(runtimeScroll *domain.RuntimeScroll) (*
 	session.devDaemonURL = s.workerDaemonURL
 	session.devAuthJWKSURL = s.authJWKSURL
 	session.devRuntimeJWKSURL = s.runtimeJWKSURL
-	if s.workerCallbacks != nil {
-		session.snapshotProgress = s.workerCallbacks.TrackSnapshotProgress(runtimeScroll.ID)
-	}
 	session.Start()
 
 	s.mu.Lock()
 	if existing := s.sessions[runtimeScroll.ID]; existing != nil {
 		s.mu.Unlock()
 		session.stopDeploymentQueue()
-		if s.workerCallbacks != nil {
-			s.workerCallbacks.ClearSnapshotProgress(runtimeScroll.ID, session.snapshotProgress)
-		}
 		return existing, nil
 	}
 	s.sessions[runtimeScroll.ID] = session
