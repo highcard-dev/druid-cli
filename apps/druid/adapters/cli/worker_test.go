@@ -97,7 +97,7 @@ func TestWorkerRestoreStagesBeforeReplacingRoot(t *testing.T) {
 	mustWrite(t, filepath.Join(root, "data", "old-only.txt"), "old")
 
 	oci := fakeRestoreOCI{t: t}
-	if err := pullWorkerRestore(root, "registry.local/backup:1", oci, nil); err != nil {
+	if err := pullWorkerRestore(root, "registry.local/backup:1", oci); err != nil {
 		t.Fatal(err)
 	}
 

@@ -117,47 +117,6 @@ func fakeRegistry(t *testing.T) *httptest.Server {
 	return srv
 }
 
-func TestPullSelectiveDoesNotReportCompleteBeforeMetadataIsWritten(t *testing.T) {
-	t.Chdir(t.TempDir())
-	server := fakeRegistry(t)
-	registryHost := strings.TrimPrefix(server.URL, "http://")
-	source := filepath.Join("scrolls", "progress-test")
-	if err := os.MkdirAll(source, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(
-		filepath.Join(source, "scroll.yaml"),
-		[]byte("name: progress-test\nversion: 0.1.0\napp_version: \"1.0\"\n"),
-		0644,
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	client := &OciClient{
-		credentialStore: NewCredentialStore(nil),
-		plainHTTP:       true,
-	}
-	repository := registryHost + "/test/progress"
-	if _, err := client.Push(source, repository, "1.0", nil, false, nil); err != nil {
-		t.Fatal(err)
-	}
-
-	destination := filepath.Join("pull", "progress-test")
-	if err := os.MkdirAll(filepath.Join(destination, "manifest.json"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	progress := domain.NewSnapshotProgress()
-	if err := client.PullSelective(destination, repository+":1.0", true, progress); err == nil {
-		t.Fatal("pull should fail when manifest.json cannot be written")
-	}
-	if percentage := progress.Percentage.Load(); percentage >= 100 {
-		t.Fatalf("failed pull progress = %d; want below 100", percentage)
-	}
-	if mode := progress.Mode.Load(); mode != domain.SnapshotProgressModeIdle {
-		t.Fatalf("failed pull mode = %v; want idle", mode)
-	}
-}
-
 func TestValidateCredentialsUsesPlainHTTPEnv(t *testing.T) {
 	t.Setenv("DRUID_REGISTRY_PLAIN_HTTP", "true")
 

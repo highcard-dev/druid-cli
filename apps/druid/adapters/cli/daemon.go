@@ -192,7 +192,7 @@ func runRuntimeDaemon() error {
 	websocketHandler.SetAllowUnauthenticatedPublic(runtimeAllowUnauthenticatedPublic)
 	handlers := runtimehandlers.RouteHandlers{
 		Server: runtimehandlers.NewRuntimeServer(
-			runtimehandlers.NewHealthHandlerWithProgress(callbacks.Progress),
+			runtimehandlers.NewHealthHandler(),
 			scrollHandler,
 		),
 		Websocket: websocketHandler,
