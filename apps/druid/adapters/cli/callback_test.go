@@ -24,7 +24,7 @@ func TestRuntimeCallbackHandlerReportsProgress(t *testing.T) {
 	request := httptest.NewRequest(
 		http.MethodPost,
 		"/internal/v1/workers/runtime-1/progress",
-		strings.NewReader(fmt.Sprintf(`{"token":%q,"percentage":42}`, token)),
+		strings.NewReader(fmt.Sprintf(`{"token":%q,"percentage":42.3}`, token)),
 	)
 	request.Header.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
 	response, err := app.Test(request)
@@ -34,7 +34,7 @@ func TestRuntimeCallbackHandlerReportsProgress(t *testing.T) {
 	if response.StatusCode != http.StatusNoContent {
 		t.Fatalf("status = %d; want %d", response.StatusCode, http.StatusNoContent)
 	}
-	if progress, ok := callbacks.Progress("runtime-1"); !ok || progress != 42 {
-		t.Fatalf("progress = %v, %v; want 42, true", progress, ok)
+	if progress, ok := callbacks.Progress("runtime-1"); !ok || progress != 42.3 {
+		t.Fatalf("progress = %v, %v; want 42.3, true", progress, ok)
 	}
 }

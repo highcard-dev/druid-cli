@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"math"
+
 	"github.com/gofiber/fiber/v2"
 	appservices "github.com/highcard-dev/daemon/apps/druid/core/services"
 	"github.com/highcard-dev/daemon/internal/callbackapi"
@@ -14,16 +16,17 @@ type runtimeCallbackHandler struct {
 
 func (h runtimeCallbackHandler) ReportProgress(c *fiber.Ctx) error {
 	var report struct {
-		Token      string `json:"token"`
-		Percentage *int64 `json:"percentage"`
+		Token      string   `json:"token"`
+		Percentage *float64 `json:"percentage"`
 	}
 	if err := c.BodyParser(&report); err != nil || report.Percentage == nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid progress report")
 	}
-	if *report.Percentage < 0 || *report.Percentage > 100 {
+	percentage := *report.Percentage
+	if math.IsNaN(percentage) || math.IsInf(percentage, 0) || percentage < 0 || percentage > 100 {
 		return fiber.NewError(fiber.StatusBadRequest, "percentage must be between 0 and 100")
 	}
-	if err := h.callbacks.ReportProgress(c.Params("runtime_id"), report.Token, *report.Percentage); err != nil {
+	if err := h.callbacks.ReportProgress(c.Params("runtime_id"), report.Token, percentage); err != nil {
 		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
 	}
 	return c.SendStatus(fiber.StatusNoContent)

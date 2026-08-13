@@ -1,6 +1,9 @@
 package domain
 
-import "sync/atomic"
+import (
+	"math"
+	"sync/atomic"
+)
 
 type ArtifactType string
 
@@ -17,9 +20,11 @@ const (
 	SnapshotProgressModeRestore = "restore"
 )
 
+const snapshotProgressScale int64 = 10
+
 // SnapshotProgress tracks the state of a data pull/push operation.
 type SnapshotProgress struct {
-	Percentage atomic.Int64
+	percentage atomic.Int64
 	Mode       atomic.Value // stores string
 }
 
@@ -27,6 +32,19 @@ func NewSnapshotProgress() *SnapshotProgress {
 	sp := &SnapshotProgress{}
 	sp.Mode.Store(SnapshotProgressModeIdle)
 	return sp
+}
+
+func (p *SnapshotProgress) StorePercentage(value float64) bool {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return false
+	}
+	value = math.Max(0, math.Min(100, value))
+	p.percentage.Store(int64(math.Round(value * float64(snapshotProgressScale))))
+	return true
+}
+
+func (p *SnapshotProgress) Percentage() float64 {
+	return float64(p.percentage.Load()) / float64(snapshotProgressScale)
 }
 
 type AnnotationInfo struct {

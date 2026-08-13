@@ -188,7 +188,7 @@ func (handler *LuaHandler) GetHandler(funcs map[string]func(data ...string)) (po
 	l.SetGlobal("get_snapshot_percentage", l.NewFunction(
 		func(l *lua.LState) int {
 			if handler.progress != nil {
-				l.Push(lua.LNumber(handler.progress.Percentage.Load()))
+				l.Push(lua.LNumber(handler.progress.Percentage()))
 			} else {
 				l.Push(lua.LNumber(100))
 			}
