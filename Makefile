@@ -1,4 +1,4 @@
-.PHONY: test build k3d-build-pull-image watch test-integration test-integration-docker test-integration-kubernetes kind-integration-up kind-integration-down
+.PHONY: test build k3d-build-pull-image watch watch-windows test-integration test-integration-docker test-integration-kubernetes kind-integration-up kind-integration-down
 
 VERSION ?= "dev"
 DRUID_K8S_PULL_IMAGE ?= druid:local
@@ -54,6 +54,10 @@ run: ## Run Daemon
 watch: ## Run Daemon with auto reload
 	@command -v air >/dev/null 2>&1 || go install github.com/air-verse/air@latest
 	air --build.cmd "CGO_ENABLED=0 go build -ldflags '-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)' -o ./bin/druid ./apps/druid" --build.full_bin "DRUID_REGISTRY_PLAIN_HTTP=true ./bin/druid $(DRUID_WATCH_ARGS)"
+
+watch-windows: ## Run Daemon with auto reload inside WSL2 on Windows
+	@grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null || (echo "watch-windows must run inside WSL2; use make watch on Linux or macOS." >&2; exit 1)
+	@$(MAKE) watch
 
 mock:
 	mockgen -source=internal/core/ports/services_ports.go -destination test/mock/services.go
