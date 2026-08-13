@@ -245,6 +245,29 @@ func (s *RuntimeSupervisor) applyMaterializedScroll(runtimeScroll *domain.Runtim
 	if err := s.store.UpdateScroll(runtimeScroll); err != nil {
 		return nil, err
 	}
+	if scroll.UI != nil && scroll.UI.Private != nil {
+		result, err := s.runtimeBackend.PublishUIPackage(context.Background(), ports.RuntimeUIPackageAction{
+			RuntimeID:  runtimeScroll.ID,
+			RootRef:    runtimeScroll.Root,
+			Scope:      domain.RuntimeUIPackageScopePrivate,
+			SourcePath: scroll.UI.Private.Path,
+		})
+		if err != nil {
+			runtimeScroll.Status = domain.RuntimeScrollStatusError
+			runtimeScroll.LastError = fmt.Sprintf("publish declared private UI: %v", err)
+			_ = s.store.UpdateScroll(runtimeScroll)
+			return nil, fmt.Errorf("publish declared private UI: %w", err)
+		}
+		if runtimeScroll.UIPackages == nil {
+			runtimeScroll.UIPackages = domain.RuntimeUIPackages{}
+		}
+		runtimeScroll.UIPackages[domain.RuntimeUIPackageScopePrivate] = domain.RuntimeUIPackage{
+			URL: result.URL, Path: result.Path, SHA256: result.SHA256, UpdatedAt: time.Now().UTC(),
+		}
+		if err := s.store.UpdateScroll(runtimeScroll); err != nil {
+			return nil, err
+		}
+	}
 	return runtimeScroll, nil
 }
 

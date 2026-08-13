@@ -506,6 +506,30 @@ func TestRuntimeSupervisorCreateCanCreate(t *testing.T) {
 	}
 }
 
+func TestRuntimeSupervisorCreatePublishesDeclaredPrivateUI(t *testing.T) {
+	store := newTestStateStore(t)
+	callbacks := NewWorkerCallbackManager()
+	backend := &fakeWorkerBackend{callbacks: callbacks, scrollYAML: strings.Replace(
+		cachedScrollYAML("start"),
+		"commands:",
+		"ui:\n  private:\n    path: private/dist/app.wasm\ncommands:",
+		1,
+	)}
+	supervisor := NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), backend)
+	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
+
+	runtimeScroll, err := supervisor.Create("registry.local/ui:1", "ui-scroll", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if backend.uiAction.SourcePath != "private/dist/app.wasm" || backend.uiAction.Scope != domain.RuntimeUIPackageScopePrivate {
+		t.Fatalf("UI action = %#v", backend.uiAction)
+	}
+	if runtimeScroll.UIPackages[domain.RuntimeUIPackageScopePrivate].SHA256 != "sha256" {
+		t.Fatalf("UI packages = %#v", runtimeScroll.UIPackages)
+	}
+}
+
 func TestRuntimeSupervisorCreateGeneratesIDWhenNameOmitted(t *testing.T) {
 	store := newTestStateStore(t)
 	callbacks := NewWorkerCallbackManager()
@@ -1165,6 +1189,7 @@ type fakeWorkerBackend struct {
 	deleteRoot  string
 	spawnCount  int
 	runCommand  func(ports.RuntimeCommand) (*int, error)
+	uiAction    ports.RuntimeUIPackageAction
 	stopRuntime func(string) error
 }
 
@@ -1187,6 +1212,7 @@ func (f *fakeWorkerBackend) RunCommand(command ports.RuntimeCommand) (*int, erro
 }
 
 func (f *fakeWorkerBackend) PublishUIPackage(ctx context.Context, action ports.RuntimeUIPackageAction) (ports.RuntimeUIPackageResult, error) {
+	f.uiAction = action
 	return ports.RuntimeUIPackageResult{URL: "http://packages/" + action.RuntimeID + "/" + string(action.Scope) + "/app.wasm", Path: action.SourcePath, SHA256: "sha256"}, nil
 }
 
