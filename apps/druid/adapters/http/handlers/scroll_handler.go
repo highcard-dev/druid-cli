@@ -113,7 +113,7 @@ func (h *ScrollHandler) EnsureScroll(c *fiber.Ctx) error {
 		return err
 	}
 	if request.ReservedPorts != nil {
-		if err := h.supervisor.SetReservedPorts(runtimeScroll.ID, runtimePortReservations(*request.ReservedPorts)); err != nil {
+		if err := h.supervisor.SetReservedPorts(runtimeScroll.ID, runtimePorts(*request.ReservedPorts)); err != nil {
 			return err
 		}
 		runtimeScroll, err = h.supervisor.Get(runtimeScroll.ID)
@@ -124,12 +124,15 @@ func (h *ScrollHandler) EnsureScroll(c *fiber.Ctx) error {
 	return c.JSON(runtimeScroll)
 }
 
-func runtimePortReservations(in []api.RuntimePortReservation) []domain.RuntimePortReservation {
-	out := make([]domain.RuntimePortReservation, 0, len(in))
-	for _, reservation := range in {
-		out = append(out, domain.RuntimePortReservation{
-			Name: reservation.Name, Port: reservation.Port, Protocol: string(reservation.Protocol),
-			Command: reservation.Command, Procedure: reservation.Procedure,
+func runtimePorts(in []api.Port) []domain.Port {
+	out := make([]domain.Port, 0, len(in))
+	for _, port := range in {
+		description := ""
+		if port.Description != nil {
+			description = *port.Description
+		}
+		out = append(out, domain.Port{
+			Name: port.Name, Port: port.Port, Protocol: string(port.Protocol), Description: description,
 		})
 	}
 	return out

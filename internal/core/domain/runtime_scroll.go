@@ -35,15 +35,7 @@ type RuntimeScroll struct {
 	CreatedAt      time.Time                `json:"created_at"`
 	UpdatedAt      time.Time                `json:"updated_at"`
 	Procedures     ProcedureStatusMap       `json:"procedures,omitempty"`
-	ReservedPorts  []RuntimePortReservation `json:"reserved_ports,omitempty"`
-}
-
-type RuntimePortReservation struct {
-	Name      string `json:"name"`
-	Port      int    `json:"port"`
-	Protocol  string `json:"protocol"`
-	Command   string `json:"command"`
-	Procedure string `json:"procedure"`
+	ReservedPorts  []Port                   `json:"reserved_ports,omitempty"`
 }
 
 type RuntimeState struct {

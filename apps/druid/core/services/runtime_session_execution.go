@@ -27,7 +27,7 @@ func (s *RuntimeSession) runCommand(cmd string, extraEnv ...map[string]map[strin
 	scrollName := s.runtimeScroll.ScrollName
 	routing := make([]domain.RuntimeRouteAssignment, len(s.runtimeScroll.Routing))
 	copy(routing, s.runtimeScroll.Routing)
-	reservations := append([]domain.RuntimePortReservation(nil), s.runtimeScroll.ReservedPorts...)
+	reservations := append([]domain.Port(nil), s.runtimeScroll.ReservedPorts...)
 	s.mu.Unlock()
 
 	if root == "" {

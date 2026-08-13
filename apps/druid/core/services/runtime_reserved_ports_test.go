@@ -9,7 +9,7 @@ import (
 func TestMergeRuntimePortsAddsReservations(t *testing.T) {
 	ports, err := mergeRuntimePorts(
 		[]domain.Port{{Name: "main", Port: 27015, Protocol: "udp"}},
-		[]domain.RuntimePortReservation{{Name: "ssh", Port: 2222, Protocol: "tcp", Command: "ssh", Procedure: "ssh"}},
+		[]domain.Port{{Name: "ssh", Port: 2222, Protocol: "tcp"}},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -22,34 +22,15 @@ func TestMergeRuntimePortsAddsReservations(t *testing.T) {
 func TestMergeRuntimePortsRejectsScrollConflict(t *testing.T) {
 	_, err := mergeRuntimePorts(
 		[]domain.Port{{Name: "ssh", Port: 22, Protocol: "tcp"}},
-		[]domain.RuntimePortReservation{{Name: "ssh", Port: 2222, Protocol: "tcp", Command: "ssh", Procedure: "ssh"}},
+		[]domain.Port{{Name: "ssh", Port: 2222, Protocol: "tcp"}},
 	)
 	if err == nil {
 		t.Fatal("expected conflicting port error")
 	}
 }
 
-func TestRoutingCommandsProvidesUnclaimedReservation(t *testing.T) {
-	commands := map[string]*domain.CommandInstructionSet{
-		"start": {Procedures: []*domain.Procedure{{ExpectedPorts: []domain.ExpectedPort{{Name: "main"}}}}},
-	}
-	result := routingCommands(commands, []domain.RuntimePortReservation{{Name: "vscode", Port: 3333, Protocol: "http", Command: "vscode", Procedure: "vscode"}})
-	command := result["vscode"]
-	if command == nil || command.Run != domain.RunModePersistent || len(command.Procedures) != 1 || command.Procedures[0].ExpectedPorts[0].Name != "vscode" {
-		t.Fatalf("synthetic command = %#v", command)
-	}
-}
-
-func TestRoutingCommandsDoesNotMutateInjectedCommand(t *testing.T) {
-	command := &domain.CommandInstructionSet{Run: domain.RunModePersistent, Procedures: []*domain.Procedure{{}}}
-	routingCommands(map[string]*domain.CommandInstructionSet{"ssh": command}, []domain.RuntimePortReservation{{Name: "ssh", Port: 2222, Protocol: "tcp", Command: "ssh", Procedure: "ssh"}})
-	if len(command.Procedures) != 1 {
-		t.Fatalf("source command was mutated: %#v", command)
-	}
-}
-
 func TestValidateReservedPortsRejectsUnsafeIdentifiers(t *testing.T) {
-	err := validateReservedPorts([]domain.RuntimePortReservation{{Name: "../ssh", Port: 2222, Protocol: "tcp", Command: "ssh", Procedure: "ssh"}})
+	err := validateReservedPorts([]domain.Port{{Name: "../ssh", Port: 2222, Protocol: "tcp"}})
 	if err == nil {
 		t.Fatal("expected unsafe identifier error")
 	}
@@ -87,8 +68,8 @@ commands:
 	if _, err := supervisor.sessionFor(scroll.ID); err == nil {
 		t.Fatal("expected session validation to fail before the port is reserved")
 	}
-	reservation := domain.RuntimePortReservation{Name: "ssh", Port: 2222, Protocol: "tcp", Command: "ssh", Procedure: "ssh"}
-	if err := supervisor.SetReservedPorts(scroll.ID, []domain.RuntimePortReservation{reservation}); err != nil {
+	reservation := domain.Port{Name: "ssh", Port: 2222, Protocol: "tcp"}
+	if err := supervisor.SetReservedPorts(scroll.ID, []domain.Port{reservation}); err != nil {
 		t.Fatal(err)
 	}
 	session, err := supervisor.sessionFor(scroll.ID)

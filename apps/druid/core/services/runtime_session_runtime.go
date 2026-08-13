@@ -13,7 +13,7 @@ func (s *RuntimeSession) Ports() ([]domain.RuntimePortStatus, error) {
 	s.mu.Lock()
 	runtimeScroll := *s.runtimeScroll
 	routing := append([]domain.RuntimeRouteAssignment(nil), s.runtimeScroll.Routing...)
-	reservations := append([]domain.RuntimePortReservation(nil), s.runtimeScroll.ReservedPorts...)
+	reservations := append([]domain.Port(nil), s.runtimeScroll.ReservedPorts...)
 	s.mu.Unlock()
 	file := s.scrollService.GetFile()
 	ports, err := mergeRuntimePorts(file.Ports, reservations)
@@ -30,14 +30,14 @@ func (s *RuntimeSession) Ports() ([]domain.RuntimePortStatus, error) {
 func (s *RuntimeSession) RoutingTargets() ([]domain.RuntimeRoutingTarget, error) {
 	s.mu.Lock()
 	runtimeScroll := *s.runtimeScroll
-	reservations := append([]domain.RuntimePortReservation(nil), s.runtimeScroll.ReservedPorts...)
+	reservations := append([]domain.Port(nil), s.runtimeScroll.ReservedPorts...)
 	s.mu.Unlock()
 	file := s.scrollService.GetFile()
 	ports, err := mergeRuntimePorts(file.Ports, reservations)
 	if err != nil {
 		return nil, err
 	}
-	return s.runtimeBackend.RoutingTargets(runtimeScroll.Root, routingCommands(file.Commands, reservations), ports)
+	return s.runtimeBackend.RoutingTargets(runtimeScroll.Root, file.Commands, ports, reservations)
 }
 
 func (s *RuntimeSession) Queue() domain.ProcedureStatusMap {
@@ -146,7 +146,7 @@ func (s *RuntimeSession) ApplyRestore(materialized *ports.RuntimeMaterialization
 	}
 	root := materialized.Root
 	scrollYAML := materialized.ScrollYAML
-	scrollService, err := coreservices.NewCachedScrollServiceWithPorts(root, scrollYAML, reservedRuntimePorts(s.runtimeScroll.ReservedPorts))
+	scrollService, err := coreservices.NewCachedScrollServiceWithPorts(root, scrollYAML, s.runtimeScroll.ReservedPorts)
 	if err != nil {
 		return err
 	}

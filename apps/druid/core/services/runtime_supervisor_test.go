@@ -1243,7 +1243,7 @@ func (f *fakeWorkerBackend) ExpectedPorts(root string, commands map[string]*doma
 	return nil, nil
 }
 
-func (f *fakeWorkerBackend) RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error) {
+func (f *fakeWorkerBackend) RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port, reservedPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error) {
 	return nil, nil
 }
 

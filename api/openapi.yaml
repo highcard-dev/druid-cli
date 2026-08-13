@@ -122,16 +122,14 @@ components:
         reserved_ports:
           type: array
           items:
-            $ref: '#/components/schemas/RuntimePortReservation'
+            $ref: '#/components/schemas/Port'
 
-    RuntimePortReservation:
+    Port:
       type: object
       required:
         - name
         - port
         - protocol
-        - command
-        - procedure
       properties:
         name:
           type: string
@@ -142,9 +140,7 @@ components:
         protocol:
           type: string
           enum: [http, https, tcp, udp]
-        command:
-          type: string
-        procedure:
+        description:
           type: string
 
     RegistryCredential:

@@ -246,7 +246,7 @@ func runtimeScrollFromConfigMap(configMap *corev1.ConfigMap) (*domain.RuntimeScr
 	if reservedPortsJSON == "" {
 		reservedPortsJSON = "[]"
 	}
-	reservedPorts := []domain.RuntimePortReservation{}
+	reservedPorts := []domain.Port{}
 	if err := json.Unmarshal([]byte(reservedPortsJSON), &reservedPorts); err != nil {
 		return nil, err
 	}

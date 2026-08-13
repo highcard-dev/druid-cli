@@ -19,8 +19,8 @@ func TestStateStorePersistsProcedureStatuses(t *testing.T) {
 		Root:       "/tmp/root",
 		ScrollName: "test",
 		ScrollYAML: "name: test\n",
-		ReservedPorts: []domain.RuntimePortReservation{
-			{Name: "ssh", Port: 2222, Protocol: "tcp", Command: "ssh", Procedure: "ssh"},
+		ReservedPorts: []domain.Port{
+			{Name: "ssh", Port: 2222, Protocol: "tcp"},
 		},
 		Procedures: domain.ProcedureStatusMap{
 			"start": {

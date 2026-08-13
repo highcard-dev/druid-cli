@@ -20,8 +20,8 @@ func TestConfigMapStateStoreRoundTripsRuntimeScroll(t *testing.T) {
 		ScrollName: "container-lab",
 		ScrollYAML: "name: container-lab\n",
 		Status:     domain.RuntimeScrollStatusCreated,
-		ReservedPorts: []domain.RuntimePortReservation{
-			{Name: "vscode", Port: 3333, Protocol: "http", Command: "vscode", Procedure: "vscode"},
+		ReservedPorts: []domain.Port{
+			{Name: "vscode", Port: 3333, Protocol: "http"},
 		},
 		Procedures: domain.ProcedureStatusMap{
 			"verify": {
@@ -102,6 +102,34 @@ func TestConfigMapStateStoreDuplicateCreateReturnsConflict(t *testing.T) {
 	}
 	if err := store.CreateScroll(scroll); !errors.Is(err, domain.ErrRuntimeScrollAlreadyExists) {
 		t.Fatalf("CreateScroll duplicate error = %v, want domain.ErrRuntimeScrollAlreadyExists", err)
+	}
+}
+
+func TestConfigMapStateStoreReadsLegacyReservedPortFields(t *testing.T) {
+	store := NewConfigMapStateStoreWithClient("druid", fake.NewSimpleClientset())
+	scroll := &domain.RuntimeScroll{
+		ID: "legacy-reservation", Artifact: "local", Root: ref("druid", "druid-legacy-reservation-data"),
+		ScrollName: "legacy-reservation", ScrollYAML: "name: legacy-reservation\n",
+	}
+	if err := store.CreateScroll(scroll); err != nil {
+		t.Fatal(err)
+	}
+
+	configMap, err := store.client.CoreV1().ConfigMaps("druid").Get(t.Context(), scrollConfigMapName(scroll.ID), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	configMap.Data[configMapKeyReservedPorts] = `[{"name":"ssh","port":2222,"protocol":"tcp","command":"ssh","procedure":"ssh"}]`
+	if _, err := store.client.CoreV1().ConfigMaps("druid").Update(t.Context(), configMap, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := store.GetScroll(scroll.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.ReservedPorts) != 1 || got.ReservedPorts[0] != (domain.Port{Name: "ssh", Port: 2222, Protocol: "tcp"}) {
+		t.Fatalf("reserved ports = %#v", got.ReservedPorts)
 	}
 }
 
