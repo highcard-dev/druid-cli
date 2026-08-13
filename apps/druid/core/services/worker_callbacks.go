@@ -17,9 +17,7 @@ type workerCallbackAction struct {
 }
 
 func NewWorkerCallbackManager() *WorkerCallbackManager {
-	return &WorkerCallbackManager{
-		actions: map[string]workerCallbackAction{},
-	}
+	return &WorkerCallbackManager{actions: map[string]workerCallbackAction{}}
 }
 
 func (m *WorkerCallbackManager) Register(runtimeID string) (<-chan ports.RuntimeWorkerResult, error) {

@@ -55,5 +55,7 @@ func storeSnapshotProgress(progress *domain.SnapshotProgress, current float64, t
 		math.IsNaN(total) || math.IsInf(total, 0) {
 		return false
 	}
-	return progress.StorePercentage(current / total * 100)
+	percentage := int64(math.Round(current / total * 100))
+	progress.Percentage.Store(max(0, min(100, percentage)))
+	return true
 }

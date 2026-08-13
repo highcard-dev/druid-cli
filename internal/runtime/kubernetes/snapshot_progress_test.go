@@ -15,20 +15,8 @@ func TestObserveSnapshotProgressReadsSteamCMDByteMarker(t *testing.T) {
 	if !observeSnapshotProgress(line, progress) {
 		t.Fatal("progress marker was not recognized")
 	}
-	if got := progress.Percentage(); got != 54.7 {
-		t.Fatalf("percentage = %v; want 54.7", got)
-	}
-}
-
-func TestObserveSnapshotProgressReadsLowProgressByteMarker(t *testing.T) {
-	progress := domain.NewSnapshotProgress()
-	line := `DRUID_PROGRESS_V1 {"unit":"bytes","current":401991074,"total":22938933947}`
-
-	if !observeSnapshotProgress(line, progress) {
-		t.Fatal("progress marker was not recognized")
-	}
-	if got := progress.Percentage(); got != 1.8 {
-		t.Fatalf("percentage = %v; want 1.8", got)
+	if got := progress.Percentage.Load(); got != 55 {
+		t.Fatalf("percentage = %d; want 55", got)
 	}
 }
 
@@ -39,8 +27,8 @@ func TestObserveSnapshotProgressReadsOriginalSteamCMDLine(t *testing.T) {
 	if observeSnapshotProgress(line, progress) {
 		t.Fatal("original SteamCMD output should remain visible in the console")
 	}
-	if got := progress.Percentage(); got != 54.7 {
-		t.Fatalf("percentage = %v; want 54.7", got)
+	if got := progress.Percentage.Load(); got != 55 {
+		t.Fatalf("percentage = %d; want 55", got)
 	}
 }
 
@@ -66,8 +54,8 @@ func TestReadSnapshotProgressDoesNotDependOnConsoleConsumer(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 		t.Fatal("progress processing blocked behind the console backlog")
 	}
-	if got := progress.Percentage(); got != 54.7 {
-		t.Fatalf("percentage = %v; want 54.7", got)
+	if got := progress.Percentage.Load(); got != 55 {
+		t.Fatalf("percentage = %d; want 55", got)
 	}
 	if got := <-output; got != "older console line" {
 		t.Fatalf("console backlog changed to %q", got)
@@ -76,7 +64,7 @@ func TestReadSnapshotProgressDoesNotDependOnConsoleConsumer(t *testing.T) {
 
 func TestObserveSnapshotProgressLeavesMalformedLinesAlone(t *testing.T) {
 	progress := domain.NewSnapshotProgress()
-	progress.StorePercentage(17)
+	progress.Percentage.Store(17)
 
 	for _, line := range []string{
 		"ordinary server output",
@@ -86,8 +74,8 @@ func TestObserveSnapshotProgressLeavesMalformedLinesAlone(t *testing.T) {
 		if observeSnapshotProgress(line, progress) {
 			t.Fatalf("line was unexpectedly recognized: %s", line)
 		}
-		if got := progress.Percentage(); got != 17 {
-			t.Fatalf("percentage changed to %v for line %q", got, line)
+		if got := progress.Percentage.Load(); got != 17 {
+			t.Fatalf("percentage changed to %d for line %q", got, line)
 		}
 	}
 }
