@@ -53,8 +53,11 @@ jobs:
             .docker/druid-install-command.sh
 
   prerelease:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     needs: [unit-tests, integration-tests, validate-api, build]
+    permissions:
+      contents: write
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -79,6 +82,7 @@ jobs:
             .docker/druid-install-command.sh
 
   docker-builds:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     needs: prerelease
     uses: ./.github/workflows/docker-builds.yml
     with:
