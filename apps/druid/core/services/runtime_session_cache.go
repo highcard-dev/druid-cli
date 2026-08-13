@@ -51,7 +51,6 @@ func (s *RuntimeSupervisor) startSession(runtimeScroll *domain.RuntimeScroll) (*
 		return nil, err
 	}
 	session.devDaemonURL = s.workerDaemonURL
-	session.devDaemonToken = s.internalToken
 	session.devAuthJWKSURL = s.authJWKSURL
 	session.devRuntimeJWKSURL = s.runtimeJWKSURL
 	session.Start()

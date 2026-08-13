@@ -95,7 +95,7 @@ func TestProcedureJobSpecBuildsDeterministicMountsAndLabels(t *testing.T) {
 		Mounts: []domain.Mount{{Path: "/work", SubPath: "cache"}},
 	}
 
-	job, err := procedureJobSpec("druid", ref("druid", "druid-static-web-data"), "start", "start", "static-web-start-0", 1, procedure, procedure.Env, "registry-secret")
+	job, err := procedureJobSpec("druid", ref("druid", "druid-static-web-data"), "start", "start", "static-web-start-0", 1, procedure, procedure.Env, "registry-secret", "druid-cli")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,6 +122,73 @@ func TestProcedureJobSpecBuildsDeterministicMountsAndLabels(t *testing.T) {
 	}
 }
 
+func TestPinPodToRuntimeNodeUsesRunningPVCConsumer(t *testing.T) {
+	root := ref("druid", "druid-static-web-data")
+	runtimePod := runningProcedurePod("druid", root, "start", "start", 1, "runtime-pod", "start-job")
+	runtimePod.Spec.Volumes = []corev1.Volume{pvcVolume("data", "druid-static-web-data")}
+	client := fake.NewSimpleClientset(runtimePod)
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+
+	podSpec := corev1.PodSpec{}
+	if err := backend.pinPodToRuntimeNode(context.Background(), "druid", "druid-static-web-data", &podSpec); err != nil {
+		t.Fatal(err)
+	}
+	if got := podSpec.NodeSelector[corev1.LabelHostname]; got != "node-a" {
+		t.Fatalf("node selector = %q, want node-a", got)
+	}
+}
+
+func TestPinPodToRuntimeNodeIgnoresInactiveOrUnrelatedPods(t *testing.T) {
+	root := ref("druid", "druid-static-web-data")
+	inactive := runningProcedurePod("druid", root, "start", "start", 1, "inactive", "start-job")
+	inactive.Status.Phase = corev1.PodSucceeded
+	inactive.Spec.Volumes = []corev1.Volume{pvcVolume("data", "druid-static-web-data")}
+	unrelated := runningProcedurePod("druid", root, "start", "start", 2, "unrelated", "other-job")
+	unrelated.Name = "unrelated-pod"
+	unrelated.Spec.Volumes = []corev1.Volume{pvcVolume("data", "another-pvc")}
+	client := fake.NewSimpleClientset(inactive, unrelated)
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+
+	podSpec := corev1.PodSpec{}
+	if err := backend.pinPodToRuntimeNode(context.Background(), "druid", "druid-static-web-data", &podSpec); err != nil {
+		t.Fatal(err)
+	}
+	if len(podSpec.NodeSelector) != 0 {
+		t.Fatalf("node selector = %#v, want no selector", podSpec.NodeSelector)
+	}
+}
+
+func TestCreateOrReuseProcedureJobPinsToRuntimePVCNode(t *testing.T) {
+	root := ref("druid", "druid-static-web-data")
+	runtimePod := runningProcedurePod("druid", root, "start", "start", 1, "runtime-pod", "start-job")
+	runtimePod.Spec.Volumes = []corev1.Volume{pvcVolume("data", "druid-static-web-data")}
+	client := fake.NewSimpleClientset(runtimePod)
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	procedure := &domain.Procedure{Image: "alpine:3.20", Command: []string{"true"}}
+
+	job, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "build", "build", "build-job", procedure, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := job.Spec.Template.Spec.NodeSelector[corev1.LabelHostname]; got != "node-a" {
+		t.Fatalf("node selector = %q, want node-a", got)
+	}
+}
+
+func TestDevStatefulSetMountsRuntimeRootAsScrollRoot(t *testing.T) {
+	root := ref("druid", "druid-ui-data")
+	statefulSet := devStatefulSetSpec("druid", root, "druid-ui-data", "druid:local", ports.RuntimeDevAction{
+		RuntimeID: "ui", RootRef: root, MountPath: "/scroll", Listen: ":8084",
+	}, "registry-secret", "druid-cli")
+	mount := statefulSet.Spec.Template.Spec.Containers[0].VolumeMounts[0]
+	if mount.MountPath != "/scroll" || mount.SubPath != "" {
+		t.Fatalf("mount = %#v, want the runtime root at /scroll", mount)
+	}
+	if user := statefulSet.Spec.Template.Spec.Containers[0].SecurityContext.RunAsUser; user == nil || *user != 0 {
+		t.Fatalf("dev server must run as root to edit runtime files, got %#v", user)
+	}
+}
+
 func TestProcedureJobSpecUsesProvidedRuntimeEnv(t *testing.T) {
 	procedure := &domain.Procedure{
 		Image: "alpine:3.20",
@@ -131,7 +198,7 @@ func TestProcedureJobSpecUsesProvidedRuntimeEnv(t *testing.T) {
 	}
 	job, err := procedureJobSpec("druid", ref("druid", "druid-static-web-data"), "start", "start", "static-web-start-0", 1, procedure, map[string]string{
 		"DRUID_PORT_HTTP": "8080",
-	}, "registry-secret")
+	}, "registry-secret", "druid-cli")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,12 +208,35 @@ func TestProcedureJobSpecUsesProvidedRuntimeEnv(t *testing.T) {
 	}
 }
 
+func TestUIPublishProcedureJobUsesProjectedDevIdentity(t *testing.T) {
+	procedure := &domain.Procedure{Image: "curlimages/curl:8.12.1", Command: []string{"true"}}
+	job, err := procedureJobSpec("druid", ref("druid", "druid-ui-data"), "ui_publish_private", "ui_publish_private.0", "ui-publish-private-0", 1, procedure, nil, "registry-secret", "druid-cli")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pod := job.Spec.Template.Spec
+	if pod.ServiceAccountName != runtimeDevServiceAccount || pod.AutomountServiceAccountToken == nil || *pod.AutomountServiceAccountToken {
+		t.Fatalf("publish pod identity = %#v", pod)
+	}
+	if len(pod.Volumes) != 2 || pod.Volumes[1].Projected == nil || len(pod.Volumes[1].Projected.Sources) != 1 {
+		t.Fatalf("publish pod volumes = %#v", pod.Volumes)
+	}
+	token := pod.Volumes[1].Projected.Sources[0].ServiceAccountToken
+	if token == nil || token.Audience != "druid-cli" || token.Path != "token" || token.ExpirationSeconds == nil || *token.ExpirationSeconds != 600 {
+		t.Fatalf("publish token projection = %#v", token)
+	}
+	mounts := pod.Containers[0].VolumeMounts
+	if len(mounts) != 1 || mounts[0].MountPath != "/var/run/secrets/druid-cli" || !mounts[0].ReadOnly {
+		t.Fatalf("publish token mount = %#v", mounts)
+	}
+}
+
 func TestProcedureJobSpecDoesNotAddReadinessProbe(t *testing.T) {
 	procedure := &domain.Procedure{
 		Image:         "itzg/minecraft-server",
 		ExpectedPorts: []domain.ExpectedPort{{Name: "main"}},
 	}
-	job, err := procedureJobSpec("druid", ref("druid", "druid-minecraft-data"), "start", "start", "minecraft-start-0", 1, procedure, nil, "registry-secret")
+	job, err := procedureJobSpec("druid", ref("druid", "druid-minecraft-data"), "start", "start", "minecraft-start-0", 1, procedure, nil, "registry-secret", "druid-cli")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,14 +321,14 @@ func TestProcedureStatefulSetSpecBuildsPersistentWorkload(t *testing.T) {
 
 func TestWorkerPullJobSpecRunsDruidWorkerPull(t *testing.T) {
 	action := ports.RuntimeWorkerAction{
-		Mode:          ports.RuntimeWorkerModeUpdate,
-		RuntimeID:     "deployment-123",
-		Artifact:      "registry.local/lab:2.0",
-		MountPath:     "/scroll",
-		CallbackURL:   "http://druid-cli:8083/internal/v1/workers/deployment-123/complete",
-		CallbackToken: "secret-token",
+		Mode:        ports.RuntimeWorkerModeUpdate,
+		RuntimeID:   "deployment-123",
+		Artifact:    "registry.local/lab:2.0",
+		MountPath:   "/scroll",
+		CallbackURL: "http://druid-cli:8083/internal/v1/workers/deployment-123/complete",
+		TokenFile:   "token-file",
 	}
-	job := workerPullJobSpec("druid", "worker-pull", "runtime-pvc", "druid-cli:test", action, "pull-secret", "runtime-registry", true)
+	job := workerPullJobSpec("druid", "worker-pull", "runtime-pvc", "druid-cli:test", action, "pull-secret", "runtime-registry", true, "druid-cli")
 	container := job.Spec.Template.Spec.Containers[0]
 	command := strings.Join(container.Command, " ")
 	for _, want := range []string{"druid --config /tmp/druid-registry.json", "worker pull", "--mode update", "--runtime-id deployment-123", "--callback-url", "chown -R 1000:1000"} {
@@ -253,7 +343,7 @@ func TestWorkerPullJobSpecRunsDruidWorkerPull(t *testing.T) {
 	for _, item := range container.Env {
 		env[item.Name] = item.Value
 	}
-	if env["DRUID_WORKER_TOKEN"] != "secret-token" || env["DRUID_REGISTRY_PLAIN_HTTP"] != "true" {
+	if env["DRUID_WORKER_TOKEN_FILE"] != "token-file" || env["DRUID_REGISTRY_PLAIN_HTTP"] != "true" {
 		t.Fatalf("env = %#v", container.Env)
 	}
 	if env[workerPullRootEnvName] != "/scroll" {
@@ -282,14 +372,14 @@ func TestSpawnPullWorkerCreateUsesFinalPVCAndWorkerJob(t *testing.T) {
 		return nil, nil
 	}
 	action := ports.RuntimeWorkerAction{
-		Mode:          ports.RuntimeWorkerModeCreate,
-		RuntimeID:     "deployment-123",
-		Artifact:      "registry.local/lab:1.0",
-		Storage:       "25Gi",
-		RootRef:       ref("games", dataPVCName("deployment-123")),
-		MountPath:     "/scroll",
-		CallbackURL:   "http://druid-cli:8083/internal/v1/workers/deployment-123/complete",
-		CallbackToken: "secret-token",
+		Mode:        ports.RuntimeWorkerModeCreate,
+		RuntimeID:   "deployment-123",
+		Artifact:    "registry.local/lab:1.0",
+		Storage:     "25Gi",
+		RootRef:     ref("games", dataPVCName("deployment-123")),
+		MountPath:   "/scroll",
+		CallbackURL: "http://druid-cli:8083/internal/v1/workers/deployment-123/complete",
+		TokenFile:   "token-file",
 	}
 	if err := backend.SpawnPullWorker(context.Background(), action); err != nil {
 		t.Fatal(err)
@@ -303,6 +393,13 @@ func TestSpawnPullWorkerCreateUsesFinalPVCAndWorkerJob(t *testing.T) {
 	}
 	if got := pvcs.Items[0].Spec.Resources.Requests.Storage().String(); got != "25Gi" {
 		t.Fatalf("pvc storage = %s, want 25Gi", got)
+	}
+	accounts, err := client.CoreV1().ServiceAccounts("games").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(accounts.Items) != 2 {
+		t.Fatalf("service accounts = %#v, want both runtime identities", accounts.Items)
 	}
 	if len(jobs) != 1 {
 		t.Fatalf("jobs = %d, want 1", len(jobs))

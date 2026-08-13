@@ -16,16 +16,36 @@ func TestRootCommandExposesRuntimeAndOCICommands(t *testing.T) {
 	}
 }
 
+func TestUIPackagePreparePathRequiresExactRuntimeAndScope(t *testing.T) {
+	for _, test := range []struct {
+		path string
+		want bool
+	}{
+		{"/api/v1/scrolls/runtime-a/ui/packages/private/prepare", true},
+		{"/api/v1/scrolls/runtime-a/ui/packages/public/prepare", true},
+		{"/api/v1/scrolls/runtime-b/ui/packages/private/prepare", false},
+		{"/api/v1/scrolls/runtime-a/ui/packages/private/prepare/extra", false},
+		{"/api/v1/scrolls/runtime-a/ui/packages/admin/prepare", false},
+	} {
+		if got := isUIPackagePreparePath(test.path, "runtime-a"); got != test.want {
+			t.Fatalf("isUIPackagePreparePath(%q) = %t, want %t", test.path, got, test.want)
+		}
+	}
+}
+
 func TestDaemonCommandExposesRuntimeListeners(t *testing.T) {
 	for _, name := range []string{"tcp", "port"} {
 		if flag := DaemonCommand.Flags().Lookup(name); flag != nil {
 			t.Fatalf("druid daemon should not expose --%s", name)
 		}
 	}
-	for _, name := range []string{"socket", "listen", "public-listen", "internal-token", "worker-callback-listen", "worker-callback-url", "docker-storage", "docker-bind-root", "docker-volume-prefix"} {
+	for _, name := range []string{"socket", "listen", "public-listen", "worker-callback-listen", "worker-callback-url", "docker-storage", "docker-bind-root", "docker-volume-prefix"} {
 		if flag := DaemonCommand.Flags().Lookup(name); flag == nil {
 			t.Fatalf("druid daemon should expose --%s", name)
 		}
+	}
+	if flag := DaemonCommand.Flags().Lookup("internal-token"); flag != nil {
+		t.Fatal("druid daemon must not expose --internal-token")
 	}
 }
 

@@ -24,13 +24,13 @@ type RuntimeSupervisor struct {
 	workerCallbacks   *WorkerCallbackManager
 	workerCallbackURL string
 	workerDaemonURL   string
-	internalToken     string
 	authJWKSURL       string
 	runtimeJWKSURL    string
 	workerTimeout     time.Duration
 
-	mu       sync.Mutex
-	sessions map[string]*RuntimeSession
+	mu          sync.Mutex
+	sessions    map[string]*RuntimeSession
+	uiPublishes map[string]ports.RuntimeUIPackageUploadAction
 }
 
 func NewRuntimeSupervisor(
@@ -44,6 +44,7 @@ func NewRuntimeSupervisor(
 		runtimeBackend: runtimeBackend,
 		workerTimeout:  20 * time.Minute,
 		sessions:       map[string]*RuntimeSession{},
+		uiPublishes:    map[string]ports.RuntimeUIPackageUploadAction{},
 	}
 }
 
@@ -59,9 +60,8 @@ func (s *RuntimeSupervisor) SetWorkerTimeout(timeout time.Duration) {
 	s.workerTimeout = timeout
 }
 
-func (s *RuntimeSupervisor) SetDevWorkerConfig(daemonURL string, internalToken string, authJWKSURL string, runtimeJWKSURL string) {
+func (s *RuntimeSupervisor) SetDevWorkerConfig(daemonURL string, authJWKSURL string, runtimeJWKSURL string) {
 	s.workerDaemonURL = strings.TrimRight(daemonURL, "/")
-	s.internalToken = internalToken
 	s.authJWKSURL = authJWKSURL
 	s.runtimeJWKSURL = runtimeJWKSURL
 }
@@ -248,32 +248,21 @@ func (s *RuntimeSupervisor) applyMaterializedScroll(runtimeScroll *domain.Runtim
 	if err := s.publishDeclaredPrivateUI(runtimeScroll, scroll); err != nil {
 		return nil, err
 	}
-	return runtimeScroll, nil
+	return s.store.GetScroll(runtimeScroll.ID)
 }
 
 func (s *RuntimeSupervisor) publishDeclaredPrivateUI(runtimeScroll *domain.RuntimeScroll, scroll *domain.Scroll) error {
 	if scroll.UI == nil || scroll.UI.Private == nil {
 		return nil
 	}
-	result, err := s.runtimeBackend.PublishUIPackage(context.Background(), ports.RuntimeUIPackageAction{
-		RuntimeID:  runtimeScroll.ID,
-		RootRef:    runtimeScroll.Root,
-		Scope:      domain.RuntimeUIPackageScopePrivate,
-		SourcePath: scroll.UI.Private.Path,
-	})
+	_, err := s.publishUIPackage(runtimeScroll.ID, string(domain.RuntimeUIPackageScopePrivate), scroll.UI.Private.Path, false)
 	if err != nil {
 		runtimeScroll.Status = domain.RuntimeScrollStatusError
 		runtimeScroll.LastError = fmt.Sprintf("publish declared private UI: %v", err)
 		_ = s.store.UpdateScroll(runtimeScroll)
 		return fmt.Errorf("publish declared private UI: %w", err)
 	}
-	if runtimeScroll.UIPackages == nil {
-		runtimeScroll.UIPackages = domain.RuntimeUIPackages{}
-	}
-	runtimeScroll.UIPackages[domain.RuntimeUIPackageScopePrivate] = domain.RuntimeUIPackage{
-		URL: result.URL, Path: result.Path, SHA256: result.SHA256, UpdatedAt: time.Now().UTC(),
-	}
-	return s.store.UpdateScroll(runtimeScroll)
+	return nil
 }
 
 func (s *RuntimeSupervisor) List() ([]*domain.RuntimeScroll, error) {

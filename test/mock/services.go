@@ -287,6 +287,21 @@ func (mr *MockRuntimeBackendInterfaceMockRecorder) BackupRuntime(ctx, root, arti
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BackupRuntime", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).BackupRuntime), ctx, root, artifact, registryCredentials)
 }
 
+// CompleteUIPackageUpload mocks base method.
+func (m *MockRuntimeBackendInterface) CompleteUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CompleteUIPackageUpload", ctx, action)
+	ret0, _ := ret[0].(ports.RuntimeUIPackageResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CompleteUIPackageUpload indicates an expected call of CompleteUIPackageUpload.
+func (mr *MockRuntimeBackendInterfaceMockRecorder) CompleteUIPackageUpload(ctx, action any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteUIPackageUpload", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).CompleteUIPackageUpload), ctx, action)
+}
+
 // DeleteRuntime mocks base method.
 func (m *MockRuntimeBackendInterface) DeleteRuntime(root string, purgeData bool) error {
 	m.ctrl.T.Helper()
@@ -299,6 +314,21 @@ func (m *MockRuntimeBackendInterface) DeleteRuntime(root string, purgeData bool)
 func (mr *MockRuntimeBackendInterfaceMockRecorder) DeleteRuntime(root, purgeData any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteRuntime", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).DeleteRuntime), root, purgeData)
+}
+
+// DevStatus mocks base method.
+func (m *MockRuntimeBackendInterface) DevStatus(ctx context.Context, root string) (ports.RuntimeDevStatus, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DevStatus", ctx, root)
+	ret0, _ := ret[0].(ports.RuntimeDevStatus)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DevStatus indicates an expected call of DevStatus.
+func (mr *MockRuntimeBackendInterfaceMockRecorder) DevStatus(ctx, root any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DevStatus", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).DevStatus), ctx, root)
 }
 
 // ExpectedPorts mocks base method.
@@ -330,19 +360,19 @@ func (mr *MockRuntimeBackendInterfaceMockRecorder) Name() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Name", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).Name))
 }
 
-// PublishUIPackage mocks base method.
-func (m *MockRuntimeBackendInterface) PublishUIPackage(ctx context.Context, action ports.RuntimeUIPackageAction) (ports.RuntimeUIPackageResult, error) {
+// PrepareUIPackageUpload mocks base method.
+func (m *MockRuntimeBackendInterface) PrepareUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageUploadCapability, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PublishUIPackage", ctx, action)
-	ret0, _ := ret[0].(ports.RuntimeUIPackageResult)
+	ret := m.ctrl.Call(m, "PrepareUIPackageUpload", ctx, action)
+	ret0, _ := ret[0].(ports.RuntimeUIPackageUploadCapability)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// PublishUIPackage indicates an expected call of PublishUIPackage.
-func (mr *MockRuntimeBackendInterfaceMockRecorder) PublishUIPackage(ctx, action any) *gomock.Call {
+// PrepareUIPackageUpload indicates an expected call of PrepareUIPackageUpload.
+func (mr *MockRuntimeBackendInterfaceMockRecorder) PrepareUIPackageUpload(ctx, action any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishUIPackage", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).PublishUIPackage), ctx, action)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PrepareUIPackageUpload", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).PrepareUIPackageUpload), ctx, action)
 }
 
 // RootRef mocks base method.
@@ -510,6 +540,45 @@ func (m *MockRuntimeWorkerCallbackBackend) WorkerCallbackDefaults(config ports.R
 func (mr *MockRuntimeWorkerCallbackBackendMockRecorder) WorkerCallbackDefaults(config any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WorkerCallbackDefaults", reflect.TypeOf((*MockRuntimeWorkerCallbackBackend)(nil).WorkerCallbackDefaults), config)
+}
+
+// MockRuntimeWorkloadAuthenticator is a mock of RuntimeWorkloadAuthenticator interface.
+type MockRuntimeWorkloadAuthenticator struct {
+	ctrl     *gomock.Controller
+	recorder *MockRuntimeWorkloadAuthenticatorMockRecorder
+	isgomock struct{}
+}
+
+// MockRuntimeWorkloadAuthenticatorMockRecorder is the mock recorder for MockRuntimeWorkloadAuthenticator.
+type MockRuntimeWorkloadAuthenticatorMockRecorder struct {
+	mock *MockRuntimeWorkloadAuthenticator
+}
+
+// NewMockRuntimeWorkloadAuthenticator creates a new mock instance.
+func NewMockRuntimeWorkloadAuthenticator(ctrl *gomock.Controller) *MockRuntimeWorkloadAuthenticator {
+	mock := &MockRuntimeWorkloadAuthenticator{ctrl: ctrl}
+	mock.recorder = &MockRuntimeWorkloadAuthenticatorMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockRuntimeWorkloadAuthenticator) EXPECT() *MockRuntimeWorkloadAuthenticatorMockRecorder {
+	return m.recorder
+}
+
+// AuthenticateWorkload mocks base method.
+func (m *MockRuntimeWorkloadAuthenticator) AuthenticateWorkload(ctx context.Context, token string) (ports.RuntimeWorkloadIdentity, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AuthenticateWorkload", ctx, token)
+	ret0, _ := ret[0].(ports.RuntimeWorkloadIdentity)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AuthenticateWorkload indicates an expected call of AuthenticateWorkload.
+func (mr *MockRuntimeWorkloadAuthenticatorMockRecorder) AuthenticateWorkload(ctx, token any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AuthenticateWorkload", reflect.TypeOf((*MockRuntimeWorkloadAuthenticator)(nil).AuthenticateWorkload), ctx, token)
 }
 
 // MockRuntimeScrollStore is a mock of RuntimeScrollStore interface.
@@ -865,21 +934,6 @@ func (mr *MockOciRegistryInterfaceMockRecorder) Push(folder, repo, tag, override
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Push", reflect.TypeOf((*MockOciRegistryInterface)(nil).Push), folder, repo, tag, overrides, packMeta, scrollFile)
 }
 
-// ResolveDigest mocks base method.
-func (m *MockOciRegistryInterface) ResolveDigest(artifact string) (string, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ResolveDigest", artifact)
-	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ResolveDigest indicates an expected call of ResolveDigest.
-func (mr *MockOciRegistryInterfaceMockRecorder) ResolveDigest(artifact any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveDigest", reflect.TypeOf((*MockOciRegistryInterface)(nil).ResolveDigest), artifact)
-}
-
 // ResolveAnnotationInfo mocks base method.
 func (m *MockOciRegistryInterface) ResolveAnnotationInfo(artifact string) (domain.AnnotationInfo, error) {
 	m.ctrl.T.Helper()
@@ -893,6 +947,21 @@ func (m *MockOciRegistryInterface) ResolveAnnotationInfo(artifact string) (domai
 func (mr *MockOciRegistryInterfaceMockRecorder) ResolveAnnotationInfo(artifact any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveAnnotationInfo", reflect.TypeOf((*MockOciRegistryInterface)(nil).ResolveAnnotationInfo), artifact)
+}
+
+// ResolveDigest mocks base method.
+func (m *MockOciRegistryInterface) ResolveDigest(artifact string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResolveDigest", artifact)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ResolveDigest indicates an expected call of ResolveDigest.
+func (mr *MockOciRegistryInterfaceMockRecorder) ResolveDigest(artifact any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveDigest", reflect.TypeOf((*MockOciRegistryInterface)(nil).ResolveDigest), artifact)
 }
 
 // MockQueueManagerInterface is a mock of QueueManagerInterface interface.

@@ -22,7 +22,7 @@ func (s *RuntimeSupervisor) runPullWorker(ctx context.Context, runtimeService po
 	if s.workerCallbacks == nil || s.workerCallbackURL == "" {
 		return nil, fmt.Errorf("daemon materialization requires --worker-callback-url and --worker-callback-listen")
 	}
-	token, resultCh, err := s.workerCallbacks.Register(runtimeID)
+	resultCh, err := s.workerCallbacks.Register(runtimeID)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +37,6 @@ func (s *RuntimeSupervisor) runPullWorker(ctx context.Context, runtimeService po
 		RootRef:             root,
 		MountPath:           "/scroll",
 		CallbackURL:         callbackURL,
-		CallbackToken:       token,
 		RegistryCredentials: registryCredentials,
 	}
 	if err := runtimeService.SpawnPullWorker(waitCtx, action); err != nil {

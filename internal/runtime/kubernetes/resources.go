@@ -58,7 +58,19 @@ fi
 chown -R 1000:1000 "$DRUID_WORKER_ROOT"`
 )
 
-func workerPullJobSpec(namespace string, jobName string, pvc string, image string, action ports.RuntimeWorkerAction, imagePullSecret string, registryConfigSecret string, registryPlainHTTP bool) *batchv1.Job {
+const (
+	runtimeDevServiceAccount    = "druid-runtime-dev"
+	runtimeWorkerServiceAccount = "druid-runtime-worker"
+	workloadTokenPath           = "/var/run/secrets/druid-cli/token"
+)
+
+func workloadTokenVolume(audience string) ([]corev1.Volume, []corev1.VolumeMount) {
+	return []corev1.Volume{{Name: "druid-cli-token", VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{Sources: []corev1.VolumeProjection{{ServiceAccountToken: &corev1.ServiceAccountTokenProjection{Audience: audience, ExpirationSeconds: ptrInt64(600), Path: "token"}}}}}}}, []corev1.VolumeMount{{Name: "druid-cli-token", MountPath: "/var/run/secrets/druid-cli", ReadOnly: true}}
+}
+
+func ptrInt64(value int64) *int64 { return &value }
+
+func workerPullJobSpec(namespace string, jobName string, pvc string, image string, action ports.RuntimeWorkerAction, imagePullSecret string, registryConfigSecret string, registryPlainHTTP bool, tokenAudience string) *batchv1.Job {
 	command := []string{
 		"sh", "-c", workerPullScript, "druid-worker-pull",
 		"worker", "pull",
@@ -70,6 +82,7 @@ func workerPullJobSpec(namespace string, jobName string, pvc string, image strin
 	}
 	job := helperJobSpec(namespace, jobName, pvc, image, command, imagePullSecret, map[string]string{
 		labelComponent: "worker-pull",
+		labelRuntimeID: runtimeLabel(action.RuntimeID),
 	})
 	container := &job.Spec.Template.Spec.Containers[0]
 	runAsRoot := int64(0)
@@ -80,7 +93,7 @@ func workerPullJobSpec(namespace string, jobName string, pvc string, image strin
 		RunAsNonRoot: &runAsNonRoot,
 	}
 	container.Env = append(container.Env,
-		corev1.EnvVar{Name: "DRUID_WORKER_TOKEN", Value: action.CallbackToken},
+		corev1.EnvVar{Name: "DRUID_WORKER_TOKEN_FILE", Value: action.TokenFile},
 		corev1.EnvVar{Name: workerPullRootEnvName, Value: action.MountPath},
 	)
 	if registryConfigSecret != "" {
@@ -95,7 +108,19 @@ func workerPullJobSpec(namespace string, jobName string, pvc string, image strin
 	if registryPlainHTTP {
 		container.Env = append(container.Env, corev1.EnvVar{Name: "DRUID_REGISTRY_PLAIN_HTTP", Value: "true"})
 	}
+	pod := &job.Spec.Template.Spec
+	pod.ServiceAccountName = runtimeWorkerServiceAccount
+	pod.AutomountServiceAccountToken = ptrBool(false)
+	volumes, mounts := workloadTokenVolume(tokenAudience)
+	pod.Volumes = append(pod.Volumes, volumes...)
+	pod.Containers[0].VolumeMounts = append(pod.Containers[0].VolumeMounts, mounts...)
 	return job
+}
+
+func ptrBool(value bool) *bool { return &value }
+
+func runtimeLabel(runtimeID string) string {
+	return dnsLabel(runtimeID)
 }
 
 func backupJobSpec(namespace string, jobName string, pvc string, image string, artifact string, imagePullSecret string, registryConfigSecret string, registryPlainHTTP bool) *batchv1.Job {
@@ -154,7 +179,7 @@ func helperJobSpec(namespace string, jobName string, pvc string, image string, c
 	}
 }
 
-func procedureJobSpec(namespace string, root string, commandName string, procedureName string, resourceName string, attempt int, procedure *domain.Procedure, env map[string]string, registrySecret string) (*batchv1.Job, error) {
+func procedureJobSpec(namespace string, root string, commandName string, procedureName string, resourceName string, attempt int, procedure *domain.Procedure, env map[string]string, registrySecret string, tokenAudience string) (*batchv1.Job, error) {
 	_, pvc, err := parseRef(root)
 	if err != nil {
 		return nil, err
@@ -183,6 +208,13 @@ func procedureJobSpec(namespace string, root string, commandName string, procedu
 		RestartPolicy: corev1.RestartPolicyNever,
 		Containers:    []corev1.Container{container},
 		Volumes:       []corev1.Volume{pvcVolume("data", pvc)},
+	}
+	if commandName == "ui_publish_private" || commandName == "ui_publish_public" {
+		podSpec.ServiceAccountName = runtimeDevServiceAccount
+		podSpec.AutomountServiceAccountToken = ptrBool(false)
+		volumes, mounts := workloadTokenVolume(tokenAudience)
+		podSpec.Volumes = append(podSpec.Volumes, volumes...)
+		podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, mounts...)
 	}
 	if registrySecret != "" {
 		podSpec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: registrySecret}}
@@ -252,13 +284,15 @@ func procedureStatefulSetSpec(namespace string, root string, commandName string,
 	}, nil
 }
 
-func devStatefulSetSpec(namespace string, root string, pvc string, image string, action ports.RuntimeDevAction, registrySecret string) *appsv1.StatefulSet {
+func devStatefulSetSpec(namespace string, root string, pvc string, image string, action ports.RuntimeDevAction, registrySecret string, tokenAudience string) *appsv1.StatefulSet {
 	labels := baseLabels(pvc)
 	labels[labelProcedure] = "dev"
+	labels[labelRuntimeID] = runtimeLabel(action.RuntimeID)
 	replicas := int32(1)
+	runAsRoot := int64(0)
 	args := []string{"dev", "--root", action.MountPath, "--listen", action.Listen, "--runtime-id", action.RuntimeID, "--daemon-url", action.DaemonURL}
-	if action.DaemonToken != "" {
-		args = append(args, "--daemon-token", action.DaemonToken)
+	if action.TokenFile != "" {
+		args = append(args, "--daemon-token-file", action.TokenFile)
 	}
 	if action.OwnerID != "" {
 		args = append(args, "--owner-id", action.OwnerID)
@@ -276,17 +310,23 @@ func devStatefulSetSpec(namespace string, root string, pvc string, image string,
 		args = append(args, "--command", command)
 	}
 	podSpec := corev1.PodSpec{
+		ServiceAccountName:           runtimeDevServiceAccount,
+		AutomountServiceAccountToken: ptrBool(false),
 		Containers: []corev1.Container{{
 			Name:            "main",
 			Image:           image,
 			Command:         []string{"druid"},
 			Args:            args,
 			ImagePullPolicy: corev1.PullIfNotPresent,
+			SecurityContext: &corev1.SecurityContext{RunAsUser: &runAsRoot},
 			Ports:           []corev1.ContainerPort{{Name: "webdav", ContainerPort: 8084}},
 			VolumeMounts:    []corev1.VolumeMount{{Name: "data", MountPath: action.MountPath}},
 		}},
 		Volumes: []corev1.Volume{pvcVolume("data", pvc)},
 	}
+	volumes, mounts := workloadTokenVolume(tokenAudience)
+	podSpec.Volumes = append(podSpec.Volumes, volumes...)
+	podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, mounts...)
 	if registrySecret != "" {
 		podSpec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: registrySecret}}
 	}

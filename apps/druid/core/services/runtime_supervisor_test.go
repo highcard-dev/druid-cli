@@ -46,6 +46,51 @@ commands:
 	}
 }
 
+func TestRuntimeSessionRepairsLegacyNilCommands(t *testing.T) {
+	store := newTestStateStore(t)
+	runtimeScroll := &domain.RuntimeScroll{
+		ID:         "legacy-null-command",
+		Artifact:   "local",
+		Root:       t.TempDir(),
+		ScrollName: "legacy-null-command",
+		ScrollYAML: `name: cached
+desc: Cached scroll
+version: 0.1.0
+app_version: "1.0"
+serve: start
+commands:
+  start:
+    run: restart
+    procedures:
+      - image: alpine:3.20
+        command: ["true"]
+  stale_command: null
+`,
+	}
+	if err := store.CreateScroll(runtimeScroll); err != nil {
+		t.Fatal(err)
+	}
+
+	session, err := NewRuntimeSession(store, runtimeScroll, &fakeWorkerBackend{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.scrollService.GetCommand("start"); err != nil {
+		t.Fatalf("preserved command: %v", err)
+	}
+	if _, err := session.scrollService.GetCommand("stale_command"); err == nil {
+		t.Fatal("legacy null command was not removed")
+	}
+
+	persisted, err := store.GetScroll(runtimeScroll.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(persisted.ScrollYAML, "stale_command") {
+		t.Fatalf("persisted scroll YAML still contains repaired command: %s", persisted.ScrollYAML)
+	}
+}
+
 func TestRuntimeSessionHydrateAutoStartsServeWithoutPreviousStatus(t *testing.T) {
 	session := newRuntimeSessionForTest(t, map[string]domain.LockStatus{}, cachedScrollYAML("start"))
 
@@ -509,23 +554,26 @@ func TestRuntimeSupervisorCreateCanCreate(t *testing.T) {
 func TestRuntimeSupervisorCreatePublishesDeclaredPrivateUI(t *testing.T) {
 	store := newTestStateStore(t)
 	callbacks := NewWorkerCallbackManager()
+	var supervisor *RuntimeSupervisor
 	backend := &fakeWorkerBackend{callbacks: callbacks, scrollYAML: strings.Replace(
 		cachedScrollYAML("start"),
 		"commands:",
 		"ui:\n  private:\n    path: private/dist/app.wasm\ncommands:",
 		1,
 	)}
-	supervisor := NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), backend)
+	backend.runCommand = declaredUIPublishCommand(&supervisor, "ui-scroll")
+	supervisor = NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), backend)
 	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
+	supervisor.SetDevWorkerConfig("http://druid-cli:8081", "", "")
 
 	runtimeScroll, err := supervisor.Create("registry.local/ui:1", "ui-scroll", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if backend.uiAction.SourcePath != "private/dist/app.wasm" || backend.uiAction.Scope != domain.RuntimeUIPackageScopePrivate {
+	if backend.uiAction.RuntimeID != "ui-scroll" || backend.uiAction.Scope != domain.RuntimeUIPackageScopePrivate {
 		t.Fatalf("UI action = %#v", backend.uiAction)
 	}
-	if runtimeScroll.UIPackages[domain.RuntimeUIPackageScopePrivate].SHA256 != "sha256" {
+	if pkg := runtimeScroll.UIPackages[domain.RuntimeUIPackageScopePrivate]; pkg.Path != "private/dist/app.wasm" || pkg.SHA256 != strings.Repeat("a", 64) {
 		t.Fatalf("UI packages = %#v", runtimeScroll.UIPackages)
 	}
 }
@@ -554,7 +602,7 @@ func TestRuntimeSupervisorCreateGeneratesIDWhenNameOmitted(t *testing.T) {
 	if backend.action.RuntimeID != runtimeScroll.ID || backend.action.RootRef != backend.RootRef(runtimeScroll.ID, "") {
 		t.Fatalf("worker action = %#v scroll = %#v", backend.action, runtimeScroll)
 	}
-	if backend.action.Mode != ports.RuntimeWorkerModeCreate || backend.action.CallbackToken == "" {
+	if backend.action.Mode != ports.RuntimeWorkerModeCreate {
 		t.Fatalf("worker action = %#v", backend.action)
 	}
 	if runtimeScroll.ArtifactDigest != "sha256:generated" || runtimeScroll.Status != domain.RuntimeScrollStatusCreated {
@@ -583,7 +631,7 @@ func TestRuntimeSupervisorCreateUsesPullWorkerBeforeStateMutation(t *testing.T) 
 	if backend.action.RootRef != backend.RootRef("worker-scroll", "") || backend.action.MountPath != "/scroll" {
 		t.Fatalf("worker root = %#v, want %s mounted at /scroll", backend.action, backend.RootRef("worker-scroll", ""))
 	}
-	if backend.action.CallbackToken == "" || !strings.Contains(backend.action.CallbackURL, "/internal/v1/workers/worker-scroll/complete") {
+	if !strings.Contains(backend.action.CallbackURL, "/internal/v1/workers/worker-scroll/complete") {
 		t.Fatalf("callback action = %#v", backend.action)
 	}
 	if runtimeScroll.ArtifactDigest != "sha256:worker" {
@@ -865,14 +913,17 @@ func TestRuntimeSupervisorUpdateRefreshesCurrentArtifactAndRestartsRunningScroll
 		t.Fatal(err)
 	}
 	callbacks := NewWorkerCallbackManager()
+	var supervisor *RuntimeSupervisor
 	backend := &fakeWorkerBackend{callbacks: callbacks, scrollYAML: strings.Replace(
 		updatedScrollYAML("refreshed-worker"),
 		"commands:",
 		"ui:\n  private:\n    path: private/dist/app.wasm\ncommands:",
 		1,
 	), digest: "sha256:refreshed"}
-	supervisor := NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), backend)
+	backend.runCommand = declaredUIPublishCommand(&supervisor, "refresh-worker")
+	supervisor = NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), backend)
 	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
+	supervisor.SetDevWorkerConfig("http://druid-cli:8081", "", "")
 
 	updated, err := supervisor.Update("refresh-worker", "", nil)
 	if err != nil {
@@ -894,11 +945,20 @@ func TestRuntimeSupervisorUpdateRefreshesCurrentArtifactAndRestartsRunningScroll
 	if updated.ArtifactDigest != "sha256:refreshed" || updated.ScrollName != "refreshed-worker" {
 		t.Fatalf("updated scroll = %#v", updated)
 	}
-	if backend.uiAction.SourcePath != "private/dist/app.wasm" || backend.uiAction.Scope != domain.RuntimeUIPackageScopePrivate {
+	if backend.uiAction.RuntimeID != "refresh-worker" || backend.uiAction.Scope != domain.RuntimeUIPackageScopePrivate {
 		t.Fatalf("UI action = %#v", backend.uiAction)
 	}
-	if updated.UIPackages[domain.RuntimeUIPackageScopePrivate].SHA256 != "sha256" {
+	if pkg := updated.UIPackages[domain.RuntimeUIPackageScopePrivate]; pkg.Path != "private/dist/app.wasm" || pkg.SHA256 != strings.Repeat("a", 64) {
 		t.Fatalf("UI packages = %#v", updated.UIPackages)
+	}
+}
+
+func declaredUIPublishCommand(supervisor **RuntimeSupervisor, runtimeID string) func(ports.RuntimeCommand) (*int, error) {
+	return func(command ports.RuntimeCommand) (*int, error) {
+		procedure := domain.ProcedureName(command.Name, 0, command.Command.Procedures[0])
+		values := command.ProcedureEnv[procedure]
+		_, err := (*supervisor).PrepareUIPackageUpload(runtimeID, "private", values["DRUID_UI_REQUEST_ID"], strings.Repeat("a", 64), "AAAAAAAAAAAAAAAAAAAAAA==")
+		return nil, err
 	}
 }
 
@@ -1200,7 +1260,7 @@ type fakeWorkerBackend struct {
 	deleteRoot  string
 	spawnCount  int
 	runCommand  func(ports.RuntimeCommand) (*int, error)
-	uiAction    ports.RuntimeUIPackageAction
+	uiAction    ports.RuntimeUIPackageUploadAction
 	stopRuntime func(string) error
 }
 
@@ -1222,9 +1282,14 @@ func (f *fakeWorkerBackend) RunCommand(command ports.RuntimeCommand) (*int, erro
 	return nil, nil
 }
 
-func (f *fakeWorkerBackend) PublishUIPackage(ctx context.Context, action ports.RuntimeUIPackageAction) (ports.RuntimeUIPackageResult, error) {
+func (f *fakeWorkerBackend) PrepareUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageUploadCapability, error) {
 	f.uiAction = action
-	return ports.RuntimeUIPackageResult{URL: "http://packages/" + action.RuntimeID + "/" + string(action.Scope) + "/app.wasm", Path: action.SourcePath, SHA256: "sha256"}, nil
+	return ports.RuntimeUIPackageUploadCapability{UploadURL: "http://uploads/" + action.RuntimeID + "/" + string(action.Scope), VerifyURL: "http://packages/" + action.RuntimeID + "/" + string(action.Scope) + "/app.wasm"}, nil
+}
+
+func (f *fakeWorkerBackend) CompleteUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageResult, error) {
+	f.uiAction = action
+	return ports.RuntimeUIPackageResult{URL: "http://packages/" + action.RuntimeID + "/" + string(action.Scope) + "/app.wasm", SHA256: strings.Repeat("a", 64)}, nil
 }
 
 func (f *fakeWorkerBackend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
@@ -1240,6 +1305,10 @@ func (f *fakeWorkerBackend) StartDev(ctx context.Context, action ports.RuntimeDe
 }
 
 func (f *fakeWorkerBackend) StopDev(ctx context.Context, root string) error { return nil }
+
+func (f *fakeWorkerBackend) DevStatus(ctx context.Context, root string) (ports.RuntimeDevStatus, error) {
+	return ports.RuntimeDevStatusReady, nil
+}
 
 func (f *fakeWorkerBackend) Attach(commandName string, data string) error {
 	return nil
@@ -1275,7 +1344,7 @@ func (f *fakeWorkerBackend) SpawnPullWorker(ctx context.Context, action ports.Ru
 	if f.callbacks == nil {
 		return nil
 	}
-	return f.callbacks.Complete(action.RuntimeID, action.CallbackToken, ports.RuntimeWorkerResult{
+	return f.callbacks.Complete(action.RuntimeID, ports.RuntimeWorkerResult{
 		ScrollYAML:     f.scrollYAML,
 		ArtifactDigest: f.digest,
 	})

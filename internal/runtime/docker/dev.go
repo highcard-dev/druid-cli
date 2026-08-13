@@ -3,6 +3,8 @@ package docker
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/http"
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
@@ -37,9 +39,6 @@ func (b *Backend) StartDev(ctx context.Context, action ports.RuntimeDevAction) e
 		"--listen", action.Listen,
 		"--runtime-id", action.RuntimeID,
 		"--daemon-url", action.DaemonURL,
-	}
-	if action.DaemonToken != "" {
-		args = append(args, "--daemon-token", action.DaemonToken)
 	}
 	if action.OwnerID != "" {
 		args = append(args, "--owner-id", action.OwnerID)
@@ -102,6 +101,54 @@ func (b *Backend) StopDev(ctx context.Context, root string) error {
 	err := b.client.ContainerRemove(ctx, ContainerName(root, "dev"), container.RemoveOptions{Force: true})
 	if err != nil && !cerrdefs.IsNotFound(err) {
 		return err
+	}
+	return nil
+}
+
+func (b *Backend) DevStatus(ctx context.Context, root string) (ports.RuntimeDevStatus, error) {
+	if root == "" {
+		return ports.RuntimeDevStatusUnhealthy, fmt.Errorf("runtime root is required")
+	}
+	inspect, err := b.client.ContainerInspect(ctx, ContainerName(root, "dev"))
+	if cerrdefs.IsNotFound(err) {
+		return ports.RuntimeDevStatusDisabled, nil
+	}
+	if err != nil {
+		return ports.RuntimeDevStatusUnhealthy, err
+	}
+	if inspect.State == nil || !inspect.State.Running {
+		return ports.RuntimeDevStatusStarting, nil
+	}
+	if err := b.devHealth(ctx, root); err != nil {
+		return ports.RuntimeDevStatusUnhealthy, nil
+	}
+	return ports.RuntimeDevStatusReady, nil
+}
+
+func (b *Backend) devHealth(ctx context.Context, root string) error {
+	inspect, err := b.client.ContainerInspect(ctx, ContainerName(root, "dev"))
+	if err != nil {
+		return err
+	}
+	bindings := inspect.NetworkSettings.Ports["8084/tcp"]
+	if len(bindings) == 0 || bindings[0].HostPort == "" {
+		return fmt.Errorf("dev container has no WebDAV port binding")
+	}
+	host := bindings[0].HostIP
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+net.JoinHostPort(host, bindings[0].HostPort)+"/health", nil)
+	if err != nil {
+		return err
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("dev container health returned %s", response.Status)
 	}
 	return nil
 }

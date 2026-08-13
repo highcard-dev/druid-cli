@@ -99,11 +99,19 @@ func (f fakeBackend) StartDev(ctx context.Context, action ports.RuntimeDevAction
 
 func (f fakeBackend) StopDev(ctx context.Context, root string) error { return nil }
 
+func (f fakeBackend) DevStatus(ctx context.Context, root string) (ports.RuntimeDevStatus, error) {
+	return ports.RuntimeDevStatusDisabled, nil
+}
+
 func (f fakeBackend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 	return nil, nil
 }
 
-func (f fakeBackend) PublishUIPackage(ctx context.Context, action ports.RuntimeUIPackageAction) (ports.RuntimeUIPackageResult, error) {
+func (f fakeBackend) PrepareUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageUploadCapability, error) {
+	return ports.RuntimeUIPackageUploadCapability{}, nil
+}
+
+func (f fakeBackend) CompleteUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageResult, error) {
 	return ports.RuntimeUIPackageResult{}, nil
 }
 
