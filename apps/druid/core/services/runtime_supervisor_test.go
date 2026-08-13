@@ -865,7 +865,12 @@ func TestRuntimeSupervisorUpdateRefreshesCurrentArtifactAndRestartsRunningScroll
 		t.Fatal(err)
 	}
 	callbacks := NewWorkerCallbackManager()
-	backend := &fakeWorkerBackend{callbacks: callbacks, scrollYAML: updatedScrollYAML("refreshed-worker"), digest: "sha256:refreshed"}
+	backend := &fakeWorkerBackend{callbacks: callbacks, scrollYAML: strings.Replace(
+		updatedScrollYAML("refreshed-worker"),
+		"commands:",
+		"ui:\n  private:\n    path: private/dist/app.wasm\ncommands:",
+		1,
+	), digest: "sha256:refreshed"}
 	supervisor := NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), backend)
 	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
 
@@ -888,6 +893,12 @@ func TestRuntimeSupervisorUpdateRefreshesCurrentArtifactAndRestartsRunningScroll
 	}
 	if updated.ArtifactDigest != "sha256:refreshed" || updated.ScrollName != "refreshed-worker" {
 		t.Fatalf("updated scroll = %#v", updated)
+	}
+	if backend.uiAction.SourcePath != "private/dist/app.wasm" || backend.uiAction.Scope != domain.RuntimeUIPackageScopePrivate {
+		t.Fatalf("UI action = %#v", backend.uiAction)
+	}
+	if updated.UIPackages[domain.RuntimeUIPackageScopePrivate].SHA256 != "sha256" {
+		t.Fatalf("UI packages = %#v", updated.UIPackages)
 	}
 }
 

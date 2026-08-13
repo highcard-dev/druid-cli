@@ -245,30 +245,35 @@ func (s *RuntimeSupervisor) applyMaterializedScroll(runtimeScroll *domain.Runtim
 	if err := s.store.UpdateScroll(runtimeScroll); err != nil {
 		return nil, err
 	}
-	if scroll.UI != nil && scroll.UI.Private != nil {
-		result, err := s.runtimeBackend.PublishUIPackage(context.Background(), ports.RuntimeUIPackageAction{
-			RuntimeID:  runtimeScroll.ID,
-			RootRef:    runtimeScroll.Root,
-			Scope:      domain.RuntimeUIPackageScopePrivate,
-			SourcePath: scroll.UI.Private.Path,
-		})
-		if err != nil {
-			runtimeScroll.Status = domain.RuntimeScrollStatusError
-			runtimeScroll.LastError = fmt.Sprintf("publish declared private UI: %v", err)
-			_ = s.store.UpdateScroll(runtimeScroll)
-			return nil, fmt.Errorf("publish declared private UI: %w", err)
-		}
-		if runtimeScroll.UIPackages == nil {
-			runtimeScroll.UIPackages = domain.RuntimeUIPackages{}
-		}
-		runtimeScroll.UIPackages[domain.RuntimeUIPackageScopePrivate] = domain.RuntimeUIPackage{
-			URL: result.URL, Path: result.Path, SHA256: result.SHA256, UpdatedAt: time.Now().UTC(),
-		}
-		if err := s.store.UpdateScroll(runtimeScroll); err != nil {
-			return nil, err
-		}
+	if err := s.publishDeclaredPrivateUI(runtimeScroll, scroll); err != nil {
+		return nil, err
 	}
 	return runtimeScroll, nil
+}
+
+func (s *RuntimeSupervisor) publishDeclaredPrivateUI(runtimeScroll *domain.RuntimeScroll, scroll *domain.Scroll) error {
+	if scroll.UI == nil || scroll.UI.Private == nil {
+		return nil
+	}
+	result, err := s.runtimeBackend.PublishUIPackage(context.Background(), ports.RuntimeUIPackageAction{
+		RuntimeID:  runtimeScroll.ID,
+		RootRef:    runtimeScroll.Root,
+		Scope:      domain.RuntimeUIPackageScopePrivate,
+		SourcePath: scroll.UI.Private.Path,
+	})
+	if err != nil {
+		runtimeScroll.Status = domain.RuntimeScrollStatusError
+		runtimeScroll.LastError = fmt.Sprintf("publish declared private UI: %v", err)
+		_ = s.store.UpdateScroll(runtimeScroll)
+		return fmt.Errorf("publish declared private UI: %w", err)
+	}
+	if runtimeScroll.UIPackages == nil {
+		runtimeScroll.UIPackages = domain.RuntimeUIPackages{}
+	}
+	runtimeScroll.UIPackages[domain.RuntimeUIPackageScopePrivate] = domain.RuntimeUIPackage{
+		URL: result.URL, Path: result.Path, SHA256: result.SHA256, UpdatedAt: time.Now().UTC(),
+	}
+	return s.store.UpdateScroll(runtimeScroll)
 }
 
 func (s *RuntimeSupervisor) List() ([]*domain.RuntimeScroll, error) {

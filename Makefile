@@ -10,7 +10,16 @@ GO_BIN ?= $(shell go env GOPATH)/bin
 DRUID_K8S_NAMESPACE ?= druid
 DRUID_WORKER_CALLBACK_LISTEN ?= 0.0.0.0:8083
 DRUID_WORKER_CALLBACK_URL ?= http://host.k3d.internal:8083
-DRUID_WATCH_ARGS ?= daemon --runtime kubernetes --listen 127.0.0.1:8081 --public-listen 127.0.0.1:8082 --worker-callback-listen $(DRUID_WORKER_CALLBACK_LISTEN) --worker-callback-url $(DRUID_WORKER_CALLBACK_URL) --unsafe-allow-unauthenticated-management --unsafe-allow-unauthenticated-public --k8s-namespace $(DRUID_K8S_NAMESPACE) --k8s-pull-image $(DRUID_K8S_PULL_IMAGE)
+WSL_HOST_IP ?= $(word 1,$(shell hostname -I))
+DRUID_WORKER_CALLBACK_URL_WINDOWS ?= http://$(WSL_HOST_IP):8083
+DRUID_K8S_UI_S3_BUCKET ?= druid-ui
+DRUID_K8S_UI_S3_PUBLIC_BASE_URL ?= http://127.0.0.1:9000/druid-ui
+DRUID_K8S_UI_S3_REGION ?= us-east-1
+DRUID_K8S_UI_S3_ENDPOINT ?= http://host.k3d.internal:9000
+DRUID_K8S_UI_S3_ENDPOINT_WINDOWS ?= http://host.docker.internal:9000
+DRUID_K8S_UI_S3_PREFIX ?= scrolls
+DRUID_K8S_UI_S3_CREDENTIALS_SECRET ?= druid-ui-s3
+DRUID_WATCH_ARGS ?= daemon --runtime kubernetes --listen 127.0.0.1:8081 --public-listen 127.0.0.1:8082 --worker-callback-listen $(DRUID_WORKER_CALLBACK_LISTEN) --worker-callback-url $(DRUID_WORKER_CALLBACK_URL) --unsafe-allow-unauthenticated-management --unsafe-allow-unauthenticated-public --k8s-namespace $(DRUID_K8S_NAMESPACE) --k8s-pull-image $(DRUID_K8S_PULL_IMAGE) --k8s-ui-s3-bucket $(DRUID_K8S_UI_S3_BUCKET) --k8s-ui-s3-public-base-url $(DRUID_K8S_UI_S3_PUBLIC_BASE_URL) --k8s-ui-s3-region $(DRUID_K8S_UI_S3_REGION) --k8s-ui-s3-endpoint $(DRUID_K8S_UI_S3_ENDPOINT) --k8s-ui-s3-prefix $(DRUID_K8S_UI_S3_PREFIX) --k8s-ui-s3-credentials-secret $(DRUID_K8S_UI_S3_CREDENTIALS_SECRET)
 
 generate-api: ## Generate API types from OpenAPI spec
 	@echo "Generating API types from OpenAPI spec..."
@@ -57,7 +66,7 @@ watch: ## Run Daemon with auto reload
 
 watch-windows: ## Run Daemon with auto reload inside WSL2 on Windows
 	@grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null || (echo "watch-windows must run inside WSL2; use make watch on Linux or macOS." >&2; exit 1)
-	@$(MAKE) watch
+	@$(MAKE) watch DRUID_WORKER_CALLBACK_URL="$(DRUID_WORKER_CALLBACK_URL_WINDOWS)" DRUID_K8S_UI_S3_ENDPOINT="$(DRUID_K8S_UI_S3_ENDPOINT_WINDOWS)"
 
 mock:
 	mockgen -source=internal/core/ports/services_ports.go -destination test/mock/services.go
