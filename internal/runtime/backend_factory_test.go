@@ -119,7 +119,7 @@ func (f fakeBackend) ExpectedPorts(root string, commands map[string]*domain.Comm
 	return nil, nil
 }
 
-func (f fakeBackend) RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error) {
+func (f fakeBackend) RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port, reservedPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error) {
 	return nil, nil
 }
 

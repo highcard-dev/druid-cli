@@ -26,6 +26,10 @@ func NewScrollService(
 }
 
 func NewCachedScrollService(scrollDir string, scrollYAML []byte) (*ScrollService, error) {
+	return NewCachedScrollServiceWithPorts(scrollDir, scrollYAML, nil)
+}
+
+func NewCachedScrollServiceWithPorts(scrollDir string, scrollYAML []byte, extraPorts []domain.Port) (*ScrollService, error) {
 	s := &ScrollService{
 		scrollDir: scrollDir,
 	}
@@ -33,7 +37,23 @@ func NewCachedScrollService(scrollDir string, scrollYAML []byte) (*ScrollService
 	if err != nil {
 		return nil, err
 	}
-	if err := scroll.Validate(false); err != nil {
+	validationScroll := *scroll
+	validationScroll.Ports = append([]domain.Port(nil), scroll.Ports...)
+	portsByName := make(map[string]domain.Port, len(validationScroll.Ports))
+	for _, port := range validationScroll.Ports {
+		portsByName[port.Name] = port
+	}
+	for _, extra := range extraPorts {
+		if current, ok := portsByName[extra.Name]; ok {
+			if current.Port != extra.Port || current.Protocol != extra.Protocol {
+				return nil, errors.New("extra port " + extra.Name + " conflicts with scroll port")
+			}
+			continue
+		}
+		validationScroll.Ports = append(validationScroll.Ports, extra)
+		portsByName[extra.Name] = extra
+	}
+	if err := validationScroll.Validate(false); err != nil {
 		return nil, err
 	}
 	s.scroll = scroll

@@ -96,7 +96,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/RegistryCredential'
-
     EnsureScrollRequest:
       type: object
       required:
@@ -120,6 +119,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/RegistryCredential'
+        reserved_ports:
+          type: array
+          items:
+            $ref: '#/components/schemas/Port'
+
+    Port:
+      type: object
+      required:
+        - name
+        - port
+        - protocol
+      properties:
+        name:
+          type: string
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        protocol:
+          type: string
+          enum: [http, https, tcp, udp]
+        description:
+          type: string
 
     RegistryCredential:
       type: object

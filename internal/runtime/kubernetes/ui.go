@@ -23,7 +23,14 @@ func (b *Backend) PrepareUIPackageUpload(ctx context.Context, action ports.Runti
 	if err != nil {
 		return ports.RuntimeUIPackageUploadCapability{}, err
 	}
-	return ports.RuntimeUIPackageUploadCapability{UploadURL: uploadURL, VerifyURL: b.uiPackagePublicURL(config, action)}, nil
+	verifyURL, err := uipackage.EndpointObjectURL(config, uiPackageObjectName(action))
+	if err != nil {
+		return ports.RuntimeUIPackageUploadCapability{}, err
+	}
+	if verifyURL == "" {
+		verifyURL = b.uiPackagePublicURL(config, action)
+	}
+	return ports.RuntimeUIPackageUploadCapability{UploadURL: uploadURL, VerifyURL: verifyURL}, nil
 }
 
 func (b *Backend) CompleteUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageResult, error) {

@@ -390,18 +390,18 @@ func (mr *MockRuntimeBackendInterfaceMockRecorder) RootRef(id, namespace any) *g
 }
 
 // RoutingTargets mocks base method.
-func (m *MockRuntimeBackendInterface) RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error) {
+func (m *MockRuntimeBackendInterface) RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port, reservedPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RoutingTargets", root, commands, globalPorts)
+	ret := m.ctrl.Call(m, "RoutingTargets", root, commands, globalPorts, reservedPorts)
 	ret0, _ := ret[0].([]domain.RuntimeRoutingTarget)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // RoutingTargets indicates an expected call of RoutingTargets.
-func (mr *MockRuntimeBackendInterfaceMockRecorder) RoutingTargets(root, commands, globalPorts any) *gomock.Call {
+func (mr *MockRuntimeBackendInterfaceMockRecorder) RoutingTargets(root, commands, globalPorts, reservedPorts any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RoutingTargets", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).RoutingTargets), root, commands, globalPorts)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RoutingTargets", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).RoutingTargets), root, commands, globalPorts, reservedPorts)
 }
 
 // RunCommand mocks base method.

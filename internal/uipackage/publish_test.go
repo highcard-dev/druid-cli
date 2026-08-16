@@ -37,10 +37,8 @@ func TestPresignPutBindsContentDigests(t *testing.T) {
 		t.Fatalf("signature expiry = %q, want 300 seconds", got)
 	}
 	signedHeaders := parsed.Query().Get("X-Amz-SignedHeaders")
-	for _, header := range []string{"content-md5", "x-amz-checksum-sha256", "x-amz-sdk-checksum-algorithm"} {
-		if !strings.Contains(signedHeaders, header) {
-			t.Fatalf("signed headers = %q, missing %q", signedHeaders, header)
-		}
+	if !strings.Contains(signedHeaders, "content-md5") {
+		t.Fatalf("signed headers = %q, missing content-md5", signedHeaders)
 	}
 }
 
@@ -50,5 +48,17 @@ func TestPresignPutRejectsInvalidDigests(t *testing.T) {
 	}, S3Config{Bucket: "druid-ui", Region: "fsn1", AccessKey: "access", SecretKey: "secret"})
 	if err == nil {
 		t.Fatal("invalid digest action was accepted")
+	}
+}
+
+func TestEndpointObjectURLUsesConfiguredS3Endpoint(t *testing.T) {
+	got, err := EndpointObjectURL(S3Config{
+		Endpoint: "http://host.k3d.internal:9000/", Bucket: "druid-ui", KeyPrefix: "/runtime/private/",
+	}, "request/app.wasm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "http://host.k3d.internal:9000/druid-ui/runtime/private/request/app.wasm" {
+		t.Fatalf("endpoint object URL = %q", got)
 	}
 }

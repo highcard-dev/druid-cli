@@ -13,9 +13,14 @@ func (s *RuntimeSession) Ports() ([]domain.RuntimePortStatus, error) {
 	s.mu.Lock()
 	runtimeScroll := *s.runtimeScroll
 	routing := append([]domain.RuntimeRouteAssignment(nil), s.runtimeScroll.Routing...)
+	reservations := append([]domain.Port(nil), s.runtimeScroll.ReservedPorts...)
 	s.mu.Unlock()
 	file := s.scrollService.GetFile()
-	runtimePorts, err := resolveRuntimePorts(file.Ports, routing, false)
+	ports, err := mergeRuntimePorts(file.Ports, reservations)
+	if err != nil {
+		return nil, err
+	}
+	runtimePorts, err := resolveRuntimePorts(ports, routing, false)
 	if err != nil {
 		return nil, err
 	}
@@ -25,8 +30,14 @@ func (s *RuntimeSession) Ports() ([]domain.RuntimePortStatus, error) {
 func (s *RuntimeSession) RoutingTargets() ([]domain.RuntimeRoutingTarget, error) {
 	s.mu.Lock()
 	runtimeScroll := *s.runtimeScroll
+	reservations := append([]domain.Port(nil), s.runtimeScroll.ReservedPorts...)
 	s.mu.Unlock()
-	return s.runtimeBackend.RoutingTargets(runtimeScroll.Root, s.scrollService.GetFile().Commands, s.scrollService.GetFile().Ports)
+	file := s.scrollService.GetFile()
+	ports, err := mergeRuntimePorts(file.Ports, reservations)
+	if err != nil {
+		return nil, err
+	}
+	return s.runtimeBackend.RoutingTargets(runtimeScroll.Root, file.Commands, ports, reservations)
 }
 
 func (s *RuntimeSession) Queue() domain.ProcedureStatusMap {
@@ -135,7 +146,7 @@ func (s *RuntimeSession) ApplyRestore(materialized *ports.RuntimeMaterialization
 	}
 	root := materialized.Root
 	scrollYAML := materialized.ScrollYAML
-	scrollService, err := coreservices.NewCachedScrollService(root, scrollYAML)
+	scrollService, err := coreservices.NewCachedScrollServiceWithPorts(root, scrollYAML, s.runtimeScroll.ReservedPorts)
 	if err != nil {
 		return err
 	}
@@ -151,7 +162,12 @@ func (s *RuntimeSession) ApplyRestore(materialized *ports.RuntimeMaterialization
 
 	s.mu.Lock()
 	commands := scrollService.GetFile().Commands
-	routing := preserveRoutingAssignments(s.runtimeScroll.Routing, scrollService.GetFile().Ports)
+	ports, err := mergeRuntimePorts(scrollService.GetFile().Ports, s.runtimeScroll.ReservedPorts)
+	if err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	routing := preserveRoutingAssignments(s.runtimeScroll.Routing, ports)
 	for commandName := range s.runtimeScroll.Procedures {
 		if commands[commandName] == nil {
 			delete(s.runtimeScroll.Procedures, commandName)

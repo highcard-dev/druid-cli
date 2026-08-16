@@ -29,6 +29,8 @@ type CommandDoneEvent struct {
 	Timestamp  time.Time `json:"timestamp"`
 }
 
+const hotReloadDebounce = 300 * time.Millisecond
+
 // WatchService handles local dev file watching and command triggers.
 type WatchService struct {
 	watcher           *fsnotify.Watcher
@@ -44,6 +46,7 @@ type WatchService struct {
 	scrollService     ports.ScrollServiceInterface
 	buildActive       bool
 	changeAfterBuild  bool
+	hotReloadTimer    *time.Timer
 }
 
 func NewDevService(
@@ -157,6 +160,10 @@ func (uds *WatchService) StopWatching() error {
 			logger.Log().Error("Failed to close file watcher", zap.Error(err))
 			return err
 		}
+	}
+	if uds.hotReloadTimer != nil {
+		uds.hotReloadTimer.Stop()
+		uds.hotReloadTimer = nil
 	}
 
 	// Close the broadcast channel to clean up subscribers
@@ -332,8 +339,30 @@ func (uds *WatchService) handleFileEvent(event fsnotify.Event) {
 		}
 	}
 
-	// Handle hot reload commands in a separate goroutine to avoid blocking the event loop
-	go uds.runHotReloadCommand()
+	uds.scheduleHotReload()
+}
+
+func (uds *WatchService) scheduleHotReload() {
+	uds.mu.Lock()
+	if !uds.isWatching {
+		uds.mu.Unlock()
+		return
+	}
+	if uds.hotReloadTimer != nil {
+		uds.hotReloadTimer.Stop()
+	}
+	ctx := uds.ctx
+	uds.hotReloadTimer = time.AfterFunc(hotReloadDebounce, func() {
+		uds.mu.Lock()
+		if !uds.isWatching || uds.ctx != ctx {
+			uds.mu.Unlock()
+			return
+		}
+		uds.hotReloadTimer = nil
+		uds.mu.Unlock()
+		uds.runHotReloadCommand()
+	})
+	uds.mu.Unlock()
 }
 
 func (uds *WatchService) runHotReloadCommand() {

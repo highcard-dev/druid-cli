@@ -65,7 +65,7 @@ func (b *Backend) AuthenticateWorkload(ctx context.Context, token string) (ports
 		}
 		if pod.Labels[labelProcedure] == "dev" {
 			identity.Kind = "dev"
-		} else if pod.Labels[labelProcedure] == "ui-publish-private-0" || pod.Labels[labelProcedure] == "ui-publish-public-0" {
+		} else if isUIPublishWorkload(pod.Labels[labelCommand], pod.Labels[labelProcedure]) {
 			identity.Kind = "ui-publish"
 		} else {
 			return ports.RuntimeWorkloadIdentity{}, fmt.Errorf("invalid Druid dev workload")

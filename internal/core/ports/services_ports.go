@@ -45,13 +45,19 @@ type RuntimeBackendInterface interface {
 	PrepareUIPackageUpload(ctx context.Context, action RuntimeUIPackageUploadAction) (RuntimeUIPackageUploadCapability, error)
 	CompleteUIPackageUpload(ctx context.Context, action RuntimeUIPackageUploadAction) (RuntimeUIPackageResult, error)
 	ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error)
-	RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error)
+	RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port, reservedPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error)
 	StopRuntime(root string) error
 	DeleteRuntime(root string, purgeData bool) error
 	BackupRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential) error
 	SpawnPullWorker(ctx context.Context, action RuntimeWorkerAction) error
 	Attach(commandName string, data string) error
 	Signal(commandName string, target string, signal string, root string) error
+}
+
+// RuntimeCommandStopper is implemented by backends that can remove one
+// command's workloads without stopping the rest of the runtime.
+type RuntimeCommandStopper interface {
+	StopCommand(root string, command string) error
 }
 
 type RuntimeDevStatus string

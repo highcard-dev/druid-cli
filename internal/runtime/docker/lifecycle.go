@@ -36,6 +36,39 @@ func (b *Backend) StopRuntime(root string) error {
 	return nil
 }
 
+func (b *Backend) StopCommand(root string, command string) error {
+	if root == "" || command == "" {
+		return fmt.Errorf("runtime root and command are required")
+	}
+	ctx := context.Background()
+	items, err := b.client.ContainerList(ctx, container.ListOptions{
+		All: true,
+		Filters: filters.NewArgs(
+			filters.Arg("label", dockerLabelRootHash+"="+rootHash(root)),
+			filters.Arg("label", dockerLabelCommand+"="+command),
+		),
+	})
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		if err := b.client.ContainerRemove(ctx, item.ID, container.RemoveOptions{Force: true}); err != nil {
+			return err
+		}
+	}
+	b.mu.Lock()
+	for key, id := range b.containers {
+		for _, item := range items {
+			if id == item.ID {
+				delete(b.containers, key)
+				delete(b.stdin, key)
+			}
+		}
+	}
+	b.mu.Unlock()
+	return nil
+}
+
 func (b *Backend) DeleteRuntime(root string, purgeData bool) error {
 	if err := b.StopRuntime(root); err != nil {
 		return err

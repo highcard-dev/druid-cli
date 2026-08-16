@@ -210,7 +210,7 @@ func TestProcedureJobSpecUsesProvidedRuntimeEnv(t *testing.T) {
 
 func TestUIPublishProcedureJobUsesProjectedDevIdentity(t *testing.T) {
 	procedure := &domain.Procedure{Image: "curlimages/curl:8.12.1", Command: []string{"true"}}
-	job, err := procedureJobSpec("druid", ref("druid", "druid-ui-data"), "ui_publish_private", "ui_publish_private.0", "ui-publish-private-0", 1, procedure, nil, "registry-secret", "druid-cli")
+	job, err := procedureJobSpec("druid", ref("druid", "druid-ui-data"), "ui_publish_private_012345abcdef", "ui_publish_private_012345abcdef.0", "ui-publish-private-0", 1, procedure, nil, "registry-secret", "druid-cli")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,6 +228,20 @@ func TestUIPublishProcedureJobUsesProjectedDevIdentity(t *testing.T) {
 	mounts := pod.Containers[0].VolumeMounts
 	if len(mounts) != 1 || mounts[0].MountPath != "/var/run/secrets/druid-cli" || !mounts[0].ReadOnly {
 		t.Fatalf("publish token mount = %#v", mounts)
+	}
+}
+
+func TestUntrustedCommandCannotRequestProjectedDevIdentity(t *testing.T) {
+	procedure := &domain.Procedure{Image: "curlimages/curl:8.12.1", Command: []string{"true"}}
+	for _, command := range []string{"ui_publish_private", "ui_publish_private_not-a-token", "ui_publish_admin_012345abcdef", "start"} {
+		job, err := procedureJobSpec("druid", ref("druid", "druid-ui-data"), command, command+".0", "test-job", 1, procedure, nil, "", "druid-cli")
+		if err != nil {
+			t.Fatal(err)
+		}
+		pod := job.Spec.Template.Spec
+		if pod.ServiceAccountName != "" || len(pod.Volumes) != 1 {
+			t.Fatalf("command %q received projected identity: %#v", command, pod)
+		}
 	}
 }
 
@@ -1118,7 +1132,7 @@ func TestRoutingTargetsReturnStableBackendServices(t *testing.T) {
 			Id:            &procedureID,
 			ExpectedPorts: []domain.ExpectedPort{{Name: "http"}},
 		}}},
-	}, []domain.Port{{Name: "http", Port: 8080, Protocol: "http"}})
+	}, []domain.Port{{Name: "http", Port: 8080, Protocol: "http"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1148,6 +1162,30 @@ func TestRoutingTargetsReturnStableBackendServices(t *testing.T) {
 	if webdav.ServiceName != serviceName(root, "dev", "webdav") || webdav.Port != 8084 || webdav.Protocol != "https" {
 		t.Fatalf("webdav target = %#v", webdav)
 	}
+}
+
+func TestRoutingTargetsIncludeUnclaimedRuntimePort(t *testing.T) {
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset())
+	root := ref("druid", "druid-static-web-data")
+	reservedPorts := []domain.Port{{Name: "vscode", Port: 3333, Protocol: "http"}}
+	globalPorts := append(reservedPorts, domain.Port{Name: "unused-game-port", Port: 25565, Protocol: "tcp"})
+	targets, err := backend.RoutingTargets(root, nil, globalPorts, reservedPorts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range targets {
+		if target.Name != "vscode" {
+			if target.Name == "unused-game-port" {
+				t.Fatalf("ordinary unclaimed port was routed: %#v", target)
+			}
+			continue
+		}
+		if target.Procedure != "" || target.ServiceName != "" || target.Selector[labelPortName] != "vscode" {
+			t.Fatalf("unclaimed target = %#v", target)
+		}
+		return
+	}
+	t.Fatalf("vscode target missing: %#v", targets)
 }
 
 func TestServiceSpecUsesRuntimePortForServiceAndTarget(t *testing.T) {
@@ -1180,7 +1218,7 @@ func TestRoutingTargetsCollapseColdstarterAndRuntimePort(t *testing.T) {
 			{Id: &coldstart, ExpectedPorts: []domain.ExpectedPort{{Name: "main"}}},
 			{Id: &start, ExpectedPorts: []domain.ExpectedPort{{Name: "main"}}},
 		}},
-	}, []domain.Port{{Name: "main", Port: 25565, Protocol: "tcp"}})
+	}, []domain.Port{{Name: "main", Port: 25565, Protocol: "tcp"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1251,7 +1289,7 @@ func TestRoutingTargetsUseCurrentServiceSelector(t *testing.T) {
 			{Id: &coldstart, ExpectedPorts: []domain.ExpectedPort{{Name: "main"}}},
 			{Id: &start, ExpectedPorts: []domain.ExpectedPort{{Name: "main"}}},
 		}},
-	}, ports)
+	}, ports, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
