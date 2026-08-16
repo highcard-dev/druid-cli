@@ -288,7 +288,8 @@ func workloadIdentityMiddleware(authenticator ports.RuntimeWorkloadAuthenticator
 		if c.Path() == "/health" || c.Path() == "/api/v1/health" {
 			return c.Next()
 		}
-		if allowUnsafe {
+		token := strings.TrimSpace(strings.TrimPrefix(c.Get("Authorization"), "Bearer "))
+		if allowUnsafe && token == "" {
 			runtimeID := strings.TrimSpace(c.Get("X-Druid-Runtime-ID"))
 			kind := "dev"
 			if isUIPackagePreparePath(c.Path(), runtimeID) {
@@ -300,7 +301,6 @@ func workloadIdentityMiddleware(authenticator ports.RuntimeWorkloadAuthenticator
 		if authenticator == nil {
 			return fiber.NewError(fiber.StatusUnauthorized, "workload identity authentication is unavailable")
 		}
-		token := strings.TrimSpace(strings.TrimPrefix(c.Get("Authorization"), "Bearer "))
 		identity, err := authenticator.AuthenticateWorkload(c.Context(), token)
 		if err != nil {
 			return fiber.NewError(fiber.StatusUnauthorized, err.Error())

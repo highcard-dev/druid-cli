@@ -76,6 +76,7 @@ func RegisterPublicRoutes(app *fiber.App, handlers RouteHandlers) {
 	app.Get("/:id/api/v1/token", handlers.Server.CreateDaemonToken)
 	app.Get("/:id/api/v1/scroll", handlers.Server.GetDaemonScroll)
 	app.Put("/:id/api/v1/scroll/commands/:command", handlers.Server.AddDaemonCommand)
+	app.Delete("/:id/api/v1/scroll/commands/:command", handlers.Server.RemoveDaemonCommand)
 	app.Post("/:id/api/v1/command", handlers.Server.RunDaemonCommand)
 	app.Get("/:id/api/v1/queue", handlers.Server.GetDaemonQueue)
 	app.Get("/:id/api/v1/consoles", handlers.Server.GetDaemonConsoles)

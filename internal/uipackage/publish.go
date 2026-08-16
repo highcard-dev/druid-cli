@@ -6,14 +6,12 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"net/http"
 	"net/url"
 	"path"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -56,25 +54,18 @@ func newClient(ctx context.Context, config S3Config) (*s3.Client, error) {
 	}), nil
 }
 
-func objectURL(config S3Config, objectName string) (*url.URL, error) {
-	key := path.Join(strings.Trim(config.KeyPrefix, "/"), objectName)
-	endpoint := config.Endpoint
-	if endpoint == "" {
-		endpoint = "https://" + config.Bucket + ".s3." + config.Region + ".amazonaws.com"
-	} else {
-		key = path.Join(config.Bucket, key)
+// EndpointObjectURL returns the path-style URL reachable by an uploader that
+// uses a configured S3-compatible endpoint.
+func EndpointObjectURL(config S3Config, objectName string) (string, error) {
+	if config.Endpoint == "" {
+		return "", nil
 	}
-	parsed, err := url.Parse(endpoint)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return nil, fmt.Errorf("invalid UI package S3 endpoint")
-	}
-	parsed.Path = path.Join(parsed.Path, key)
-	return parsed, nil
+	return url.JoinPath(config.Endpoint, config.Bucket, path.Join(strings.Trim(config.KeyPrefix, "/"), objectName))
 }
 
 // PresignPut issues a short-lived URL for a one-shot runtime command.
-// S3 requires the uploader to provide a SHA-256 checksum and verifies it
-// against the uploaded bytes before accepting the object.
+// Content-MD5 binds the exact bytes while remaining compatible with S3 stores
+// that do not implement the newer x-amz-checksum-* request contract.
 func PresignPut(ctx context.Context, objectName string, action ports.RuntimeUIPackageUploadAction, config S3Config) (string, error) {
 	if config.Bucket == "" || config.Region == "" || objectName == "" || action.SHA256 == "" || action.ContentMD5 == "" {
 		return "", fmt.Errorf("ui package S3 bucket, region, object name, and digests are required")
@@ -87,41 +78,26 @@ func PresignPut(ctx context.Context, objectName string, action ports.RuntimeUIPa
 	if err != nil || len(md5) != 16 {
 		return "", fmt.Errorf("invalid UI package Content-MD5")
 	}
-	cfg, err := loadConfig(ctx, config)
+	client, err := newClient(ctx, config)
 	if err != nil {
 		return "", err
 	}
-	uploadURL, err := objectURL(config, objectName)
-	if err != nil {
-		return "", err
-	}
-	query := uploadURL.Query()
-	query.Set("X-Amz-Expires", "300")
-	uploadURL.RawQuery = query.Encode()
-	request, err := http.NewRequestWithContext(ctx, http.MethodPut, uploadURL.String(), nil)
-	if err != nil {
-		return "", err
-	}
-	checksum := base64.StdEncoding.EncodeToString(sha256sum)
-	request.Header.Set("Content-Type", "application/wasm")
-	request.Header.Set("Cache-Control", "public, max-age=31536000, immutable")
-	request.Header.Set("Content-MD5", action.ContentMD5)
-	request.Header.Set("x-amz-sdk-checksum-algorithm", "SHA256")
-	request.Header.Set("x-amz-checksum-sha256", checksum)
-	credentials, err := cfg.Credentials.Retrieve(ctx)
-	if err != nil {
-		return "", err
-	}
-	presigned, signedHeaders, err := v4.NewSigner().PresignHTTP(ctx, credentials, request, "UNSIGNED-PAYLOAD", "s3", config.Region, time.Now(), func(options *v4.SignerOptions) {
-		options.DisableHeaderHoisting = true
+	presigned, err := s3.NewPresignClient(client).PresignPutObject(ctx, &s3.PutObjectInput{
+		Bucket:       aws.String(config.Bucket),
+		Key:          aws.String(path.Join(strings.Trim(config.KeyPrefix, "/"), objectName)),
+		ContentType:  aws.String("application/wasm"),
+		CacheControl: aws.String("public, max-age=31536000, immutable"),
+		ContentMD5:   aws.String(action.ContentMD5),
+	}, func(options *s3.PresignOptions) {
+		options.Expires = 5 * time.Minute
 	})
 	if err != nil {
 		return "", err
 	}
-	if signedHeaders.Get("Content-Md5") != action.ContentMD5 || signedHeaders.Get("X-Amz-Checksum-Sha256") != checksum || signedHeaders.Get("X-Amz-Sdk-Checksum-Algorithm") != "SHA256" {
+	if presigned.SignedHeader.Get("Content-Md5") != action.ContentMD5 {
 		return "", fmt.Errorf("UI package presigned request did not bind required integrity headers")
 	}
-	return presigned, nil
+	return presigned.URL, nil
 }
 
 // PresignGet issues a short-lived read capability for the worker-side

@@ -43,6 +43,25 @@ func resolveRuntimePorts(ports []domain.Port, routing []domain.RuntimeRouteAssig
 	return resolved, nil
 }
 
+func mergeRuntimePorts(ports []domain.Port, reservations []domain.Port) ([]domain.Port, error) {
+	merged := append([]domain.Port(nil), ports...)
+	byName := make(map[string]domain.Port, len(merged))
+	for _, port := range merged {
+		byName[port.Name] = port
+	}
+	for _, reservation := range reservations {
+		if current, exists := byName[reservation.Name]; exists {
+			if current.Port != reservation.Port || current.Protocol != reservation.Protocol {
+				return nil, fmt.Errorf("reserved port %s conflicts with scroll port", reservation.Name)
+			}
+			continue
+		}
+		merged = append(merged, reservation)
+		byName[reservation.Name] = reservation
+	}
+	return merged, nil
+}
+
 func validateDynamicPortsUnchanged(
 	ports []domain.Port,
 	currentRouting []domain.RuntimeRouteAssignment,

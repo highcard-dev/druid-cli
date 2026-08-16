@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
@@ -25,6 +26,14 @@ func (s *RuntimeSupervisor) AddCommand(id string, command string, instruction *d
 		return err
 	}
 	return session.AddCommand(command, instruction)
+}
+
+func (s *RuntimeSupervisor) RemoveCommand(id string, command string) error {
+	session, err := s.sessionFor(id)
+	if err != nil {
+		return err
+	}
+	return session.RemoveCommand(command)
 }
 
 func (s *RuntimeSupervisor) EnableDevWatch(id string, request DevWatchRequest) (DevWatchStatus, error) {
@@ -64,6 +73,9 @@ func (s *RuntimeSupervisor) SubscribeDevWatch(id string) (chan *[]byte, func(), 
 }
 
 func (s *RuntimeSession) AddCommand(command string, instruction *domain.CommandInstructionSet) error {
+	// HTTP adapters may provide zero-copy route parameters. Command names are
+	// retained as map keys, so own the bytes beyond the request lifetime.
+	command = strings.Clone(command)
 	if command == "" {
 		return fmt.Errorf("command is required")
 	}
@@ -77,6 +89,42 @@ func (s *RuntimeSession) AddCommand(command string, instruction *domain.CommandI
 		file.Commands = map[string]*domain.CommandInstructionSet{}
 	}
 	file.Commands[command] = instruction
+	data, err := yaml.Marshal(file)
+	if err != nil {
+		return err
+	}
+	s.runtimeScroll.ScrollYAML = string(data)
+	return s.store.UpdateScroll(s.runtimeScroll)
+}
+
+func (s *RuntimeSession) RemoveCommand(command string) error {
+	if command == "" {
+		return fmt.Errorf("command is required")
+	}
+
+	// Keep the scheduler from starting the command while its runtime resources
+	// and persisted definition are being removed.
+	s.runMu.Lock()
+	defer s.runMu.Unlock()
+
+	s.queueMu.Lock()
+	delete(s.queue, command)
+	s.queueMu.Unlock()
+
+	s.mu.Lock()
+	root := s.runtimeScroll.Root
+	s.mu.Unlock()
+	if stopper, ok := s.runtimeBackend.(ports.RuntimeCommandStopper); ok {
+		if err := stopper.StopCommand(root, command); err != nil {
+			return err
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	file := s.scrollService.GetFile()
+	delete(file.Commands, command)
+	delete(s.runtimeScroll.Procedures, command)
 	data, err := yaml.Marshal(file)
 	if err != nil {
 		return err

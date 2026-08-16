@@ -68,7 +68,7 @@ func TestPublishUIPackageRunsOneShotCommandWithEphemeralURL(t *testing.T) {
 	if got := updated.UIPackages[domain.RuntimeUIPackageScopePrivate]; got.Path != "private/dist/app.wasm" || got.SHA256 != strings.Repeat("a", 64) {
 		t.Fatalf("package = %#v", got)
 	}
-	if command.Name != "ui_publish_private" || command.Command == nil || len(command.Command.Procedures) != 1 {
+	if !strings.HasPrefix(command.Name, "ui_publish_private_") || command.Command == nil || len(command.Command.Procedures) != 1 {
 		t.Fatalf("command = %#v", command)
 	}
 	if got := command.Command.Procedures[0].Image; got != uiPublishImage {

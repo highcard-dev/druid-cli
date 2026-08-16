@@ -102,7 +102,7 @@ func (s *RuntimeSupervisor) publishUIPackage(id string, scope string, sourcePath
 		s.mu.Unlock()
 	}()
 
-	commandName := "ui_publish_" + string(uiScope)
+	commandName := "ui_publish_" + string(uiScope) + "_" + strings.ReplaceAll(action.RequestID, "-", "")[:12]
 	command := uiPublishCommand()
 	session, err := s.sessionFor(runtimeScroll.ID)
 	if err != nil {
@@ -111,6 +111,7 @@ func (s *RuntimeSupervisor) publishUIPackage(id string, scope string, sourcePath
 	if err := session.AddCommand(commandName, command); err != nil {
 		return nil, err
 	}
+	defer func() { _ = session.RemoveCommand(commandName) }()
 	procedureName := domain.ProcedureName(commandName, 0, command.Procedures[0])
 	if err := session.AddTempItemWithWaitEnv(commandName, map[string]map[string]string{
 		procedureName: {
@@ -180,7 +181,8 @@ cp "$source" "$artifact"
 source="$artifact"
 sha256="$(sha256sum "$source" | awk '{print $1}')"
 content_md5="$(md5sum "$source" | awk '{print $1}' | xxd -r -p | base64 | tr -d '\n')"
-capability="$(curl --fail --silent --show-error --request POST \
+echo "Preparing Druid UI package upload"
+capability="$(curl --fail-with-body --silent --show-error --request POST \
   --header "Authorization: Bearer $(cat "$token_file")" \
   --data-urlencode "request_id=$request_id" \
   --data-urlencode "sha256=$sha256" \
@@ -189,15 +191,15 @@ capability="$(curl --fail --silent --show-error --request POST \
 url="$(printf '%s\n' "$capability" | sed -n '1p')"
 verify_url="$(printf '%s\n' "$capability" | sed -n '2p')"
 test -n "$url" && test -n "$verify_url"
-curl --fail --silent --show-error --request PUT --upload-file "$source" \
+echo "Uploading Druid UI package"
+curl --fail-with-body --silent --show-error --request PUT --upload-file "$source" \
   --header "Content-Type: application/wasm" \
   --header "Cache-Control: public, max-age=31536000, immutable" \
-  --header "x-amz-sdk-checksum-algorithm: SHA256" \
-  --header "x-amz-checksum-sha256: $(printf '%s' "$sha256" | xxd -r -p | base64 | tr -d '\n')" \
   --header "Content-MD5: $content_md5" \
   "$url"
+echo "Verifying Druid UI package"
 for attempt in 1 2 3 4 5; do
-  actual_sha256="$(curl --fail --silent --show-error --retry 3 "$verify_url" | sha256sum | awk '{print $1}')" && [ "$actual_sha256" = "$sha256" ] && break
+  actual_sha256="$(curl --fail-with-body --silent --show-error --retry 3 "$verify_url" | sha256sum | awk '{print $1}')" && [ "$actual_sha256" = "$sha256" ] && break
   [ "$attempt" = 5 ] && echo "uploaded UI package SHA-256 verification failed" >&2 && exit 1
   sleep 1
 done

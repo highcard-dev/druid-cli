@@ -209,7 +209,7 @@ func procedureJobSpec(namespace string, root string, commandName string, procedu
 		Containers:    []corev1.Container{container},
 		Volumes:       []corev1.Volume{pvcVolume("data", pvc)},
 	}
-	if commandName == "ui_publish_private" || commandName == "ui_publish_public" {
+	if isUIPublishCommand(commandName) {
 		podSpec.ServiceAccountName = runtimeDevServiceAccount
 		podSpec.AutomountServiceAccountToken = ptrBool(false)
 		volumes, mounts := workloadTokenVolume(tokenAudience)
@@ -370,6 +370,9 @@ func serviceSpec(namespace string, root string, serviceProcedure string, selecto
 	labels := baseLabels(pvc)
 	labels[labelProcedure] = dnsLabel(serviceProcedure)
 	labels[labelPortName] = dnsLabel(portName)
+	if command := selector[labelCommand]; command != "" {
+		labels[labelCommand] = command
+	}
 	protocol := corev1.ProtocolTCP
 	if normalizeProtocol(port.Protocol) == "udp" {
 		protocol = corev1.ProtocolUDP

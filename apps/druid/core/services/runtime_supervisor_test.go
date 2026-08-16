@@ -511,7 +511,7 @@ func TestRuntimeSupervisorEnsureCanCreate(t *testing.T) {
 	)
 	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
 
-	runtimeScroll, err := supervisor.Ensure(artifact, "quiet-scroll", nil)
+	runtimeScroll, err := supervisor.Ensure(EnsureOptions{Artifact: artifact, Name: "quiet-scroll"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -521,6 +521,44 @@ func TestRuntimeSupervisorEnsureCanCreate(t *testing.T) {
 	}
 	if len(runtimeScroll.Procedures) != 0 {
 		t.Fatalf("procedures = %#v, want empty", runtimeScroll.Procedures)
+	}
+}
+
+func TestRuntimeSupervisorEnsureOwnsReservedPortState(t *testing.T) {
+	store := newTestStateStore(t)
+	scroll := &domain.RuntimeScroll{
+		ID: "ensure-ports", Artifact: "local", Root: t.TempDir(), ScrollName: "cached",
+		ScrollYAML: cachedScrollYAML("start"), Status: domain.RuntimeScrollStatusCreated,
+		Procedures: domain.ProcedureStatusMap{},
+	}
+	if err := store.CreateScroll(scroll); err != nil {
+		t.Fatal(err)
+	}
+	supervisor := NewRuntimeSupervisor(store, nil, &fakeWorkerBackend{})
+	reserved := []domain.Port{{Name: "ssh", Port: 2222, Protocol: "tcp"}}
+
+	got, err := supervisor.Ensure(EnsureOptions{Name: scroll.ID, ReservedPorts: reserved})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.ReservedPorts) != 1 || got.ReservedPorts[0] != reserved[0] {
+		t.Fatalf("reserved ports = %#v", got.ReservedPorts)
+	}
+
+	got, err = supervisor.Ensure(EnsureOptions{Name: scroll.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.ReservedPorts) != 1 {
+		t.Fatalf("omitted reservations changed state: %#v", got.ReservedPorts)
+	}
+
+	got, err = supervisor.Ensure(EnsureOptions{Name: scroll.ID, ReservedPorts: []domain.Port{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ReservedPorts == nil || len(got.ReservedPorts) != 0 {
+		t.Fatalf("reserved ports were not cleared: %#v", got.ReservedPorts)
 	}
 }
 
@@ -715,7 +753,7 @@ func TestRuntimeSupervisorEnsureRetriesIncompleteMaterializationFailure(t *testi
 	)
 	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
 
-	if _, err := supervisor.Ensure("registry.local/missing:1.0", "broken-scroll", nil); err == nil {
+	if _, err := supervisor.Ensure(EnsureOptions{Artifact: "registry.local/missing:1.0", Name: "broken-scroll"}); err == nil {
 		t.Fatal("Ensure error = nil, want materialization error")
 	}
 	failed, err := store.GetScroll("broken-scroll")
@@ -729,7 +767,7 @@ func TestRuntimeSupervisorEnsureRetriesIncompleteMaterializationFailure(t *testi
 	backend.workerErr = nil
 	backend.scrollYAML = cachedScrollYAML("start")
 	backend.digest = "sha256:recovered"
-	runtimeScroll, err := supervisor.Ensure("registry.local/missing:1.0", "broken-scroll", nil)
+	runtimeScroll, err := supervisor.Ensure(EnsureOptions{Artifact: "registry.local/missing:1.0", Name: "broken-scroll"})
 	if err != nil {
 		t.Fatalf("second Ensure error = %v, want recovery", err)
 	}
@@ -758,7 +796,7 @@ func TestRuntimeSupervisorEnsureRepairsIncompletePlaceholder(t *testing.T) {
 	)
 	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
 
-	runtimeScroll, err := supervisor.Ensure("registry.local/lab:1.0", "repair-scroll", nil)
+	runtimeScroll, err := supervisor.Ensure(EnsureOptions{Artifact: "registry.local/lab:1.0", Name: "repair-scroll"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -794,7 +832,7 @@ func TestRuntimeSupervisorEnsureDoesNotRetryExistingError(t *testing.T) {
 	)
 	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
 
-	runtimeScroll, err := supervisor.Ensure(existing.Artifact, existing.ID, nil)
+	runtimeScroll, err := supervisor.Ensure(EnsureOptions{Artifact: existing.Artifact, Name: existing.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -833,7 +871,11 @@ func TestRuntimeSupervisorEnsureUpdatesChangedArtifact(t *testing.T) {
 	)
 	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
 
-	updated, err := supervisor.Ensure("registry.local/lab:2.0", "update-scroll", []domain.RegistryCredential{{Host: "registry.local", Username: "bot"}})
+	updated, err := supervisor.Ensure(EnsureOptions{
+		Artifact:            "registry.local/lab:2.0",
+		Name:                "update-scroll",
+		RegistryCredentials: []domain.RegistryCredential{{Host: "registry.local", Username: "bot"}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -885,7 +927,7 @@ func TestRuntimeSupervisorUpdateUsesPullWorkerWhenAvailable(t *testing.T) {
 	)
 	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
 
-	updated, err := supervisor.Ensure("registry.local/lab:2.0", "update-worker", nil)
+	updated, err := supervisor.Ensure(EnsureOptions{Artifact: "registry.local/lab:2.0", Name: "update-worker"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1296,7 +1338,7 @@ func (f *fakeWorkerBackend) ExpectedPorts(root string, commands map[string]*doma
 	return nil, nil
 }
 
-func (f *fakeWorkerBackend) RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error) {
+func (f *fakeWorkerBackend) RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port, reservedPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error) {
 	return nil, nil
 }
 

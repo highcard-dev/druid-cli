@@ -91,7 +91,7 @@ func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.Command
 	return statuses, nil
 }
 
-func (b *Backend) RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error) {
+func (b *Backend) RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port, reservedPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error) {
 	namespace, pvc, err := parseRef(root)
 	if err != nil {
 		return nil, err
@@ -160,6 +160,25 @@ func (b *Backend) RoutingTargets(root string, commands map[string]*domain.Comman
 			}
 		}
 	}
+	for _, port := range reservedPorts {
+		if _, ok := seen[port.Name]; ok {
+			continue
+		}
+		targets = append(targets, domain.RuntimeRoutingTarget{
+			Name:      port.Name,
+			PortName:  port.Name,
+			Port:      port.Port,
+			Protocol:  normalizeProtocol(port.Protocol),
+			Namespace: namespace,
+			Selector: map[string]string{
+				labelManagedBy: "druid",
+				labelComponent: "runtime",
+				labelScrollID:  dnsLabel(pvc),
+				labelPortName:  dnsLabel(port.Name),
+			},
+		})
+	}
+	sort.Slice(targets, func(i, j int) bool { return targets[i].Name < targets[j].Name })
 	return targets, nil
 }
 
