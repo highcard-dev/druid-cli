@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -24,14 +23,10 @@ type RuntimeSupervisor struct {
 	runtimeBackend    ports.RuntimeBackendInterface
 	workerCallbacks   *WorkerCallbackManager
 	workerCallbackURL string
-	workerDaemonURL   string
-	authJWKSURL       string
-	runtimeJWKSURL    string
 	workerTimeout     time.Duration
 
-	mu          sync.Mutex
-	sessions    map[string]*RuntimeSession
-	uiPublishes map[string]ports.RuntimeUIPackageUploadAction
+	mu       sync.Mutex
+	sessions map[string]*RuntimeSession
 }
 
 type EnsureOptions struct {
@@ -40,7 +35,19 @@ type EnsureOptions struct {
 	OwnerID             string
 	Namespace           string
 	RegistryCredentials []domain.RegistryCredential
-	ReservedPorts       []domain.Port
+}
+
+// developerPorts are deployment-owned platform ports. They are allocated when
+// a runtime is created and never changed by commands, the SPA, or later ensure
+// requests.
+var developerPorts = []domain.Port{
+	{Name: "webdav", Port: 8084, Protocol: "http"},
+	{Name: "vscode", Port: 3333, Protocol: "http"},
+	{Name: "ssh", Port: 2222, Protocol: "tcp"},
+}
+
+func fixedDeveloperPorts() []domain.Port {
+	return append([]domain.Port(nil), developerPorts...)
 }
 
 func NewRuntimeSupervisor(
@@ -54,7 +61,6 @@ func NewRuntimeSupervisor(
 		runtimeBackend: runtimeBackend,
 		workerTimeout:  20 * time.Minute,
 		sessions:       map[string]*RuntimeSession{},
-		uiPublishes:    map[string]ports.RuntimeUIPackageUploadAction{},
 	}
 }
 
@@ -68,12 +74,6 @@ func (s *RuntimeSupervisor) SetWorkerTimeout(timeout time.Duration) {
 		return
 	}
 	s.workerTimeout = timeout
-}
-
-func (s *RuntimeSupervisor) SetDevWorkerConfig(daemonURL string, authJWKSURL string, runtimeJWKSURL string) {
-	s.workerDaemonURL = strings.TrimRight(daemonURL, "/")
-	s.authJWKSURL = authJWKSURL
-	s.runtimeJWKSURL = runtimeJWKSURL
 }
 
 func (s *RuntimeSupervisor) Start() error {
@@ -106,10 +106,10 @@ func (s *RuntimeSupervisor) Create(artifact string, name string, registryCredent
 }
 
 func (s *RuntimeSupervisor) CreateWithOwner(artifact string, name string, ownerID string, namespace string, registryCredentials []domain.RegistryCredential) (*domain.RuntimeScroll, error) {
-	return s.createWithOwner(artifact, name, ownerID, namespace, registryCredentials, nil)
+	return s.createWithOwner(artifact, name, ownerID, namespace, registryCredentials)
 }
 
-func (s *RuntimeSupervisor) createWithOwner(artifact string, name string, ownerID string, namespace string, registryCredentials []domain.RegistryCredential, reservedPorts []domain.Port) (*domain.RuntimeScroll, error) {
+func (s *RuntimeSupervisor) createWithOwner(artifact string, name string, ownerID string, namespace string, registryCredentials []domain.RegistryCredential) (*domain.RuntimeScroll, error) {
 	id := coreservices.RuntimeScrollIDFromName(name)
 	if id == "" {
 		id = uuid.NewString()
@@ -126,7 +126,7 @@ func (s *RuntimeSupervisor) createWithOwner(artifact string, name string, ownerI
 		Root:          s.runtimeBackend.RootRef(id, namespace),
 		Status:        domain.RuntimeScrollStatusCreated,
 		Procedures:    domain.ProcedureStatusMap{},
-		ReservedPorts: append([]domain.Port(nil), reservedPorts...),
+		ReservedPorts: fixedDeveloperPorts(),
 	}
 	if err := s.store.CreateScroll(placeholder); err != nil {
 		return nil, err
@@ -153,15 +153,6 @@ func (s *RuntimeSupervisor) createWithOwner(artifact string, name string, ownerI
 }
 
 func (s *RuntimeSupervisor) Ensure(options EnsureOptions) (*domain.RuntimeScroll, error) {
-	if options.ReservedPorts != nil {
-		reservedPorts := make([]domain.Port, len(options.ReservedPorts))
-		copy(reservedPorts, options.ReservedPorts)
-		options.ReservedPorts = reservedPorts
-		if err := domain.ValidateFixedPorts(options.ReservedPorts); err != nil {
-			return nil, err
-		}
-	}
-
 	id := coreservices.RuntimeScrollIDFromName(options.Name)
 	if id != "" {
 		runtimeScroll, err := s.store.GetScroll(id)
@@ -208,18 +199,13 @@ func (s *RuntimeSupervisor) Ensure(options EnsureOptions) (*domain.RuntimeScroll
 			return nil, err
 		}
 	}
-	return s.createWithOwner(options.Artifact, options.Name, options.OwnerID, options.Namespace, options.RegistryCredentials, options.ReservedPorts)
+	return s.createWithOwner(options.Artifact, options.Name, options.OwnerID, options.Namespace, options.RegistryCredentials)
 }
 
 func applyEnsureOptions(runtimeScroll *domain.RuntimeScroll, options EnsureOptions) bool {
 	changed := false
 	if options.OwnerID != "" && runtimeScroll.OwnerID != options.OwnerID {
 		runtimeScroll.OwnerID = options.OwnerID
-		changed = true
-	}
-	if options.ReservedPorts != nil && !slices.Equal(runtimeScroll.ReservedPorts, options.ReservedPorts) {
-		runtimeScroll.ReservedPorts = make([]domain.Port, len(options.ReservedPorts))
-		copy(runtimeScroll.ReservedPorts, options.ReservedPorts)
 		changed = true
 	}
 	return changed

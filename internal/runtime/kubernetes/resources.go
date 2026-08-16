@@ -59,7 +59,6 @@ chown -R 1000:1000 "$DRUID_WORKER_ROOT"`
 )
 
 const (
-	runtimeDevServiceAccount    = "druid-runtime-dev"
 	runtimeWorkerServiceAccount = "druid-runtime-worker"
 	workloadTokenPath           = "/var/run/secrets/druid-cli/token"
 )
@@ -209,13 +208,6 @@ func procedureJobSpec(namespace string, root string, commandName string, procedu
 		Containers:    []corev1.Container{container},
 		Volumes:       []corev1.Volume{pvcVolume("data", pvc)},
 	}
-	if isUIPublishCommand(commandName) {
-		podSpec.ServiceAccountName = runtimeDevServiceAccount
-		podSpec.AutomountServiceAccountToken = ptrBool(false)
-		volumes, mounts := workloadTokenVolume(tokenAudience)
-		podSpec.Volumes = append(podSpec.Volumes, volumes...)
-		podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, mounts...)
-	}
 	if registrySecret != "" {
 		podSpec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: registrySecret}}
 	}
@@ -282,84 +274,6 @@ func procedureStatefulSetSpec(namespace string, root string, commandName string,
 			},
 		},
 	}, nil
-}
-
-func devStatefulSetSpec(namespace string, root string, pvc string, image string, action ports.RuntimeDevAction, registrySecret string, tokenAudience string) *appsv1.StatefulSet {
-	labels := baseLabels(pvc)
-	labels[labelProcedure] = "dev"
-	labels[labelRuntimeID] = runtimeLabel(action.RuntimeID)
-	replicas := int32(1)
-	runAsRoot := int64(0)
-	args := []string{"dev", "--root", action.MountPath, "--listen", action.Listen, "--runtime-id", action.RuntimeID, "--daemon-url", action.DaemonURL}
-	if action.TokenFile != "" {
-		args = append(args, "--daemon-token-file", action.TokenFile)
-	}
-	if action.OwnerID != "" {
-		args = append(args, "--owner-id", action.OwnerID)
-	}
-	if action.AuthJWKSURL != "" {
-		args = append(args, "--auth-jwks-url", action.AuthJWKSURL)
-	}
-	if action.RuntimeJWKSURL != "" {
-		args = append(args, "--runtime-jwks-url", action.RuntimeJWKSURL)
-	}
-	for _, watchPath := range action.WatchPaths {
-		args = append(args, "--watch", watchPath)
-	}
-	for _, command := range action.HotReloadCommands {
-		args = append(args, "--command", command)
-	}
-	podSpec := corev1.PodSpec{
-		ServiceAccountName:           runtimeDevServiceAccount,
-		AutomountServiceAccountToken: ptrBool(false),
-		Containers: []corev1.Container{{
-			Name:            "main",
-			Image:           image,
-			Command:         []string{"druid"},
-			Args:            args,
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			SecurityContext: &corev1.SecurityContext{RunAsUser: &runAsRoot},
-			Ports:           []corev1.ContainerPort{{Name: "webdav", ContainerPort: 8084}},
-			VolumeMounts:    []corev1.VolumeMount{{Name: "data", MountPath: action.MountPath}},
-		}},
-		Volumes: []corev1.Volume{pvcVolume("data", pvc)},
-	}
-	volumes, mounts := workloadTokenVolume(tokenAudience)
-	podSpec.Volumes = append(podSpec.Volumes, volumes...)
-	podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, mounts...)
-	if registrySecret != "" {
-		podSpec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: registrySecret}}
-	}
-	return &appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{Name: devStatefulSetName(root), Namespace: namespace, Labels: labels},
-		Spec: appsv1.StatefulSetSpec{
-			Replicas:    &replicas,
-			ServiceName: devStatefulSetName(root),
-			Selector:    &metav1.LabelSelector{MatchLabels: labels},
-			Template:    corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels}, Spec: podSpec},
-		},
-	}
-}
-
-func devServiceSpec(namespace string, root string, pvc string) *corev1.Service {
-	labels := baseLabels(pvc)
-	labels[labelProcedure] = "dev"
-	labels[labelPortName] = "webdav"
-	selector := baseLabels(pvc)
-	selector[labelProcedure] = "dev"
-	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: serviceName(root, "dev", "webdav"), Namespace: namespace, Labels: labels},
-		Spec: corev1.ServiceSpec{
-			Type:     corev1.ServiceTypeClusterIP,
-			Selector: selector,
-			Ports: []corev1.ServicePort{{
-				Name:       "webdav",
-				Protocol:   corev1.ProtocolTCP,
-				Port:       8084,
-				TargetPort: intstr.FromInt(8084),
-			}},
-		},
-	}
 }
 
 func serviceSpec(namespace string, root string, serviceProcedure string, selector map[string]string, portName string, port domain.Port) (*corev1.Service, error) {

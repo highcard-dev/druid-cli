@@ -159,15 +159,3 @@ func (f *fakeProcedureDaemon) GetScrollUIPackages(ctx context.Context, id string
 func (f *fakeProcedureDaemon) PublishScrollUIPackage(ctx context.Context, id string, scope string, path string) (*api.RuntimeScroll, error) {
 	return &api.RuntimeScroll{Id: id}, nil
 }
-
-func (f *fakeProcedureDaemon) EnableWatch(ctx context.Context, id string, request api.DevWatchRequest) (*api.DevWatchResponse, error) {
-	return nil, nil
-}
-
-func (f *fakeProcedureDaemon) DisableWatch(ctx context.Context, id string) (*api.DevWatchResponse, error) {
-	return nil, nil
-}
-
-func (f *fakeProcedureDaemon) WatchStatus(ctx context.Context, id string) (*api.DevWatchStatus, error) {
-	return nil, nil
-}

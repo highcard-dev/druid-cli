@@ -1,12 +1,7 @@
 package handlers
 
 import (
-	"time"
-
-	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
-	appservices "github.com/highcard-dev/daemon/apps/druid/core/services"
-	"github.com/highcard-dev/daemon/internal/api"
 	"github.com/highcard-dev/daemon/internal/core/domain"
 )
 
@@ -44,84 +39,4 @@ func (h *ScrollHandler) RemoveDaemonCommand(c *fiber.Ctx) error {
 		return err
 	}
 	return c.SendStatus(fiber.StatusNoContent)
-}
-
-func (h *ScrollHandler) GetDaemonWatchStatus(c *fiber.Ctx) error {
-	status, err := h.supervisor.DevWatchStatus(c.Params("id"))
-	if err != nil {
-		return err
-	}
-	return c.JSON(status)
-}
-
-func (h *ScrollHandler) EnableDaemonWatch(c *fiber.Ctx) error {
-	var request appservices.DevWatchRequest
-	if len(c.Body()) > 0 {
-		if err := c.BodyParser(&request); err != nil {
-			return fiber.NewError(fiber.StatusBadRequest, err.Error())
-		}
-	}
-	status, err := h.supervisor.EnableDevWatch(c.Params("id"), request)
-	if err != nil {
-		return err
-	}
-	return c.JSON(api.DevWatchResponse{Status: string(status.Status), Enabled: status.Enabled})
-}
-
-func (h *ScrollHandler) DisableDaemonWatch(c *fiber.Ctx) error {
-	status, err := h.supervisor.DisableDevWatch(c.Params("id"))
-	if err != nil {
-		return err
-	}
-	return c.JSON(api.DevWatchResponse{Status: string(status.Status), Enabled: status.Enabled})
-}
-
-func (h *WebsocketHandler) WatchNotifications(c *websocket.Conn) {
-	defer c.Close()
-	if h.scrolls == nil {
-		return
-	}
-	subscription, unsubscribe, err := h.scrolls.supervisor.SubscribeDevWatch(c.Params("id"))
-	if err != nil {
-		return
-	}
-	defer unsubscribe()
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for {
-			if _, _, err := c.ReadMessage(); err != nil {
-				return
-			}
-		}
-	}()
-
-	pingTicker := time.NewTicker(30 * time.Second)
-	defer pingTicker.Stop()
-	for {
-		select {
-		case <-done:
-			return
-		case data, ok := <-subscription:
-			if !ok || data == nil {
-				return
-			}
-			if err := c.WriteMessage(websocket.TextMessage, *data); err != nil {
-				return
-			}
-		case <-pingTicker.C:
-			if err := c.WriteMessage(websocket.PingMessage, nil); err != nil {
-				return
-			}
-		}
-	}
-}
-
-func (h *WebsocketHandler) WatchNotificationsPublic(c *websocket.Conn) {
-	if !h.PublicQueryAuth(c) {
-		_ = c.Close()
-		return
-	}
-	h.WatchNotifications(c)
 }

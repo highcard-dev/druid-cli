@@ -14,7 +14,7 @@ import (
 	reflect "reflect"
 	time "time"
 
-	fiber "github.com/gofiber/fiber/v2"
+	v2 "github.com/gofiber/fiber/v2"
 	domain "github.com/highcard-dev/daemon/internal/core/domain"
 	ports "github.com/highcard-dev/daemon/internal/core/ports"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -47,7 +47,7 @@ func (m *MockAuthorizerServiceInterface) EXPECT() *MockAuthorizerServiceInterfac
 }
 
 // CheckHeader mocks base method.
-func (m *MockAuthorizerServiceInterface) CheckHeader(r *fiber.Ctx) (*ports.AuthContext, error) {
+func (m *MockAuthorizerServiceInterface) CheckHeader(r *v2.Ctx) (*ports.AuthContext, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CheckHeader", r)
 	ret0, _ := ret[0].(*ports.AuthContext)
@@ -287,19 +287,19 @@ func (mr *MockRuntimeBackendInterfaceMockRecorder) BackupRuntime(ctx, root, arti
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BackupRuntime", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).BackupRuntime), ctx, root, artifact, registryCredentials)
 }
 
-// CompleteUIPackageUpload mocks base method.
-func (m *MockRuntimeBackendInterface) CompleteUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageResult, error) {
+// CreateUIPackageUpload mocks base method.
+func (m *MockRuntimeBackendInterface) CreateUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageUpload, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CompleteUIPackageUpload", ctx, action)
-	ret0, _ := ret[0].(ports.RuntimeUIPackageResult)
+	ret := m.ctrl.Call(m, "CreateUIPackageUpload", ctx, action)
+	ret0, _ := ret[0].(ports.RuntimeUIPackageUpload)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// CompleteUIPackageUpload indicates an expected call of CompleteUIPackageUpload.
-func (mr *MockRuntimeBackendInterfaceMockRecorder) CompleteUIPackageUpload(ctx, action any) *gomock.Call {
+// CreateUIPackageUpload indicates an expected call of CreateUIPackageUpload.
+func (mr *MockRuntimeBackendInterfaceMockRecorder) CreateUIPackageUpload(ctx, action any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteUIPackageUpload", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).CompleteUIPackageUpload), ctx, action)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateUIPackageUpload", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).CreateUIPackageUpload), ctx, action)
 }
 
 // DeleteRuntime mocks base method.
@@ -314,21 +314,6 @@ func (m *MockRuntimeBackendInterface) DeleteRuntime(root string, purgeData bool)
 func (mr *MockRuntimeBackendInterfaceMockRecorder) DeleteRuntime(root, purgeData any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteRuntime", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).DeleteRuntime), root, purgeData)
-}
-
-// DevStatus mocks base method.
-func (m *MockRuntimeBackendInterface) DevStatus(ctx context.Context, root string) (ports.RuntimeDevStatus, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DevStatus", ctx, root)
-	ret0, _ := ret[0].(ports.RuntimeDevStatus)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// DevStatus indicates an expected call of DevStatus.
-func (mr *MockRuntimeBackendInterfaceMockRecorder) DevStatus(ctx, root any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DevStatus", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).DevStatus), ctx, root)
 }
 
 // ExpectedPorts mocks base method.
@@ -360,21 +345,6 @@ func (mr *MockRuntimeBackendInterfaceMockRecorder) Name() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Name", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).Name))
 }
 
-// PrepareUIPackageUpload mocks base method.
-func (m *MockRuntimeBackendInterface) PrepareUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageUploadCapability, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PrepareUIPackageUpload", ctx, action)
-	ret0, _ := ret[0].(ports.RuntimeUIPackageUploadCapability)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// PrepareUIPackageUpload indicates an expected call of PrepareUIPackageUpload.
-func (mr *MockRuntimeBackendInterfaceMockRecorder) PrepareUIPackageUpload(ctx, action any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PrepareUIPackageUpload", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).PrepareUIPackageUpload), ctx, action)
-}
-
 // RootRef mocks base method.
 func (m *MockRuntimeBackendInterface) RootRef(id, namespace string) string {
 	m.ctrl.T.Helper()
@@ -390,7 +360,7 @@ func (mr *MockRuntimeBackendInterfaceMockRecorder) RootRef(id, namespace any) *g
 }
 
 // RoutingTargets mocks base method.
-func (m *MockRuntimeBackendInterface) RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port, reservedPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error) {
+func (m *MockRuntimeBackendInterface) RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts, reservedPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RoutingTargets", root, commands, globalPorts, reservedPorts)
 	ret0, _ := ret[0].([]domain.RuntimeRoutingTarget)
@@ -447,34 +417,6 @@ func (mr *MockRuntimeBackendInterfaceMockRecorder) SpawnPullWorker(ctx, action a
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SpawnPullWorker", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).SpawnPullWorker), ctx, action)
 }
 
-// StartDev mocks base method.
-func (m *MockRuntimeBackendInterface) StartDev(ctx context.Context, action ports.RuntimeDevAction) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "StartDev", ctx, action)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// StartDev indicates an expected call of StartDev.
-func (mr *MockRuntimeBackendInterfaceMockRecorder) StartDev(ctx, action any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartDev", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).StartDev), ctx, action)
-}
-
-// StopDev mocks base method.
-func (m *MockRuntimeBackendInterface) StopDev(ctx context.Context, root string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "StopDev", ctx, root)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// StopDev indicates an expected call of StopDev.
-func (mr *MockRuntimeBackendInterfaceMockRecorder) StopDev(ctx, root any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopDev", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).StopDev), ctx, root)
-}
-
 // StopRuntime mocks base method.
 func (m *MockRuntimeBackendInterface) StopRuntime(root string) error {
 	m.ctrl.T.Helper()
@@ -487,6 +429,44 @@ func (m *MockRuntimeBackendInterface) StopRuntime(root string) error {
 func (mr *MockRuntimeBackendInterfaceMockRecorder) StopRuntime(root any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopRuntime", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).StopRuntime), root)
+}
+
+// MockRuntimeCommandStopper is a mock of RuntimeCommandStopper interface.
+type MockRuntimeCommandStopper struct {
+	ctrl     *gomock.Controller
+	recorder *MockRuntimeCommandStopperMockRecorder
+	isgomock struct{}
+}
+
+// MockRuntimeCommandStopperMockRecorder is the mock recorder for MockRuntimeCommandStopper.
+type MockRuntimeCommandStopperMockRecorder struct {
+	mock *MockRuntimeCommandStopper
+}
+
+// NewMockRuntimeCommandStopper creates a new mock instance.
+func NewMockRuntimeCommandStopper(ctrl *gomock.Controller) *MockRuntimeCommandStopper {
+	mock := &MockRuntimeCommandStopper{ctrl: ctrl}
+	mock.recorder = &MockRuntimeCommandStopperMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockRuntimeCommandStopper) EXPECT() *MockRuntimeCommandStopperMockRecorder {
+	return m.recorder
+}
+
+// StopCommand mocks base method.
+func (m *MockRuntimeCommandStopper) StopCommand(root, command string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StopCommand", root, command)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// StopCommand indicates an expected call of StopCommand.
+func (mr *MockRuntimeCommandStopperMockRecorder) StopCommand(root, command any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopCommand", reflect.TypeOf((*MockRuntimeCommandStopper)(nil).StopCommand), root, command)
 }
 
 // MockRuntimeWorkerCallbackBackend is a mock of RuntimeWorkerCallbackBackend interface.

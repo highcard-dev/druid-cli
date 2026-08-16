@@ -13,53 +13,17 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 )
 
-func TestAuthenticateWorkloadRequiresBoundDruidDevPod(t *testing.T) {
-	client := k8sfake.NewSimpleClientset(&corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "dev-0", Namespace: "games", UID: types.UID("pod-uid"), Labels: map[string]string{
-			labelManagedBy: "druid", labelProcedure: "dev", labelRuntimeID: "runtime-a",
-		}},
-		Spec: corev1.PodSpec{ServiceAccountName: runtimeDevServiceAccount},
-	})
-	client.PrependReactor("create", "tokenreviews", tokenReviewReactor(runtimeDevServiceAccount, "games", "dev-0", "pod-uid", true))
-	backend := NewWithClient(Config{Namespace: "games", OperatorServiceAccount: "operator-system/operator"}, nil, client)
-	identity, err := backend.AuthenticateWorkload(context.Background(), "token")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if identity.Kind != "dev" || identity.RuntimeID != "runtime-a" || identity.Namespace != "games" {
-		t.Fatalf("identity = %#v", identity)
-	}
-}
-
-func TestAuthenticateWorkloadAcceptsOnlyDruidUIPublishJob(t *testing.T) {
-	client := k8sfake.NewSimpleClientset(&corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "publish-0", Namespace: "games", UID: types.UID("pod-uid"), Labels: map[string]string{
-			labelManagedBy: "druid", labelRuntimeID: "runtime-a", labelCommand: "ui-publish-private-012345abcdef", labelProcedure: "ui-publish-private-012345abcdef-0",
-		}},
-		Spec: corev1.PodSpec{ServiceAccountName: runtimeDevServiceAccount},
-	})
-	client.PrependReactor("create", "tokenreviews", tokenReviewReactor(runtimeDevServiceAccount, "games", "publish-0", "pod-uid", true))
-	backend := NewWithClient(Config{Namespace: "games", OperatorServiceAccount: "operator-system/operator"}, nil, client)
-	identity, err := backend.AuthenticateWorkload(context.Background(), "token")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if identity.Kind != "ui-publish" || identity.RuntimeID != "runtime-a" {
-		t.Fatalf("identity = %#v", identity)
-	}
-}
-
-func TestAuthenticateWorkloadRejectsUnrelatedDevServiceAccountPod(t *testing.T) {
+func TestAuthenticateWorkloadRejectsUnrecognizedServiceAccount(t *testing.T) {
 	client := k8sfake.NewSimpleClientset(&corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "other-0", Namespace: "games", UID: types.UID("pod-uid"), Labels: map[string]string{
-			labelManagedBy: "druid", labelRuntimeID: "runtime-a", labelCommand: "ui-publish-private", labelProcedure: "different-procedure",
+			labelManagedBy: "druid", labelRuntimeID: "runtime-a",
 		}},
-		Spec: corev1.PodSpec{ServiceAccountName: runtimeDevServiceAccount},
+		Spec: corev1.PodSpec{ServiceAccountName: "unrecognized"},
 	})
-	client.PrependReactor("create", "tokenreviews", tokenReviewReactor(runtimeDevServiceAccount, "games", "other-0", "pod-uid", true))
+	client.PrependReactor("create", "tokenreviews", tokenReviewReactor("unrecognized", "games", "other-0", "pod-uid", true))
 	backend := NewWithClient(Config{Namespace: "games", OperatorServiceAccount: "operator-system/operator"}, nil, client)
 	if _, err := backend.AuthenticateWorkload(context.Background(), "token"); err == nil {
-		t.Fatal("unrelated Druid dev service account pod was accepted")
+		t.Fatal("unrecognized service account pod was accepted")
 	}
 }
 
@@ -106,8 +70,8 @@ func TestEnsureRuntimeServiceAccountsCreatesBothAndIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(accounts.Items) != 2 {
-		t.Fatalf("service accounts = %#v, want two", accounts.Items)
+	if len(accounts.Items) != 1 {
+		t.Fatalf("service accounts = %#v, want one", accounts.Items)
 	}
 	for _, account := range accounts.Items {
 		if account.Labels[labelManagedBy] != "druid" || account.Labels[labelComponent] != "workload-identity" {

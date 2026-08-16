@@ -49,6 +49,7 @@ jobs:
           path: |
             bin/druid
             bin/druid-coldstarter
+            bin/druid-dev
             .docker/entrypoint.sh
             .docker/druid-install-command.sh
 
@@ -75,6 +76,7 @@ jobs:
           files: |
             bin/druid
             bin/druid-coldstarter
+            bin/druid-dev
             .docker/entrypoint.sh
             .docker/druid-install-command.sh
 

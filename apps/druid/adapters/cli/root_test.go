@@ -3,7 +3,7 @@ package cli
 import "testing"
 
 func TestRootCommandExposesRuntimeAndOCICommands(t *testing.T) {
-	for _, name := range []string{"pull", "push", "login", "dev", "update"} {
+	for _, name := range []string{"pull", "push", "login", "update"} {
 		if cmd, _, err := RootCmd.Find([]string{name}); err != nil || cmd == nil || cmd.Name() != name {
 			t.Fatalf("druid should expose %q", name)
 		}
@@ -13,23 +13,6 @@ func TestRootCommandExposesRuntimeAndOCICommands(t *testing.T) {
 	}
 	if cmd, _, err := RootCmd.Find([]string{"worker", "push"}); err != nil || cmd == nil || cmd.Name() != "push" {
 		t.Fatalf("druid should expose worker push")
-	}
-}
-
-func TestUIPackagePreparePathRequiresExactRuntimeAndScope(t *testing.T) {
-	for _, test := range []struct {
-		path string
-		want bool
-	}{
-		{"/api/v1/scrolls/runtime-a/ui/packages/private/prepare", true},
-		{"/api/v1/scrolls/runtime-a/ui/packages/public/prepare", true},
-		{"/api/v1/scrolls/runtime-b/ui/packages/private/prepare", false},
-		{"/api/v1/scrolls/runtime-a/ui/packages/private/prepare/extra", false},
-		{"/api/v1/scrolls/runtime-a/ui/packages/admin/prepare", false},
-	} {
-		if got := isUIPackagePreparePath(test.path, "runtime-a"); got != test.want {
-			t.Fatalf("isUIPackagePreparePath(%q) = %t, want %t", test.path, got, test.want)
-		}
 	}
 }
 

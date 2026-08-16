@@ -175,20 +175,6 @@ func TestCreateOrReuseProcedureJobPinsToRuntimePVCNode(t *testing.T) {
 	}
 }
 
-func TestDevStatefulSetMountsRuntimeRootAsScrollRoot(t *testing.T) {
-	root := ref("druid", "druid-ui-data")
-	statefulSet := devStatefulSetSpec("druid", root, "druid-ui-data", "druid:local", ports.RuntimeDevAction{
-		RuntimeID: "ui", RootRef: root, MountPath: "/scroll", Listen: ":8084",
-	}, "registry-secret", "druid-cli")
-	mount := statefulSet.Spec.Template.Spec.Containers[0].VolumeMounts[0]
-	if mount.MountPath != "/scroll" || mount.SubPath != "" {
-		t.Fatalf("mount = %#v, want the runtime root at /scroll", mount)
-	}
-	if user := statefulSet.Spec.Template.Spec.Containers[0].SecurityContext.RunAsUser; user == nil || *user != 0 {
-		t.Fatalf("dev server must run as root to edit runtime files, got %#v", user)
-	}
-}
-
 func TestProcedureJobSpecUsesProvidedRuntimeEnv(t *testing.T) {
 	procedure := &domain.Procedure{
 		Image: "alpine:3.20",
@@ -205,43 +191,6 @@ func TestProcedureJobSpecUsesProvidedRuntimeEnv(t *testing.T) {
 	env := job.Spec.Template.Spec.Containers[0].Env
 	if len(env) != 1 || env[0].Name != "DRUID_PORT_HTTP" || env[0].Value != "8080" {
 		t.Fatalf("env = %#v", env)
-	}
-}
-
-func TestUIPublishProcedureJobUsesProjectedDevIdentity(t *testing.T) {
-	procedure := &domain.Procedure{Image: "curlimages/curl:8.12.1", Command: []string{"true"}}
-	job, err := procedureJobSpec("druid", ref("druid", "druid-ui-data"), "ui_publish_private_012345abcdef", "ui_publish_private_012345abcdef.0", "ui-publish-private-0", 1, procedure, nil, "registry-secret", "druid-cli")
-	if err != nil {
-		t.Fatal(err)
-	}
-	pod := job.Spec.Template.Spec
-	if pod.ServiceAccountName != runtimeDevServiceAccount || pod.AutomountServiceAccountToken == nil || *pod.AutomountServiceAccountToken {
-		t.Fatalf("publish pod identity = %#v", pod)
-	}
-	if len(pod.Volumes) != 2 || pod.Volumes[1].Projected == nil || len(pod.Volumes[1].Projected.Sources) != 1 {
-		t.Fatalf("publish pod volumes = %#v", pod.Volumes)
-	}
-	token := pod.Volumes[1].Projected.Sources[0].ServiceAccountToken
-	if token == nil || token.Audience != "druid-cli" || token.Path != "token" || token.ExpirationSeconds == nil || *token.ExpirationSeconds != 600 {
-		t.Fatalf("publish token projection = %#v", token)
-	}
-	mounts := pod.Containers[0].VolumeMounts
-	if len(mounts) != 1 || mounts[0].MountPath != "/var/run/secrets/druid-cli" || !mounts[0].ReadOnly {
-		t.Fatalf("publish token mount = %#v", mounts)
-	}
-}
-
-func TestUntrustedCommandCannotRequestProjectedDevIdentity(t *testing.T) {
-	procedure := &domain.Procedure{Image: "curlimages/curl:8.12.1", Command: []string{"true"}}
-	for _, command := range []string{"ui_publish_private", "ui_publish_private_not-a-token", "ui_publish_admin_012345abcdef", "start"} {
-		job, err := procedureJobSpec("druid", ref("druid", "druid-ui-data"), command, command+".0", "test-job", 1, procedure, nil, "", "druid-cli")
-		if err != nil {
-			t.Fatal(err)
-		}
-		pod := job.Spec.Template.Spec
-		if pod.ServiceAccountName != "" || len(pod.Volumes) != 1 {
-			t.Fatalf("command %q received projected identity: %#v", command, pod)
-		}
 	}
 }
 
@@ -412,8 +361,8 @@ func TestSpawnPullWorkerCreateUsesFinalPVCAndWorkerJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(accounts.Items) != 2 {
-		t.Fatalf("service accounts = %#v, want both runtime identities", accounts.Items)
+	if len(accounts.Items) != 1 || accounts.Items[0].Name != runtimeWorkerServiceAccount {
+		t.Fatalf("service accounts = %#v, want worker identity", accounts.Items)
 	}
 	if len(jobs) != 1 {
 		t.Fatalf("jobs = %d, want 1", len(jobs))
@@ -1137,17 +1086,13 @@ func TestRoutingTargetsReturnStableBackendServices(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(targets) != 2 {
+	if len(targets) != 1 {
 		t.Fatalf("targets = %#v", targets)
 	}
 	var target domain.RuntimeRoutingTarget
-	var webdav domain.RuntimeRoutingTarget
 	for _, item := range targets {
 		if item.Name == "http" {
 			target = item
-		}
-		if item.Name == "webdav" {
-			webdav = item
 		}
 	}
 	if target.Namespace != "druid" || target.ServiceName != serviceName(root, "web", "http") || target.Port != 8080 {
@@ -1158,9 +1103,6 @@ func TestRoutingTargetsReturnStableBackendServices(t *testing.T) {
 	}
 	if target.Selector[labelScrollID] != "druid-static-web-data" || target.Selector[labelProcedure] != "web" {
 		t.Fatalf("selector = %#v", target.Selector)
-	}
-	if webdav.ServiceName != serviceName(root, "dev", "webdav") || webdav.Port != 8084 || webdav.Protocol != "https" {
-		t.Fatalf("webdav target = %#v", webdav)
 	}
 }
 

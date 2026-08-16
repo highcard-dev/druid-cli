@@ -2,7 +2,6 @@ package docker
 
 import (
 	"context"
-	"fmt"
 	"path"
 	"strings"
 
@@ -10,38 +9,16 @@ import (
 	"github.com/highcard-dev/daemon/internal/uipackage"
 )
 
-func (b *Backend) PrepareUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageUploadCapability, error) {
+func (b *Backend) CreateUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageUpload, error) {
 	if err := b.config.ValidateForUIPublishing(); err != nil {
-		return ports.RuntimeUIPackageUploadCapability{}, err
+		return ports.RuntimeUIPackageUpload{}, err
 	}
 	config := b.uiPackageS3Config(action)
-	uploadURL, err := uipackage.PresignPut(ctx, uiPackageObjectName(action), action, config)
+	uploadURL, err := uipackage.PresignPut(ctx, uiPackageObjectName(action), config)
 	if err != nil {
-		return ports.RuntimeUIPackageUploadCapability{}, err
+		return ports.RuntimeUIPackageUpload{}, err
 	}
-	verifyURL, err := uipackage.EndpointObjectURL(config, uiPackageObjectName(action))
-	if err != nil {
-		return ports.RuntimeUIPackageUploadCapability{}, err
-	}
-	if verifyURL == "" {
-		verifyURL = b.uiPackagePublicURL(config, action)
-	}
-	return ports.RuntimeUIPackageUploadCapability{UploadURL: uploadURL, VerifyURL: verifyURL}, nil
-}
-
-func (b *Backend) CompleteUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageResult, error) {
-	if err := b.config.ValidateForUIPublishing(); err != nil {
-		return ports.RuntimeUIPackageResult{}, err
-	}
-	config := b.uiPackageS3Config(action)
-	objectName := uiPackageObjectName(action)
-	sha256, err := uipackage.Inspect(ctx, objectName, action, config)
-	if err != nil {
-		return ports.RuntimeUIPackageResult{}, fmt.Errorf("verify uploaded UI package: %w", err)
-	}
-	return ports.RuntimeUIPackageResult{
-		URL: b.uiPackagePublicURL(config, action), SHA256: sha256,
-	}, nil
+	return ports.RuntimeUIPackageUpload{UploadURL: uploadURL, URL: b.uiPackagePublicURL(config, action)}, nil
 }
 
 func (b *Backend) uiPackagePublicURL(config uipackage.S3Config, action ports.RuntimeUIPackageUploadAction) string {
@@ -55,8 +32,7 @@ func uiPackageObjectName(action ports.RuntimeUIPackageUploadAction) string {
 func (b *Backend) uiPackageS3Config(action ports.RuntimeUIPackageUploadAction) uipackage.S3Config {
 	return uipackage.S3Config{
 		Bucket: b.config.UIS3Bucket, Region: b.config.UIS3Region, Endpoint: b.config.UIS3Endpoint,
-		VerifyEndpoint: b.config.UIS3DaemonEndpoint,
-		KeyPrefix:      strings.Trim(strings.Trim(b.config.UIS3Prefix, "/")+"/docker/"+action.RuntimeID+"/"+string(action.Scope), "/"),
-		AccessKey:      b.config.UIS3AccessKey, SecretKey: b.config.UIS3SecretKey, SessionToken: b.config.UIS3SessionToken,
+		KeyPrefix: strings.Trim(strings.Trim(b.config.UIS3Prefix, "/")+"/docker/"+action.RuntimeID+"/"+string(action.Scope), "/"),
+		AccessKey: b.config.UIS3AccessKey, SecretKey: b.config.UIS3SecretKey, SessionToken: b.config.UIS3SessionToken,
 	}
 }

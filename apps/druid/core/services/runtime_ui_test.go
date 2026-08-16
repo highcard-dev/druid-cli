@@ -48,24 +48,17 @@ func TestPublishUIPackageRunsOneShotCommandWithEphemeralURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	var command ports.RuntimeCommand
-	var supervisor *RuntimeSupervisor
 	backend := &fakeWorkerBackend{runCommand: func(got ports.RuntimeCommand) (*int, error) {
 		command = got
-		procedure := domain.ProcedureName(got.Name, 0, got.Command.Procedures[0])
-		values := got.ProcedureEnv[procedure]
-		if _, err := supervisor.PrepareUIPackageUpload("ui-scroll", "private", values["DRUID_UI_REQUEST_ID"], strings.Repeat("a", 64), "AAAAAAAAAAAAAAAAAAAAAA=="); err != nil {
-			return nil, err
-		}
 		return nil, nil
 	}}
-	supervisor = NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), backend)
-	supervisor.SetDevWorkerConfig("http://daemon", "", "")
+	supervisor := NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), backend)
 
 	updated, err := supervisor.PublishUIPackage("ui-scroll", "private", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := updated.UIPackages[domain.RuntimeUIPackageScopePrivate]; got.Path != "private/dist/app.wasm" || got.SHA256 != strings.Repeat("a", 64) {
+	if got := updated.UIPackages[domain.RuntimeUIPackageScopePrivate]; got.Path != "private/dist/app.wasm" || got.URL == "" {
 		t.Fatalf("package = %#v", got)
 	}
 	if !strings.HasPrefix(command.Name, "ui_publish_private_") || command.Command == nil || len(command.Command.Procedures) != 1 {
@@ -76,14 +69,11 @@ func TestPublishUIPackageRunsOneShotCommandWithEphemeralURL(t *testing.T) {
 	}
 	procedure := domain.ProcedureName(command.Name, 0, command.Command.Procedures[0])
 	values := command.ProcedureEnv[procedure]
-	if values["DRUID_UI_SOURCE"] != "private/dist/app.wasm" || values["DRUID_UI_REQUEST_ID"] == "" || values["DRUID_UI_PREPARE_URL"] != "http://daemon/api/v1/scrolls/ui-scroll/ui/packages/private/prepare" {
+	if values["DRUID_UI_SOURCE"] != "private/dist/app.wasm" || values["DRUID_UI_UPLOAD_URL"] == "" {
 		t.Fatalf("procedure env = %#v", values)
 	}
-	if strings.Contains(strings.Join(command.Command.Procedures[0].Command, " "), "http://uploads/") {
-		t.Fatal("upload URL must not be persisted in command arguments")
-	}
-	script := strings.Join(command.Command.Procedures[0].Command, " ")
-	if !strings.Contains(script, "verify_url=") || !strings.Contains(script, "uploaded UI package SHA-256 verification failed") {
-		t.Fatal("publish command must verify the uploaded public object before completion")
+	script := command.Command.Procedures[0].Command[len(command.Command.Procedures[0].Command)-1]
+	if strings.Contains(script, "sha256") || strings.Contains(script, "content_md5") || strings.Contains(script, "prepare_url") {
+		t.Fatal("publish command must upload directly without digest negotiation")
 	}
 }

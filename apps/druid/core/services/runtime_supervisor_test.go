@@ -524,41 +524,24 @@ func TestRuntimeSupervisorEnsureCanCreate(t *testing.T) {
 	}
 }
 
-func TestRuntimeSupervisorEnsureOwnsReservedPortState(t *testing.T) {
+func TestRuntimeSupervisorEnsureDoesNotChangeReservedPortState(t *testing.T) {
 	store := newTestStateStore(t)
+	reserved := fixedDeveloperPorts()
 	scroll := &domain.RuntimeScroll{
 		ID: "ensure-ports", Artifact: "local", Root: t.TempDir(), ScrollName: "cached",
 		ScrollYAML: cachedScrollYAML("start"), Status: domain.RuntimeScrollStatusCreated,
-		Procedures: domain.ProcedureStatusMap{},
+		Procedures: domain.ProcedureStatusMap{}, ReservedPorts: reserved,
 	}
 	if err := store.CreateScroll(scroll); err != nil {
 		t.Fatal(err)
 	}
 	supervisor := NewRuntimeSupervisor(store, nil, &fakeWorkerBackend{})
-	reserved := []domain.Port{{Name: "ssh", Port: 2222, Protocol: "tcp"}}
-
-	got, err := supervisor.Ensure(EnsureOptions{Name: scroll.ID, ReservedPorts: reserved})
+	got, err := supervisor.Ensure(EnsureOptions{Name: scroll.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.ReservedPorts) != 1 || got.ReservedPorts[0] != reserved[0] {
+	if len(got.ReservedPorts) != len(reserved) || got.ReservedPorts[0] != reserved[0] {
 		t.Fatalf("reserved ports = %#v", got.ReservedPorts)
-	}
-
-	got, err = supervisor.Ensure(EnsureOptions{Name: scroll.ID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got.ReservedPorts) != 1 {
-		t.Fatalf("omitted reservations changed state: %#v", got.ReservedPorts)
-	}
-
-	got, err = supervisor.Ensure(EnsureOptions{Name: scroll.ID, ReservedPorts: []domain.Port{}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.ReservedPorts == nil || len(got.ReservedPorts) != 0 {
-		t.Fatalf("reserved ports were not cleared: %#v", got.ReservedPorts)
 	}
 }
 
@@ -583,6 +566,9 @@ func TestRuntimeSupervisorCreateCanCreate(t *testing.T) {
 
 	if runtimeScroll.Status != domain.RuntimeScrollStatusCreated {
 		t.Fatalf("status = %s, want created", runtimeScroll.Status)
+	}
+	if got := runtimeScroll.ReservedPorts; len(got) != 3 || got[0] != (domain.Port{Name: "webdav", Port: 8084, Protocol: "http"}) || got[1] != (domain.Port{Name: "vscode", Port: 3333, Protocol: "http"}) || got[2] != (domain.Port{Name: "ssh", Port: 2222, Protocol: "tcp"}) {
+		t.Fatalf("reserved developer ports = %#v", got)
 	}
 	if len(runtimeScroll.Procedures) != 0 {
 		t.Fatalf("procedures = %#v, want empty", runtimeScroll.Procedures)
@@ -1273,12 +1259,8 @@ func (f *fakeWorkerBackend) RunCommand(command ports.RuntimeCommand) (*int, erro
 	return nil, nil
 }
 
-func (f *fakeWorkerBackend) PrepareUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageUploadCapability, error) {
-	return ports.RuntimeUIPackageUploadCapability{UploadURL: "http://uploads/" + action.RuntimeID + "/" + string(action.Scope), VerifyURL: "http://packages/" + action.RuntimeID + "/" + string(action.Scope) + "/app.wasm"}, nil
-}
-
-func (f *fakeWorkerBackend) CompleteUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageResult, error) {
-	return ports.RuntimeUIPackageResult{URL: "http://packages/" + action.RuntimeID + "/" + string(action.Scope) + "/app.wasm", SHA256: strings.Repeat("a", 64)}, nil
+func (f *fakeWorkerBackend) CreateUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageUpload, error) {
+	return ports.RuntimeUIPackageUpload{UploadURL: "http://uploads/" + action.RuntimeID + "/" + string(action.Scope), URL: "http://packages/" + action.RuntimeID + "/" + string(action.Scope) + "/app.wasm"}, nil
 }
 
 func (f *fakeWorkerBackend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
@@ -1287,16 +1269,6 @@ func (f *fakeWorkerBackend) ExpectedPorts(root string, commands map[string]*doma
 
 func (f *fakeWorkerBackend) RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port, reservedPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error) {
 	return nil, nil
-}
-
-func (f *fakeWorkerBackend) StartDev(ctx context.Context, action ports.RuntimeDevAction) error {
-	return nil
-}
-
-func (f *fakeWorkerBackend) StopDev(ctx context.Context, root string) error { return nil }
-
-func (f *fakeWorkerBackend) DevStatus(ctx context.Context, root string) (ports.RuntimeDevStatus, error) {
-	return ports.RuntimeDevStatusReady, nil
 }
 
 func (f *fakeWorkerBackend) Attach(commandName string, data string) error {

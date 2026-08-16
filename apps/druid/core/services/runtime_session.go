@@ -14,22 +14,18 @@ import (
 // the command queue and cached scroll.yaml; storage and containers stay behind
 // the runtime backend.
 type RuntimeSession struct {
-	store             ports.RuntimeScrollStore
-	runtimeScroll     *domain.RuntimeScroll
-	scrollService     *coreservices.ScrollService
-	watchService      ports.WatchServiceInterface
-	runtimeBackend    ports.RuntimeBackendInterface
-	queue             map[string]*runtimeQueueItem
-	workWg            sync.WaitGroup
-	notifierChan      []chan []string
-	devDaemonURL      string
-	devAuthJWKSURL    string
-	devRuntimeJWKSURL string
-
-	mu      sync.Mutex
-	queueMu sync.Mutex
-	runMu   sync.Mutex
-	started bool
+	store          ports.RuntimeScrollStore
+	runtimeScroll  *domain.RuntimeScroll
+	scrollService  *coreservices.ScrollService
+	watchService   ports.WatchServiceInterface
+	runtimeBackend ports.RuntimeBackendInterface
+	queue          map[string]*runtimeQueueItem
+	workWg         sync.WaitGroup
+	notifierChan   []chan []string
+	mu             sync.Mutex
+	queueMu        sync.Mutex
+	runMu          sync.Mutex
+	started        bool
 }
 
 func NewRuntimeSession(

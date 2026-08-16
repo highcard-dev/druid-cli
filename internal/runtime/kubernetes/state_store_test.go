@@ -176,14 +176,14 @@ func TestConfigMapStateStorePreservesUIPackageScopesFromStaleUpdate(t *testing.T
 		t.Fatal(err)
 	}
 	privateUpdate.UIPackages = domain.RuntimeUIPackages{
-		domain.RuntimeUIPackageScopePrivate: {Path: "private/dist/app.wasm", SHA256: "private"},
+		domain.RuntimeUIPackageScopePrivate: {Path: "private/dist/app.wasm", URL: "private"},
 	}
 	if err := store.UpdateScroll(privateUpdate); err != nil {
 		t.Fatal(err)
 	}
 
 	stale.UIPackages = domain.RuntimeUIPackages{
-		domain.RuntimeUIPackageScopePublic: {Path: "public/dist/app.wasm", SHA256: "public"},
+		domain.RuntimeUIPackageScopePublic: {Path: "public/dist/app.wasm", URL: "public"},
 	}
 	if err := store.UpdateScroll(stale); err != nil {
 		t.Fatal(err)
@@ -193,10 +193,10 @@ func TestConfigMapStateStorePreservesUIPackageScopesFromStaleUpdate(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.UIPackages[domain.RuntimeUIPackageScopePrivate].SHA256 != "private" {
+	if got.UIPackages[domain.RuntimeUIPackageScopePrivate].URL != "private" {
 		t.Fatalf("private package = %#v", got.UIPackages[domain.RuntimeUIPackageScopePrivate])
 	}
-	if got.UIPackages[domain.RuntimeUIPackageScopePublic].SHA256 != "public" {
+	if got.UIPackages[domain.RuntimeUIPackageScopePublic].URL != "public" {
 		t.Fatalf("public package = %#v", got.UIPackages[domain.RuntimeUIPackageScopePublic])
 	}
 }
@@ -209,7 +209,7 @@ func TestConfigMapStateStorePreservesNewerUIPackageFromStaleUpdate(t *testing.T)
 		ID: "ui-package-race", Artifact: "local", Root: ref("druid", "ui-package-race-data"),
 		ScrollName: "ui-package-race", ScrollYAML: "name: ui-package-race\n",
 		UIPackages: domain.RuntimeUIPackages{
-			domain.RuntimeUIPackageScopePrivate: {SHA256: "old", UpdatedAt: older},
+			domain.RuntimeUIPackageScopePrivate: {URL: "old", UpdatedAt: older},
 		},
 	}
 	if err := store.CreateScroll(scroll); err != nil {
@@ -224,7 +224,7 @@ func TestConfigMapStateStorePreservesNewerUIPackageFromStaleUpdate(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	fresh.UIPackages[domain.RuntimeUIPackageScopePrivate] = domain.RuntimeUIPackage{SHA256: "new", UpdatedAt: newer}
+	fresh.UIPackages[domain.RuntimeUIPackageScopePrivate] = domain.RuntimeUIPackage{URL: "new", UpdatedAt: newer}
 	if err := store.UpdateScroll(fresh); err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +237,7 @@ func TestConfigMapStateStorePreservesNewerUIPackageFromStaleUpdate(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pkg := got.UIPackages[domain.RuntimeUIPackageScopePrivate]; pkg.SHA256 != "new" || !pkg.UpdatedAt.Equal(newer) {
+	if pkg := got.UIPackages[domain.RuntimeUIPackageScopePrivate]; pkg.URL != "new" || !pkg.UpdatedAt.Equal(newer) {
 		t.Fatalf("private package = %#v, want newer concurrent publish", pkg)
 	}
 }

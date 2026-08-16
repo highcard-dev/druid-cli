@@ -38,12 +38,8 @@ type LogManagerInterface interface {
 type RuntimeBackendInterface interface {
 	Name() string
 	RootRef(id string, namespace string) string
-	StartDev(ctx context.Context, action RuntimeDevAction) error
-	StopDev(ctx context.Context, root string) error
-	DevStatus(ctx context.Context, root string) (RuntimeDevStatus, error)
 	RunCommand(command RuntimeCommand) (*int, error)
-	PrepareUIPackageUpload(ctx context.Context, action RuntimeUIPackageUploadAction) (RuntimeUIPackageUploadCapability, error)
-	CompleteUIPackageUpload(ctx context.Context, action RuntimeUIPackageUploadAction) (RuntimeUIPackageResult, error)
+	CreateUIPackageUpload(ctx context.Context, action RuntimeUIPackageUploadAction) (RuntimeUIPackageUpload, error)
 	ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error)
 	RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port, reservedPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error)
 	StopRuntime(root string) error
@@ -59,15 +55,6 @@ type RuntimeBackendInterface interface {
 type RuntimeCommandStopper interface {
 	StopCommand(root string, command string) error
 }
-
-type RuntimeDevStatus string
-
-const (
-	RuntimeDevStatusDisabled  RuntimeDevStatus = "disabled"
-	RuntimeDevStatusStarting  RuntimeDevStatus = "starting"
-	RuntimeDevStatusReady     RuntimeDevStatus = "ready"
-	RuntimeDevStatusUnhealthy RuntimeDevStatus = "unhealthy"
-)
 
 type RuntimeWorkerCallbackConfig struct {
 	Listen string
@@ -122,25 +109,17 @@ func (c RuntimeCommand) ObserveProcedureStatus(procedure string, status domain.S
 }
 
 type RuntimeUIPackageUploadAction struct {
-	RuntimeID  string
-	RootRef    string
-	Scope      domain.RuntimeUIPackageScope
-	RequestID  string
-	SHA256     string
-	ContentMD5 string
+	RuntimeID string
+	RootRef   string
+	Scope     domain.RuntimeUIPackageScope
+	RequestID string
 }
 
-// RuntimeUIPackageUploadCapability exposes a short-lived upload URL and the
-// immutable public object URL that the Job verifies after upload.
-type RuntimeUIPackageUploadCapability struct {
+// RuntimeUIPackageUpload exposes a short-lived upload URL and the immutable
+// public URL of the unique object it writes.
+type RuntimeUIPackageUpload struct {
 	UploadURL string
-	VerifyURL string
-}
-
-type RuntimeUIPackageResult struct {
-	URL    string
-	Path   string
-	SHA256 string
+	URL       string
 }
 
 type RuntimeMaterialization struct {
@@ -174,21 +153,6 @@ type RuntimeWorkerResult struct {
 	ScrollYAML     string `json:"scroll_yaml,omitempty"`
 	ArtifactDigest string `json:"artifact_digest,omitempty"`
 	Error          string `json:"error,omitempty"`
-}
-
-type RuntimeDevAction struct {
-	RuntimeID         string
-	RootRef           string
-	MountPath         string
-	Listen            string
-	WatchPaths        []string
-	HotReloadCommands []string
-	Routing           []domain.RuntimeRouteAssignment
-	DaemonURL         string
-	TokenFile         string
-	OwnerID           string
-	AuthJWKSURL       string
-	RuntimeJWKSURL    string
 }
 
 type BroadcastChannelInterface interface {

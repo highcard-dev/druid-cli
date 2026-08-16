@@ -21,7 +21,6 @@ func TestChartRendersDefaultAndCustomValues(t *testing.T) {
 		"--listen=:8081",
 		"--public-listen=:8082",
 		"--worker-callback-listen=:8083",
-		"--worker-daemon-url=http://druid-cli:8081",
 		"--public-jwks-url=http://druid-cli:8082/.well-known/jwks.json",
 		"name: management",
 		"name: public",

@@ -93,26 +93,12 @@ func (f fakeBackend) RootRef(id string, namespace string) string {
 	return id
 }
 
-func (f fakeBackend) StartDev(ctx context.Context, action ports.RuntimeDevAction) error {
-	return nil
-}
-
-func (f fakeBackend) StopDev(ctx context.Context, root string) error { return nil }
-
-func (f fakeBackend) DevStatus(ctx context.Context, root string) (ports.RuntimeDevStatus, error) {
-	return ports.RuntimeDevStatusDisabled, nil
-}
-
 func (f fakeBackend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 	return nil, nil
 }
 
-func (f fakeBackend) PrepareUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageUploadCapability, error) {
-	return ports.RuntimeUIPackageUploadCapability{}, nil
-}
-
-func (f fakeBackend) CompleteUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageResult, error) {
-	return ports.RuntimeUIPackageResult{}, nil
+func (f fakeBackend) CreateUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageUpload, error) {
+	return ports.RuntimeUIPackageUpload{}, nil
 }
 
 func (f fakeBackend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {

@@ -70,10 +70,6 @@ func jobName(prefix string, root string, procedureName string) string {
 	return objectName(fmt.Sprintf("%s-%s-%s", runtimeID(root), prefix, procedureName))
 }
 
-func devStatefulSetName(root string) string {
-	return dnsLabel(fmt.Sprintf("druid-dev-%s", refPVCName(root)))
-}
-
 func serviceName(root string, procedureName string, portName string) string {
 	return objectName(fmt.Sprintf("%s-%s-%s", runtimeID(root), procedureName, portName))
 }

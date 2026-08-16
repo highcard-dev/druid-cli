@@ -47,7 +47,6 @@ var runtimeAllowUnauthenticatedManagement bool
 var runtimeWorkerTimeout time.Duration
 var runtimeWorkerCallbackListen string
 var runtimeWorkerCallbackURL string
-var runtimeWorkerDaemonURL string
 var runtimeAuthJWKSURL string
 var runtimePublicJWKSURL string
 var dockerWorkerImage string
@@ -83,7 +82,6 @@ func init() {
 	DaemonCommand.Flags().DurationVar(&runtimeWorkerTimeout, "worker-timeout", 20*time.Minute, "Maximum time for runtime materialization workers")
 	DaemonCommand.Flags().StringVar(&runtimeWorkerCallbackListen, "worker-callback-listen", "", "Optional internal worker callback listen address, for example :8083")
 	DaemonCommand.Flags().StringVar(&runtimeWorkerCallbackURL, "worker-callback-url", "", "URL workers use to call back to this daemon")
-	DaemonCommand.Flags().StringVar(&runtimeWorkerDaemonURL, "worker-daemon-url", "", "URL dev workers use for daemon management API calls")
 	DaemonCommand.Flags().StringVar(&runtimeAuthJWKSURL, "auth-jwks-url", "", "JWKS URL used to validate customer JWTs")
 	DaemonCommand.Flags().StringVar(&runtimePublicJWKSURL, "public-jwks-url", "", "Public JWKS URL workers use to validate daemon runtime tokens")
 	DaemonCommand.Flags().StringVar(&dockerWorkerImage, "docker-worker-image", "", "Docker image used for sibling worker containers (default: DRUID_DOCKER_WORKER_IMAGE)")
@@ -175,7 +173,6 @@ func runRuntimeDaemon() error {
 	runtimeWorkerCallbackListen = callbackConfig.Listen
 	runtimeWorkerCallbackURL = callbackConfig.URL
 	supervisor.SetWorkerCallbacks(callbacks, runtimeWorkerCallbackURL)
-	supervisor.SetDevWorkerConfig(runtimeWorkerDaemonURL, runtimeAuthJWKSURL, runtimePublicJWKSURL)
 	if err := supervisor.Start(); err != nil {
 		return err
 	}
@@ -226,9 +223,6 @@ func loadRuntimeDaemonEnv() {
 	}
 	if runtimeWorkerCallbackListen == "" {
 		runtimeWorkerCallbackListen = os.Getenv("DRUID_WORKER_CALLBACK_LISTEN")
-	}
-	if runtimeWorkerDaemonURL == "" {
-		runtimeWorkerDaemonURL = os.Getenv("DRUID_WORKER_DAEMON_URL")
 	}
 	if runtimeAuthJWKSURL == "" {
 		runtimeAuthJWKSURL = os.Getenv("DRUID_AUTH_JWKS_URL")
@@ -285,11 +279,7 @@ func workloadIdentityMiddleware(authenticator ports.RuntimeWorkloadAuthenticator
 		token := strings.TrimSpace(strings.TrimPrefix(c.Get("Authorization"), "Bearer "))
 		if allowUnsafe && token == "" {
 			runtimeID := strings.TrimSpace(c.Get("X-Druid-Runtime-ID"))
-			kind := "dev"
-			if isUIPackagePreparePath(c.Path(), runtimeID) {
-				kind = "ui-publish"
-			}
-			c.Locals("druid-workload-identity", ports.RuntimeWorkloadIdentity{Kind: kind, RuntimeID: runtimeID, PodUID: "unsafe-local"})
+			c.Locals("druid-workload-identity", ports.RuntimeWorkloadIdentity{Kind: "unsafe", RuntimeID: runtimeID, PodUID: "unsafe-local"})
 			return c.Next()
 		}
 		if authenticator == nil {
@@ -303,29 +293,12 @@ func workloadIdentityMiddleware(authenticator ports.RuntimeWorkloadAuthenticator
 			c.Locals("druid-workload-identity", identity)
 			return c.Next()
 		}
-		if identity.Kind == "dev" && c.Method() == fiber.MethodPost && strings.HasPrefix(c.Path(), "/api/v1/scrolls/"+identity.RuntimeID+"/commands/") {
-			c.Locals("druid-workload-identity", identity)
-			return c.Next()
-		}
-		if identity.Kind == "ui-publish" && c.Method() == fiber.MethodPost && isUIPackagePreparePath(c.Path(), identity.RuntimeID) {
-			c.Locals("druid-workload-identity", identity)
-			return c.Next()
-		}
 		if identity.Kind == "worker" && strings.HasPrefix(c.Path(), "/internal/v1/workers/"+identity.RuntimeID+"/") {
 			c.Locals("druid-workload-identity", identity)
 			return c.Next()
 		}
 		return fiber.NewError(fiber.StatusForbidden, "workload identity is not authorized for this request")
 	}
-}
-
-func isUIPackagePreparePath(requestPath string, runtimeID string) bool {
-	prefix := "/api/v1/scrolls/" + runtimeID + "/ui/packages/"
-	if runtimeID == "" || !strings.HasPrefix(requestPath, prefix) {
-		return false
-	}
-	parts := strings.Split(strings.TrimPrefix(requestPath, prefix), "/")
-	return len(parts) == 2 && (parts[0] == "private" || parts[0] == "public") && parts[1] == "prepare"
 }
 
 func openWorkerCallbackListener(listen string) (net.Listener, error) {
