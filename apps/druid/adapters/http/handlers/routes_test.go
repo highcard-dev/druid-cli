@@ -33,6 +33,25 @@ func TestRouteSplitKeepsManagementAndPublicSurfacesSeparate(t *testing.T) {
 	}
 }
 
+func TestWorkerRoutesExposeOnlyUIPackagePrepare(t *testing.T) {
+	handlers := RouteHandlers{Server: NewRuntimeServer(NewHealthHandler(), nil), Websocket: &WebsocketHandler{}}
+	worker := fiber.New(fiber.Config{DisableStartupMessage: true})
+	RegisterWorkerRoutes(worker, handlers)
+
+	foundPrepare := false
+	for _, route := range worker.GetRoutes() {
+		if route.Method == http.MethodPost && route.Path == "/api/v1/scrolls/:id/ui/packages/:scope/prepare" {
+			foundPrepare = true
+		}
+		if route.Path == "/api/v1/scrolls" {
+			t.Fatalf("worker listener must not expose management route %s %s", route.Method, route.Path)
+		}
+	}
+	if !foundPrepare {
+		t.Fatal("worker listener does not expose the UI package prepare route")
+	}
+}
+
 func TestPublicRoutesAnswerCorsPreflight(t *testing.T) {
 	handlers := RouteHandlers{Server: NewRuntimeServer(NewHealthHandler(), nil), Websocket: &WebsocketHandler{}}
 	public := fiber.New(fiber.Config{DisableStartupMessage: true})

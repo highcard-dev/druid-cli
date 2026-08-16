@@ -62,6 +62,10 @@ const (
 // actions. The URL is an expiring, exact-object capability and is never
 // persisted in the deployment definition.
 func (s *RuntimeSupervisor) PublishUIPackage(id string, scope string, sourcePath string) (*domain.RuntimeScroll, error) {
+	return s.publishUIPackage(id, scope, sourcePath, true)
+}
+
+func (s *RuntimeSupervisor) publishUIPackage(id string, scope string, sourcePath string, requireDevReady bool) (*domain.RuntimeScroll, error) {
 	runtimeScroll, err := s.store.GetScroll(id)
 	if err != nil {
 		return nil, err
@@ -73,12 +77,14 @@ func (s *RuntimeSupervisor) PublishUIPackage(id string, scope string, sourcePath
 	if s.workerDaemonURL == "" {
 		return nil, fmt.Errorf("Druid UI publishing requires a configured runtime management URL")
 	}
-	status, err := s.runtimeBackend.DevStatus(context.Background(), runtimeScroll.Root)
-	if err != nil {
-		return nil, err
-	}
-	if status != ports.RuntimeDevStatusReady {
-		return nil, fmt.Errorf("Druid Developer Mode must be ready before publishing a UI package (current status: %s)", status)
+	if requireDevReady {
+		status, err := s.runtimeBackend.DevStatus(context.Background(), runtimeScroll.Root)
+		if err != nil {
+			return nil, err
+		}
+		if status != ports.RuntimeDevStatusReady {
+			return nil, fmt.Errorf("Druid Developer Mode must be ready before publishing a UI package (current status: %s)", status)
+		}
 	}
 
 	action := ports.RuntimeUIPackageUploadAction{
@@ -140,6 +146,18 @@ func (s *RuntimeSupervisor) PublishUIPackage(id string, scope string, sourcePath
 	if err := s.store.UpdateScroll(runtimeScroll); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	liveSession := s.sessions[id]
+	s.mu.Unlock()
+	if liveSession != nil {
+		packages := make(domain.RuntimeUIPackages, len(runtimeScroll.UIPackages))
+		for packageScope, pkg := range runtimeScroll.UIPackages {
+			packages[packageScope] = pkg
+		}
+		liveSession.mu.Lock()
+		liveSession.runtimeScroll.UIPackages = packages
+		liveSession.mu.Unlock()
+	}
 	return s.store.GetScroll(id)
 }
 
@@ -149,7 +167,7 @@ func uiPublishCommand() *domain.CommandInstructionSet {
 		Procedures: []*domain.Procedure{{
 			Image:      uiPublishImage,
 			WorkingDir: "/app/resources/deployment",
-			Mounts:     []domain.Mount{{Path: "/app/resources/deployment"}},
+			Mounts:     []domain.Mount{{Path: "/app/resources/deployment", SubPath: ".", ReadOnly: true}},
 			Command: []string{"sh", "-ec", `
 source="${DRUID_UI_SOURCE:?DRUID_UI_SOURCE is required}"
 prepare_url="${DRUID_UI_PREPARE_URL:?DRUID_UI_PREPARE_URL is required}"

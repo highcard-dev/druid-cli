@@ -1,4 +1,4 @@
-.PHONY: test build k3d-build-pull-image watch test-integration test-integration-docker test-integration-kubernetes kind-integration-up kind-integration-down
+.PHONY: test build k3d-build-pull-image watch watch-windows test-integration test-integration-docker test-integration-kubernetes kind-integration-up kind-integration-down
 
 VERSION ?= "dev"
 DRUID_K8S_PULL_IMAGE ?= druid:local
@@ -11,6 +11,9 @@ DRUID_K8S_NAMESPACE ?= druid
 DRUID_WORKER_CALLBACK_LISTEN ?= 0.0.0.0:8083
 DRUID_WORKER_CALLBACK_URL ?= http://host.k3d.internal:8083
 DRUID_WORKER_DAEMON_URL ?= http://host.k3d.internal:8081
+WSL_HOST_IP ?= $(word 1,$(shell hostname -I))
+DRUID_WORKER_CALLBACK_URL_WINDOWS ?= http://$(WSL_HOST_IP):8083
+DRUID_WORKER_DAEMON_URL_WINDOWS ?= http://$(WSL_HOST_IP):8081
 DRUID_WATCH_ARGS ?= daemon --runtime kubernetes --listen 127.0.0.1:8081 --public-listen 127.0.0.1:8082 --worker-callback-listen $(DRUID_WORKER_CALLBACK_LISTEN) --worker-callback-url $(DRUID_WORKER_CALLBACK_URL) --worker-daemon-url $(DRUID_WORKER_DAEMON_URL) --unsafe-allow-unauthenticated-management --unsafe-allow-unauthenticated-public --k8s-namespace $(DRUID_K8S_NAMESPACE) --k8s-pull-image $(DRUID_K8S_PULL_IMAGE)
 export DRUID_K8S_UI_S3_BUCKET ?= druid-ui
 export DRUID_K8S_UI_S3_PUBLIC_BASE_URL ?= http://127.0.0.1:9000/druid-ui
@@ -62,6 +65,10 @@ run: ## Run Daemon
 watch: ## Run Daemon with auto reload
 	@command -v air >/dev/null 2>&1 || go install github.com/air-verse/air@latest
 	air --build.cmd "CGO_ENABLED=0 go build -ldflags '-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)' -o ./bin/druid ./apps/druid" --build.full_bin "DRUID_REGISTRY_PLAIN_HTTP=true ./bin/druid $(DRUID_WATCH_ARGS)"
+
+watch-windows: ## Run Daemon with auto reload inside WSL2 on Windows
+	@grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null || (echo "watch-windows must run inside WSL2; use make watch on Linux or macOS." >&2; exit 1)
+	@$(MAKE) watch DRUID_WORKER_CALLBACK_URL="$(DRUID_WORKER_CALLBACK_URL_WINDOWS)" DRUID_WORKER_DAEMON_URL="$(DRUID_WORKER_DAEMON_URL_WINDOWS)"
 
 mock:
 	mockgen -source=internal/core/ports/services_ports.go -destination test/mock/services.go

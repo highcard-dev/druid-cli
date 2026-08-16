@@ -19,12 +19,9 @@ func (b *Backend) PrepareUIPackageUpload(ctx context.Context, action ports.Runti
 	if err != nil {
 		return ports.RuntimeUIPackageUploadCapability{}, err
 	}
-	verifyURL, err := uipackage.EndpointObjectURL(config, uiPackageObjectName(action))
+	verifyURL, err := uipackage.PresignGet(ctx, uiPackageObjectName(action), config)
 	if err != nil {
 		return ports.RuntimeUIPackageUploadCapability{}, err
-	}
-	if verifyURL == "" {
-		verifyURL = b.uiPackagePublicURL(config, action)
 	}
 	return ports.RuntimeUIPackageUploadCapability{UploadURL: uploadURL, VerifyURL: verifyURL}, nil
 }

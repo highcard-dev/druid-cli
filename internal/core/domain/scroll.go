@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -58,6 +59,15 @@ type File struct {
 	Ports       []Port                            `yaml:"ports" json:"ports"`
 	Commands    map[string]*CommandInstructionSet `yaml:"commands" json:"commands"`
 	Chunks      []*Chunks                         `yaml:"chunks" json:"chunks"`
+	UI          *UIDeclaration                    `yaml:"ui,omitempty" json:"ui,omitempty"`
+}
+
+type UIDeclaration struct {
+	Private *UIPackageDeclaration `yaml:"private,omitempty" json:"private,omitempty"`
+}
+
+type UIPackageDeclaration struct {
+	Path string `yaml:"path" json:"path"`
 }
 
 type Scroll struct {
@@ -265,6 +275,22 @@ func (sc *Scroll) Validate(strict bool) error {
 	if sc.Serve != "" {
 		if _, ok := sc.Commands[sc.Serve]; !ok {
 			return fmt.Errorf("scroll serve command %s is not defined", sc.Serve)
+		}
+	}
+	if sc.UI != nil {
+		if sc.UI.Private == nil {
+			return fmt.Errorf("ui.private declaration is required")
+		}
+		uiPath := sc.UI.Private.Path
+		cleaned := path.Clean(uiPath)
+		if uiPath == "" || path.IsAbs(uiPath) || cleaned != uiPath || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+			return fmt.Errorf("private ui package path must be a normalized relative path")
+		}
+		if !strings.HasPrefix(cleaned, "private/") {
+			return fmt.Errorf("private ui package path must be rooted at private/")
+		}
+		if path.Ext(cleaned) != ".wasm" {
+			return fmt.Errorf("private ui package path must point to a .wasm file")
 		}
 	}
 

@@ -2,6 +2,8 @@ package client
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"mime"
 	"net/http"
@@ -9,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gofiber/contrib/websocket"
@@ -171,11 +174,12 @@ func newDevApp(root string, watch ports.WatchServiceInterface, authOpt ...devAut
 		ErrorHandler:          runtimehandlers.ErrorHandler,
 	})
 	app.Use(runtimehandlers.RequestLogger)
-	server := devServer{root: root, watch: watch, auth: auth}
+	server := devServer{root: root, watch: watch, auth: auth, fileMu: &sync.Mutex{}}
 	app.Use(func(c *fiber.Ctx) error {
 		c.Set("Access-Control-Allow-Origin", "*")
 		c.Set("Access-Control-Allow-Methods", "GET,HEAD,PUT,OPTIONS,PROPFIND,MKCOL,MOVE,COPY,DELETE")
-		c.Set("Access-Control-Allow-Headers", "Origin,Content-Type,Accept,Authorization,Cache-Control,Depth,Destination,Overwrite")
+		c.Set("Access-Control-Allow-Headers", "Origin,Content-Type,Accept,Authorization,Cache-Control,Depth,Destination,Overwrite,If-Match")
+		c.Set("Access-Control-Expose-Headers", "ETag")
 		if c.Method() == fiber.MethodOptions && c.Path() != "/api/v1/files" && !strings.HasPrefix(c.Path(), "/webdav/") {
 			return c.SendStatus(fiber.StatusNoContent)
 		}
@@ -189,15 +193,22 @@ func newDevApp(root string, watch ports.WatchServiceInterface, authOpt ...devAut
 		LockSystem: webdav.NewMemLS(),
 	})
 	app.All("/webdav/*", func(c *fiber.Ctx) error {
+		write := c.Method() == fiber.MethodPut || c.Method() == fiber.MethodDelete ||
+			c.Method() == "MKCOL" || c.Method() == "MOVE" || c.Method() == "COPY"
+		if write {
+			server.fileMu.Lock()
+			defer server.fileMu.Unlock()
+		}
 		return webdavHandler(c)
 	})
 	return app
 }
 
 type devServer struct {
-	root  string
-	watch ports.WatchServiceInterface
-	auth  devAuth
+	root   string
+	watch  ports.WatchServiceInterface
+	auth   devAuth
+	fileMu *sync.Mutex
 }
 
 func (s devServer) GetHealth(c *fiber.Ctx) error { return c.SendString("ok") }
@@ -293,6 +304,8 @@ func (s devServer) sendFile(c *fiber.Ctx, raw string) error {
 		}
 		return err
 	}
+	sum := sha256.Sum256(data)
+	c.Set(fiber.HeaderETag, `"`+hex.EncodeToString(sum[:])+`"`)
 	if contentType := mime.TypeByExtension(filepath.Ext(fullPath)); contentType != "" {
 		c.Set(fiber.HeaderContentType, contentType)
 	}
@@ -308,12 +321,91 @@ func (s devServer) writeFile(c *fiber.Ctx, raw string) error {
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
+	s.fileMu.Lock()
+	defer s.fileMu.Unlock()
+	expected := strings.Trim(c.Get(fiber.HeaderIfMatch), `"`)
+	current, readErr := os.ReadFile(fullPath)
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return readErr
+	}
+	if expected != "" {
+		currentSum := sha256.Sum256(current)
+		matchesMissing := expected == "missing" && os.IsNotExist(readErr)
+		matchesExisting := readErr == nil && strings.EqualFold(expected, hex.EncodeToString(currentSum[:]))
+		if !matchesMissing && !matchesExisting {
+			c.Set(fiber.HeaderETag, `"`+hex.EncodeToString(currentSum[:])+`"`)
+			return c.Status(fiber.StatusPreconditionFailed).Send(current)
+		}
+	}
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(fullPath, c.Body(), 0644); err != nil {
+	mode := os.FileMode(0600)
+	if info, err := os.Stat(fullPath); err == nil {
+		mode = info.Mode().Perm()
+	} else if !os.IsNotExist(err) {
 		return err
 	}
+	temp, err := os.CreateTemp(filepath.Dir(fullPath), ".druid-write-*")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if _, err := temp.Write(c.Body()); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Chmod(mode); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	if expected == "missing" {
+		if err := os.Link(tempPath, fullPath); os.IsExist(err) {
+			remote, readErr := os.ReadFile(fullPath)
+			if readErr != nil {
+				return readErr
+			}
+			remoteSum := sha256.Sum256(remote)
+			c.Set(fiber.HeaderETag, `"`+hex.EncodeToString(remoteSum[:])+`"`)
+			return c.Status(fiber.StatusPreconditionFailed).Send(remote)
+		} else if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(c.Body())
+		c.Set(fiber.HeaderETag, `"`+hex.EncodeToString(sum[:])+`"`)
+		return c.SendStatus(fiber.StatusNoContent)
+	}
+	if expected != "" {
+		latest, latestErr := os.ReadFile(fullPath)
+		if latestErr != nil {
+			return latestErr
+		}
+		latestSum := sha256.Sum256(latest)
+		if !strings.EqualFold(expected, hex.EncodeToString(latestSum[:])) {
+			c.Set(fiber.HeaderETag, `"`+hex.EncodeToString(latestSum[:])+`"`)
+			return c.Status(fiber.StatusPreconditionFailed).Send(latest)
+		}
+	}
+	if err := os.Rename(tempPath, fullPath); err != nil {
+		return err
+	}
+	if saved, err := os.ReadFile(fullPath); err != nil {
+		return err
+	} else if savedSum, bodySum := sha256.Sum256(saved), sha256.Sum256(c.Body()); savedSum != bodySum {
+		savedSum := sha256.Sum256(saved)
+		c.Set(fiber.HeaderETag, `"`+hex.EncodeToString(savedSum[:])+`"`)
+		return c.Status(fiber.StatusPreconditionFailed).Send(saved)
+	}
+	sum := sha256.Sum256(c.Body())
+	c.Set(fiber.HeaderETag, `"`+hex.EncodeToString(sum[:])+`"`)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 

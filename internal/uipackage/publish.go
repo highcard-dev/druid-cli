@@ -100,6 +100,28 @@ func PresignPut(ctx context.Context, objectName string, action ports.RuntimeUIPa
 	return presigned.URL, nil
 }
 
+// PresignGet issues a short-lived read capability for the worker-side
+// byte-for-byte verification. It is separate from the durable browser URL.
+func PresignGet(ctx context.Context, objectName string, config S3Config) (string, error) {
+	if config.Bucket == "" || config.Region == "" || objectName == "" {
+		return "", fmt.Errorf("ui package S3 bucket, region, and object name are required")
+	}
+	client, err := newClient(ctx, config)
+	if err != nil {
+		return "", err
+	}
+	result, err := s3.NewPresignClient(client).PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(config.Bucket),
+		Key:    aws.String(path.Join(strings.Trim(config.KeyPrefix, "/"), objectName)),
+	}, func(options *s3.PresignOptions) {
+		options.Expires = 5 * time.Minute
+	})
+	if err != nil {
+		return "", err
+	}
+	return result.URL, nil
+}
+
 // Inspect verifies the server's stored bytes using its ETag. The publish Job
 // separately downloads the immutable object and compares SHA-256 before it
 // exits, which covers S3-compatible stores that do not return checksum fields.

@@ -47,6 +47,12 @@ func RegisterManagementRoutes(app *fiber.App, handlers RouteHandlers) {
 	app.Post("/api/v1/scrolls/:id/ui/packages/:scope/prepare", handlers.Server.PrepareDaemonUIPackageUpload)
 }
 
+// RegisterWorkerRoutes exposes the minimal authenticated surface needed by
+// runtime worker Pods. Keep the management API bound to its private listener.
+func RegisterWorkerRoutes(app *fiber.App, handlers RouteHandlers) {
+	app.Post("/api/v1/scrolls/:id/ui/packages/:scope/prepare", handlers.Server.PrepareDaemonUIPackageUpload)
+}
+
 func RegisterPublicRoutes(app *fiber.App, handlers RouteHandlers) {
 	var authorizer ports.AuthorizerServiceInterface
 	if handlers.Server != nil && handlers.Server.ScrollHandler != nil {

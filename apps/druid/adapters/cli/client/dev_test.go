@@ -170,6 +170,103 @@ func TestDevServerWebDAVReadWriteAndCallback(t *testing.T) {
 	}
 }
 
+func TestDevServerPutFileUsesAtomicIfMatch(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "data", "server.cfg")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("before"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0600); err != nil {
+		t.Fatal(err)
+	}
+	app := newDevApp(root, nil)
+
+	get, err := app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/files?path=data/server.cfg", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	etag := get.Header.Get("ETag")
+	_ = get.Body.Close()
+	if etag == "" {
+		t.Fatal("GET did not return an ETag")
+	}
+
+	if err := os.WriteFile(path, []byte("remote-change"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	stale := httptest.NewRequest(http.MethodPut, "/api/v1/files?path=data/server.cfg", strings.NewReader("client-change"))
+	stale.Header.Set("If-Match", etag)
+	res, err := app.Test(stale)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusPreconditionFailed || string(body) != "remote-change" {
+		t.Fatalf("stale PUT status=%d body=%q", res.StatusCode, body)
+	}
+	if current, _ := os.ReadFile(path); string(current) != "remote-change" {
+		t.Fatalf("stale PUT overwrote file: %q", current)
+	}
+
+	get, _ = app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/files?path=data/server.cfg", nil))
+	etag = get.Header.Get("ETag")
+	_ = get.Body.Close()
+	fresh := httptest.NewRequest(http.MethodPut, "/api/v1/files?path=data/server.cfg", strings.NewReader("client-change"))
+	fresh.Header.Set("If-Match", etag)
+	res, err = app.Test(fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusNoContent || res.Header.Get("ETag") == "" {
+		t.Fatalf("fresh PUT status=%d etag=%q", res.StatusCode, res.Header.Get("ETag"))
+	}
+	if info, err := os.Stat(path); err != nil {
+		t.Fatal(err)
+	} else if info.Mode().Perm() != 0600 {
+		t.Fatalf("saved mode=%v, want 0600", info.Mode().Perm())
+	}
+}
+
+func TestDevServerPutFileCreatesOnlyWhenStillMissing(t *testing.T) {
+	root := t.TempDir()
+	app := newDevApp(root, nil)
+	url := "/api/v1/files?path=data/generated.cfg"
+
+	create := httptest.NewRequest(http.MethodPut, url, strings.NewReader("created"))
+	create.Header.Set("If-Match", `"missing"`)
+	res, err := app.Test(create)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatalf("create status=%d", res.StatusCode)
+	}
+	createdPath := filepath.Join(root, "data", "generated.cfg")
+	if info, err := os.Stat(createdPath); err != nil {
+		t.Fatal(err)
+	} else if info.Mode().Perm() != 0600 {
+		t.Fatalf("created mode=%v, want 0600", info.Mode().Perm())
+	}
+
+	staleCreate := httptest.NewRequest(http.MethodPut, url, strings.NewReader("overwritten"))
+	staleCreate.Header.Set("If-Match", `"missing"`)
+	res, err = app.Test(staleCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusPreconditionFailed || string(body) != "created" {
+		t.Fatalf("second create status=%d body=%q", res.StatusCode, body)
+	}
+}
+
 func TestDevServerWebsocketReceivesWatcherBuildEvents(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "private", "src"), 0755); err != nil {
