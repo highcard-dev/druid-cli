@@ -6,6 +6,7 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
+	coreservices "github.com/highcard-dev/daemon/internal/core/services"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"go.uber.org/zap"
 )
@@ -58,19 +59,14 @@ func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeSc
 		_ = s.store.UpdateScroll(runtimeScroll)
 		return nil, err
 	}
-	scroll, err := domain.NewScrollFromBytes(materialized.Root, materialized.ScrollYAML)
+	scrollService, err := coreservices.NewCachedScrollServiceWithPorts(materialized.Root, materialized.ScrollYAML, runtimeScroll.ReservedPorts)
 	if err != nil {
 		runtimeScroll.Status = domain.RuntimeScrollStatusError
 		runtimeScroll.LastError = err.Error()
 		_ = s.store.UpdateScroll(runtimeScroll)
 		return nil, err
 	}
-	if err := scroll.Validate(false); err != nil {
-		runtimeScroll.Status = domain.RuntimeScrollStatusError
-		runtimeScroll.LastError = err.Error()
-		_ = s.store.UpdateScroll(runtimeScroll)
-		return nil, err
-	}
+	scroll := scrollService.GetCurrent()
 	runtimeScroll.Artifact = materialized.Artifact
 	if runtimeScroll.Artifact == "" {
 		runtimeScroll.Artifact = artifact

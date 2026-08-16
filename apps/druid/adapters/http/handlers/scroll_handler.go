@@ -108,18 +108,19 @@ func (h *ScrollHandler) EnsureScroll(c *fiber.Ctx) error {
 	if request.Namespace != nil {
 		namespace = *request.Namespace
 	}
-	runtimeScroll, err := h.supervisor.EnsureWithOwner(request.Artifact, name, ownerID, namespace, registryCredentials(request.RegistryCredentials))
-	if err != nil {
-		return err
+	options := appservices.EnsureOptions{
+		Artifact:            request.Artifact,
+		Name:                name,
+		OwnerID:             ownerID,
+		Namespace:           namespace,
+		RegistryCredentials: registryCredentials(request.RegistryCredentials),
 	}
 	if request.ReservedPorts != nil {
-		if err := h.supervisor.SetReservedPorts(runtimeScroll.ID, runtimePorts(*request.ReservedPorts)); err != nil {
-			return err
-		}
-		runtimeScroll, err = h.supervisor.Get(runtimeScroll.ID)
-		if err != nil {
-			return err
-		}
+		options.ReservedPorts = runtimePorts(*request.ReservedPorts)
+	}
+	runtimeScroll, err := h.supervisor.Ensure(options)
+	if err != nil {
+		return err
 	}
 	return c.JSON(runtimeScroll)
 }

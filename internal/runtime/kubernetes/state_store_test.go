@@ -50,6 +50,17 @@ func TestConfigMapStateStoreRoundTripsRuntimeScroll(t *testing.T) {
 	if len(got.ReservedPorts) != 1 || got.ReservedPorts[0].Name != "vscode" {
 		t.Fatalf("reserved ports = %#v, want vscode", got.ReservedPorts)
 	}
+	got.ReservedPorts = []domain.Port{}
+	if err := store.UpdateScroll(got); err != nil {
+		t.Fatal(err)
+	}
+	got, err = store.GetScroll("container-lab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ReservedPorts == nil || len(got.ReservedPorts) != 0 {
+		t.Fatalf("reserved ports = %#v, want explicit empty list", got.ReservedPorts)
+	}
 
 	got.Status = domain.RuntimeScrollStatusRunning
 	got.Procedures["verify"]["verify.0"] = domain.LockStatus{Status: domain.ScrollLockStatusDone, LastStatusChange: 456}
