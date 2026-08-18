@@ -707,7 +707,7 @@ func TestExpectedServicesUseRootNamespace(t *testing.T) {
 	root := ref("games", dataPVCName("deployment-123"))
 	procedure := &domain.Procedure{ExpectedPorts: []domain.ExpectedPort{{Name: "http"}}}
 
-	err := backend.ensureExpectedServices(context.Background(), root, "start", "start", procedure, []domain.Port{{Name: "http", Port: 8080, Protocol: "tcp"}}, map[string]int{"http": 1})
+	err := backend.ensureExpectedServices(context.Background(), root, "start", "start", procedure, []domain.Port{{Name: "http", Port: 8080, Protocol: "tcp"}}, map[string]int{"http": 1}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -783,7 +783,7 @@ func TestExpectedPortsUsesPodStatsTraffic(t *testing.T) {
 			Id:            &procedureName,
 			ExpectedPorts: []domain.ExpectedPort{{Name: "http", KeepAliveTraffic: "1b/5m"}},
 		}}},
-	}, []domain.Port{{Name: "http", Port: 80, Protocol: "tcp"}})
+	}, []domain.Port{{Name: "http", Port: 80, Protocol: "tcp"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -833,7 +833,7 @@ func TestExpectedPortsDegradesWhenPodStatsUnavailable(t *testing.T) {
 
 	statuses, err := backend.ExpectedPorts(root, map[string]*domain.CommandInstructionSet{
 		"start": {Procedures: []*domain.Procedure{{Id: ptrString("start"), ExpectedPorts: []domain.ExpectedPort{{Name: "http", KeepAliveTraffic: "1b/5m"}}}}},
-	}, []domain.Port{{Name: "http", Port: 80, Protocol: "tcp"}})
+	}, []domain.Port{{Name: "http", Port: 80, Protocol: "tcp"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -882,7 +882,7 @@ func TestExpectedPortsWithoutActivePodDoesNotBorrowTraffic(t *testing.T) {
 
 	statuses, err := backend.ExpectedPorts(root, map[string]*domain.CommandInstructionSet{
 		"start": {Procedures: []*domain.Procedure{{Id: &procedureName, ExpectedPorts: []domain.ExpectedPort{{Name: "http", KeepAliveTraffic: "1b/5m"}}}}},
-	}, []domain.Port{{Name: "http", Port: 80, Protocol: "tcp"}})
+	}, []domain.Port{{Name: "http", Port: 80, Protocol: "tcp"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1122,12 +1122,53 @@ func TestRoutingTargetsIncludeUnclaimedRuntimePort(t *testing.T) {
 			}
 			continue
 		}
-		if target.Procedure != "" || target.ServiceName != "" || target.Selector[labelPortName] != "vscode" {
+		if target.Procedure != "" || target.ServiceName != reservedServiceName(root, "vscode") || target.Selector[labelPortName] != "vscode" {
 			t.Fatalf("unclaimed target = %#v", target)
 		}
 		return
 	}
 	t.Fatalf("vscode target missing: %#v", targets)
+}
+
+func TestReservedPortRoutingTargetsStableServiceCreatedByCommand(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	root := ref("druid", "druid-static-web-data")
+	reservedPorts := []domain.Port{{Name: "webdav", Port: 8084, Protocol: "http"}}
+
+	before, err := backend.RoutingTargets(root, nil, reservedPorts, reservedPorts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantService := reservedServiceName(root, "webdav")
+	if len(before) != 1 || before[0].ServiceName != wantService {
+		t.Fatalf("unclaimed targets = %#v, want backend Service %q", before, wantService)
+	}
+
+	procedure := &domain.Procedure{ExpectedPorts: []domain.ExpectedPort{{Name: "webdav"}}}
+	if err := backend.ensureExpectedServices(context.Background(), root, "druid_ui_dev", "files", procedure, reservedPorts, map[string]int{"webdav": 1}, portNames(reservedPorts)); err != nil {
+		t.Fatal(err)
+	}
+	service, err := client.CoreV1().Services("druid").Get(context.Background(), wantService, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if service.Spec.Selector[labelCommand] != "druid-ui-dev" || service.Spec.Selector[labelProcedure] != "files" {
+		t.Fatalf("service selector = %#v", service.Spec.Selector)
+	}
+
+	after, err := backend.RoutingTargets(root, map[string]*domain.CommandInstructionSet{
+		"druid_ui_dev": {Procedures: []*domain.Procedure{{
+			Id:            ptrString("files"),
+			ExpectedPorts: []domain.ExpectedPort{{Name: "webdav"}},
+		}}},
+	}, reservedPorts, reservedPorts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != 1 || after[0].ServiceName != wantService {
+		t.Fatalf("claimed targets = %#v, want backend Service %q", after, wantService)
+	}
 }
 
 func TestServiceSpecUsesRuntimePortForServiceAndTarget(t *testing.T) {
@@ -1191,7 +1232,7 @@ func TestExpectedServiceForSharedPortMovesToActiveProcedure(t *testing.T) {
 	ports := []domain.Port{{Name: "main", Port: 25565, Protocol: "tcp"}}
 	portUse := map[string]int{"main": 2}
 
-	if err := backend.ensureExpectedServices(context.Background(), root, "start", "coldstart", coldstart, ports, portUse); err != nil {
+	if err := backend.ensureExpectedServices(context.Background(), root, "start", "coldstart", coldstart, ports, portUse, nil); err != nil {
 		t.Fatal(err)
 	}
 	service, err := client.CoreV1().Services("druid").Get(context.Background(), serviceName(root, "start", "main"), metav1.GetOptions{})
@@ -1202,7 +1243,7 @@ func TestExpectedServiceForSharedPortMovesToActiveProcedure(t *testing.T) {
 		t.Fatalf("coldstart selector = %#v", service.Spec.Selector)
 	}
 
-	if err := backend.ensureExpectedServices(context.Background(), root, "start", "start", start, ports, portUse); err != nil {
+	if err := backend.ensureExpectedServices(context.Background(), root, "start", "start", start, ports, portUse, nil); err != nil {
 		t.Fatal(err)
 	}
 	service, err = client.CoreV1().Services("druid").Get(context.Background(), serviceName(root, "start", "main"), metav1.GetOptions{})
@@ -1222,7 +1263,7 @@ func TestRoutingTargetsUseCurrentServiceSelector(t *testing.T) {
 	start := "start"
 	ports := []domain.Port{{Name: "main", Port: 25565, Protocol: "tcp"}}
 	portUse := map[string]int{"main": 2}
-	if err := backend.ensureExpectedServices(context.Background(), root, "start", "start", &domain.Procedure{ExpectedPorts: []domain.ExpectedPort{{Name: "main"}}}, ports, portUse); err != nil {
+	if err := backend.ensureExpectedServices(context.Background(), root, "start", "start", &domain.Procedure{ExpectedPorts: []domain.ExpectedPort{{Name: "main"}}}, ports, portUse, nil); err != nil {
 		t.Fatal(err)
 	}
 

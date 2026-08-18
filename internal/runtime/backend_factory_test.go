@@ -101,7 +101,7 @@ func (f fakeBackend) CreateUIPackageUpload(ctx context.Context, action ports.Run
 	return ports.RuntimeUIPackageUpload{}, nil
 }
 
-func (f fakeBackend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
+func (f fakeBackend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port, reservedPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
 	return nil, nil
 }
 

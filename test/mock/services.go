@@ -317,18 +317,18 @@ func (mr *MockRuntimeBackendInterfaceMockRecorder) DeleteRuntime(root, purgeData
 }
 
 // ExpectedPorts mocks base method.
-func (m *MockRuntimeBackendInterface) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
+func (m *MockRuntimeBackendInterface) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port, reservedPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ExpectedPorts", root, commands, globalPorts)
+	ret := m.ctrl.Call(m, "ExpectedPorts", root, commands, globalPorts, reservedPorts)
 	ret0, _ := ret[0].([]domain.RuntimePortStatus)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ExpectedPorts indicates an expected call of ExpectedPorts.
-func (mr *MockRuntimeBackendInterfaceMockRecorder) ExpectedPorts(root, commands, globalPorts any) *gomock.Call {
+func (mr *MockRuntimeBackendInterfaceMockRecorder) ExpectedPorts(root, commands, globalPorts, reservedPorts any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExpectedPorts", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).ExpectedPorts), root, commands, globalPorts)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExpectedPorts", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).ExpectedPorts), root, commands, globalPorts, reservedPorts)
 }
 
 // Name mocks base method.

@@ -1263,7 +1263,7 @@ func (f *fakeWorkerBackend) CreateUIPackageUpload(ctx context.Context, action po
 	return ports.RuntimeUIPackageUpload{UploadURL: "http://uploads/" + action.RuntimeID + "/" + string(action.Scope), URL: "http://packages/" + action.RuntimeID + "/" + string(action.Scope) + "/app.wasm"}, nil
 }
 
-func (f *fakeWorkerBackend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
+func (f *fakeWorkerBackend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port, reservedPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
 	return nil, nil
 }
 

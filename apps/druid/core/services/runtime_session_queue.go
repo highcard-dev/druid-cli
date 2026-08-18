@@ -254,6 +254,7 @@ func (s *RuntimeSession) RunQueue() {
 			startedAt := time.Now()
 			err := s.runCommand(c, i.procedureEnv)
 			isRestartMode := runMode == domain.RunModeRestart
+			isPersistentMode := runMode == domain.RunModePersistent
 
 			if err != nil {
 				logger.Log().Error("Error running command", zap.String("command", c), zap.Error(err))
@@ -263,7 +264,9 @@ func (s *RuntimeSession) RunQueue() {
 				}
 			}
 
-			if isRestartMode {
+			if isPersistentMode {
+				logger.Log().Info("Persistent command running", zap.String("command", c))
+			} else if isRestartMode {
 				s.setQueueStatus(c, domain.ScrollLockStatusWaiting, nil)
 				s.queueMu.Lock()
 				if time.Since(startedAt) < 30*time.Second {

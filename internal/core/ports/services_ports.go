@@ -40,7 +40,7 @@ type RuntimeBackendInterface interface {
 	RootRef(id string, namespace string) string
 	RunCommand(command RuntimeCommand) (*int, error)
 	CreateUIPackageUpload(ctx context.Context, action RuntimeUIPackageUploadAction) (RuntimeUIPackageUpload, error)
-	ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error)
+	ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port, reservedPorts []domain.Port) ([]domain.RuntimePortStatus, error)
 	RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port, reservedPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error)
 	StopRuntime(root string) error
 	DeleteRuntime(root string, purgeData bool) error
@@ -97,6 +97,7 @@ type RuntimeCommand struct {
 	Command                 *domain.CommandInstructionSet
 	Root                    string
 	GlobalPorts             []domain.Port
+	ReservedPorts           []domain.Port
 	Routing                 []domain.RuntimeRouteAssignment
 	ProcedureEnv            map[string]map[string]string
 	ProcedureStatusObserver func(procedure string, status domain.ScrollLockStatus, exitCode *int)

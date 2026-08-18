@@ -24,7 +24,7 @@ func (s *RuntimeSession) Ports() ([]domain.RuntimePortStatus, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.runtimeBackend.ExpectedPorts(runtimeScroll.Root, file.Commands, runtimePorts)
+	return s.runtimeBackend.ExpectedPorts(runtimeScroll.Root, file.Commands, runtimePorts, reservations)
 }
 
 func (s *RuntimeSession) RoutingTargets() ([]domain.RuntimeRoutingTarget, error) {

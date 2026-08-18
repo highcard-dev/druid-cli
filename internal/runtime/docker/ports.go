@@ -16,7 +16,7 @@ import (
 	"github.com/highcard-dev/daemon/internal/core/domain"
 )
 
-func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
+func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port, _ []domain.Port) ([]domain.RuntimePortStatus, error) {
 	statuses := []domain.RuntimePortStatus{}
 	portsByName := portsByName(globalPorts)
 	for commandName, command := range commands {
