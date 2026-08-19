@@ -57,9 +57,10 @@ func dataPVCName(id string) string {
 func runtimeID(root string) string {
 	pvc := refPVCName(root)
 	if strings.HasPrefix(pvc, "druid-") && strings.HasSuffix(pvc, "-data") {
-		return strings.TrimSuffix(strings.TrimPrefix(pvc, "druid-"), "-data")
+		pvc = strings.TrimSuffix(strings.TrimPrefix(pvc, "druid-"), "-data")
 	}
-	return pvc
+	split := strings.Split(pvc, "-")
+	return split[0]
 }
 
 func procedureResourceName(root string, commandName string, procedureIndex int) string {
