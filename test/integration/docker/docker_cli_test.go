@@ -66,7 +66,7 @@ func TestDockerBackendCLIComplexLifecycle(t *testing.T) {
 	statuses := e2e.RunClientJSON[[]e2e.RuntimePortStatus](t, bins, socket, "ports", created.ID)
 	assertPortBound(t, statuses, fixture)
 
-	e2e.UnixJSONRequest(t, socket, http.MethodPost, "/api/v1/scrolls/"+created.ID+"/commands/record", "")
+	e2e.UnixJSONRequest(t, socket, http.MethodPost, "/api/v1/scrolls/"+created.ID+"/commands/record?sync=true", "")
 	root := strings.TrimPrefix(created.Root, "docker-bind://")
 	if got := readDockerRootFile(t, root, "data/finite.txt"); !strings.Contains(got, "finite-ok") {
 		t.Fatalf("finite file = %q, want finite-ok", got)
@@ -92,7 +92,6 @@ func TestDockerBackendVolumeStorageWorkerLifecycleBackupRestore(t *testing.T) {
 	routePort := e2e.FreePort(t)
 	callbackPort := e2e.FreePort(t)
 	publicPort := e2e.FreePort(t)
-	managementPort := e2e.FreePort(t)
 	registryPort := e2e.StartRegistry(t)
 	containerHost := e2e.DockerHostAddress(t)
 	name := fmt.Sprintf("docker-volume-%d", time.Now().UnixNano())
@@ -112,7 +111,6 @@ func TestDockerBackendVolumeStorageWorkerLifecycleBackupRestore(t *testing.T) {
 		"--docker-volume-prefix", "druid-e2e",
 		"--worker-callback-listen", fmt.Sprintf(":%d", callbackPort),
 		"--worker-callback-url", fmt.Sprintf("http://%s:%d", containerHost, callbackPort),
-		"--listen", fmt.Sprintf(":%d", managementPort),
 		"--unsafe-allow-unauthenticated-management",
 	}, []string{"DRUID_REGISTRY_PLAIN_HTTP=true"})
 	t.Cleanup(func() {
@@ -142,7 +140,9 @@ func TestDockerBackendVolumeStorageWorkerLifecycleBackupRestore(t *testing.T) {
 	env := e2e.ParseEnv(body)
 	e2e.AssertRuntimeEnv(t, env, fixture, "docker", created.ID)
 
-	e2e.RunClient(t, bins, socket, "dev", created.ID, "--watch", "data", "--command", "record")
+	// The standalone druid-dev server owns file watching; this lifecycle test
+	// needs only the Scroll command that produces the backup fixture.
+	e2e.UnixJSONRequest(t, socket, http.MethodPost, "/api/v1/scrolls/"+created.ID+"/commands/record?sync=true", "")
 
 	finiteURL := fmt.Sprintf("http://127.0.0.1:%d/webdav/data/finite.txt", publicPort)
 	if got := e2e.WaitHTTP(t, finiteURL); !strings.Contains(got, "finite-ok") {
