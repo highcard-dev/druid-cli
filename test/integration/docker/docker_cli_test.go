@@ -92,6 +92,7 @@ func TestDockerBackendVolumeStorageWorkerLifecycleBackupRestore(t *testing.T) {
 	routePort := e2e.FreePort(t)
 	callbackPort := e2e.FreePort(t)
 	publicPort := e2e.FreePort(t)
+	managementPort := e2e.FreePort(t)
 	registryPort := e2e.StartRegistry(t)
 	containerHost := e2e.DockerHostAddress(t)
 	name := fmt.Sprintf("docker-volume-%d", time.Now().UnixNano())
@@ -111,6 +112,8 @@ func TestDockerBackendVolumeStorageWorkerLifecycleBackupRestore(t *testing.T) {
 		"--docker-volume-prefix", "druid-e2e",
 		"--worker-callback-listen", fmt.Sprintf(":%d", callbackPort),
 		"--worker-callback-url", fmt.Sprintf("http://%s:%d", containerHost, callbackPort),
+		"--listen", fmt.Sprintf(":%d", managementPort),
+		"--worker-daemon-url", fmt.Sprintf("http://%s:%d", containerHost, managementPort),
 		"--unsafe-allow-unauthenticated-management",
 	}, []string{"DRUID_REGISTRY_PLAIN_HTTP=true"})
 	t.Cleanup(func() {
