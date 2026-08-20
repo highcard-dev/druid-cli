@@ -23,6 +23,22 @@ func TestProcedureDefaultsToContainer(t *testing.T) {
 	}
 }
 
+func TestPrivateUIPackagePathValidation(t *testing.T) {
+	valid := testScroll(t, &Procedure{Image: "alpine:3.20"})
+	valid.UI = &UIDeclaration{Private: &UIPackageDeclaration{Path: "private/dist/app.wasm"}}
+	if err := valid.Validate(false); err != nil {
+		t.Fatalf("Validate() valid UI error = %v", err)
+	}
+
+	for _, invalidPath := range []string{"", "../private/app.wasm", "public/app.wasm", "private/app.js"} {
+		scroll := testScroll(t, &Procedure{Image: "alpine:3.20"})
+		scroll.UI = &UIDeclaration{Private: &UIPackageDeclaration{Path: invalidPath}}
+		if err := scroll.Validate(false); err == nil {
+			t.Fatalf("Validate() path %q error = nil", invalidPath)
+		}
+	}
+}
+
 func TestSignalProcedureValidation(t *testing.T) {
 	scroll := testScroll(t, &Procedure{
 		Type:   ProcedureTypeSignal,

@@ -1,6 +1,17 @@
 package cli
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/highcard-dev/daemon/internal/core/ports"
+)
+
+type testWorkloadAuthenticator struct{}
+
+func (testWorkloadAuthenticator) AuthenticateWorkload(context.Context, string) (ports.RuntimeWorkloadIdentity, error) {
+	return ports.RuntimeWorkloadIdentity{}, nil
+}
 
 func TestRootCommandExposesRuntimeAndOCICommands(t *testing.T) {
 	for _, name := range []string{"pull", "push", "login", "update"} {
@@ -54,6 +65,18 @@ func TestOpenWorkerCallbackListenerEmpty(t *testing.T) {
 	}
 	if listener != nil {
 		t.Fatal("listener should be nil")
+	}
+}
+
+func TestWorkerCallbackUnsafeFallbackRequiresMissingAuthenticator(t *testing.T) {
+	if workerCallbackAllowsUnsafeFallback(testWorkloadAuthenticator{}, true) {
+		t.Fatal("Kubernetes callback listener must authenticate projected workload tokens")
+	}
+	if !workerCallbackAllowsUnsafeFallback(nil, true) {
+		t.Fatal("explicit unsafe mode should remain available to backends without workload identity")
+	}
+	if workerCallbackAllowsUnsafeFallback(nil, false) {
+		t.Fatal("safe mode must never allow unauthenticated callbacks")
 	}
 }
 
