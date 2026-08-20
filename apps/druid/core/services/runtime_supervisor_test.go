@@ -524,41 +524,24 @@ func TestRuntimeSupervisorEnsureCanCreate(t *testing.T) {
 	}
 }
 
-func TestRuntimeSupervisorEnsureOwnsReservedPortState(t *testing.T) {
+func TestRuntimeSupervisorEnsureDoesNotChangeReservedPortState(t *testing.T) {
 	store := newTestStateStore(t)
+	reserved := fixedDeveloperPorts()
 	scroll := &domain.RuntimeScroll{
 		ID: "ensure-ports", Artifact: "local", Root: t.TempDir(), ScrollName: "cached",
 		ScrollYAML: cachedScrollYAML("start"), Status: domain.RuntimeScrollStatusCreated,
-		Procedures: domain.ProcedureStatusMap{},
+		Procedures: domain.ProcedureStatusMap{}, ReservedPorts: reserved,
 	}
 	if err := store.CreateScroll(scroll); err != nil {
 		t.Fatal(err)
 	}
 	supervisor := NewRuntimeSupervisor(store, nil, &fakeWorkerBackend{})
-	reserved := []domain.Port{{Name: "ssh", Port: 2222, Protocol: "tcp"}}
-
-	got, err := supervisor.Ensure(EnsureOptions{Name: scroll.ID, ReservedPorts: reserved})
+	got, err := supervisor.Ensure(EnsureOptions{Name: scroll.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.ReservedPorts) != 1 || got.ReservedPorts[0] != reserved[0] {
+	if len(got.ReservedPorts) != len(reserved) || got.ReservedPorts[0] != reserved[0] {
 		t.Fatalf("reserved ports = %#v", got.ReservedPorts)
-	}
-
-	got, err = supervisor.Ensure(EnsureOptions{Name: scroll.ID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got.ReservedPorts) != 1 {
-		t.Fatalf("omitted reservations changed state: %#v", got.ReservedPorts)
-	}
-
-	got, err = supervisor.Ensure(EnsureOptions{Name: scroll.ID, ReservedPorts: []domain.Port{}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.ReservedPorts == nil || len(got.ReservedPorts) != 0 {
-		t.Fatalf("reserved ports were not cleared: %#v", got.ReservedPorts)
 	}
 }
 
@@ -584,35 +567,11 @@ func TestRuntimeSupervisorCreateCanCreate(t *testing.T) {
 	if runtimeScroll.Status != domain.RuntimeScrollStatusCreated {
 		t.Fatalf("status = %s, want created", runtimeScroll.Status)
 	}
+	if got := runtimeScroll.ReservedPorts; len(got) != 3 || got[0] != (domain.Port{Name: "webdav", Port: 8084, Protocol: "http"}) || got[1] != (domain.Port{Name: "vscode", Port: 3333, Protocol: "http"}) || got[2] != (domain.Port{Name: "ssh", Port: 2222, Protocol: "tcp"}) {
+		t.Fatalf("reserved developer ports = %#v", got)
+	}
 	if len(runtimeScroll.Procedures) != 0 {
 		t.Fatalf("procedures = %#v, want empty", runtimeScroll.Procedures)
-	}
-}
-
-func TestRuntimeSupervisorCreatePublishesDeclaredPrivateUI(t *testing.T) {
-	store := newTestStateStore(t)
-	callbacks := NewWorkerCallbackManager()
-	var supervisor *RuntimeSupervisor
-	backend := &fakeWorkerBackend{callbacks: callbacks, scrollYAML: strings.Replace(
-		cachedScrollYAML("start"),
-		"commands:",
-		"ui:\n  private:\n    path: private/dist/app.wasm\ncommands:",
-		1,
-	)}
-	backend.runCommand = declaredUIPublishCommand(&supervisor, "ui-scroll")
-	supervisor = NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), backend)
-	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
-	supervisor.SetDevWorkerConfig("http://druid-cli:8081", "", "")
-
-	runtimeScroll, err := supervisor.Create("registry.local/ui:1", "ui-scroll", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if backend.uiAction.RuntimeID != "ui-scroll" || backend.uiAction.Scope != domain.RuntimeUIPackageScopePrivate {
-		t.Fatalf("UI action = %#v", backend.uiAction)
-	}
-	if pkg := runtimeScroll.UIPackages[domain.RuntimeUIPackageScopePrivate]; pkg.Path != "private/dist/app.wasm" || pkg.SHA256 != strings.Repeat("a", 64) {
-		t.Fatalf("UI packages = %#v", runtimeScroll.UIPackages)
 	}
 }
 
@@ -955,17 +914,9 @@ func TestRuntimeSupervisorUpdateRefreshesCurrentArtifactAndRestartsRunningScroll
 		t.Fatal(err)
 	}
 	callbacks := NewWorkerCallbackManager()
-	var supervisor *RuntimeSupervisor
-	backend := &fakeWorkerBackend{callbacks: callbacks, scrollYAML: strings.Replace(
-		updatedScrollYAML("refreshed-worker"),
-		"commands:",
-		"ui:\n  private:\n    path: private/dist/app.wasm\ncommands:",
-		1,
-	), digest: "sha256:refreshed"}
-	backend.runCommand = declaredUIPublishCommand(&supervisor, "refresh-worker")
-	supervisor = NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), backend)
+	backend := &fakeWorkerBackend{callbacks: callbacks, scrollYAML: updatedScrollYAML("refreshed-worker"), digest: "sha256:refreshed"}
+	supervisor := NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), backend)
 	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
-	supervisor.SetDevWorkerConfig("http://druid-cli:8081", "", "")
 
 	updated, err := supervisor.Update("refresh-worker", "", nil)
 	if err != nil {
@@ -986,21 +937,6 @@ func TestRuntimeSupervisorUpdateRefreshesCurrentArtifactAndRestartsRunningScroll
 	}
 	if updated.ArtifactDigest != "sha256:refreshed" || updated.ScrollName != "refreshed-worker" {
 		t.Fatalf("updated scroll = %#v", updated)
-	}
-	if backend.uiAction.RuntimeID != "refresh-worker" || backend.uiAction.Scope != domain.RuntimeUIPackageScopePrivate {
-		t.Fatalf("UI action = %#v", backend.uiAction)
-	}
-	if pkg := updated.UIPackages[domain.RuntimeUIPackageScopePrivate]; pkg.Path != "private/dist/app.wasm" || pkg.SHA256 != strings.Repeat("a", 64) {
-		t.Fatalf("UI packages = %#v", updated.UIPackages)
-	}
-}
-
-func declaredUIPublishCommand(supervisor **RuntimeSupervisor, runtimeID string) func(ports.RuntimeCommand) (*int, error) {
-	return func(command ports.RuntimeCommand) (*int, error) {
-		procedure := domain.ProcedureName(command.Name, 0, command.Command.Procedures[0])
-		values := command.ProcedureEnv[procedure]
-		_, err := (*supervisor).PrepareUIPackageUpload(runtimeID, "private", values["DRUID_UI_REQUEST_ID"], strings.Repeat("a", 64), "AAAAAAAAAAAAAAAAAAAAAA==")
-		return nil, err
 	}
 }
 
@@ -1302,7 +1238,6 @@ type fakeWorkerBackend struct {
 	deleteRoot  string
 	spawnCount  int
 	runCommand  func(ports.RuntimeCommand) (*int, error)
-	uiAction    ports.RuntimeUIPackageUploadAction
 	stopRuntime func(string) error
 }
 
@@ -1324,32 +1259,16 @@ func (f *fakeWorkerBackend) RunCommand(command ports.RuntimeCommand) (*int, erro
 	return nil, nil
 }
 
-func (f *fakeWorkerBackend) PrepareUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageUploadCapability, error) {
-	f.uiAction = action
-	return ports.RuntimeUIPackageUploadCapability{UploadURL: "http://uploads/" + action.RuntimeID + "/" + string(action.Scope), VerifyURL: "http://packages/" + action.RuntimeID + "/" + string(action.Scope) + "/app.wasm"}, nil
+func (f *fakeWorkerBackend) CreateUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageUpload, error) {
+	return ports.RuntimeUIPackageUpload{UploadURL: "http://uploads/" + action.RuntimeID + "/" + string(action.Scope), URL: "http://packages/" + action.RuntimeID + "/" + string(action.Scope) + "/app.wasm"}, nil
 }
 
-func (f *fakeWorkerBackend) CompleteUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageResult, error) {
-	f.uiAction = action
-	return ports.RuntimeUIPackageResult{URL: "http://packages/" + action.RuntimeID + "/" + string(action.Scope) + "/app.wasm", SHA256: strings.Repeat("a", 64)}, nil
-}
-
-func (f *fakeWorkerBackend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
+func (f *fakeWorkerBackend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port, reservedPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
 	return nil, nil
 }
 
 func (f *fakeWorkerBackend) RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port, reservedPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error) {
 	return nil, nil
-}
-
-func (f *fakeWorkerBackend) StartDev(ctx context.Context, action ports.RuntimeDevAction) error {
-	return nil
-}
-
-func (f *fakeWorkerBackend) StopDev(ctx context.Context, root string) error { return nil }
-
-func (f *fakeWorkerBackend) DevStatus(ctx context.Context, root string) (ports.RuntimeDevStatus, error) {
-	return ports.RuntimeDevStatusReady, nil
 }
 
 func (f *fakeWorkerBackend) Attach(commandName string, data string) error {

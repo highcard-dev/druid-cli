@@ -59,17 +59,6 @@ func (b *Backend) AuthenticateWorkload(ctx context.Context, token string) (ports
 		RuntimeID: pod.Labels[labelRuntimeID],
 	}
 	switch serviceAccount {
-	case runtimeDevServiceAccount:
-		if pod.Labels[labelManagedBy] != "druid" || identity.RuntimeID == "" {
-			return ports.RuntimeWorkloadIdentity{}, fmt.Errorf("invalid Druid dev workload")
-		}
-		if pod.Labels[labelProcedure] == "dev" {
-			identity.Kind = "dev"
-		} else if isUIPublishWorkload(pod.Labels[labelCommand], pod.Labels[labelProcedure]) {
-			identity.Kind = "ui-publish"
-		} else {
-			return ports.RuntimeWorkloadIdentity{}, fmt.Errorf("invalid Druid dev workload")
-		}
 	case runtimeWorkerServiceAccount:
 		if pod.Labels[labelManagedBy] != "druid" || pod.Labels[labelComponent] != "worker-pull" || identity.RuntimeID == "" {
 			return ports.RuntimeWorkloadIdentity{}, fmt.Errorf("invalid Druid worker workload")
@@ -102,7 +91,7 @@ func (b *Backend) ensureRuntimeServiceAccount(ctx context.Context, namespace str
 // runtime workloads. Create plus AlreadyExists is an atomic existence check,
 // so concurrent deployment startup cannot race between a separate get/create.
 func (b *Backend) ensureRuntimeServiceAccounts(ctx context.Context, namespace string) error {
-	for _, name := range []string{runtimeDevServiceAccount, runtimeWorkerServiceAccount} {
+	for _, name := range []string{runtimeWorkerServiceAccount} {
 		if err := b.ensureRuntimeServiceAccount(ctx, namespace, name); err != nil {
 			return fmt.Errorf("ensure runtime service account %q: %w", name, err)
 		}

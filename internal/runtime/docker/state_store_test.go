@@ -82,9 +82,8 @@ func TestStateStorePersistsUIPackages(t *testing.T) {
 		Status:     domain.RuntimeScrollStatusCreated,
 		UIPackages: domain.RuntimeUIPackages{
 			domain.RuntimeUIPackageScopePrivate: {
-				URL:    "http://127.0.0.1:8085/ui/private/hash/app.wasm",
-				Path:   "private/dist/app.wasm",
-				SHA256: "hash",
+				URL:  "http://127.0.0.1:8085/ui/private/id/app.wasm",
+				Path: "private/dist/app.wasm",
 			},
 		},
 	}
@@ -97,7 +96,7 @@ func TestStateStorePersistsUIPackages(t *testing.T) {
 		t.Fatal(err)
 	}
 	pkg := got.UIPackages[domain.RuntimeUIPackageScopePrivate]
-	if pkg.Path != "private/dist/app.wasm" || pkg.SHA256 != "hash" {
+	if pkg.Path != "private/dist/app.wasm" || pkg.URL != "http://127.0.0.1:8085/ui/private/id/app.wasm" {
 		t.Fatalf("ui package = %#v", pkg)
 	}
 }

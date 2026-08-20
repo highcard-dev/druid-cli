@@ -115,28 +115,11 @@ func (h *ScrollHandler) EnsureScroll(c *fiber.Ctx) error {
 		Namespace:           namespace,
 		RegistryCredentials: registryCredentials(request.RegistryCredentials),
 	}
-	if request.ReservedPorts != nil {
-		options.ReservedPorts = runtimePorts(*request.ReservedPorts)
-	}
 	runtimeScroll, err := h.supervisor.Ensure(options)
 	if err != nil {
 		return err
 	}
 	return c.JSON(runtimeScroll)
-}
-
-func runtimePorts(in []api.Port) []domain.Port {
-	out := make([]domain.Port, 0, len(in))
-	for _, port := range in {
-		description := ""
-		if port.Description != nil {
-			description = *port.Description
-		}
-		out = append(out, domain.Port{
-			Name: port.Name, Port: port.Port, Protocol: string(port.Protocol), Description: description,
-		})
-	}
-	return out
 }
 
 func (h *ScrollHandler) GetScroll(c *fiber.Ctx, id string) error {
@@ -410,20 +393,6 @@ func (h *ScrollHandler) GetDaemonUIPackages(c *fiber.Ctx) error {
 
 func (h *ScrollHandler) PublishDaemonUIPackage(c *fiber.Ctx) error {
 	return h.PublishScrollUIPackage(c, c.Params("id"), api.PublishScrollUIPackageParamsScope(c.Params("scope")))
-}
-
-func (h *ScrollHandler) PrepareDaemonUIPackageUpload(c *fiber.Ctx) error {
-	identity, ok := c.Locals("druid-workload-identity").(ports.RuntimeWorkloadIdentity)
-	if !ok || identity.Kind != "ui-publish" || identity.RuntimeID != c.Params("id") {
-		return fiber.NewError(fiber.StatusForbidden, "UI publish workload identity is not authorized")
-	}
-	capability, err := h.supervisor.PrepareUIPackageUpload(
-		c.Params("id"), c.Params("scope"), c.FormValue("request_id"), c.FormValue("sha256"), c.FormValue("content_md5"),
-	)
-	if err != nil {
-		return err
-	}
-	return c.SendString(capability.UploadURL + "\n" + capability.VerifyURL)
 }
 
 func (h *ScrollHandler) BackupScroll(c *fiber.Ctx, id string) error {

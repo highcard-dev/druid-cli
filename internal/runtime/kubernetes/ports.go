@@ -17,12 +17,13 @@ import (
 	"go.uber.org/zap"
 )
 
-func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
+func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port, reservedPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
 	namespace, pvc, err := parseRef(root)
 	if err != nil {
 		return nil, err
 	}
 	portsByName := portsByName(globalPorts)
+	reservedPortNames := portNames(reservedPorts)
 	statuses := []domain.RuntimePortStatus{}
 	now := time.Now()
 	for commandName, command := range commands {
@@ -40,10 +41,7 @@ func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.Command
 			}
 			traffic, trafficErr := b.procedureTrafficForSelector(context.Background(), namespace, serviceSelector(pvc, commandName, procedureName, "", nil), now)
 			for _, expectedPort := range procedure.ExpectedPorts {
-				port, ok := portsByName[expectedPort.Name]
-				if !ok {
-					return nil, fmt.Errorf("expected port %s is not defined in top-level ports", expectedPort.Name)
-				}
+				port := portsByName[expectedPort.Name]
 				status := domain.RuntimePortStatus{
 					Name:             expectedPort.Name,
 					Procedure:        procedureName,
@@ -52,7 +50,7 @@ func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.Command
 					KeepAliveTraffic: expectedPort.KeepAliveTraffic,
 					Source:           "kubernetes-service",
 				}
-				serviceProcedure := serviceProcedureName(commandName, procedureName, expectedPort.Name, portUse)
+				serviceProcedure := serviceProcedureName(commandName, procedureName, expectedPort.Name, portUse, reservedPortNames)
 				serviceReady, hostPort := b.serviceReady(context.Background(), namespace, serviceName(root, serviceProcedure, expectedPort.Name))
 				status.Bound = serviceReady
 				status.HostPort = hostPort
@@ -97,22 +95,9 @@ func (b *Backend) RoutingTargets(root string, commands map[string]*domain.Comman
 		return nil, err
 	}
 	portsByName := portsByName(globalPorts)
-	targets := []domain.RuntimeRoutingTarget{{
-		Name:        "webdav",
-		Procedure:   "dev",
-		PortName:    "webdav",
-		Port:        8084,
-		Protocol:    "https",
-		Namespace:   namespace,
-		ServiceName: serviceName(root, "dev", "webdav"),
-		Selector: map[string]string{
-			labelManagedBy: "druid",
-			labelComponent: "runtime",
-			labelScrollID:  dnsLabel(pvc),
-			labelProcedure: "dev",
-		},
-	}}
-	seen := map[string]struct{}{"webdav": {}}
+	reservedPortNames := portNames(reservedPorts)
+	targets := []domain.RuntimeRoutingTarget{}
+	seen := map[string]struct{}{}
 	commandNames := make([]string, 0, len(commands))
 	for commandName := range commands {
 		commandNames = append(commandNames, commandName)
@@ -133,12 +118,9 @@ func (b *Backend) RoutingTargets(root string, commands map[string]*domain.Comman
 				if _, ok := seen[expectedPort.Name]; ok {
 					continue
 				}
-				port, ok := portsByName[expectedPort.Name]
-				if !ok {
-					return nil, fmt.Errorf("expected port %s is not defined in top-level ports", expectedPort.Name)
-				}
+				port := portsByName[expectedPort.Name]
 				seen[expectedPort.Name] = struct{}{}
-				serviceProcedure := serviceProcedureName(commandName, procedureName, expectedPort.Name, portUse)
+				serviceProcedure := serviceProcedureName(commandName, procedureName, expectedPort.Name, portUse, reservedPortNames)
 				svcName := serviceName(root, serviceProcedure, expectedPort.Name)
 				selector := serviceSelector(pvc, commandName, procedureName, expectedPort.Name, portUse)
 				if currentSelector, ok := b.currentServiceSelector(context.Background(), namespace, svcName); ok {
@@ -165,11 +147,12 @@ func (b *Backend) RoutingTargets(root string, commands map[string]*domain.Comman
 			continue
 		}
 		targets = append(targets, domain.RuntimeRoutingTarget{
-			Name:      port.Name,
-			PortName:  port.Name,
-			Port:      port.Port,
-			Protocol:  normalizeProtocol(port.Protocol),
-			Namespace: namespace,
+			Name:        port.Name,
+			PortName:    port.Name,
+			Port:        port.Port,
+			Protocol:    normalizeProtocol(port.Protocol),
+			Namespace:   namespace,
+			ServiceName: reservedServiceName(root, port.Name),
 			Selector: map[string]string{
 				labelManagedBy: "druid",
 				labelComponent: "runtime",
@@ -182,7 +165,7 @@ func (b *Backend) RoutingTargets(root string, commands map[string]*domain.Comman
 	return targets, nil
 }
 
-func (b *Backend) ensureExpectedServices(ctx context.Context, root string, commandName string, procedureName string, procedure *domain.Procedure, globalPorts []domain.Port, portUse map[string]int) error {
+func (b *Backend) ensureExpectedServices(ctx context.Context, root string, commandName string, procedureName string, procedure *domain.Procedure, globalPorts []domain.Port, portUse map[string]int, reservedPortNames map[string]struct{}) error {
 	namespace, _, err := parseRef(root)
 	if err != nil {
 		logger.Log().Error("Cannot reconcile Kubernetes Services for invalid root", zap.String("root", root), zap.String("command", commandName), zap.String("procedure", procedureName), zap.Error(err))
@@ -190,13 +173,8 @@ func (b *Backend) ensureExpectedServices(ctx context.Context, root string, comma
 	}
 	ports := portsByName(globalPorts)
 	for _, expected := range procedure.ExpectedPorts {
-		port, ok := ports[expected.Name]
-		if !ok {
-			err := fmt.Errorf("expected port %s is not defined in top-level ports", expected.Name)
-			logger.Log().Error("Kubernetes expected port has no top-level port definition", zap.String("namespace", namespace), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("port", expected.Name), zap.Error(err))
-			return err
-		}
-		serviceProcedure := serviceProcedureName(commandName, procedureName, expected.Name, portUse)
+		port := ports[expected.Name]
+		serviceProcedure := serviceProcedureName(commandName, procedureName, expected.Name, portUse, reservedPortNames)
 		service, err := serviceSpec(namespace, root, serviceProcedure, serviceSelector(refPVCName(root), commandName, procedureName, expected.Name, portUse), expected.Name, port)
 		if err != nil {
 			logger.Log().Error("Failed to build Kubernetes Service for expected port", zap.String("namespace", namespace), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("port", expected.Name), zap.Error(err))
@@ -256,11 +234,18 @@ func expectedPortUse(command *domain.CommandInstructionSet) map[string]int {
 	return use
 }
 
-func serviceProcedureName(commandName string, procedureName string, portName string, portUse map[string]int) string {
+func serviceProcedureName(commandName string, procedureName string, portName string, portUse map[string]int, reservedPortNames map[string]struct{}) string {
+	if _, reserved := reservedPortNames[portName]; reserved {
+		return portName
+	}
 	if portUse[portName] > 1 {
 		return commandName
 	}
 	return procedureName
+}
+
+func reservedServiceName(root string, portName string) string {
+	return serviceName(root, portName, portName)
 }
 
 func serviceSelector(pvc string, commandName string, procedureName string, portName string, portUse map[string]int) map[string]string {
@@ -314,6 +299,14 @@ func portsByName(ports []domain.Port) map[string]domain.Port {
 	result := map[string]domain.Port{}
 	for _, port := range ports {
 		result[port.Name] = port
+	}
+	return result
+}
+
+func portNames(ports []domain.Port) map[string]struct{} {
+	result := make(map[string]struct{}, len(ports))
+	for _, port := range ports {
+		result[port.Name] = struct{}{}
 	}
 	return result
 }

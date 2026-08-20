@@ -36,6 +36,25 @@ func TestRuntimeSessionRunCommandPassesCommandContextToRuntimeBackend(t *testing
 	}
 }
 
+func TestRuntimeSessionPersistentCommandRemainsRunningAfterSetup(t *testing.T) {
+	session := newRuntimeSessionExecutionTest(t, executionScrollYAML(), &fakeWorkerBackend{
+		runCommand: func(command ports.RuntimeCommand) (*int, error) {
+			command.ObserveProcedureStatus("web", domain.ScrollLockStatusRunning, nil)
+			return nil, nil
+		},
+	})
+	session.Start()
+
+	if err := session.AddTempItemWithWait("serve"); err != nil {
+		t.Fatal(err)
+	}
+
+	status := session.Queue()["serve"]["web"].Status
+	if status != domain.ScrollLockStatusRunning {
+		t.Fatalf("persistent command status = %s, want running", status)
+	}
+}
+
 func TestRuntimeSessionRunCommandPassesRoutingAndScrollIdentity(t *testing.T) {
 	var seen ports.RuntimeCommand
 	session := newRuntimeSessionExecutionTest(t, executionScrollYAML(), &fakeWorkerBackend{

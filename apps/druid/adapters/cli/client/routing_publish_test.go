@@ -204,15 +204,3 @@ func (f *fakeRoutingDaemon) GetScrollUIPackages(ctx context.Context, id string) 
 func (f *fakeRoutingDaemon) PublishScrollUIPackage(ctx context.Context, id string, scope string, path string) (*api.RuntimeScroll, error) {
 	return &api.RuntimeScroll{Id: id, Status: api.RuntimeScrollStatusCreated}, nil
 }
-
-func (f *fakeRoutingDaemon) EnableWatch(ctx context.Context, id string, request api.DevWatchRequest) (*api.DevWatchResponse, error) {
-	return &api.DevWatchResponse{Status: "enabled", Enabled: true, WatchedPaths: request.WatchPaths}, nil
-}
-
-func (f *fakeRoutingDaemon) DisableWatch(ctx context.Context, id string) (*api.DevWatchResponse, error) {
-	return &api.DevWatchResponse{Status: "disabled", Enabled: false}, nil
-}
-
-func (f *fakeRoutingDaemon) WatchStatus(ctx context.Context, id string) (*api.DevWatchStatus, error) {
-	return &api.DevWatchStatus{Status: "disabled", Enabled: false}, nil
-}

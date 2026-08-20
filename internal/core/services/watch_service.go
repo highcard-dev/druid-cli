@@ -300,6 +300,10 @@ func (uds *WatchService) handleFileEvent(event fsnotify.Event) {
 			relativePath = relPath
 		}
 	}
+	logger.Log().Info("Druid development file change detected",
+		zap.String("path", relativePath),
+		zap.String("operation", event.Op.String()),
+	)
 
 	changeEvent := FileChangeEvent{
 		Path:      relativePath,

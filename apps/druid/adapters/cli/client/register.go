@@ -25,9 +25,6 @@ type RuntimeDaemon interface {
 	ApplyScrollRouting(ctx context.Context, id string, assignments []api.RuntimeRouteAssignment) (*api.RuntimeScroll, error)
 	GetScrollUIPackages(ctx context.Context, id string) (map[string]api.RuntimeUIPackage, error)
 	PublishScrollUIPackage(ctx context.Context, id string, scope string, path string) (*api.RuntimeScroll, error)
-	EnableWatch(ctx context.Context, id string, request api.DevWatchRequest) (*api.DevWatchResponse, error)
-	DisableWatch(ctx context.Context, id string) (*api.DevWatchResponse, error)
-	WatchStatus(ctx context.Context, id string) (*api.DevWatchStatus, error)
 }
 
 type Config struct {
@@ -46,7 +43,6 @@ func Register(root *cobra.Command, cfg Config) {
 		CreateCommand,
 		DeleteCommand,
 		DescribeCommand,
-		DevCommand,
 		ListCommand,
 		PortsCommand,
 		ProcedureCommand,

@@ -99,7 +99,81 @@ paths:
       responses:
         '101':
           description: WebSocket upgrade accepted
+  /api/v1/watch/status:
+    get:
+      operationId: getWatchStatus
+      tags: [watch]
+      summary: Get the in-container build watcher status
+      responses:
+        '200':
+          description: Watcher status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatchModeResponse'
+  /api/v1/watch/enable:
+    post:
+      operationId: enableWatch
+      tags: [watch]
+      summary: Start or reconfigure the in-container build watcher
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WatchModeRequest'
+      responses:
+        '200':
+          description: Watcher started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatchModeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/v1/watch/disable:
+    post:
+      operationId: disableWatch
+      tags: [watch]
+      summary: Stop the in-container build watcher
+      responses:
+        '200':
+          description: Watcher stopped
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatchModeResponse'
 components:
+  schemas:
+    WatchModeRequest:
+      type: object
+      required: [watch_paths, working_directory, command]
+      properties:
+        watch_paths:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: Paths relative to the mounted runtime root.
+        working_directory:
+          type: string
+          description: Working directory relative to the mounted runtime root.
+        command:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: Executable followed by its arguments.
+    WatchModeResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [disabled, starting, ready, error]
+        error:
+          type: string
+          nullable: true
   parameters:
     FilePath:
       name: path

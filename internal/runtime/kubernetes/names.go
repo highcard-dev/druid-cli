@@ -57,9 +57,10 @@ func dataPVCName(id string) string {
 func runtimeID(root string) string {
 	pvc := refPVCName(root)
 	if strings.HasPrefix(pvc, "druid-") && strings.HasSuffix(pvc, "-data") {
-		return strings.TrimSuffix(strings.TrimPrefix(pvc, "druid-"), "-data")
+		pvc = strings.TrimSuffix(strings.TrimPrefix(pvc, "druid-"), "-data")
 	}
-	return pvc
+	split := strings.Split(pvc, "-")
+	return split[0]
 }
 
 func procedureResourceName(root string, commandName string, procedureIndex int) string {
@@ -68,10 +69,6 @@ func procedureResourceName(root string, commandName string, procedureIndex int) 
 
 func jobName(prefix string, root string, procedureName string) string {
 	return objectName(fmt.Sprintf("%s-%s-%s", runtimeID(root), prefix, procedureName))
-}
-
-func devStatefulSetName(root string) string {
-	return dnsLabel(fmt.Sprintf("druid-dev-%s", refPVCName(root)))
 }
 
 func serviceName(root string, procedureName string, portName string) string {

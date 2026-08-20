@@ -28,6 +28,7 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 		zap.Int("procedures", len(command.Command.Procedures)),
 	)
 	portUse := expectedPortUse(command.Command)
+	reservedPortNames := portNames(command.ReservedPorts)
 	startIndex := 0
 	if command.Command.Run == domain.RunModeRestart {
 		resumeIndex, err := b.resumeRestartProcedureIndex(context.Background(), command.Root, command.Name, command.Command)
@@ -100,7 +101,7 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 				return nil, err
 			}
 			command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusRunning, nil)
-			if err := b.ensurePersistentProcedure(context.Background(), command.ScrollID, command.Root, command.Name, procedureName, resourceName, procedure, command.GlobalPorts, env, portUse); err != nil {
+			if err := b.ensurePersistentProcedure(context.Background(), command.ScrollID, command.Root, command.Name, procedureName, resourceName, procedure, command.GlobalPorts, env, portUse, reservedPortNames); err != nil {
 				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusError, nil)
 				logger.Log().Error("Kubernetes persistent procedure failed", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("procedure", procedureName), zap.Error(err))
 				return nil, err
@@ -108,7 +109,7 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 			continue
 		}
 		command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusRunning, nil)
-		exitCode, err := b.runJobProcedure(command.ScrollID, command.Name, procedureName, resourceName, procedure, command.Root, command.GlobalPorts, env, portUse)
+		exitCode, err := b.runJobProcedure(command.ScrollID, command.Name, procedureName, resourceName, procedure, command.Root, command.GlobalPorts, env, portUse, reservedPortNames)
 		if err != nil {
 			if exitCode != nil && *exitCode != 0 && procedure.IgnoreFailure {
 				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, exitCode)
@@ -138,7 +139,7 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 	return nil, nil
 }
 
-func (b *Backend) runJobProcedure(scrollID string, commandName string, procedureName string, resourceName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, env map[string]string, portUse map[string]int) (*int, error) {
+func (b *Backend) runJobProcedure(scrollID string, commandName string, procedureName string, resourceName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, env map[string]string, portUse map[string]int, reservedPortNames map[string]struct{}) (*int, error) {
 	if procedure.IsSignal() {
 		logger.Log().Info("Running Kubernetes signal procedure", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("target", procedure.Target), zap.String("signal", procedure.Signal))
 		if err := b.Signal(procedureName, procedure.Target, procedure.Signal, root); err != nil {
@@ -153,7 +154,7 @@ func (b *Backend) runJobProcedure(scrollID string, commandName string, procedure
 		return nil, err
 	}
 	ctx := context.Background()
-	if err := b.ensureExpectedServices(ctx, root, commandName, procedureName, procedure, globalPorts, portUse); err != nil {
+	if err := b.ensureExpectedServices(ctx, root, commandName, procedureName, procedure, globalPorts, portUse, reservedPortNames); err != nil {
 		logger.Log().Error("Failed to reconcile Kubernetes procedure Services", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.Error(err))
 		return nil, err
 	}
@@ -227,8 +228,8 @@ func (b *Backend) runJobProcedure(scrollID string, commandName string, procedure
 	return exitCode, nil
 }
 
-func (b *Backend) ensurePersistentProcedure(ctx context.Context, scrollID string, root string, commandName string, procedureName string, resourceName string, procedure *domain.Procedure, globalPorts []domain.Port, env map[string]string, portUse map[string]int) error {
-	if err := b.ensureExpectedServices(ctx, root, commandName, procedureName, procedure, globalPorts, portUse); err != nil {
+func (b *Backend) ensurePersistentProcedure(ctx context.Context, scrollID string, root string, commandName string, procedureName string, resourceName string, procedure *domain.Procedure, globalPorts []domain.Port, env map[string]string, portUse map[string]int, reservedPortNames map[string]struct{}) error {
+	if err := b.ensureExpectedServices(ctx, root, commandName, procedureName, procedure, globalPorts, portUse, reservedPortNames); err != nil {
 		logger.Log().Error("Failed to reconcile Kubernetes persistent procedure Services", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.Error(err))
 		return err
 	}

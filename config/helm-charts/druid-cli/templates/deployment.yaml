@@ -38,7 +38,6 @@ spec:
             - --public-listen=:{{ .Values.service.publicPort }}
             - --worker-callback-listen=:{{ .Values.service.workerCallbackPort }}
             - --worker-callback-url=http://{{ include "druid-cli.fullname" . }}:{{ .Values.service.workerCallbackPort }}
-            - --worker-daemon-url={{ default (printf "http://%s:%v" (include "druid-cli.fullname" .) .Values.service.managementPort) .Values.runtime.workerDaemonUrl }}
             - --public-jwks-url={{ default (printf "http://%s:%v/.well-known/jwks.json" (include "druid-cli.fullname" .) .Values.service.publicPort) .Values.auth.publicJwksUrl }}
             {{- if .Values.auth.jwksUrl }}
             - --auth-jwks-url={{ .Values.auth.jwksUrl }}

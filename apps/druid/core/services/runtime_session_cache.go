@@ -50,9 +50,6 @@ func (s *RuntimeSupervisor) startSession(runtimeScroll *domain.RuntimeScroll) (*
 	if err != nil {
 		return nil, err
 	}
-	session.devDaemonURL = s.workerDaemonURL
-	session.devAuthJWKSURL = s.authJWKSURL
-	session.devRuntimeJWKSURL = s.runtimeJWKSURL
 	session.Start()
 
 	s.mu.Lock()

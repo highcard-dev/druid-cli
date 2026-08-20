@@ -70,13 +70,14 @@ func (s *RuntimeSession) runCommand(cmd string, extraEnv ...map[string]map[strin
 	}
 
 	exitCode, err := s.runtimeBackend.RunCommand(ports.RuntimeCommand{
-		Name:         cmd,
-		ScrollID:     scrollID,
-		Command:      command,
-		Root:         root,
-		GlobalPorts:  runtimePorts,
-		Routing:      routing,
-		ProcedureEnv: procedureEnv,
+		Name:          cmd,
+		ScrollID:      scrollID,
+		Command:       command,
+		Root:          root,
+		GlobalPorts:   runtimePorts,
+		ReservedPorts: reservations,
+		Routing:       routing,
+		ProcedureEnv:  procedureEnv,
 		ProcedureStatusObserver: func(procedure string, status domain.ScrollLockStatus, exitCode *int) {
 			s.persistProcedureStatus(cmd, procedure, status, exitCode)
 		},

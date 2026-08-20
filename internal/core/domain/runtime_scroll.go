@@ -75,6 +75,5 @@ type RuntimeUIPackages map[RuntimeUIPackageScope]RuntimeUIPackage
 type RuntimeUIPackage struct {
 	URL       string    `json:"url"`
 	Path      string    `json:"path"`
-	SHA256    string    `json:"sha256"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

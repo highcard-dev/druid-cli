@@ -119,11 +119,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/RegistryCredential'
-        reserved_ports:
-          type: array
-          items:
-            $ref: '#/components/schemas/Port'
-
     Port:
       type: object
       required:
@@ -252,14 +247,11 @@ components:
       required:
         - url
         - path
-        - sha256
         - updated_at
       properties:
         url:
           type: string
         path:
-          type: string
-        sha256:
           type: string
         updated_at:
           type: string
@@ -339,6 +331,11 @@ components:
           format: date-time
         procedures:
           $ref: '#/components/schemas/ProcedureStatusMap'
+        reserved_ports:
+          type: array
+          readOnly: true
+          items:
+            $ref: '#/components/schemas/Port'
 
     DeletedScroll:
       type: object

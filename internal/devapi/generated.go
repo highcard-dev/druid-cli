@@ -8,6 +8,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,6 +20,35 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/oapi-codegen/runtime"
 )
+
+// Defines values for WatchModeResponseStatus.
+const (
+	Disabled WatchModeResponseStatus = "disabled"
+	Error    WatchModeResponseStatus = "error"
+	Ready    WatchModeResponseStatus = "ready"
+	Starting WatchModeResponseStatus = "starting"
+)
+
+// WatchModeRequest defines model for WatchModeRequest.
+type WatchModeRequest struct {
+	// Command Executable followed by its arguments.
+	Command []string `json:"command"`
+
+	// WatchPaths Paths relative to the mounted runtime root.
+	WatchPaths []string `json:"watch_paths"`
+
+	// WorkingDirectory Working directory relative to the mounted runtime root.
+	WorkingDirectory string `json:"working_directory"`
+}
+
+// WatchModeResponse defines model for WatchModeResponse.
+type WatchModeResponse struct {
+	Error  *string                 `json:"error"`
+	Status WatchModeResponseStatus `json:"status"`
+}
+
+// WatchModeResponseStatus defines model for WatchModeResponse.Status.
+type WatchModeResponseStatus string
 
 // FilePath defines model for FilePath.
 type FilePath = string
@@ -52,6 +82,9 @@ type PutFileParams struct {
 
 // PutFileTextRequestBody defines body for PutFile for text/plain ContentType.
 type PutFileTextRequestBody = PutFileTextBody
+
+// EnableWatchJSONRequestBody defines body for EnableWatch for application/json ContentType.
+type EnableWatchJSONRequestBody = WatchModeRequest
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -140,6 +173,17 @@ type ClientInterface interface {
 
 	PutFileWithTextBody(ctx context.Context, params *PutFileParams, body PutFileTextRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// DisableWatch request
+	DisableWatch(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EnableWatchWithBody request with any body
+	EnableWatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	EnableWatch(ctx context.Context, body EnableWatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWatchStatus request
+	GetWatchStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetHealth request
 	GetHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -197,6 +241,54 @@ func (c *Client) PutFileWithBody(ctx context.Context, params *PutFileParams, con
 
 func (c *Client) PutFileWithTextBody(ctx context.Context, params *PutFileParams, body PutFileTextRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPutFileRequestWithTextBody(c.Server, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DisableWatch(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDisableWatchRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EnableWatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEnableWatchRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EnableWatch(ctx context.Context, body EnableWatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEnableWatchRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetWatchStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWatchStatusRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -420,6 +512,100 @@ func NewPutFileRequestWithBody(server string, params *PutFileParams, contentType
 	return req, nil
 }
 
+// NewDisableWatchRequest generates requests for DisableWatch
+func NewDisableWatchRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/watch/disable")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewEnableWatchRequest calls the generic EnableWatch builder with application/json body
+func NewEnableWatchRequest(server string, body EnableWatchJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewEnableWatchRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewEnableWatchRequestWithBody generates requests for EnableWatch with any type of body
+func NewEnableWatchRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/watch/enable")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetWatchStatusRequest generates requests for GetWatchStatus
+func NewGetWatchStatusRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/watch/status")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetHealthRequest generates requests for GetHealth
 func NewGetHealthRequest(server string) (*http.Request, error) {
 	var err error
@@ -531,6 +717,17 @@ type ClientWithResponsesInterface interface {
 
 	PutFileWithTextBodyWithResponse(ctx context.Context, params *PutFileParams, body PutFileTextRequestBody, reqEditors ...RequestEditorFn) (*PutFileResponse, error)
 
+	// DisableWatchWithResponse request
+	DisableWatchWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*DisableWatchResponse, error)
+
+	// EnableWatchWithBodyWithResponse request with any body
+	EnableWatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EnableWatchResponse, error)
+
+	EnableWatchWithResponse(ctx context.Context, body EnableWatchJSONRequestBody, reqEditors ...RequestEditorFn) (*EnableWatchResponse, error)
+
+	// GetWatchStatusWithResponse request
+	GetWatchStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWatchStatusResponse, error)
+
 	// GetHealthWithResponse request
 	GetHealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHealthResponse, error)
 
@@ -616,6 +813,72 @@ func (r PutFileResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r PutFileResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DisableWatchResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *WatchModeResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r DisableWatchResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DisableWatchResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EnableWatchResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *WatchModeResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r EnableWatchResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EnableWatchResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetWatchStatusResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *WatchModeResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWatchStatusResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWatchStatusResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -708,6 +971,41 @@ func (c *ClientWithResponses) PutFileWithTextBodyWithResponse(ctx context.Contex
 	return ParsePutFileResponse(rsp)
 }
 
+// DisableWatchWithResponse request returning *DisableWatchResponse
+func (c *ClientWithResponses) DisableWatchWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*DisableWatchResponse, error) {
+	rsp, err := c.DisableWatch(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDisableWatchResponse(rsp)
+}
+
+// EnableWatchWithBodyWithResponse request with arbitrary body returning *EnableWatchResponse
+func (c *ClientWithResponses) EnableWatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EnableWatchResponse, error) {
+	rsp, err := c.EnableWatchWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEnableWatchResponse(rsp)
+}
+
+func (c *ClientWithResponses) EnableWatchWithResponse(ctx context.Context, body EnableWatchJSONRequestBody, reqEditors ...RequestEditorFn) (*EnableWatchResponse, error) {
+	rsp, err := c.EnableWatch(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEnableWatchResponse(rsp)
+}
+
+// GetWatchStatusWithResponse request returning *GetWatchStatusResponse
+func (c *ClientWithResponses) GetWatchStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWatchStatusResponse, error) {
+	rsp, err := c.GetWatchStatus(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWatchStatusResponse(rsp)
+}
+
 // GetHealthWithResponse request returning *GetHealthResponse
 func (c *ClientWithResponses) GetHealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHealthResponse, error) {
 	rsp, err := c.GetHealth(ctx, reqEditors...)
@@ -790,6 +1088,84 @@ func ParsePutFileResponse(rsp *http.Response) (*PutFileResponse, error) {
 	return response, nil
 }
 
+// ParseDisableWatchResponse parses an HTTP response from a DisableWatchWithResponse call
+func ParseDisableWatchResponse(rsp *http.Response) (*DisableWatchResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DisableWatchResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WatchModeResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEnableWatchResponse parses an HTTP response from a EnableWatchWithResponse call
+func ParseEnableWatchResponse(rsp *http.Response) (*EnableWatchResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EnableWatchResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WatchModeResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetWatchStatusResponse parses an HTTP response from a GetWatchStatusWithResponse call
+func ParseGetWatchStatusResponse(rsp *http.Response) (*GetWatchStatusResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWatchStatusResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WatchModeResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetHealthResponse parses an HTTP response from a GetHealthWithResponse call
 func ParseGetHealthResponse(rsp *http.Response) (*GetHealthResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -833,9 +1209,18 @@ type ServerInterface interface {
 	// Return CORS/WebDAV file access options
 	// (OPTIONS /api/v1/files)
 	OptionsFile(c *fiber.Ctx, params OptionsFileParams) error
-	// Write a file into the runtime root; an optional If-Match SHA-256 ETag serializes Druid-managed writes
+	// Write a file into the runtime root
 	// (PUT /api/v1/files)
 	PutFile(c *fiber.Ctx, params PutFileParams) error
+	// Stop the in-container build watcher
+	// (POST /api/v1/watch/disable)
+	DisableWatch(c *fiber.Ctx) error
+	// Start or reconfigure the in-container build watcher
+	// (POST /api/v1/watch/enable)
+	EnableWatch(c *fiber.Ctx) error
+	// Get the in-container build watcher status
+	// (GET /api/v1/watch/status)
+	GetWatchStatus(c *fiber.Ctx) error
 	// Check dev server health
 	// (GET /health)
 	GetHealth(c *fiber.Ctx) error
@@ -979,6 +1364,24 @@ func (siw *ServerInterfaceWrapper) PutFile(c *fiber.Ctx) error {
 	return siw.Handler.PutFile(c, params)
 }
 
+// DisableWatch operation middleware
+func (siw *ServerInterfaceWrapper) DisableWatch(c *fiber.Ctx) error {
+
+	return siw.Handler.DisableWatch(c)
+}
+
+// EnableWatch operation middleware
+func (siw *ServerInterfaceWrapper) EnableWatch(c *fiber.Ctx) error {
+
+	return siw.Handler.EnableWatch(c)
+}
+
+// GetWatchStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetWatchStatus(c *fiber.Ctx) error {
+
+	return siw.Handler.GetWatchStatus(c)
+}
+
 // GetHealth operation middleware
 func (siw *ServerInterfaceWrapper) GetHealth(c *fiber.Ctx) error {
 
@@ -1020,6 +1423,12 @@ func RegisterHandlersWithOptions(router fiber.Router, si ServerInterface, option
 
 	router.Put(options.BaseURL+"/api/v1/files", wrapper.PutFile)
 
+	router.Post(options.BaseURL+"/api/v1/watch/disable", wrapper.DisableWatch)
+
+	router.Post(options.BaseURL+"/api/v1/watch/enable", wrapper.EnableWatch)
+
+	router.Get(options.BaseURL+"/api/v1/watch/status", wrapper.GetWatchStatus)
+
 	router.Get(options.BaseURL+"/health", wrapper.GetHealth)
 
 	router.Get(options.BaseURL+"/ws/v1/watch/notify", wrapper.WatchNotifications)
@@ -1029,22 +1438,25 @@ func RegisterHandlersWithOptions(router fiber.Router, si ServerInterface, option
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/8xWTXPjNgz9Kxi2RzmK07QH7Sm76TY5dDcTZ5pDJwdYhCTWEsmQkBPXo//eISV/JFJ2",
-	"O53ttCfLIAjiPTwC3IrcNNZo0uxFthUWHTbE5OK/j6qmG+QqfEvyuVOWldEiE7etZtXQzBnDM0c1sloT",
-	"FKomsMhVAoVxQM/Y2GBxao1MqcV8hSWd/OGNPhGJUCHSY0tuIxKhsSGRibBbJMLRY6scSZGxaykRPq+o",
-	"wZAHb2zw8+yULkXXdcHZW6M9xZzfo7ylx5Y8j7O+1muslQQ3OHSJ+GT4o2m1HDsH8KANQxHX40lKF+ZN",
-	"MkDSGp6MW5GDi5vrSEFkBPOcvE+gIqwDN6glPCHnVQivCpVjCOQDJay4DvAuXaskXNIaFuTW5EQi1uR8",
-	"f97pyfzkNCRvLGm0SmTih2hKIn2RhhStStfzNCQQDSVFQowlF4+7liITvxAHmHHjofC/b8X3jgqRie/S",
-	"gzzSg0u6F0b38Ir+s9PT8JMbzaTjiWhtPUBMTc7EM8+OsAlrh7IWxjXIIhNLpTEK4nWhE8H0zKmtMehm",
-	"+2VJTJRySMkH4s77LKdQ7tGkR0qKW86/vmWvppCDb5smQMnELaEE7MVQONMAVwRuUE24QgEuloF60Rfs",
-	"oUtERSjHJbsilP9OzSY4o2fl/xPGPlSUr0AVgHueiqOEpugyMXM/Zuxzv/DNSTsfkzYcBY64dZrGOghm",
-	"+PD5dpHe0/Ly4rfjBgE7BFPobDvRzxZsbOw4tUHpgStkyFGDoyenmKLMPDZR+4Uq256U2KFhSYVxYXmt",
-	"dPkO6JnJaaxjQn7jmRqIQZwHaWIftOhY5coiEygNV3d3N/DzHZaQG+Ok0jF4aGIv6b9pv0mPibJ6b+Tm",
-	"/9BeXo6n7u9II96nwCiT/qcXan72RtxdbwNtoDa6JAdNHDDXxezX8PFKiPdRHkNHUprNqCO9A9SDILHe",
-	"h4HF1cXs7Mef+rp7cgpr9Sd5iPNq1qDGkmQvnCkdd4lI+yn4pZF01Xt8dbK8VbDh3SEyYVYTlR6NhzBm",
-	"fRyzoPwwpTeTDUkePKtdkjuMg6EH+eTD8I1DPo1DfvMm4Pvg9On4IfAa+fx0Pq77PS0XJl8RQ2tLh7Lv",
-	"IpZHTWfRLsO+JQGbvuB5hbqk+AxZtqqWL58hR5Bi/gFRCBhh9ze3dbXIRBpv5uC73T3gBhq6ZG/pi39k",
-	"6MN2D91fAQAA//9hB1HgfgoAAA==",
+	"H4sIAAAAAAAC/8xXTW/bOBP+KwTf96hEyW5OvrVNP3LYNoiBzaEICloc2WwkkhkOnRiB//tiSFm2I+Vj",
+	"2yzam00OyWeeZ750LyvXemfBUpCTe+kVqhYIMP37YBo4V7Tg3xpChcaTcVZO5EW0ZFo4QOfoAKFRZJYg",
+	"atOA8IoWhagdCrhTrecVNEtFUHpVXas5HH4Pzh7KQhq+6SYCrmQhrWpBTiSfloVEuIkGQcsJYYRChmoB",
+	"rWIctPJsFwiNncv1es3GwTsbIGF+q/QF3EQINER9ZpeqMVpgZ7Au5GdHH1y0emjMzgvrSNRpnx/KKNIz",
+	"l4qqxV9Ow85jHp0HJJOBVK5t1djF7++giqRmDYjaNY27BS1mK2EoCIXz2LIWiR6CNoy4XMjW2LO8eVxs",
+	"dhWiWvHmLSP7xjyG4dusZhC9YOQELUC0LloCLTCrKljVn0Hg8NrY+TdtECpyuBriuMwmojd5MaaH+u/G",
+	"ytc958eAFL0sV/1VbvYdqhQMO6LmiBqqCogO+YeNTcMabiJ0QFEgRTGfsbFlcNoEPqFl2kRiQ4avNAPL",
+	"N18952F37RA+Gxpbu0eTVWhYCqYEULw5P0spmjJWVRWEUIgFqIZzV1ktEpEc/qY2leKLUkySIXZZnmI0",
+	"WpzCUkwBl4CykEvAkN87Ojw+PGIKnAervJET+WdaKmQflqXyplwelwwgLcwh5RBznZ4703IiPwJxGqaD",
+	"28L09V7+H6GWE/m/clu+yq1J2Reu9dWD8vDH0VFOTktg04vK+6ZzsXQVAR0EQlAt723LTu2wVSQncmas",
+	"SoE0lIngjkrfKK5r90+XrJFS00EKTNxJRjnmZe9NuVPp0pGT54/01S5Vs9i27MpEXoDSQuVgqNG1KQF3",
+	"E4/dVXOmXmbBrtaFXIDSQ8k+gdL/jWYjnMGdCb+EsXcLqK6FqYXqeap3AI3R5RLyMGTsS954ddJOhqR1",
+	"TwkEimhhGAe8LN59uZiWlzA7ffP3boEQGw/GvPNxJH3P46ukb1LsrdOr3yFz9yeT9UtYT6F6i4YI7A/F",
+	"6p5Il2gINtlqbNcun8nWddFX3FTZy64XpQbnwoh2p9kgtUT5r4ooj3f7NI552s1S5bDnjhTIZAQoAjnv",
+	"B2E7JecTCcYeMCZlLKCYRdN0fSz1pw0laWWMErBPM/Le7hPykrD8YS42yr8g4n6ZFgqJtfjZgJ7yRcKh",
+	"QKicrc08IryCnNv567HRInkyzWa/EasMZ5+hj0DPELI5N85LHuyeouJTtniWhccKZfepx+Po9UiFHbjL",
+	"k2NIk6MwoRs8V6M9Vm8tFxuQGx+7hezkbdhqn+bW1aMOJ7I/7862Dz0/Pjoe+WiB2dRV10Ai+jkqnRuj",
+	"p2FBijM+N0sfM6lOVwtl55Am66ybffD6QDa+MLmdO2bERk5kmTpiZ3u/+WbuaFgX/Uou+zsL+dr11fqf",
+	"AAAA///JD7lP8Q8AAA==",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

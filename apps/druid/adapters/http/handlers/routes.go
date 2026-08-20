@@ -40,17 +40,6 @@ func RegisterManagementRoutes(app *fiber.App, handlers RouteHandlers) {
 	api.RegisterHandlersWithOptions(app, handlers.Server, api.FiberServerOptions{})
 	app.Get("/health", handlers.Server.GetHealthAuth)
 	app.Get("/ws/v1/scrolls/:id/consoles/:console", websocket.New(handlers.Websocket.AttachConsole))
-	app.Get("/ws/v1/scrolls/:id/watch/notify", websocket.New(handlers.Websocket.WatchNotifications))
-	app.Get("/api/v1/scrolls/:id/dev/status", handlers.Server.GetDaemonWatchStatus)
-	app.Post("/api/v1/scrolls/:id/dev/enable", handlers.Server.EnableDaemonWatch)
-	app.Post("/api/v1/scrolls/:id/dev/disable", handlers.Server.DisableDaemonWatch)
-	app.Post("/api/v1/scrolls/:id/ui/packages/:scope/prepare", handlers.Server.PrepareDaemonUIPackageUpload)
-}
-
-// RegisterWorkerRoutes exposes the minimal authenticated surface needed by
-// runtime worker Pods. Keep the management API bound to its private listener.
-func RegisterWorkerRoutes(app *fiber.App, handlers RouteHandlers) {
-	app.Post("/api/v1/scrolls/:id/ui/packages/:scope/prepare", handlers.Server.PrepareDaemonUIPackageUpload)
 }
 
 func RegisterPublicRoutes(app *fiber.App, handlers RouteHandlers) {
@@ -68,7 +57,6 @@ func RegisterPublicRoutes(app *fiber.App, handlers RouteHandlers) {
 	app.Get("/health", handlers.Server.GetHealthAuth)
 	app.Get("/.well-known/jwks.json", RuntimeJWKS(authorizer))
 	app.Get("/:id/ws/v1/serve/:console", websocket.New(handlers.Websocket.AttachScrollConsole))
-	app.Get("/:id/ws/v1/watch/notify", websocket.New(handlers.Websocket.WatchNotificationsPublic))
 	if handlers.Server != nil && handlers.Server.ScrollHandler != nil {
 		app.Use("/:id", handlers.Server.PublicAuth)
 	}
@@ -85,7 +73,4 @@ func RegisterPublicRoutes(app *fiber.App, handlers RouteHandlers) {
 	app.Get("/:id/api/v1/ports", handlers.Server.GetDaemonPorts)
 	app.Get("/:id/api/v1/ui/packages", handlers.Server.GetDaemonUIPackages)
 	app.Post("/:id/api/v1/ui/packages/:scope/publish", handlers.Server.PublishDaemonUIPackage)
-	app.Get("/:id/api/v1/watch/status", handlers.Server.GetDaemonWatchStatus)
-	app.Post("/:id/api/v1/watch/enable", handlers.Server.EnableDaemonWatch)
-	app.Post("/:id/api/v1/watch/disable", handlers.Server.DisableDaemonWatch)
 }
