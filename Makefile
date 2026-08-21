@@ -13,9 +13,7 @@ DRUID_WORKER_CALLBACK_LISTEN ?= 0.0.0.0:8083
 DRUID_WORKER_CALLBACK_URL ?= http://host.k3d.internal:8083
 WSL_HOST_IP ?= $(word 1,$(shell hostname -I 2>/dev/null))
 DRUID_WORKER_CALLBACK_URL_WINDOWS ?= http://$(WSL_HOST_IP):8083
-DRUID_WORKER_DAEMON_URL ?= http://host.k3d.internal:8081
-DRUID_WORKER_DAEMON_URL_WINDOWS ?= http://$(WSL_HOST_IP):8081
-DRUID_WATCH_ARGS ?= daemon --runtime kubernetes --listen 127.0.0.1:8081 --public-listen 127.0.0.1:8082 --worker-callback-listen $(DRUID_WORKER_CALLBACK_LISTEN) --worker-callback-url $(DRUID_WORKER_CALLBACK_URL) --worker-daemon-url $(DRUID_WORKER_DAEMON_URL) --unsafe-allow-unauthenticated-management --unsafe-allow-unauthenticated-public --k8s-namespace $(DRUID_K8S_NAMESPACE) --k8s-pull-image $(DRUID_K8S_PULL_IMAGE)
+DRUID_WATCH_ARGS ?= daemon --runtime kubernetes --listen 127.0.0.1:8081 --public-listen 127.0.0.1:8082 --worker-callback-listen $(DRUID_WORKER_CALLBACK_LISTEN) --worker-callback-url $(DRUID_WORKER_CALLBACK_URL) --unsafe-allow-unauthenticated-management --unsafe-allow-unauthenticated-public --k8s-namespace $(DRUID_K8S_NAMESPACE) --k8s-pull-image $(DRUID_K8S_PULL_IMAGE)
 export DRUID_K8S_UI_S3_BUCKET ?= druid-ui
 export DRUID_K8S_UI_S3_PUBLIC_BASE_URL ?= http://127.0.0.1:9000/druid-ui
 export DRUID_K8S_UI_S3_REGION ?= us-east-1
@@ -80,7 +78,7 @@ watch: k3d-build-local-images ## Build local runtime images, then run Daemon wit
 
 watch-windows: ## Build local runtime images, then run the daemon with auto reload inside WSL2.
 	@grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null || (echo "watch-windows must run inside WSL2; use make watch on Linux or macOS." >&2; exit 1)
-	@$(MAKE) watch DRUID_WORKER_CALLBACK_URL="$(DRUID_WORKER_CALLBACK_URL_WINDOWS)" DRUID_WORKER_DAEMON_URL="$(DRUID_WORKER_DAEMON_URL_WINDOWS)"
+	@$(MAKE) watch DRUID_WORKER_CALLBACK_URL="$(DRUID_WORKER_CALLBACK_URL_WINDOWS)"
 
 mock:
 	mockgen -source=internal/core/ports/services_ports.go -destination test/mock/services.go
