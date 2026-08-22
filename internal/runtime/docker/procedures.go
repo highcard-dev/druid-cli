@@ -46,14 +46,14 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 				return nil, fmt.Errorf("docker runtime procedure %s requires image", procedureName)
 			}
 			command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusRunning, nil)
-			if err := b.startPersistentContainer(runtimeConsoleID(command.ScrollID, procedureName), command.Name, procedureName, procedureResourceName(command.Name, idx), procedure, command.Root, command.GlobalPorts, command.Routing, env); err != nil {
+			if err := b.startPersistentContainer(runtimeConsoleID(command.ScrollID, procedureName), command.Name, procedureName, procedureResourceName(command.Name, idx), procedure, command.Root, command.Ports, command.Routing, env); err != nil {
 				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusError, nil)
 				return nil, err
 			}
 			continue
 		}
 		command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusRunning, nil)
-		exitCode, err := b.runProcedure(runtimeConsoleID(command.ScrollID, procedureName), command.Name, procedureName, procedureResourceName(command.Name, idx), procedure, command.Root, command.GlobalPorts, command.Routing, env)
+		exitCode, err := b.runProcedure(runtimeConsoleID(command.ScrollID, procedureName), command.Name, procedureName, procedureResourceName(command.Name, idx), procedure, command.Root, command.Ports, command.Routing, env)
 		if err != nil {
 			if exitCode != nil && *exitCode != 0 && procedure.IgnoreFailure {
 				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, exitCode)

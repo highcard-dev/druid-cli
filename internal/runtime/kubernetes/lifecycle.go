@@ -61,15 +61,6 @@ func (b *Backend) StopCommand(root string, command string) error {
 	if err := b.client.AppsV1().StatefulSets(namespace).DeleteCollection(ctx, options, listOptions); err != nil {
 		return err
 	}
-	services, err := b.client.CoreV1().Services(namespace).List(ctx, listOptions)
-	if err != nil {
-		return err
-	}
-	for _, service := range services.Items {
-		if err := b.client.CoreV1().Services(namespace).Delete(ctx, service.Name, options); err != nil && !apierrors.IsNotFound(err) {
-			return err
-		}
-	}
 	if err := b.client.CoreV1().Pods(namespace).DeleteCollection(ctx, options, listOptions); err != nil {
 		return err
 	}
@@ -82,7 +73,6 @@ func (b *Backend) StopCommand(root string, command string) error {
 		jobs, jobErr := b.client.BatchV1().Jobs(namespace).List(waitCtx, listOptions)
 		statefulSets, statefulSetErr := b.client.AppsV1().StatefulSets(namespace).List(waitCtx, listOptions)
 		pods, podErr := b.client.CoreV1().Pods(namespace).List(waitCtx, listOptions)
-		services, serviceErr := b.client.CoreV1().Services(namespace).List(waitCtx, listOptions)
 		if jobErr != nil {
 			return jobErr
 		}
@@ -92,10 +82,7 @@ func (b *Backend) StopCommand(root string, command string) error {
 		if podErr != nil {
 			return podErr
 		}
-		if serviceErr != nil {
-			return serviceErr
-		}
-		if len(jobs.Items) == 0 && len(statefulSets.Items) == 0 && len(pods.Items) == 0 && len(services.Items) == 0 {
+		if len(jobs.Items) == 0 && len(statefulSets.Items) == 0 && len(pods.Items) == 0 {
 			return nil
 		}
 		select {

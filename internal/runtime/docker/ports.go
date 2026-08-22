@@ -16,9 +16,9 @@ import (
 	"github.com/highcard-dev/daemon/internal/core/domain"
 )
 
-func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port, _ []domain.Port) ([]domain.RuntimePortStatus, error) {
+func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, ports []domain.Port) ([]domain.RuntimePortStatus, error) {
 	statuses := []domain.RuntimePortStatus{}
-	portsByName := portsByName(globalPorts)
+	portsByName := portsByName(ports)
 	for commandName, command := range commands {
 		if command == nil {
 			continue
@@ -47,8 +47,8 @@ func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.Command
 	return statuses, nil
 }
 
-func (b *Backend) RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port, reservedPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error) {
-	portsByName := portsByName(globalPorts)
+func (b *Backend) RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, ports []domain.Port) ([]domain.RuntimeRoutingTarget, error) {
+	portsByName := portsByName(ports)
 	targets := []domain.RuntimeRoutingTarget{}
 	seen := map[string]struct{}{}
 	commandNames := make([]string, 0, len(commands))
@@ -84,7 +84,7 @@ func (b *Backend) RoutingTargets(root string, commands map[string]*domain.Comman
 			}
 		}
 	}
-	for _, port := range reservedPorts {
+	for _, port := range ports {
 		if _, ok := seen[port.Name]; ok {
 			continue
 		}

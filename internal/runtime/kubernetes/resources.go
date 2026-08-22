@@ -188,6 +188,9 @@ func procedureJobSpec(namespace string, root string, commandName string, procedu
 	labels[labelProcedure] = dnsLabel(procedureName)
 	labels[labelCommand] = dnsLabel(commandName)
 	labels[labelAttempt] = fmt.Sprintf("%d", attempt)
+	for _, expectedPort := range procedure.ExpectedPorts {
+		labels[portSelectorLabel(expectedPort.Name)] = "true"
+	}
 	if len(procedure.ExpectedPorts) == 1 {
 		labels[labelPortName] = dnsLabel(procedure.ExpectedPorts[0].Name)
 	}
@@ -232,10 +235,14 @@ func procedureStatefulSetSpec(namespace string, root string, commandName string,
 	if err != nil {
 		return nil, err
 	}
-	labels := baseLabels(pvc)
-	labels[labelRuntimeID] = dnsLabel(runtimeID(root))
-	labels[labelProcedure] = dnsLabel(procedureName)
-	labels[labelCommand] = dnsLabel(commandName)
+	selectorLabels := baseLabels(pvc)
+	selectorLabels[labelRuntimeID] = dnsLabel(runtimeID(root))
+	selectorLabels[labelProcedure] = dnsLabel(procedureName)
+	selectorLabels[labelCommand] = dnsLabel(commandName)
+	labels := copyLabels(selectorLabels)
+	for _, expectedPort := range procedure.ExpectedPorts {
+		labels[portSelectorLabel(expectedPort.Name)] = "true"
+	}
 	if len(procedure.ExpectedPorts) == 1 {
 		labels[labelPortName] = dnsLabel(procedure.ExpectedPorts[0].Name)
 	}
@@ -267,7 +274,7 @@ func procedureStatefulSetSpec(namespace string, root string, commandName string,
 		Spec: appsv1.StatefulSetSpec{
 			Replicas:    &replicas,
 			ServiceName: resourceName,
-			Selector:    &metav1.LabelSelector{MatchLabels: labels},
+			Selector:    &metav1.LabelSelector{MatchLabels: selectorLabels},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec:       podSpec,
@@ -276,24 +283,20 @@ func procedureStatefulSetSpec(namespace string, root string, commandName string,
 	}, nil
 }
 
-func serviceSpec(namespace string, root string, serviceProcedure string, selector map[string]string, portName string, port domain.Port) (*corev1.Service, error) {
+func serviceSpec(namespace string, root string, selector map[string]string, portName string, port domain.Port) (*corev1.Service, error) {
 	_, pvc, err := parseRef(root)
 	if err != nil {
 		return nil, err
 	}
 	labels := baseLabels(pvc)
-	labels[labelProcedure] = dnsLabel(serviceProcedure)
 	labels[labelPortName] = dnsLabel(portName)
-	if command := selector[labelCommand]; command != "" {
-		labels[labelCommand] = command
-	}
 	protocol := corev1.ProtocolTCP
 	if normalizeProtocol(port.Protocol) == "udp" {
 		protocol = corev1.ProtocolUDP
 	}
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      serviceName(root, serviceProcedure, portName),
+			Name:      portServiceName(root, portName),
 			Namespace: namespace,
 			Labels:    labels,
 		},
@@ -308,6 +311,14 @@ func serviceSpec(namespace string, root string, serviceProcedure string, selecto
 			}},
 		},
 	}, nil
+}
+
+func copyLabels(source map[string]string) map[string]string {
+	result := make(map[string]string, len(source))
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
 }
 
 func pvcVolume(name string, pvc string) corev1.Volume {

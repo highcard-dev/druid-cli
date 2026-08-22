@@ -118,7 +118,7 @@ func TestRoutingTargetsUseFirstConcreteProcedureForSharedDockerPort(t *testing.T
 			{Id: &coldstart, ExpectedPorts: []domain.ExpectedPort{{Name: "main"}}},
 			{Id: &start, ExpectedPorts: []domain.ExpectedPort{{Name: "main"}}},
 		}},
-	}, []domain.Port{{Name: "main", Port: 25565, Protocol: "tcp"}}, nil)
+	}, []domain.Port{{Name: "main", Port: 25565, Protocol: "tcp"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,27 +135,15 @@ func TestRoutingTargetsUseFirstConcreteProcedureForSharedDockerPort(t *testing.T
 	t.Fatalf("main target missing: %#v", targets)
 }
 
-func TestDockerRoutingTargetsIncludeUnclaimedRuntimePort(t *testing.T) {
-	reservedPorts := []domain.Port{{Name: "ssh", Port: 2222, Protocol: "tcp"}}
-	globalPorts := append(reservedPorts, domain.Port{Name: "unused-game-port", Port: 25565, Protocol: "tcp"})
-	targets, err := (&Backend{}).RoutingTargets("docker-volume://druid-tools-data", nil, globalPorts, reservedPorts)
+func TestDockerRoutingTargetsIncludeAllUnclaimedRuntimePorts(t *testing.T) {
+	ports := []domain.Port{{Name: "ssh", Port: 2222, Protocol: "tcp"}, {Name: "unused-game-port", Port: 25565, Protocol: "tcp"}}
+	targets, err := (&Backend{}).RoutingTargets("docker-volume://druid-tools-data", nil, ports)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, target := range targets {
-		if target.Name == "unused-game-port" {
-			t.Fatalf("ordinary unclaimed port was routed: %#v", target)
-		}
-		if target.Name == "ssh" && target.Procedure == "" && target.ServiceName == "" {
-			continue
-		}
+	if len(targets) != 2 || targets[0].Name != "ssh" || targets[1].Name != "unused-game-port" {
+		t.Fatalf("targets = %#v, want every runtime port", targets)
 	}
-	for _, target := range targets {
-		if target.Name == "ssh" {
-			return
-		}
-	}
-	t.Fatalf("unclaimed ssh target missing: %#v", targets)
 }
 
 func TestContainerSpecAddsHostGatewayExtraHost(t *testing.T) {

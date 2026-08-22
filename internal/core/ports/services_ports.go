@@ -40,8 +40,8 @@ type RuntimeBackendInterface interface {
 	RootRef(id string, namespace string) string
 	RunCommand(command RuntimeCommand) (*int, error)
 	CreateUIPackageUpload(ctx context.Context, action RuntimeUIPackageUploadAction) (RuntimeUIPackageUpload, error)
-	ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port, reservedPorts []domain.Port) ([]domain.RuntimePortStatus, error)
-	RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port, reservedPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error)
+	ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, ports []domain.Port) ([]domain.RuntimePortStatus, error)
+	RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, ports []domain.Port) ([]domain.RuntimeRoutingTarget, error)
 	StopRuntime(root string) error
 	DeleteRuntime(root string, purgeData bool) error
 	BackupRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential) error
@@ -92,12 +92,13 @@ type RuntimeScrollStore interface {
 }
 
 type RuntimeCommand struct {
-	Name                    string
-	ScrollID                string
-	Command                 *domain.CommandInstructionSet
-	Root                    string
-	GlobalPorts             []domain.Port
-	ReservedPorts           []domain.Port
+	Name     string
+	ScrollID string
+	Command  *domain.CommandInstructionSet
+	Root     string
+	// Ports is the complete runtime port set after reserved ports are merged
+	// and dynamic ports are resolved from routing assignments.
+	Ports                   []domain.Port
 	Routing                 []domain.RuntimeRouteAssignment
 	ProcedureEnv            map[string]map[string]string
 	ProcedureStatusObserver func(procedure string, status domain.ScrollLockStatus, exitCode *int)
