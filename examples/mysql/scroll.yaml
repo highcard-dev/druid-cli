@@ -11,7 +11,7 @@ ports:
 serve: "start"
 commands:
   start:
-    run: restart
+    run: persistent
     procedures:
       - image: mysql:8.4
         expectedPorts:
