@@ -27,7 +27,7 @@ commands:
 
   start:
     needs: [install]
-    run: restart
+    run: persistent
     procedures:
       - id: coldstart
         image: highcard/druid:stable
