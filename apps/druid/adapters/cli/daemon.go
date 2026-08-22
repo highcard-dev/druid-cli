@@ -145,7 +145,10 @@ func runRuntimeDaemon() error {
 		return err
 	}
 	manager := services.NewRuntimeScrollManager(runtime.Store)
-	supervisor := appservices.NewRuntimeSupervisor(runtime.Store, manager, runtime.Backend)
+	supervisor, err := appservices.NewRuntimeSupervisor(runtime.Store, manager, runtime)
+	if err != nil {
+		return err
+	}
 	callbacks := appservices.NewWorkerCallbackManager()
 	supervisor.SetWorkerTimeout(runtimeWorkerTimeout)
 	callbackConfig := ports.RuntimeWorkerCallbackConfig{

@@ -18,15 +18,16 @@ import (
 )
 
 type Backend struct {
-	client         k8sclient.Interface
-	restConfig     *rest.Config
-	httpClient     *http.Client
-	consoleManager ports.ConsoleManagerInterface
-	config         Config
-	statsReader    nodeStatsReader
-	jobLogRunner   func(context.Context, *batchv1.Job) ([]byte, error)
-	jobExitMu      sync.Mutex
-	jobExits       map[string]recentJobExit
+	client                  k8sclient.Interface
+	restConfig              *rest.Config
+	httpClient              *http.Client
+	consoleManager          ports.ConsoleManagerInterface
+	procedureStatusObserver ports.ProcedureStatusObserver
+	config                  Config
+	statsReader             nodeStatsReader
+	jobLogRunner            func(context.Context, *batchv1.Job) ([]byte, error)
+	jobExitMu               sync.Mutex
+	jobExits                map[string]recentJobExit
 }
 
 type recentJobExit struct {
@@ -39,7 +40,10 @@ const (
 	defaultKubernetesClientBurst int     = 100
 )
 
-func New(config Config, consoleManager ports.ConsoleManagerInterface) (*Backend, error) {
+func New(config Config, consoleManager ports.ConsoleManagerInterface, observer ports.ProcedureStatusObserver) (*Backend, error) {
+	if observer == nil {
+		return nil, fmt.Errorf("procedure status observer is required")
+	}
 	config = config.WithDefaults()
 
 	restConfig, namespace, source, _, err := runtimeRESTConfig(config)
@@ -64,12 +68,13 @@ func New(config Config, consoleManager ports.ConsoleManagerInterface) (*Backend,
 	}
 	logger.Log().Info("Using Kubernetes backend settings", zap.String("source", source), zap.String("namespace", config.Namespace))
 	backend := &Backend{
-		client:         client,
-		restConfig:     restConfig,
-		httpClient:     httpClient,
-		consoleManager: consoleManager,
-		config:         config,
-		jobExits:       make(map[string]recentJobExit),
+		client:                  client,
+		restConfig:              restConfig,
+		httpClient:              httpClient,
+		consoleManager:          consoleManager,
+		procedureStatusObserver: observer,
+		config:                  config,
+		jobExits:                make(map[string]recentJobExit),
 	}
 	backend.statsReader = backend.readNodeStatsSummary
 	if config.PullImage == "" {

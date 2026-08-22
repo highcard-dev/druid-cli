@@ -38,10 +38,10 @@ func TestRuntimeSessionRunCommandPassesCommandContextToRuntimeBackend(t *testing
 
 func TestRuntimeSessionPersistentCommandRemainsRunningAfterSetup(t *testing.T) {
 	session := newRuntimeSessionExecutionTest(t, executionScrollYAML(), &fakeWorkerBackend{
-		runCommand: func(command ports.RuntimeCommand) (*int, error) {
-			command.ObserveProcedureStatus("web", domain.ScrollLockStatusRunning, nil)
-			return nil, nil
-		},
+		procedureStatusUpdates: []ports.ProcedureStatusUpdate{{
+			Procedure: "web",
+			Status:    domain.ScrollLockStatusRunning,
+		}},
 	})
 	session.Start()
 
@@ -161,13 +161,12 @@ func TestRuntimeSessionRunCommandRejectsUnassignedDynamicPort(t *testing.T) {
 	}
 }
 
-func TestRuntimeSessionRunCommandPersistsProcedureStatusCallbacks(t *testing.T) {
+func TestRuntimeSessionRunCommandPersistsProcedureStatusUpdates(t *testing.T) {
 	exitCode := 0
 	session := newRuntimeSessionExecutionTest(t, executionScrollYAML(), &fakeWorkerBackend{
-		runCommand: func(command ports.RuntimeCommand) (*int, error) {
-			command.ObserveProcedureStatus("web", domain.ScrollLockStatusRunning, nil)
-			command.ObserveProcedureStatus("web", domain.ScrollLockStatusDone, &exitCode)
-			return nil, nil
+		procedureStatusUpdates: []ports.ProcedureStatusUpdate{
+			{Procedure: "web", Status: domain.ScrollLockStatusRunning},
+			{Procedure: "web", Status: domain.ScrollLockStatusDone, ExitCode: &exitCode},
 		},
 	})
 
@@ -242,6 +241,9 @@ func newRuntimeSessionExecutionTest(t *testing.T, scrollYAML string, backend *fa
 	if err != nil {
 		t.Fatal(err)
 	}
+	backend.procedureStatusObserver = ports.ProcedureStatusObserverFunc(func(update ports.ProcedureStatusUpdate) {
+		session.persistProcedureStatus(update.Command, update.Procedure, update.Status, update.ExitCode)
+	})
 	return session
 }
 

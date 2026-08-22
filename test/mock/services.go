@@ -431,32 +431,8 @@ func (mr *MockRuntimeBackendInterfaceMockRecorder) StopRuntime(root any) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopRuntime", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).StopRuntime), root)
 }
 
-// MockRuntimeCommandStopper is a mock of RuntimeCommandStopper interface.
-type MockRuntimeCommandStopper struct {
-	ctrl     *gomock.Controller
-	recorder *MockRuntimeCommandStopperMockRecorder
-	isgomock struct{}
-}
-
-// MockRuntimeCommandStopperMockRecorder is the mock recorder for MockRuntimeCommandStopper.
-type MockRuntimeCommandStopperMockRecorder struct {
-	mock *MockRuntimeCommandStopper
-}
-
-// NewMockRuntimeCommandStopper creates a new mock instance.
-func NewMockRuntimeCommandStopper(ctrl *gomock.Controller) *MockRuntimeCommandStopper {
-	mock := &MockRuntimeCommandStopper{ctrl: ctrl}
-	mock.recorder = &MockRuntimeCommandStopperMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockRuntimeCommandStopper) EXPECT() *MockRuntimeCommandStopperMockRecorder {
-	return m.recorder
-}
-
 // StopCommand mocks base method.
-func (m *MockRuntimeCommandStopper) StopCommand(root, command string) error {
+func (m *MockRuntimeBackendInterface) StopCommand(root, command string) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "StopCommand", root, command)
 	ret0, _ := ret[0].(error)
@@ -464,9 +440,9 @@ func (m *MockRuntimeCommandStopper) StopCommand(root, command string) error {
 }
 
 // StopCommand indicates an expected call of StopCommand.
-func (mr *MockRuntimeCommandStopperMockRecorder) StopCommand(root, command any) *gomock.Call {
+func (mr *MockRuntimeBackendInterfaceMockRecorder) StopCommand(root, command any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopCommand", reflect.TypeOf((*MockRuntimeCommandStopper)(nil).StopCommand), root, command)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopCommand", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).StopCommand), root, command)
 }
 
 // MockRuntimeWorkerCallbackBackend is a mock of RuntimeWorkerCallbackBackend interface.

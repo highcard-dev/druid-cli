@@ -50,16 +50,15 @@ func (s *RuntimeSupervisor) startSession(runtimeScroll *domain.RuntimeScroll) (*
 	if err != nil {
 		return nil, err
 	}
-	session.Start()
 
 	s.mu.Lock()
 	if existing := s.sessions[runtimeScroll.ID]; existing != nil {
 		s.mu.Unlock()
-		session.stopDeploymentQueue()
 		return existing, nil
 	}
 	s.sessions[runtimeScroll.ID] = session
 	s.mu.Unlock()
+	session.Start()
 	return session, nil
 }
 

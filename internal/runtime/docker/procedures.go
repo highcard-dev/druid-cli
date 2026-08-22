@@ -34,45 +34,58 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 		)
 		if command.Command.Run == domain.RunModePersistent {
 			if procedure.IsSignal() {
-				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusRunning, nil)
+				b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusRunning, nil)
 				if err := b.Signal(procedureName, procedure.Target, procedure.Signal, command.Root); err != nil {
-					command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusError, nil)
+					b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusError, nil)
 					return nil, err
 				}
-				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, nil)
+				b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusDone, nil)
 				continue
 			}
 			if procedure.Image == "" {
 				return nil, fmt.Errorf("docker runtime procedure %s requires image", procedureName)
 			}
-			command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusRunning, nil)
+			b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusRunning, nil)
 			if err := b.startPersistentContainer(runtimeConsoleID(command.ScrollID, procedureName), command.Name, procedureName, procedureResourceName(command.Name, idx), procedure, command.Root, command.Ports, command.Routing, env); err != nil {
-				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusError, nil)
+				b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusError, nil)
 				return nil, err
 			}
 			continue
 		}
-		command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusRunning, nil)
+		b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusRunning, nil)
 		exitCode, err := b.runProcedure(runtimeConsoleID(command.ScrollID, procedureName), command.Name, procedureName, procedureResourceName(command.Name, idx), procedure, command.Root, command.Ports, command.Routing, env)
 		if err != nil {
 			if exitCode != nil && *exitCode != 0 && procedure.IgnoreFailure {
-				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, exitCode)
+				b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusDone, exitCode)
 				continue
 			}
-			command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusError, exitCode)
+			b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusError, exitCode)
 			return exitCode, err
 		}
 		if exitCode != nil && *exitCode != 0 {
 			if procedure.IgnoreFailure {
-				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, exitCode)
+				b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusDone, exitCode)
 				continue
 			}
-			command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusError, exitCode)
+			b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusError, exitCode)
 			return exitCode, nil
 		}
-		command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, exitCode)
+		b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusDone, exitCode)
 	}
 	return nil, nil
+}
+
+func (b *Backend) observeProcedureStatus(command ports.RuntimeCommand, procedure string, status domain.ScrollLockStatus, exitCode *int) {
+	if b.procedureStatusObserver == nil {
+		return
+	}
+	b.procedureStatusObserver.ObserveProcedureStatus(ports.ProcedureStatusUpdate{
+		RuntimeID: command.ScrollID,
+		Command:   command.Name,
+		Procedure: procedure,
+		Status:    status,
+		ExitCode:  exitCode,
+	})
 }
 
 func (b *Backend) runProcedure(consoleID string, commandName string, procedureName string, resourceName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, routing []domain.RuntimeRouteAssignment, env map[string]string) (*int, error) {

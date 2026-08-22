@@ -42,6 +42,7 @@ type RuntimeBackendInterface interface {
 	CreateUIPackageUpload(ctx context.Context, action RuntimeUIPackageUploadAction) (RuntimeUIPackageUpload, error)
 	ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, ports []domain.Port) ([]domain.RuntimePortStatus, error)
 	RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, ports []domain.Port) ([]domain.RuntimeRoutingTarget, error)
+	StopCommand(root string, command string) error
 	StopRuntime(root string) error
 	DeleteRuntime(root string, purgeData bool) error
 	BackupRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential) error
@@ -50,10 +51,16 @@ type RuntimeBackendInterface interface {
 	Signal(commandName string, target string, signal string, root string) error
 }
 
-// RuntimeCommandStopper is implemented by backends that can remove one
-// command's workloads without stopping the rest of the runtime.
-type RuntimeCommandStopper interface {
-	StopCommand(root string, command string) error
+// RuntimeBackendFactory creates a backend with its required status observer.
+type RuntimeBackendFactory interface {
+	Create(observer ProcedureStatusObserver) (RuntimeBackendInterface, error)
+}
+
+// RuntimeBackendFactoryFunc adapts a function to RuntimeBackendFactory.
+type RuntimeBackendFactoryFunc func(observer ProcedureStatusObserver) (RuntimeBackendInterface, error)
+
+func (f RuntimeBackendFactoryFunc) Create(observer ProcedureStatusObserver) (RuntimeBackendInterface, error) {
+	return f(observer)
 }
 
 type RuntimeWorkerCallbackConfig struct {
@@ -92,22 +99,41 @@ type RuntimeScrollStore interface {
 }
 
 type RuntimeCommand struct {
-	Name     string
+	// Name identifies the command within the Scroll.
+	Name string
+	// ScrollID identifies the runtime Scroll whose command is being executed.
 	ScrollID string
-	Command  *domain.CommandInstructionSet
-	Root     string
-	// Ports is the complete runtime port set after reserved ports are merged
-	// and dynamic ports are resolved from routing assignments.
-	Ports                   []domain.Port
-	Routing                 []domain.RuntimeRouteAssignment
-	ProcedureEnv            map[string]map[string]string
-	ProcedureStatusObserver func(procedure string, status domain.ScrollLockStatus, exitCode *int)
+	// Command contains the procedures and run mode to execute.
+	Command *domain.CommandInstructionSet
+	// Root identifies the backend-owned runtime data location.
+	Root string
+	// Ports contains all runtime ports after merging reservations and resolving dynamic assignments.
+	Ports []domain.Port
+	// Routing contains the runtime's external route assignments used by backends during execution.
+	Routing []domain.RuntimeRouteAssignment
+	// ProcedureEnv contains the fully resolved environment for each procedure name.
+	ProcedureEnv map[string]map[string]string
 }
 
-func (c RuntimeCommand) ObserveProcedureStatus(procedure string, status domain.ScrollLockStatus, exitCode *int) {
-	if c.ProcedureStatusObserver != nil {
-		c.ProcedureStatusObserver(procedure, status, exitCode)
-	}
+// ProcedureStatusUpdate identifies one backend-reported procedure transition.
+type ProcedureStatusUpdate struct {
+	RuntimeID string
+	Command   string
+	Procedure string
+	Status    domain.ScrollLockStatus
+	ExitCode  *int
+}
+
+// ProcedureStatusObserver receives procedure transitions from a runtime backend.
+type ProcedureStatusObserver interface {
+	ObserveProcedureStatus(update ProcedureStatusUpdate)
+}
+
+// ProcedureStatusObserverFunc adapts a function to ProcedureStatusObserver.
+type ProcedureStatusObserverFunc func(update ProcedureStatusUpdate)
+
+func (f ProcedureStatusObserverFunc) ObserveProcedureStatus(update ProcedureStatusUpdate) {
+	f(update)
 }
 
 type RuntimeUIPackageUploadAction struct {

@@ -77,9 +77,6 @@ func (s *RuntimeSession) runCommand(cmd string, extraEnv ...map[string]map[strin
 		Ports:        runtimePorts,
 		Routing:      routing,
 		ProcedureEnv: procedureEnv,
-		ProcedureStatusObserver: func(procedure string, status domain.ScrollLockStatus, exitCode *int) {
-			s.persistProcedureStatus(cmd, procedure, status, exitCode)
-		},
 	})
 	if err != nil {
 		s.setCommandProcedureStatus(cmd, command, domain.ScrollLockStatusError, exitCode)
