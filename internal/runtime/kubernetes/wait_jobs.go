@@ -151,6 +151,9 @@ func (b *Backend) jobStartupFailure(ctx context.Context, namespace string, jobNa
 	for _, pod := range pods.Items {
 		for _, condition := range pod.Status.Conditions {
 			if condition.Type == corev1.PodScheduled && condition.Status == corev1.ConditionFalse && condition.Reason == corev1.PodReasonUnschedulable {
+				if strings.Contains(condition.Message, "unbound immediate PersistentVolumeClaims") {
+					continue
+				}
 				return 1, fmt.Sprintf("pod %s is unschedulable: %s", pod.Name, condition.Message), true
 			}
 		}
