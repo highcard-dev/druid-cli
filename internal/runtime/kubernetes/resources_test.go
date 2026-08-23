@@ -535,6 +535,31 @@ func TestCreateFreshJobKeepsFailedJob(t *testing.T) {
 	}
 }
 
+func TestCreateFreshJobReusesPendingJob(t *testing.T) {
+	existing := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{Name: "pending", Namespace: "druid", UID: "existing"},
+	}
+	client := fake.NewSimpleClientset(existing)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
+
+	created, err := backend.createFreshJob(context.Background(), &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{Name: "pending", Namespace: "druid"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.UID != existing.UID {
+		t.Fatalf("job UID = %q, want existing UID %q", created.UID, existing.UID)
+	}
+	jobs, err := client.BatchV1().Jobs("druid").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs.Items) != 1 {
+		t.Fatalf("jobs = %d, want 1", len(jobs.Items))
+	}
+}
+
 func TestCreateOrReuseProcedureJobRetainsFailedBaseAndCreatesRetry(t *testing.T) {
 	root := ref("druid", dataPVCName("deployment-123"))
 	base := procedureResourceName(root, "start", 1)
