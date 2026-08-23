@@ -138,9 +138,7 @@ func runRuntimeDaemon() error {
 		OperatorServiceAccount: k8sOperatorServiceAccount,
 	}
 	dockerConfig := runtimedocker.Config{WorkerImage: dockerWorkerImage, Storage: dockerStorage, BindRoot: dockerBindRoot, VolumePrefix: dockerVolumePrefix, UIS3Bucket: dockerUIS3Bucket, UIS3PublicBaseURL: dockerUIS3PublicBaseURL, UIS3Region: dockerUIS3Region, UIS3Endpoint: dockerUIS3Endpoint, UIS3Prefix: dockerUIS3Prefix, UIS3AccessKey: dockerUIS3AccessKey, UIS3SecretKey: dockerUIS3SecretKey, UIS3SessionToken: dockerUIS3SessionToken}
-	logManager := services.NewLogManager()
-	consoleService := services.NewConsoleManager(logManager)
-	runtime, err := runtimebackend.NewRuntime(runtimeBackendName, consoleService, runtimeStateDir, runtimebackend.WithKubernetesConfig(kubernetesConfig), runtimebackend.WithDockerConfig(dockerConfig))
+	runtime, err := runtimebackend.NewRuntime(runtimeBackendName, runtimeStateDir, runtimebackend.WithKubernetesConfig(kubernetesConfig), runtimebackend.WithDockerConfig(dockerConfig))
 	if err != nil {
 		return err
 	}
@@ -184,9 +182,9 @@ func runRuntimeDaemon() error {
 	if err != nil {
 		return err
 	}
-	scrollHandler := runtimehandlers.NewScrollHandler(supervisor, consoleService, logManager, authorizer)
+	scrollHandler := runtimehandlers.NewScrollHandler(supervisor, authorizer)
 	scrollHandler.SetAllowUnauthenticatedPublic(runtimeAllowUnauthenticatedPublic)
-	websocketHandler := runtimehandlers.NewWebsocketHandler(consoleService)
+	websocketHandler := runtimehandlers.NewWebsocketHandler()
 	websocketHandler.SetScrollHandler(scrollHandler)
 	websocketHandler.SetAuthorizer(authorizer)
 	websocketHandler.SetAllowUnauthenticatedPublic(runtimeAllowUnauthenticatedPublic)

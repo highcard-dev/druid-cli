@@ -2,34 +2,28 @@ package handlers
 
 import (
 	"errors"
-	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	appservices "github.com/highcard-dev/daemon/apps/druid/core/services"
 	"github.com/highcard-dev/daemon/internal/api"
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
-	"github.com/highcard-dev/daemon/internal/core/services"
 )
 
 type ScrollHandler struct {
 	supervisor                 *appservices.RuntimeSupervisor
-	consoleService             *services.ConsoleManager
-	logService                 *services.LogManager
 	authorizer                 ports.AuthorizerServiceInterface
 	allowUnauthenticatedPublic bool
 }
 
-func NewScrollHandler(supervisor *appservices.RuntimeSupervisor, consoleService *services.ConsoleManager, logService *services.LogManager, authorizer ...ports.AuthorizerServiceInterface) *ScrollHandler {
+func NewScrollHandler(supervisor *appservices.RuntimeSupervisor, authorizer ...ports.AuthorizerServiceInterface) *ScrollHandler {
 	var auth ports.AuthorizerServiceInterface
 	if len(authorizer) > 0 {
 		auth = authorizer[0]
 	}
 	return &ScrollHandler{
-		supervisor:     supervisor,
-		consoleService: consoleService,
-		logService:     logService,
-		authorizer:     auth,
+		supervisor: supervisor,
+		authorizer: auth,
 	}
 }
 
@@ -232,22 +226,11 @@ func (h *ScrollHandler) GetScrollConsoles(c *fiber.Ctx, id string) error {
 	if _, err := h.getScroll(id); err != nil {
 		return err
 	}
-	prefix := id + "/"
-	consoles := map[string]*domain.Console{}
-	for consoleID, console := range h.consoleService.GetConsoles() {
-		if strings.HasPrefix(consoleID, prefix) {
-			consoles[strings.TrimPrefix(consoleID, prefix)] = console
-		}
-	}
-	return c.JSON(consoles)
-}
-
-func (h *ScrollHandler) GetScrollLogs(c *fiber.Ctx, id string) error {
-	logs, err := h.scrollLogs(id)
+	consoles, err := h.supervisor.Consoles(id)
 	if err != nil {
 		return err
 	}
-	return c.JSON(logs)
+	return c.JSON(consoles)
 }
 
 func (h *ScrollHandler) GetDaemonScroll(c *fiber.Ctx) error {
@@ -283,27 +266,6 @@ func (h *ScrollHandler) GetDaemonQueue(c *fiber.Ctx) error {
 
 func (h *ScrollHandler) GetDaemonConsoles(c *fiber.Ctx) error {
 	return h.GetScrollConsoles(c, c.Params("id"))
-}
-
-func (h *ScrollHandler) GetDaemonLogs(c *fiber.Ctx) error {
-	logs, err := h.scrollLogs(c.Params("id"))
-	if err != nil {
-		return err
-	}
-	streams := make([]map[string]any, 0, len(logs))
-	for stream, log := range logs {
-		streams = append(streams, map[string]any{"stream": stream, "log": log})
-	}
-	return c.JSON(streams)
-}
-
-func (h *ScrollHandler) GetDaemonStreamLogs(c *fiber.Ctx) error {
-	logs, err := h.scrollLogs(c.Params("id"))
-	if err != nil {
-		return err
-	}
-	stream := c.Params("stream")
-	return c.JSON(map[string]any{"stream": stream, "log": logs[stream]})
 }
 
 func (h *ScrollHandler) GetDaemonPorts(c *fiber.Ctx) error {
@@ -435,25 +397,4 @@ func (h *ScrollHandler) getScroll(id string) (*domain.RuntimeScroll, error) {
 		return nil, fiber.NewError(fiber.StatusNotFound, err.Error())
 	}
 	return runtimeScroll, err
-}
-
-func (h *ScrollHandler) scrollLogs(id string) (map[string][]string, error) {
-	if _, err := h.getScroll(id); err != nil {
-		return nil, err
-	}
-	prefix := id + "/"
-	logs := map[string][]string{}
-	for streamID, log := range h.logService.GetStreams() {
-		if !strings.HasPrefix(streamID, prefix) {
-			continue
-		}
-		response := make(chan []byte, 100)
-		log.Req <- response
-		lines := []string{}
-		for line := range response {
-			lines = append(lines, string(line))
-		}
-		logs[strings.TrimPrefix(streamID, prefix)] = lines
-	}
-	return logs, nil
 }

@@ -8,22 +8,9 @@ const (
 )
 
 type Console struct {
-	Channel *BroadcastChannel `json:"-" validate:"required"`
-
-	WriteInput func(data string) error `json:"-"`
-
 	Type ConsoleType `json:"type" validate:"required"`
 
 	InputMode string `json:"inputMode" validate:"required"`
 
 	Exit *int `json:"exit,omitempty"`
 } //@name Console
-
-type StreamItem struct {
-	Data   string
-	Stream string
-}
-
-func (c *Console) MarkExited(exitCode int) {
-	c.Exit = &exitCode
-}

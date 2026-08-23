@@ -39,27 +39,36 @@ func (s *RuntimeSupervisor) runPullWorker(ctx context.Context, runtimeService po
 		CallbackURL:         callbackURL,
 		RegistryCredentials: registryCredentials,
 	}
-	if err := runtimeService.SpawnPullWorker(waitCtx, action); err != nil {
+	workerDone, err := runtimeService.SpawnPullWorker(waitCtx, action)
+	if err != nil {
 		s.workerCallbacks.Cancel(runtimeID)
 		return nil, err
 	}
-	select {
-	case result, ok := <-resultCh:
-		if !ok {
-			return nil, fmt.Errorf("worker callback closed before result")
+	for {
+		select {
+		case result, ok := <-resultCh:
+			if !ok {
+				return nil, fmt.Errorf("worker callback closed before result")
+			}
+			if result.Error != "" {
+				return nil, errors.New(result.Error)
+			}
+			return &ports.RuntimeMaterialization{
+				Artifact:       artifact,
+				ArtifactDigest: result.ArtifactDigest,
+				Root:           root,
+				ScrollYAML:     []byte(result.ScrollYAML),
+			}, nil
+		case workerErr := <-workerDone:
+			workerDone = nil
+			if workerErr != nil {
+				s.workerCallbacks.Cancel(runtimeID)
+				return nil, workerErr
+			}
+		case <-waitCtx.Done():
+			s.workerCallbacks.Cancel(runtimeID)
+			return nil, fmt.Errorf("worker action for runtime %s timed out: %w", runtimeID, waitCtx.Err())
 		}
-		if result.Error != "" {
-			return nil, errors.New(result.Error)
-		}
-		return &ports.RuntimeMaterialization{
-			Artifact:       artifact,
-			ArtifactDigest: result.ArtifactDigest,
-			Root:           root,
-			ScrollYAML:     []byte(result.ScrollYAML),
-		}, nil
-	case <-waitCtx.Done():
-		s.workerCallbacks.Cancel(runtimeID)
-		return nil, fmt.Errorf("worker action for runtime %s timed out: %w", runtimeID, waitCtx.Err())
 	}
 }
 

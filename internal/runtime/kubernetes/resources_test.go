@@ -20,7 +20,6 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
-	coreservices "github.com/highcard-dev/daemon/internal/core/services"
 )
 
 func setStatsReader(backend *Backend, nodeName string, summary *nodeStatsSummary, err error) {
@@ -32,6 +31,13 @@ func setStatsReader(backend *Backend, nodeName string, summary *nodeStatsSummary
 			return nil, fmt.Errorf("unexpected node %s", node)
 		}
 		return summary, nil
+	}
+}
+
+func assertFinishedJobTTL(t *testing.T, job *batchv1.Job) {
+	t.Helper()
+	if job.Spec.TTLSecondsAfterFinished == nil || *job.Spec.TTLSecondsAfterFinished != finishedJobTTLSeconds {
+		t.Fatalf("TTLSecondsAfterFinished = %#v, want %d", job.Spec.TTLSecondsAfterFinished, finishedJobTTLSeconds)
 	}
 }
 
@@ -74,7 +80,7 @@ func ptrString(value string) *string {
 }
 
 func TestRootRefUsesRequestedNamespace(t *testing.T) {
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset())
+	backend := NewWithClient(Config{Namespace: "druid"}, fake.NewSimpleClientset())
 	if got, want := backend.RootRef("deployment-123", "games"), ref("games", dataPVCName("deployment-123")); got != want {
 		t.Fatalf("RootRef = %s, want %s", got, want)
 	}
@@ -103,6 +109,7 @@ func TestProcedureJobSpecBuildsDeterministicMountsAndLabels(t *testing.T) {
 	if job.Namespace != "druid" {
 		t.Fatalf("namespace = %s, want druid", job.Namespace)
 	}
+	assertFinishedJobTTL(t, job)
 	if job.Labels[labelManagedBy] != "druid" || job.Labels[labelProcedure] != "start" {
 		t.Fatalf("labels = %#v", job.Labels)
 	}
@@ -127,7 +134,7 @@ func TestPinPodToRuntimeNodeUsesRunningPVCConsumer(t *testing.T) {
 	runtimePod := runningProcedurePod("druid", root, "start", "start", 1, "runtime-pod", "start-job")
 	runtimePod.Spec.Volumes = []corev1.Volume{pvcVolume("data", "druid-static-web-data")}
 	client := fake.NewSimpleClientset(runtimePod)
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 
 	podSpec := corev1.PodSpec{}
 	if err := backend.pinPodToRuntimeNode(context.Background(), "druid", "druid-static-web-data", &podSpec); err != nil {
@@ -147,7 +154,7 @@ func TestPinPodToRuntimeNodeIgnoresInactiveOrUnrelatedPods(t *testing.T) {
 	unrelated.Name = "unrelated-pod"
 	unrelated.Spec.Volumes = []corev1.Volume{pvcVolume("data", "another-pvc")}
 	client := fake.NewSimpleClientset(inactive, unrelated)
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 
 	podSpec := corev1.PodSpec{}
 	if err := backend.pinPodToRuntimeNode(context.Background(), "druid", "druid-static-web-data", &podSpec); err != nil {
@@ -163,7 +170,7 @@ func TestCreateOrReuseProcedureJobPinsToRuntimePVCNode(t *testing.T) {
 	runtimePod := runningProcedurePod("druid", root, "start", "start", 1, "runtime-pod", "start-job")
 	runtimePod.Spec.Volumes = []corev1.Volume{pvcVolume("data", "druid-static-web-data")}
 	client := fake.NewSimpleClientset(runtimePod)
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 	procedure := &domain.Procedure{Image: "alpine:3.20", Command: []string{"true"}}
 
 	job, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "build", "build", "build-job", procedure, nil)
@@ -282,6 +289,84 @@ func TestProcedureStatefulSetSpecBuildsPersistentWorkload(t *testing.T) {
 	}
 }
 
+func TestPersistentStatefulSetRunsEarlierProceduresAsInitContainers(t *testing.T) {
+	root := ref("druid", "druid-minecraft-data")
+	command := &domain.CommandInstructionSet{Run: domain.RunModePersistent, Procedures: []*domain.Procedure{
+		{
+			Id:            ptrString("coldstart"),
+			Image:         "druid:local",
+			Command:       []string{"druid-coldstarter"},
+			ExpectedPorts: []domain.ExpectedPort{{Name: "main"}, {Name: "rcon"}},
+			Mounts:        []domain.Mount{{Path: "/runtime", SubPath: "."}},
+		},
+		{
+			Id:            ptrString("start"),
+			Image:         "eclipse-temurin:21-jre",
+			Command:       []string{"sh", "./start.sh"},
+			ExpectedPorts: []domain.ExpectedPort{{Name: "main"}, {Name: "rcon"}},
+			Mounts:        []domain.Mount{{Path: "/server"}},
+		},
+	}}
+	statefulSet, err := persistentStatefulSetSpec("druid", root, "start", "minecraft-start-1", command, map[string]map[string]string{
+		"coldstart": {"DRUID_PORT_MAIN": "25565"},
+		"start":     {"DRUID_PORT_MAIN": "25565"},
+	}, "registry-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pod := statefulSet.Spec.Template.Spec
+	if len(pod.InitContainers) != 1 || pod.InitContainers[0].Name != "init-coldstart" || pod.InitContainers[0].Image != "druid:local" {
+		t.Fatalf("init containers = %#v", pod.InitContainers)
+	}
+	if len(pod.Containers) != 1 || pod.Containers[0].Name != "main" || pod.Containers[0].Image != "eclipse-temurin:21-jre" {
+		t.Fatalf("containers = %#v", pod.Containers)
+	}
+	if statefulSet.Spec.Selector.MatchLabels[labelProcedure] != "start" {
+		t.Fatalf("selector = %#v", statefulSet.Spec.Selector.MatchLabels)
+	}
+	for _, portName := range []string{"main", "rcon"} {
+		if statefulSet.Spec.Template.Labels[portSelectorLabel(portName)] != "true" {
+			t.Fatalf("pod labels = %#v, want port %s", statefulSet.Spec.Template.Labels, portName)
+		}
+	}
+}
+
+func TestRunPersistentCommandCreatesOneStatefulSetAndInitReadyServices(t *testing.T) {
+	root := ref("druid", "druid-minecraft-data")
+	legacyLabels := baseLabels("druid-minecraft-data")
+	legacyLabels[labelCommand] = "start"
+	legacyLabels[labelProcedure] = "coldstart"
+	client := fake.NewSimpleClientset(&appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: "minecraft-start-0", Namespace: "druid", Labels: legacyLabels}})
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
+	command := &domain.CommandInstructionSet{Run: domain.RunModePersistent, Procedures: []*domain.Procedure{
+		{Id: ptrString("coldstart"), Image: "druid:local", ExpectedPorts: []domain.ExpectedPort{{Name: "main"}}},
+		{Id: ptrString("start"), Image: "minecraft:local", ExpectedPorts: []domain.ExpectedPort{{Name: "main"}}},
+	}}
+	if _, err := backend.RunCommand(ports.RuntimeCommand{
+		ScrollID: "minecraft",
+		Root:     root,
+		Name:     "start",
+		Command:  command,
+		Ports:    []domain.Port{{Name: "main", Port: 25565, Protocol: "tcp"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	statefulSets, err := client.AppsV1().StatefulSets("druid").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(statefulSets.Items) != 1 || statefulSets.Items[0].Name != "minecraft-start-1" || len(statefulSets.Items[0].Spec.Template.Spec.InitContainers) != 1 {
+		t.Fatalf("StatefulSets = %#v", statefulSets.Items)
+	}
+	service, err := client.CoreV1().Services("druid").Get(context.Background(), portServiceName(root, "main"), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !service.Spec.PublishNotReadyAddresses {
+		t.Fatal("persistent port Service must publish the init-running Pod")
+	}
+}
+
 func TestProcedureWorkloadsLabelEveryExpectedPort(t *testing.T) {
 	procedure := &domain.Procedure{
 		Image: "nginx:1.27",
@@ -323,6 +408,7 @@ func TestWorkerPullJobSpecRunsDruidWorkerPull(t *testing.T) {
 		TokenFile:   "token-file",
 	}
 	job := workerPullJobSpec("druid", "worker-pull", "runtime-pvc", "druid-cli:test", action, "pull-secret", "runtime-registry", true, "druid-cli")
+	assertFinishedJobTTL(t, job)
 	container := job.Spec.Template.Spec.Containers[0]
 	command := strings.Join(container.Command, " ")
 	for _, want := range []string{"druid --config /tmp/druid-registry.json", "worker pull", "--mode update", "--runtime-id deployment-123", "--callback-url", "chown -R 1000:1000"} {
@@ -359,11 +445,11 @@ func TestWorkerPullJobSpecRunsDruidWorkerPull(t *testing.T) {
 
 func TestSpawnPullWorkerCreateUsesFinalPVCAndWorkerJob(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "druid", PullImage: "druid-cli:test"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid", PullImage: "druid-cli:test"}, client)
 	var jobs []*batchv1.Job
-	backend.jobLogRunner = func(ctx context.Context, job *batchv1.Job) ([]byte, error) {
+	backend.helperJobRunner = func(ctx context.Context, job *batchv1.Job) error {
 		jobs = append(jobs, job.DeepCopy())
-		return nil, nil
+		return nil
 	}
 	action := ports.RuntimeWorkerAction{
 		Mode:        ports.RuntimeWorkerModeCreate,
@@ -375,7 +461,11 @@ func TestSpawnPullWorkerCreateUsesFinalPVCAndWorkerJob(t *testing.T) {
 		CallbackURL: "http://druid-cli:8083/internal/v1/workers/deployment-123/complete",
 		TokenFile:   "token-file",
 	}
-	if err := backend.SpawnPullWorker(context.Background(), action); err != nil {
+	done, err := backend.SpawnPullWorker(context.Background(), action)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
 	pvcs, err := client.CoreV1().PersistentVolumeClaims("games").List(context.Background(), metav1.ListOptions{})
@@ -411,7 +501,7 @@ func TestDeleteFinishedJobRemovesJob(t *testing.T) {
 	client := fake.NewSimpleClientset(&batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{Name: "finished", Namespace: "druid"},
 	})
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 
 	backend.deleteFinishedJob(context.Background(), "druid", "finished")
 
@@ -428,7 +518,7 @@ func TestCreateFreshJobKeepsFailedJob(t *testing.T) {
 			Status: corev1.ConditionTrue,
 		}}},
 	})
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 
 	created, err := backend.createFreshJob(context.Background(), &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "failed", Namespace: "druid"}})
 	if err != nil {
@@ -459,7 +549,7 @@ func TestCreateOrReuseProcedureJobRetainsFailedBaseAndCreatesRetry(t *testing.T)
 			Status: corev1.ConditionTrue,
 		}}},
 	})
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 
 	created, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "start", "start.1", base, &domain.Procedure{Image: "alpine"}, nil)
 	if err != nil {
@@ -480,7 +570,7 @@ func TestCreateOrReuseProcedureJobUsesNextRetryAttempt(t *testing.T) {
 		failedProcedureJob(root, base, "start", "start.1", 1),
 		failedProcedureJob(root, base+"-r2", "start", "start.1", 2),
 	)
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 
 	created, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "start", "start.1", base, &domain.Procedure{Image: "alpine"}, nil)
 	if err != nil {
@@ -503,7 +593,7 @@ func TestCreateOrReuseProcedureJobReusesActiveAttempt(t *testing.T) {
 		Status: batchv1.JobStatus{Active: 1},
 	}
 	client := fake.NewSimpleClientset(active)
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 
 	created, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "start", "coldstart", base, &domain.Procedure{Image: "alpine"}, nil)
 	if err != nil {
@@ -542,7 +632,7 @@ func TestResumeRestartProcedureIndexDeletesSupersededActiveProcedure(t *testing.
 		Status: batchv1.JobStatus{Active: 1},
 	}
 	client := fake.NewSimpleClientset(coldstartJob, startJob)
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 
 	resumeIndex, err := backend.resumeRestartProcedureIndex(context.Background(), root, "start", &domain.CommandInstructionSet{Procedures: []*domain.Procedure{
 		{Id: &coldstart},
@@ -574,7 +664,7 @@ func TestResumeRestartProcedureIndexKeepsOnlyActiveFirstProcedure(t *testing.T) 
 		Status: batchv1.JobStatus{Active: 1},
 	}
 	client := fake.NewSimpleClientset(coldstartJob)
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 
 	resumeIndex, err := backend.resumeRestartProcedureIndex(context.Background(), root, "start", &domain.CommandInstructionSet{Procedures: []*domain.Procedure{{Id: &coldstart}}})
 	if err != nil {
@@ -588,7 +678,7 @@ func TestResumeRestartProcedureIndexKeepsOnlyActiveFirstProcedure(t *testing.T) 
 	}
 }
 
-func TestCreateOrReuseProcedureJobDeletesSucceededAttempt(t *testing.T) {
+func TestCreateOrReuseProcedureJobRetainsSucceededAttempt(t *testing.T) {
 	root := ref("druid", dataPVCName("deployment-123"))
 	base := procedureResourceName(root, "install", 0)
 	client := fake.NewSimpleClientset(&batchv1.Job{
@@ -599,14 +689,17 @@ func TestCreateOrReuseProcedureJobDeletesSucceededAttempt(t *testing.T) {
 		},
 		Status: batchv1.JobStatus{Succeeded: 1},
 	})
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 
 	created, err := backend.createOrReuseProcedureJob(context.Background(), "druid", root, "install", "install", base, &domain.Procedure{Image: "alpine"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created.Name != base {
-		t.Fatalf("job name = %s, want clean base %s after deleting succeeded attempt", created.Name, base)
+	if want := procedureAttemptName(base, 2); created.Name != want {
+		t.Fatalf("job name = %s, want %s", created.Name, want)
+	}
+	if _, err := client.BatchV1().Jobs("druid").Get(context.Background(), base, metav1.GetOptions{}); err != nil {
+		t.Fatalf("retained succeeded job: %v", err)
 	}
 }
 
@@ -628,7 +721,7 @@ func TestWaitForJobReportsPodFailureReason(t *testing.T) {
 			}},
 		}}},
 	}
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset(job, pod))
+	backend := NewWithClient(Config{Namespace: "druid"}, fake.NewSimpleClientset(job, pod))
 
 	exitCode, err := backend.waitForJob(context.Background(), "druid", "failed-start")
 	if err == nil {
@@ -642,8 +735,27 @@ func TestWaitForJobReportsPodFailureReason(t *testing.T) {
 	}
 }
 
+func TestWaitForJobImmediatelyReportsUnschedulablePod(t *testing.T) {
+	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "unschedulable", Namespace: "druid"}}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "unschedulable-pod", Namespace: "druid", Labels: map[string]string{"job-name": job.Name}},
+		Status: corev1.PodStatus{Conditions: []corev1.PodCondition{{
+			Type: corev1.PodScheduled, Status: corev1.ConditionFalse, Reason: corev1.PodReasonUnschedulable, Message: "insufficient memory",
+		}}},
+	}
+	backend := NewWithClient(Config{Namespace: "druid"}, fake.NewSimpleClientset(job, pod))
+
+	exitCode, err := backend.waitForJob(context.Background(), "druid", job.Name)
+	if err == nil || !strings.Contains(err.Error(), "insufficient memory") {
+		t.Fatalf("waitForJob error = %v, want unschedulable detail", err)
+	}
+	if exitCode == nil || *exitCode != 1 {
+		t.Fatalf("exitCode = %#v, want 1", exitCode)
+	}
+}
+
 func TestWaitForJobUsesRecentSuccessfulDeletion(t *testing.T) {
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset())
+	backend := NewWithClient(Config{Namespace: "druid"}, fake.NewSimpleClientset())
 	backend.recordJobExit("druid", "finished", 0)
 
 	exitCode, err := backend.waitForJob(context.Background(), "druid", "finished")
@@ -656,7 +768,7 @@ func TestWaitForJobUsesRecentSuccessfulDeletion(t *testing.T) {
 }
 
 func TestWaitForJobMissingWithoutRecentExitFails(t *testing.T) {
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset())
+	backend := NewWithClient(Config{Namespace: "druid"}, fake.NewSimpleClientset())
 
 	if _, err := backend.waitForJob(context.Background(), "druid", "missing"); !apierrors.IsNotFound(err) {
 		t.Fatalf("waitForJob error = %v, want not found", err)
@@ -734,7 +846,7 @@ func TestStartupContainerFailureReportsNonzeroTermination(t *testing.T) {
 
 func TestExpectedServicesUseRootNamespace(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "druid-system"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid-system"}, client)
 	root := ref("games", dataPVCName("deployment-123"))
 	procedure := &domain.Procedure{ExpectedPorts: []domain.ExpectedPort{{Name: "http"}}}
 
@@ -752,7 +864,7 @@ func TestExpectedServicesUseRootNamespace(t *testing.T) {
 
 func TestRegistryConfigSecretUsesDruidClientConfigShape(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 	secretName, cleanup, err := backend.createRegistryConfigSecret(context.Background(), "druid", "artifact", []domain.RegistryCredential{{
 		Host:     "artifacts.druid.gg/user/scroll",
 		Username: "robot$scroll",
@@ -779,7 +891,7 @@ func TestRegistryConfigSecretUsesDruidClientConfigShape(t *testing.T) {
 
 func TestExpectedPortsUsesPodStatsTraffic(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 	root := ref("druid", "druid-static-web-data")
 	procedureName := "start"
 	pod := runningProcedurePod("druid", root, "start", procedureName, 1, "pod-start-stats", "start-job")
@@ -835,7 +947,7 @@ func TestExpectedPortsUsesPodStatsTraffic(t *testing.T) {
 
 func TestExpectedPortsDegradesWhenPodStatsUnavailable(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 	root := ref("druid", "druid-static-web-data")
 	pod := runningProcedurePod("druid", root, "start", "start", 1, "pod-start-unavailable", "start-job")
 	if _, err := client.CoreV1().Pods("druid").Create(context.Background(), pod, metav1.CreateOptions{}); err != nil {
@@ -882,7 +994,7 @@ func TestExpectedPortsDegradesWhenPodStatsUnavailable(t *testing.T) {
 
 func TestExpectedPortsWithoutActivePodDoesNotBorrowTraffic(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 	root := ref("druid", "druid-static-web-data")
 	procedureName := "start"
 	unrelated := runningProcedurePod("druid", ref("druid", "other-scroll"), "start", procedureName, 1, "pod-other", "start-job")
@@ -945,7 +1057,7 @@ func TestKeepAliveTrafficStopsIdleRunningProcedure(t *testing.T) {
 		Status: batchv1.JobStatus{Active: 1},
 	}
 	client := fake.NewSimpleClientset(job, pod)
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 	globalPodTrafficStore.record("pod-idle-stop", 100, 50, time.Now().Add(-2*time.Minute))
 	setStatsReader(backend, "node-a", podStats("druid", "pod-idle-stop", 100, 50), nil)
 	stopper := backend.keepAliveTrafficIdleStopper("druid", root, "start", "start", &domain.Procedure{
@@ -980,7 +1092,7 @@ func TestKeepAliveTrafficKeepsProcedureWhenTrafficPresent(t *testing.T) {
 		Status: batchv1.JobStatus{Active: 1},
 	}
 	client := fake.NewSimpleClientset(job, pod)
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 	globalPodTrafficStore.record("pod-traffic-present", 100, 50, time.Now().Add(-2*time.Minute))
 	globalPodTrafficStore.record("pod-traffic-present", 100, 50, time.Now().Add(-500*time.Millisecond))
 	setStatsReader(backend, "node-a", podStats("druid", "pod-traffic-present", 102, 55), nil)
@@ -1013,7 +1125,7 @@ func TestKeepAliveTrafficKeepsProcedureWhenPodStatsUnavailable(t *testing.T) {
 		Status: batchv1.JobStatus{Active: 1},
 	}
 	client := fake.NewSimpleClientset(job, pod)
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 	setStatsReader(backend, "node-a", nil, errors.New("stats unavailable"))
 	stopper := backend.keepAliveTrafficIdleStopper("druid", root, "start", "start", &domain.Procedure{
 		ExpectedPorts: []domain.ExpectedPort{{Name: "main", KeepAliveTraffic: "1b/1s"}},
@@ -1044,7 +1156,7 @@ func TestKeepAliveTrafficKeepsProcedureWhilePodStatsWarmUp(t *testing.T) {
 		Status: batchv1.JobStatus{Active: 1},
 	}
 	client := fake.NewSimpleClientset(job, pod)
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 	setStatsReader(backend, "node-a", podStats("druid", "pod-stats-warmup", 100, 50), nil)
 	stopper := backend.keepAliveTrafficIdleStopper("druid", root, "start", "start", &domain.Procedure{
 		ExpectedPorts: []domain.ExpectedPort{{Name: "main", KeepAliveTraffic: "1b/1s"}},
@@ -1072,7 +1184,7 @@ func TestKeepAliveTrafficWaitsForFullWindowBeforeStopping(t *testing.T) {
 		Status: batchv1.JobStatus{Active: 1},
 	}
 	client := fake.NewSimpleClientset(job, pod)
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 	globalPodTrafficStore.record("pod-full-window", 100, 50, time.Now().Add(-2*time.Minute))
 	setStatsReader(backend, "node-a", podStats("druid", "pod-full-window", 100, 50), nil)
 	stopper := backend.keepAliveTrafficIdleStopper("druid", root, "start", "start", &domain.Procedure{
@@ -1092,7 +1204,7 @@ func TestKeepAliveTrafficWaitsForFullWindowBeforeStopping(t *testing.T) {
 }
 
 func TestKeepAliveTrafficDoesNotStopColdstarter(t *testing.T) {
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset())
+	backend := NewWithClient(Config{Namespace: "druid"}, fake.NewSimpleClientset())
 	stopper := backend.keepAliveTrafficIdleStopper("druid", ref("druid", "druid-static-web-data"), "start", "coldstart", &domain.Procedure{
 		Command:       []string{"druid-coldstarter"},
 		ExpectedPorts: []domain.ExpectedPort{{Name: "main", KeepAliveTraffic: "1b/1s"}},
@@ -1103,7 +1215,7 @@ func TestKeepAliveTrafficDoesNotStopColdstarter(t *testing.T) {
 }
 
 func TestRoutingTargetsReturnStableBackendServices(t *testing.T) {
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset())
+	backend := NewWithClient(Config{Namespace: "druid"}, fake.NewSimpleClientset())
 	root := ref("druid", "druid-static-web-data")
 	procedureID := "web"
 
@@ -1138,7 +1250,7 @@ func TestRoutingTargetsReturnStableBackendServices(t *testing.T) {
 }
 
 func TestRoutingTargetsIncludeAllUnclaimedRuntimePorts(t *testing.T) {
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset())
+	backend := NewWithClient(Config{Namespace: "druid"}, fake.NewSimpleClientset())
 	root := ref("druid", "druid-static-web-data")
 	ports := []domain.Port{{Name: "vscode", Port: 3333, Protocol: "http"}, {Name: "unused-game-port", Port: 25565, Protocol: "tcp"}}
 	targets, err := backend.RoutingTargets(root, nil, ports)
@@ -1157,7 +1269,7 @@ func TestRoutingTargetsIncludeAllUnclaimedRuntimePorts(t *testing.T) {
 
 func TestPortRoutingTargetUsesStableServiceCreatedByCommand(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 	root := ref("druid", "druid-static-web-data")
 	ports := []domain.Port{{Name: "webdav", Port: 8084, Protocol: "http"}}
 
@@ -1215,7 +1327,7 @@ func TestServiceSpecUsesRuntimePortForServiceAndTarget(t *testing.T) {
 }
 
 func TestRoutingTargetsCollapseColdstarterAndRuntimePort(t *testing.T) {
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset())
+	backend := NewWithClient(Config{Namespace: "druid"}, fake.NewSimpleClientset())
 	root := ref("druid", "druid-minecraft-data")
 	coldstart := "coldstart"
 	start := "start"
@@ -1249,7 +1361,7 @@ func TestRoutingTargetsCollapseColdstarterAndRuntimePort(t *testing.T) {
 
 func TestExpectedServiceForSharedPortKeepsStableLabelSelector(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 	root := ref("druid", "druid-minecraft-data")
 	coldstart := &domain.Procedure{ExpectedPorts: []domain.ExpectedPort{{Name: "main"}}}
 	start := &domain.Procedure{ExpectedPorts: []domain.ExpectedPort{{Name: "main"}}}
@@ -1306,7 +1418,7 @@ func TestExpectedServiceReplacesLegacyProcedureNamedService(t *testing.T) {
 	legacyLabels := baseLabels(refPVCName(root))
 	legacyLabels[labelPortName] = "http"
 	client := fake.NewSimpleClientset(&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: legacyName, Namespace: "druid", Labels: legacyLabels}})
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 	procedure := &domain.Procedure{ExpectedPorts: []domain.ExpectedPort{{Name: "http"}}}
 	if err := backend.ensureExpectedServices(context.Background(), root, "start", "web", procedure, []domain.Port{{Name: "http", Port: 8080, Protocol: "tcp"}}); err != nil {
 		t.Fatal(err)
@@ -1320,7 +1432,7 @@ func TestExpectedServiceReplacesLegacyProcedureNamedService(t *testing.T) {
 }
 
 func TestRoutingTargetsUseStablePortSelector(t *testing.T) {
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset())
+	backend := NewWithClient(Config{Namespace: "druid"}, fake.NewSimpleClientset())
 	root := ref("druid", "druid-minecraft-data")
 	coldstart := "coldstart"
 	start := "start"
@@ -1351,7 +1463,7 @@ func TestRoutingTargetsUseStablePortSelector(t *testing.T) {
 
 func TestStopRuntimeDeletesWorkloadsButPreservesDataAndServices(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 	root := ref("druid", "druid-static-web-data")
 	labels := baseLabels("druid-static-web-data")
 	labels[labelProcedure] = "web"
@@ -1415,7 +1527,7 @@ func TestStopCommandPreservesStablePortService(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := fake.NewSimpleClientset(service)
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 	if err := backend.StopCommand(root, "start"); err != nil {
 		t.Fatal(err)
 	}
@@ -1426,7 +1538,7 @@ func TestStopCommandPreservesStablePortService(t *testing.T) {
 
 func TestDeleteRuntimePurgesServicesAndDataWhenRequested(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 	root := ref("druid", "druid-static-web-data")
 	service, err := serviceSpec("druid", root, portServiceSelector(refPVCName(root), "http"), "http", domain.Port{Name: "http", Port: 8080, Protocol: "tcp"})
 	if err != nil {
@@ -1453,6 +1565,7 @@ func TestDeleteRuntimePurgesServicesAndDataWhenRequested(t *testing.T) {
 
 func TestBackupJobSpecUsesRuntimePVCAndRegistryEnv(t *testing.T) {
 	backup := backupJobSpec("druid", "backup", "runtime-pvc", "druid-cli:test", "registry.local/scroll:backup", "registry-secret", "", true)
+	assertFinishedJobTTL(t, backup)
 	if backup.Spec.Template.Spec.Containers[0].Command[1] != "push" {
 		t.Fatalf("backup command = %#v", backup.Spec.Template.Spec.Containers[0].Command)
 	}
@@ -1468,8 +1581,8 @@ func TestBackupJobSpecUsesRuntimePVCAndRegistryEnv(t *testing.T) {
 }
 
 func TestSpawnPullWorkerRequiresPullImage(t *testing.T) {
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset())
-	err := backend.SpawnPullWorker(context.Background(), ports.RuntimeWorkerAction{
+	backend := NewWithClient(Config{Namespace: "druid"}, fake.NewSimpleClientset())
+	_, err := backend.SpawnPullWorker(context.Background(), ports.RuntimeWorkerAction{
 		Mode:      ports.RuntimeWorkerModeCreate,
 		RuntimeID: "scroll",
 		Artifact:  "ghcr.io/example/scroll:latest",
@@ -1484,8 +1597,8 @@ func TestSpawnPullWorkerRequiresPullImage(t *testing.T) {
 }
 
 func TestSpawnPullWorkerRejectsLocalArtifactPath(t *testing.T) {
-	backend := NewWithClient(Config{Namespace: "druid", PullImage: "druid-cli:test"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), fake.NewSimpleClientset())
-	err := backend.SpawnPullWorker(context.Background(), ports.RuntimeWorkerAction{
+	backend := NewWithClient(Config{Namespace: "druid", PullImage: "druid-cli:test"}, fake.NewSimpleClientset())
+	_, err := backend.SpawnPullWorker(context.Background(), ports.RuntimeWorkerAction{
 		Mode:      ports.RuntimeWorkerModeCreate,
 		RuntimeID: "scroll",
 		Artifact:  t.TempDir(),
@@ -1501,7 +1614,7 @@ func TestSpawnPullWorkerRejectsLocalArtifactPath(t *testing.T) {
 
 func TestSignalDeletesPersistentStatefulSetAndPods(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "druid"}, coreservices.NewConsoleManager(coreservices.NewLogManager()), client)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
 	root := ref("druid", "druid-static-web-data")
 	name := "static-web-start-0"
 	labels := baseLabels("druid-static-web-data")

@@ -1,24 +1,24 @@
 package handlers
 
 import (
+	"context"
+	"io"
 	"time"
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/highcard-dev/daemon/internal/core/ports"
-	"github.com/highcard-dev/daemon/internal/core/services"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"go.uber.org/zap"
 )
 
 type WebsocketHandler struct {
-	consoleService             *services.ConsoleManager
 	scrolls                    *ScrollHandler
 	authorizer                 ports.AuthorizerServiceInterface
 	allowUnauthenticatedPublic bool
 }
 
-func NewWebsocketHandler(consoleService *services.ConsoleManager) *WebsocketHandler {
-	return &WebsocketHandler{consoleService: consoleService}
+func NewWebsocketHandler() *WebsocketHandler {
+	return &WebsocketHandler{}
 }
 
 func (h *WebsocketHandler) SetScrollHandler(scrolls *ScrollHandler) {
@@ -34,11 +34,7 @@ func (h *WebsocketHandler) SetAllowUnauthenticatedPublic(allow bool) {
 }
 
 func (h *WebsocketHandler) AttachConsole(c *websocket.Conn) {
-	consoleID := c.Params("console")
-	if id := c.Params("id"); id != "" {
-		consoleID = id + "/" + consoleID
-	}
-	h.attach(c, consoleID)
+	h.attach(c, c.Params("id"), c.Params("console"))
 }
 
 func (h *WebsocketHandler) AttachScrollConsole(c *websocket.Conn) {
@@ -49,17 +45,16 @@ func (h *WebsocketHandler) AttachScrollConsole(c *websocket.Conn) {
 	h.AttachConsole(c)
 }
 
-func (h *WebsocketHandler) attach(c *websocket.Conn, consoleID string) {
+func (h *WebsocketHandler) attach(c *websocket.Conn, runtimeID string, consoleID string) {
 	defer c.Close()
-
-	console := h.consoleService.GetConsole(consoleID)
-	if console == nil {
-		logger.Log().Warn("Console not found", zap.String("console", consoleID))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	session, err := h.scrolls.supervisor.OpenConsole(ctx, runtimeID, consoleID)
+	if err != nil {
+		logger.Log().Warn("Console unavailable", zap.String("runtime", runtimeID), zap.String("console", consoleID), zap.Error(err))
 		return
 	}
-
-	subscription := console.Channel.Subscribe()
-	defer console.Channel.Unsubscribe(subscription)
+	defer session.Close()
 
 	done := make(chan struct{})
 	go func() {
@@ -69,11 +64,30 @@ func (h *WebsocketHandler) attach(c *websocket.Conn, consoleID string) {
 			if err != nil {
 				return
 			}
-			if console.WriteInput != nil {
-				if err := console.WriteInput(string(data)); err != nil {
-					logger.Log().Debug("Failed to write console input", zap.Error(err))
+			if _, err := session.Write(data); err != nil {
+				logger.Log().Debug("Failed to write console input", zap.Error(err))
+				return
+			}
+		}
+	}()
+	output := make(chan []byte, 25)
+	go func() {
+		defer close(output)
+		buffer := make([]byte, 32*1024)
+		for {
+			n, err := session.Read(buffer)
+			if n > 0 {
+				select {
+				case output <- append([]byte(nil), buffer[:n]...):
+				case <-ctx.Done():
 					return
 				}
+			}
+			if err != nil {
+				if err != io.EOF && ctx.Err() == nil {
+					logger.Log().Debug("Console output ended", zap.Error(err))
+				}
+				return
 			}
 		}
 	}()
@@ -84,11 +98,11 @@ func (h *WebsocketHandler) attach(c *websocket.Conn, consoleID string) {
 		select {
 		case <-done:
 			return
-		case data, ok := <-subscription:
-			if !ok || data == nil {
+		case data, ok := <-output:
+			if !ok {
 				return
 			}
-			if err := c.WriteMessage(websocket.TextMessage, *data); err != nil {
+			if err := c.WriteMessage(websocket.TextMessage, data); err != nil {
 				return
 			}
 		case <-pingTicker.C:

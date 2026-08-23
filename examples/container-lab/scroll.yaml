@@ -50,8 +50,27 @@ commands:
             date -u '+seeded at %Y-%m-%dT%H:%M:%SZ' > /work/redis/seed.txt;
             printf 'cache seed refreshed\n' > /work/reports/seed-cache.txt
 
-  start:
+  start-cache:
     needs: [prepare, seed-cache]
+    run: persistent
+    procedures:
+      - id: cache
+        image: redis:7.4-alpine
+        expectedPorts:
+          - name: redis
+            keepAliveTraffic: 1b/5m
+        mounts:
+          - path: /data
+            sub_path: redis
+        command:
+          - redis-server
+          - --appendonly
+          - "yes"
+          - --dir
+          - /data
+
+  start:
+    needs: [start-cache]
     run: persistent
     procedures:
       - id: web
@@ -70,21 +89,6 @@ commands:
           - "8080"
           - --directory
           - /site
-
-      - id: cache
-        image: redis:7.4-alpine
-        expectedPorts:
-          - name: redis
-            keepAliveTraffic: 1b/5m
-        mounts:
-          - path: /data
-            sub_path: redis
-        command:
-          - redis-server
-          - --appendonly
-          - "yes"
-          - --dir
-          - /data
 
   verify:
     needs: [start]

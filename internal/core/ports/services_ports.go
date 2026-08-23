@@ -2,6 +2,7 @@ package ports
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -30,11 +31,6 @@ type ScrollServiceInterface interface {
 	GetCommand(cmd string) (*domain.CommandInstructionSet, error)
 }
 
-type LogManagerInterface interface {
-	GetStreams() map[string]*domain.Log
-	AddLine(stream string, sc []byte)
-}
-
 type RuntimeBackendInterface interface {
 	Name() string
 	RootRef(id string, namespace string) string
@@ -46,8 +42,8 @@ type RuntimeBackendInterface interface {
 	StopRuntime(root string) error
 	DeleteRuntime(root string, purgeData bool) error
 	BackupRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential) error
-	SpawnPullWorker(ctx context.Context, action RuntimeWorkerAction) error
-	Attach(commandName string, data string) error
+	SpawnPullWorker(ctx context.Context, action RuntimeWorkerAction) (<-chan error, error)
+	OpenConsole(ctx context.Context, root string, procedure string) (io.ReadWriteCloser, error)
 	Signal(commandName string, target string, signal string, root string) error
 }
 
@@ -181,17 +177,6 @@ type RuntimeWorkerResult struct {
 	ScrollYAML     string `json:"scroll_yaml,omitempty"`
 	ArtifactDigest string `json:"artifact_digest,omitempty"`
 	Error          string `json:"error,omitempty"`
-}
-
-type BroadcastChannelInterface interface {
-	NewHub() *domain.BroadcastChannel
-	Run()
-}
-
-type ConsoleManagerInterface interface {
-	GetConsole(consoleId string) *domain.Console
-	GetConsoles() map[string]*domain.Console
-	AddConsoleWithChannel(consoleId string, consoleType domain.ConsoleType, inputMode string, channel chan string) (*domain.Console, chan struct{})
 }
 
 type OciRegistryInterface interface {

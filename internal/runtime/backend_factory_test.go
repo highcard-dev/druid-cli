@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +16,7 @@ import (
 
 func TestNewRuntimeDockerOwnsStoreSelection(t *testing.T) {
 	previousDocker := newDockerBackend
-	newDockerBackend = func(config docker.Config, consoleManager ports.ConsoleManagerInterface, observer ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) {
+	newDockerBackend = func(config docker.Config, observer ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) {
 		if config.VolumePrefix != "lab" {
 			t.Fatalf("volume prefix = %s, want lab", config.VolumePrefix)
 		}
@@ -26,7 +27,7 @@ func TestNewRuntimeDockerOwnsStoreSelection(t *testing.T) {
 	}
 	t.Cleanup(func() { newDockerBackend = previousDocker })
 
-	runtime, err := NewRuntime("docker", nil, t.TempDir(), WithDockerConfig(docker.Config{VolumePrefix: "lab"}))
+	runtime, err := NewRuntime("docker", t.TempDir(), WithDockerConfig(docker.Config{VolumePrefix: "lab"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +46,7 @@ func TestNewRuntimeKubernetesOwnsStoreSelection(t *testing.T) {
 	stateDir := t.TempDir()
 	previousBackend := newKubernetesBackend
 	previousStore := newKubernetesStateStore
-	newKubernetesBackend = func(config runtimekubernetes.Config, consoleManager ports.ConsoleManagerInterface, observer ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) {
+	newKubernetesBackend = func(config runtimekubernetes.Config, observer ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) {
 		if config.Namespace != "druid" {
 			t.Fatalf("backend namespace = %s, want druid", config.Namespace)
 		}
@@ -65,7 +66,7 @@ func TestNewRuntimeKubernetesOwnsStoreSelection(t *testing.T) {
 		newKubernetesStateStore = previousStore
 	})
 
-	runtime, err := NewRuntime("kubernetes", nil, stateDir, WithKubernetesConfig(runtimekubernetes.Config{Namespace: "druid"}))
+	runtime, err := NewRuntime("kubernetes", stateDir, WithKubernetesConfig(runtimekubernetes.Config{Namespace: "druid"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +85,7 @@ func TestNewRuntimeKubernetesOwnsStoreSelection(t *testing.T) {
 }
 
 func TestNewRuntimeUnknownBackendErrorsOnce(t *testing.T) {
-	_, err := NewRuntime("nope", nil, t.TempDir())
+	_, err := NewRuntime("nope", t.TempDir())
 	if err == nil || !strings.Contains(err.Error(), `unknown runtime backend "nope"`) {
 		t.Fatalf("error = %v", err)
 	}
@@ -165,12 +166,14 @@ func (f fakeBackend) BackupRuntime(ctx context.Context, root string, artifact st
 	return nil
 }
 
-func (f fakeBackend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorkerAction) error {
-	return nil
+func (f fakeBackend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorkerAction) (<-chan error, error) {
+	done := make(chan error, 1)
+	done <- nil
+	return done, nil
 }
 
-func (f fakeBackend) Attach(commandName string, data string) error {
-	return nil
+func (f fakeBackend) OpenConsole(context.Context, string, string) (io.ReadWriteCloser, error) {
+	return nil, nil
 }
 
 func (f fakeBackend) Signal(commandName string, target string, signal string, root string) error {

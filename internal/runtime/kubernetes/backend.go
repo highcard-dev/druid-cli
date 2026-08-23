@@ -21,11 +21,10 @@ type Backend struct {
 	client                  k8sclient.Interface
 	restConfig              *rest.Config
 	httpClient              *http.Client
-	consoleManager          ports.ConsoleManagerInterface
 	procedureStatusObserver ports.ProcedureStatusObserver
 	config                  Config
 	statsReader             nodeStatsReader
-	jobLogRunner            func(context.Context, *batchv1.Job) ([]byte, error)
+	helperJobRunner         func(context.Context, *batchv1.Job) error
 	jobExitMu               sync.Mutex
 	jobExits                map[string]recentJobExit
 }
@@ -40,7 +39,7 @@ const (
 	defaultKubernetesClientBurst int     = 100
 )
 
-func New(config Config, consoleManager ports.ConsoleManagerInterface, observer ports.ProcedureStatusObserver) (*Backend, error) {
+func New(config Config, observer ports.ProcedureStatusObserver) (*Backend, error) {
 	if observer == nil {
 		return nil, fmt.Errorf("procedure status observer is required")
 	}
@@ -71,7 +70,6 @@ func New(config Config, consoleManager ports.ConsoleManagerInterface, observer p
 		client:                  client,
 		restConfig:              restConfig,
 		httpClient:              httpClient,
-		consoleManager:          consoleManager,
 		procedureStatusObserver: observer,
 		config:                  config,
 		jobExits:                make(map[string]recentJobExit),
@@ -140,12 +138,12 @@ func kubeconfigRESTConfig(config Config) (*rest.Config, string, string, error) {
 	return restConfig, namespace, source, nil
 }
 
-func NewWithClient(config Config, consoleManager ports.ConsoleManagerInterface, client k8sclient.Interface) *Backend {
+func NewWithClient(config Config, client k8sclient.Interface) *Backend {
 	config = config.WithDefaults()
 	if config.Namespace == "" {
 		config.Namespace = "default"
 	}
-	backend := &Backend{client: client, consoleManager: consoleManager, config: config, jobExits: make(map[string]recentJobExit)}
+	backend := &Backend{client: client, config: config, jobExits: make(map[string]recentJobExit)}
 	backend.statsReader = backend.readNodeStatsSummary
 	return backend
 }

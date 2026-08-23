@@ -21,7 +21,7 @@ func TestAuthenticateWorkloadRejectsUnrecognizedServiceAccount(t *testing.T) {
 		Spec: corev1.PodSpec{ServiceAccountName: "unrecognized"},
 	})
 	client.PrependReactor("create", "tokenreviews", tokenReviewReactor("unrecognized", "games", "other-0", "pod-uid", true))
-	backend := NewWithClient(Config{Namespace: "games", OperatorServiceAccount: "operator-system/operator"}, nil, client)
+	backend := NewWithClient(Config{Namespace: "games", OperatorServiceAccount: "operator-system/operator"}, client)
 	if _, err := backend.AuthenticateWorkload(context.Background(), "token"); err == nil {
 		t.Fatal("unrecognized service account pod was accepted")
 	}
@@ -30,13 +30,13 @@ func TestAuthenticateWorkloadRejectsUnrecognizedServiceAccount(t *testing.T) {
 func TestAuthenticateWorkloadRejectsWrongAudienceOrDeletedPod(t *testing.T) {
 	client := k8sfake.NewSimpleClientset()
 	client.PrependReactor("create", "tokenreviews", tokenReviewReactor(runtimeWorkerServiceAccount, "games", "worker-0", "pod-uid", false))
-	backend := NewWithClient(Config{Namespace: "games", OperatorServiceAccount: "operator-system/operator"}, nil, client)
+	backend := NewWithClient(Config{Namespace: "games", OperatorServiceAccount: "operator-system/operator"}, client)
 	if _, err := backend.AuthenticateWorkload(context.Background(), "token"); err == nil {
 		t.Fatal("unauthenticated token was accepted")
 	}
 	client = k8sfake.NewSimpleClientset()
 	client.PrependReactor("create", "tokenreviews", tokenReviewReactor(runtimeWorkerServiceAccount, "games", "worker-0", "pod-uid", true))
-	backend = NewWithClient(Config{Namespace: "games", OperatorServiceAccount: "operator-system/operator"}, nil, client)
+	backend = NewWithClient(Config{Namespace: "games", OperatorServiceAccount: "operator-system/operator"}, client)
 	if _, err := backend.AuthenticateWorkload(context.Background(), "token"); err == nil {
 		t.Fatal("deleted pod token was accepted")
 	}
@@ -50,7 +50,7 @@ func TestAuthenticateWorkloadRejectsCrossRuntimeLabel(t *testing.T) {
 		Spec: corev1.PodSpec{ServiceAccountName: runtimeWorkerServiceAccount},
 	})
 	client.PrependReactor("create", "tokenreviews", tokenReviewReactor(runtimeWorkerServiceAccount, "games", "worker-0", "pod-uid", true))
-	backend := NewWithClient(Config{Namespace: "games", OperatorServiceAccount: "operator-system/operator"}, nil, client)
+	backend := NewWithClient(Config{Namespace: "games", OperatorServiceAccount: "operator-system/operator"}, client)
 	if _, err := backend.AuthenticateWorkload(context.Background(), "token"); err == nil {
 		t.Fatal("worker without worker-pull label was accepted")
 	}
@@ -58,7 +58,7 @@ func TestAuthenticateWorkloadRejectsCrossRuntimeLabel(t *testing.T) {
 
 func TestEnsureRuntimeServiceAccountsCreatesBothAndIsIdempotent(t *testing.T) {
 	client := k8sfake.NewSimpleClientset()
-	backend := NewWithClient(Config{Namespace: "games"}, nil, client)
+	backend := NewWithClient(Config{Namespace: "games"}, client)
 
 	if err := backend.ensureRuntimeServiceAccounts(context.Background(), "games"); err != nil {
 		t.Fatal(err)

@@ -63,13 +63,6 @@ func rootHash(root string) string {
 	return hex.EncodeToString(hash[:])[:10]
 }
 
-func runtimeConsoleID(scrollID string, procedureName string) string {
-	if scrollID == "" {
-		return procedureName
-	}
-	return scrollID + "/" + procedureName
-}
-
 func sanitizeContainerName(name string) string {
 	re := regexp.MustCompile(`[^a-zA-Z0-9_.-]+`)
 	name = re.ReplaceAllString(name, "-")

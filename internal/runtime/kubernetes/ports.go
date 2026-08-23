@@ -37,7 +37,12 @@ func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.Command
 			if procedure.Id != nil {
 				procedureName = *procedure.Id
 			}
-			traffic, trafficErr := b.procedureTrafficForSelector(context.Background(), namespace, procedureSelector(pvc, commandName, procedureName), now)
+			trafficSelector := procedureSelector(pvc, commandName, procedureName)
+			if command.Run == domain.RunModePersistent {
+				trafficSelector = baseLabels(pvc)
+				trafficSelector[labelCommand] = dnsLabel(commandName)
+			}
+			traffic, trafficErr := b.procedureTrafficForSelector(context.Background(), namespace, trafficSelector, now)
 			for _, expectedPort := range procedure.ExpectedPorts {
 				port := portsByName[expectedPort.Name]
 				status := domain.RuntimePortStatus{
@@ -147,6 +152,14 @@ func (b *Backend) RoutingTargets(root string, commands map[string]*domain.Comman
 }
 
 func (b *Backend) ensureExpectedServices(ctx context.Context, root string, commandName string, procedureName string, procedure *domain.Procedure, ports []domain.Port) error {
+	return b.ensureExpectedServicesWithOptions(ctx, root, commandName, procedureName, procedure, ports, false)
+}
+
+func (b *Backend) ensurePersistentExpectedServices(ctx context.Context, root string, commandName string, procedureName string, procedure *domain.Procedure, ports []domain.Port) error {
+	return b.ensureExpectedServicesWithOptions(ctx, root, commandName, procedureName, procedure, ports, true)
+}
+
+func (b *Backend) ensureExpectedServicesWithOptions(ctx context.Context, root string, commandName string, procedureName string, procedure *domain.Procedure, ports []domain.Port, publishNotReady bool) error {
 	namespace, _, err := parseRef(root)
 	if err != nil {
 		logger.Log().Error("Cannot reconcile Kubernetes Services for invalid root", zap.String("root", root), zap.String("command", commandName), zap.String("procedure", procedureName), zap.Error(err))
@@ -160,6 +173,7 @@ func (b *Backend) ensureExpectedServices(ctx context.Context, root string, comma
 			logger.Log().Error("Failed to build Kubernetes Service for expected port", zap.String("namespace", namespace), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("port", expected.Name), zap.Error(err))
 			return err
 		}
+		service.Spec.PublishNotReadyAddresses = publishNotReady
 		logger.Log().Debug("Reconciling Kubernetes expected-port Service",
 			zap.String("namespace", namespace),
 			zap.String("command", commandName),

@@ -2,7 +2,6 @@ package docker
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -13,12 +12,10 @@ import (
 
 type Backend struct {
 	client                  *client.Client
-	consoleManager          ports.ConsoleManagerInterface
 	procedureStatusObserver ports.ProcedureStatusObserver
 	config                  Config
 	mu                      sync.Mutex
 	containers              map[string]string
-	stdin                   map[string]io.Writer
 }
 
 type Config struct {
@@ -93,11 +90,11 @@ func (c Config) ValidateForUIPublishing() error {
 	return nil
 }
 
-func New(consoleManager ports.ConsoleManagerInterface, observer ports.ProcedureStatusObserver) (*Backend, error) {
-	return NewWithConfig(Config{}, consoleManager, observer)
+func New(observer ports.ProcedureStatusObserver) (*Backend, error) {
+	return NewWithConfig(Config{}, observer)
 }
 
-func NewWithConfig(config Config, consoleManager ports.ConsoleManagerInterface, observer ports.ProcedureStatusObserver) (*Backend, error) {
+func NewWithConfig(config Config, observer ports.ProcedureStatusObserver) (*Backend, error) {
 	if observer == nil {
 		return nil, fmt.Errorf("procedure status observer is required")
 	}
@@ -119,11 +116,9 @@ func NewWithConfig(config Config, consoleManager ports.ConsoleManagerInterface, 
 	}
 	return &Backend{
 		client:                  cli,
-		consoleManager:          consoleManager,
 		procedureStatusObserver: observer,
 		config:                  config,
 		containers:              map[string]string{},
-		stdin:                   map[string]io.Writer{},
 	}, nil
 }
 

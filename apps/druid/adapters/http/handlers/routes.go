@@ -68,8 +68,6 @@ func RegisterPublicRoutes(app *fiber.App, handlers RouteHandlers) {
 	app.Post("/:id/api/v1/command", handlers.Server.RunDaemonCommand)
 	app.Get("/:id/api/v1/queue", handlers.Server.GetDaemonQueue)
 	app.Get("/:id/api/v1/consoles", handlers.Server.GetDaemonConsoles)
-	app.Get("/:id/api/v1/logs", handlers.Server.GetDaemonLogs)
-	app.Get("/:id/api/v1/logs/:stream", handlers.Server.GetDaemonStreamLogs)
 	app.Get("/:id/api/v1/ports", handlers.Server.GetDaemonPorts)
 	app.Get("/:id/api/v1/ui/packages", handlers.Server.GetDaemonUIPackages)
 	app.Post("/:id/api/v1/ui/packages/:scope/publish", handlers.Server.PublishDaemonUIPackage)

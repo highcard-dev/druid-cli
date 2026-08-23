@@ -33,19 +33,19 @@ func WithDockerConfig(config docker.Config) Option {
 	}
 }
 
-var newDockerBackend = func(config docker.Config, consoleManager ports.ConsoleManagerInterface, observer ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) {
-	return docker.NewWithConfig(config, consoleManager, observer)
+var newDockerBackend = func(config docker.Config, observer ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) {
+	return docker.NewWithConfig(config, observer)
 }
 
-var newKubernetesBackend = func(config runtimekubernetes.Config, consoleManager ports.ConsoleManagerInterface, observer ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) {
-	return runtimekubernetes.New(config, consoleManager, observer)
+var newKubernetesBackend = func(config runtimekubernetes.Config, observer ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) {
+	return runtimekubernetes.New(config, observer)
 }
 
 var newKubernetesStateStore = func(config runtimekubernetes.Config) (ports.RuntimeScrollStore, error) {
 	return runtimekubernetes.NewConfigMapStateStore(config)
 }
 
-func NewRuntime(name string, consoleManager ports.ConsoleManagerInterface, stateDir string, opts ...Option) (*Runtime, error) {
+func NewRuntime(name string, stateDir string, opts ...Option) (*Runtime, error) {
 	options := Options{}
 	for _, opt := range opts {
 		opt(&options)
@@ -59,7 +59,7 @@ func NewRuntime(name string, consoleManager ports.ConsoleManagerInterface, state
 		return &Runtime{
 			Store: dockerRuntimeStore{RuntimeScrollStore: store, config: options.Docker.WithDefaults()},
 			create: func(observer ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) {
-				return newDockerBackend(options.Docker, consoleManager, observer)
+				return newDockerBackend(options.Docker, observer)
 			},
 		}, nil
 	case "kubernetes":
@@ -70,7 +70,7 @@ func NewRuntime(name string, consoleManager ports.ConsoleManagerInterface, state
 		return &Runtime{
 			Store: store,
 			create: func(observer ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) {
-				return newKubernetesBackend(options.Kubernetes, consoleManager, observer)
+				return newKubernetesBackend(options.Kubernetes, observer)
 			},
 		}, nil
 	default:

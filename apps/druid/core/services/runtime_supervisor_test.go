@@ -1,8 +1,10 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +17,10 @@ import (
 	coreservices "github.com/highcard-dev/daemon/internal/core/services"
 	"github.com/highcard-dev/daemon/internal/runtime/docker"
 )
+
+type testConsoleSession struct{ *bytes.Buffer }
+
+func (*testConsoleSession) Close() error { return nil }
 
 func TestRuntimeSessionUsesCachedScrollYAML(t *testing.T) {
 	root := t.TempDir()
@@ -43,6 +49,65 @@ commands:
 	}
 	if got := session.scrollService.GetFile().Name; got != "cached" {
 		t.Fatalf("scroll name = %q, want cached", got)
+	}
+}
+
+func TestRuntimeSupervisorDerivesAndOpensPersistedConsoles(t *testing.T) {
+	exitCode := 0
+	root := t.TempDir()
+	runtimeScroll := &domain.RuntimeScroll{
+		ID:         "console-runtime",
+		Root:       root,
+		ScrollName: "console-runtime",
+		ScrollYAML: `name: console-runtime
+desc: Console runtime
+version: 0.1.0
+app_version: "1.0"
+commands:
+  start:
+    procedures:
+      - id: server
+        image: alpine:3.20
+        tty: true
+      - id: stop-server
+        type: signal
+        target: server
+        signal: SIGTERM
+`,
+		Procedures: domain.ProcedureStatusMap{"start": {
+			"server":      {Status: domain.ScrollLockStatusDone, ExitCode: &exitCode},
+			"stop-server": {Status: domain.ScrollLockStatusDone, ExitCode: &exitCode},
+		}},
+	}
+	store := newTestStateStore(t)
+	if err := store.CreateScroll(runtimeScroll); err != nil {
+		t.Fatal(err)
+	}
+	opened := &testConsoleSession{Buffer: bytes.NewBufferString("history\n")}
+	backend := &fakeWorkerBackend{console: opened}
+	supervisor := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
+	session, err := NewRuntimeSession(store, runtimeScroll, backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	supervisor.sessions[runtimeScroll.ID] = session
+
+	consoles, err := supervisor.Consoles(runtimeScroll.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(consoles) != 1 || consoles["server"].Type != domain.ConsoleTypeTTY || consoles["server"].Exit == nil || *consoles["server"].Exit != 0 {
+		t.Fatalf("consoles = %#v", consoles)
+	}
+	got, err := supervisor.OpenConsole(context.Background(), runtimeScroll.ID, "server")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != opened || backend.consoleRoot != root || backend.consoleProcedure != "server" {
+		t.Fatalf("open console = (%T, %q, %q)", got, backend.consoleRoot, backend.consoleProcedure)
+	}
+	if _, err := supervisor.OpenConsole(context.Background(), runtimeScroll.ID, "stop-server"); err == nil {
+		t.Fatal("signal procedure unexpectedly exposed a console")
 	}
 }
 
@@ -715,6 +780,36 @@ func TestRuntimeSupervisorCreateWorkerFailureLeavesGeneratedPlaceholder(t *testi
 	}
 }
 
+func TestRuntimeSupervisorCreateReturnsInfrastructureFailureBeforeCallback(t *testing.T) {
+	store := newTestStateStore(t)
+	callbacks := NewWorkerCallbackManager()
+	done := make(chan error, 1)
+	done <- errors.New("worker pod is unschedulable")
+	backend := &fakeWorkerBackend{workerDone: done}
+	supervisor := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
+	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
+
+	if _, err := supervisor.Create("registry.local/missing:1.0", "broken-worker", nil); err == nil || !strings.Contains(err.Error(), "unschedulable") {
+		t.Fatalf("Create error = %v, want infrastructure failure", err)
+	}
+}
+
+func TestRuntimeSupervisorCreateUsesCallbackWithoutWaitingForWorkerExit(t *testing.T) {
+	store := newTestStateStore(t)
+	callbacks := NewWorkerCallbackManager()
+	backend := &fakeWorkerBackend{
+		callbacks:  callbacks,
+		workerDone: make(chan error),
+		scrollYAML: cachedScrollYAML("start"),
+	}
+	supervisor := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
+	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
+
+	if _, err := supervisor.Create("registry.local/lab:1.0", "callback-first", nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRuntimeSupervisorCreateRequiresWorkerCallbackConfig(t *testing.T) {
 	store := newTestStateStore(t)
 	supervisor := newRuntimeSupervisorForTest(t,
@@ -1285,12 +1380,16 @@ type fakeWorkerBackend struct {
 	scrollYAML              string
 	digest                  string
 	workerErr               error
+	workerDone              <-chan error
 	action                  ports.RuntimeWorkerAction
 	stopRoot                string
 	deleteRoot              string
 	spawnCount              int
 	runCommand              func(ports.RuntimeCommand) (*int, error)
 	stopRuntime             func(string) error
+	console                 io.ReadWriteCloser
+	consoleRoot             string
+	consoleProcedure        string
 }
 
 func newRuntimeSupervisorForTest(t *testing.T, store ports.RuntimeScrollStore, manager *coreservices.RuntimeScrollManager, factory ports.RuntimeBackendFactory) *RuntimeSupervisor {
@@ -1348,8 +1447,10 @@ func (f *fakeWorkerBackend) RoutingTargets(root string, commands map[string]*dom
 	return nil, nil
 }
 
-func (f *fakeWorkerBackend) Attach(commandName string, data string) error {
-	return nil
+func (f *fakeWorkerBackend) OpenConsole(_ context.Context, root string, procedure string) (io.ReadWriteCloser, error) {
+	f.consoleRoot = root
+	f.consoleProcedure = procedure
+	return f.console, nil
 }
 
 func (f *fakeWorkerBackend) Signal(commandName string, target string, signal string, root string) error {
@@ -1377,19 +1478,26 @@ func (f *fakeWorkerBackend) BackupRuntime(ctx context.Context, root string, arti
 	return nil
 }
 
-func (f *fakeWorkerBackend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorkerAction) error {
+func (f *fakeWorkerBackend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorkerAction) (<-chan error, error) {
 	f.action = action
 	f.spawnCount++
 	if f.workerErr != nil {
-		return f.workerErr
+		return nil, f.workerErr
+	}
+	done := f.workerDone
+	if done == nil {
+		completed := make(chan error, 1)
+		completed <- nil
+		done = completed
 	}
 	if f.callbacks == nil {
-		return nil
+		return done, nil
 	}
-	return f.callbacks.Complete(action.RuntimeID, ports.RuntimeWorkerResult{
+	err := f.callbacks.Complete(action.RuntimeID, ports.RuntimeWorkerResult{
 		ScrollYAML:     f.scrollYAML,
 		ArtifactDigest: f.digest,
 	})
+	return done, err
 }
 
 func cachedScrollYAML(serve string) string {

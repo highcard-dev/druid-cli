@@ -26,8 +26,6 @@ type ServiceConfig struct {
 	TestAddress   string
 	TestName      string
 	CommandStatus []string
-	UseLogSpy     bool
-	LogSpy        func(string, []byte) bool
 }
 
 func checkQueue(queueManager interface {
@@ -51,11 +49,6 @@ func TestExamples(t *testing.T) {
 			TestAddress:   "localhost:25565",
 			TestName:      "Minecraft",
 			CommandStatus: []string{"start", "install"},
-			UseLogSpy:     true,
-			LogSpy: func(stream string, sc []byte) bool {
-				println(string(sc))
-				return strings.Contains(string(sc), `For help, type "help"`)
-			},
 		},
 		{
 			ServiceName:   "nginx",
@@ -71,17 +64,6 @@ func TestExamples(t *testing.T) {
 
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
-			logManager := mock_ports.NewMockLogManagerInterface(ctrl)
-			logDoneChan := make(chan struct{}, 1)
-
-			logManager.EXPECT().AddLine(gomock.Any(), gomock.Any()).DoAndReturn(func(stream string, sc []byte) {
-				if config.UseLogSpy {
-					if config.LogSpy(stream, sc) {
-						logDoneChan <- struct{}{}
-					}
-				}
-			}).AnyTimes()
-
 			unixTime := time.Now().Unix()
 
 			path := "./druid-cli-test/"
@@ -146,10 +128,6 @@ func TestExamples(t *testing.T) {
 			if err != nil {
 				t.Error(err)
 				return
-			}
-
-			if config.UseLogSpy {
-				<-logDoneChan
 			}
 
 			if config.TestAddress != "" {
