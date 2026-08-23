@@ -779,6 +779,22 @@ func TestWaitForJobImmediatelyReportsUnschedulablePod(t *testing.T) {
 	}
 }
 
+func TestJobStartupFailureWaitsForImmediatePVCBinding(t *testing.T) {
+	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "pvc-binding", Namespace: "druid"}}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "pvc-binding-pod", Namespace: "druid", Labels: map[string]string{"job-name": job.Name}},
+		Status: corev1.PodStatus{Conditions: []corev1.PodCondition{{
+			Type: corev1.PodScheduled, Status: corev1.ConditionFalse, Reason: corev1.PodReasonUnschedulable,
+			Message: "0/3 nodes are available: pod has unbound immediate PersistentVolumeClaims",
+		}}},
+	}
+	backend := NewWithClient(Config{Namespace: "druid"}, fake.NewSimpleClientset(job, pod))
+
+	if _, _, failed := backend.jobStartupFailure(context.Background(), "druid", job.Name, false); failed {
+		t.Fatal("jobStartupFailure reported transient PVC binding as terminal")
+	}
+}
+
 func TestWaitForJobUsesRecentSuccessfulDeletion(t *testing.T) {
 	backend := NewWithClient(Config{Namespace: "druid"}, fake.NewSimpleClientset())
 	backend.recordJobExit("druid", "finished", 0)
