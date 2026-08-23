@@ -77,6 +77,9 @@ func TestPublishUIPackageRunsOneShotCommandWithEphemeralURL(t *testing.T) {
 		t.Fatalf("procedure env = %#v", values)
 	}
 	script := command.Command.Procedures[0].Command[len(command.Command.Procedures[0].Command)-1]
+	if !strings.Contains(script, "$(printenv DRUID_UI_SOURCE)") || !strings.Contains(script, "$(printenv DRUID_UI_UPLOAD_URL)") {
+		t.Fatalf("publish command lost request-scoped environment references: %q", script)
+	}
 	if strings.Contains(script, "sha256") || strings.Contains(script, "content_md5") || strings.Contains(script, "prepare_url") {
 		t.Fatal("publish command must upload directly without digest negotiation")
 	}
