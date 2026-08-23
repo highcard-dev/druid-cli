@@ -181,13 +181,17 @@ func procedureJobAttempt(job *batchv1.Job, baseName string) int {
 }
 
 func (b *Backend) createFreshJob(ctx context.Context, job *batchv1.Job) (*batchv1.Job, error) {
-	propagation := metav1.DeletePropagationBackground
+	propagation := metav1.DeletePropagationForeground
 	deleteCtx, cancelDelete := context.WithTimeout(ctx, 30*time.Second)
 	defer cancelDelete()
 	existing, err := b.client.BatchV1().Jobs(job.Namespace).Get(deleteCtx, job.Name, metav1.GetOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		logger.Log().Error("Failed to check Kubernetes job before create", zap.String("namespace", job.Namespace), zap.String("job", job.Name), zap.Error(err))
 		return nil, err
+	}
+	if err == nil && existing.Status.Succeeded == 0 && !kubernetesJobFailed(existing) {
+		logger.Log().Info("Reusing active Kubernetes job", zap.String("namespace", job.Namespace), zap.String("job", job.Name))
+		return existing, nil
 	}
 	if existing != nil && kubernetesJobFailed(existing) {
 		original := job.Name
