@@ -6,7 +6,6 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
@@ -27,8 +26,9 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 		zap.String("root", command.Root),
 		zap.Int("procedures", len(command.Command.Procedures)),
 	)
-	portUse := expectedPortUse(command.Command)
-	reservedPortNames := portNames(command.ReservedPorts)
+	if command.Command.Run == domain.RunModePersistent {
+		return nil, b.runPersistentCommand(command)
+	}
 	startIndex := 0
 	if command.Command.Run == domain.RunModeRestart {
 		resumeIndex, err := b.resumeRestartProcedureIndex(context.Background(), command.Root, command.Name, command.Command)
@@ -83,54 +83,29 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 			zap.Bool("signal", procedure.IsSignal()),
 			zap.Int("expected_ports", len(procedure.ExpectedPorts)),
 		)
-		if command.Command.Run == domain.RunModePersistent {
-			if procedure.IsSignal() {
-				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusRunning, nil)
-				if err := b.Signal(procedureName, procedure.Target, procedure.Signal, command.Root); err != nil {
-					command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusError, nil)
-					logger.Log().Error("Kubernetes signal procedure failed", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("procedure", procedureName), zap.String("target", procedure.Target), zap.String("signal", procedure.Signal), zap.Error(err))
-					return nil, err
-				}
-				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, nil)
-				logger.Log().Info("Kubernetes signal procedure completed", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("procedure", procedureName), zap.String("target", procedure.Target), zap.String("signal", procedure.Signal))
-				continue
-			}
-			if procedure.Image == "" {
-				err := fmt.Errorf("kubernetes procedure %s requires image", procedureName)
-				logger.Log().Error("Kubernetes persistent procedure missing image", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("procedure", procedureName), zap.Error(err))
-				return nil, err
-			}
-			command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusRunning, nil)
-			if err := b.ensurePersistentProcedure(context.Background(), command.ScrollID, command.Root, command.Name, procedureName, resourceName, procedure, command.GlobalPorts, env, portUse, reservedPortNames); err != nil {
-				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusError, nil)
-				logger.Log().Error("Kubernetes persistent procedure failed", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("procedure", procedureName), zap.Error(err))
-				return nil, err
-			}
-			continue
-		}
-		command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusRunning, nil)
-		exitCode, err := b.runJobProcedure(command.ScrollID, command.Name, procedureName, resourceName, procedure, command.Root, command.GlobalPorts, env, portUse, reservedPortNames)
+		b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusRunning, nil)
+		exitCode, err := b.runJobProcedure(command.ScrollID, command.Name, procedureName, resourceName, procedure, command.Root, command.Ports, env)
 		if err != nil {
 			if exitCode != nil && *exitCode != 0 && procedure.IgnoreFailure {
-				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, exitCode)
+				b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusDone, exitCode)
 				logger.Log().Warn("Kubernetes job procedure failed but failure is ignored", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("procedure", procedureName), zap.Int("exit_code", *exitCode), zap.Error(err))
 				continue
 			}
-			command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusError, exitCode)
+			b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusError, exitCode)
 			logger.Log().Error("Kubernetes job procedure failed", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("procedure", procedureName), zap.Any("exit_code", exitCode), zap.Error(err))
 			return exitCode, err
 		}
 		if exitCode != nil && *exitCode != 0 {
 			if procedure.IgnoreFailure {
-				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, exitCode)
+				b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusDone, exitCode)
 				logger.Log().Warn("Kubernetes job procedure failed but failure is ignored", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("procedure", procedureName), zap.Int("exit_code", *exitCode))
 				continue
 			}
-			command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusError, exitCode)
+			b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusError, exitCode)
 			logger.Log().Warn("Kubernetes command stopped after non-zero procedure exit", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("procedure", procedureName), zap.Int("exit_code", *exitCode))
 			return exitCode, nil
 		}
-		command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, exitCode)
+		b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusDone, exitCode)
 		if exitCode != nil {
 			logger.Log().Info("Kubernetes job procedure completed", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("procedure", procedureName), zap.Int("exit_code", *exitCode))
 		}
@@ -139,7 +114,20 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 	return nil, nil
 }
 
-func (b *Backend) runJobProcedure(scrollID string, commandName string, procedureName string, resourceName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, env map[string]string, portUse map[string]int, reservedPortNames map[string]struct{}) (*int, error) {
+func (b *Backend) observeProcedureStatus(command ports.RuntimeCommand, procedure string, status domain.ScrollLockStatus, exitCode *int) {
+	if b.procedureStatusObserver == nil {
+		return
+	}
+	b.procedureStatusObserver.ObserveProcedureStatus(ports.ProcedureStatusUpdate{
+		RuntimeID: command.ScrollID,
+		Command:   command.Name,
+		Procedure: procedure,
+		Status:    status,
+		ExitCode:  exitCode,
+	})
+}
+
+func (b *Backend) runJobProcedure(scrollID string, commandName string, procedureName string, resourceName string, procedure *domain.Procedure, root string, ports []domain.Port, env map[string]string) (*int, error) {
 	if procedure.IsSignal() {
 		logger.Log().Info("Running Kubernetes signal procedure", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("target", procedure.Target), zap.String("signal", procedure.Signal))
 		if err := b.Signal(procedureName, procedure.Target, procedure.Signal, root); err != nil {
@@ -154,7 +142,7 @@ func (b *Backend) runJobProcedure(scrollID string, commandName string, procedure
 		return nil, err
 	}
 	ctx := context.Background()
-	if err := b.ensureExpectedServices(ctx, root, commandName, procedureName, procedure, globalPorts, portUse, reservedPortNames); err != nil {
+	if err := b.ensureExpectedServices(ctx, root, commandName, procedureName, procedure, ports); err != nil {
 		logger.Log().Error("Failed to reconcile Kubernetes procedure Services", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.Error(err))
 		return nil, err
 	}
@@ -185,34 +173,9 @@ func (b *Backend) runJobProcedure(scrollID string, commandName string, procedure
 		logger.Log().Error("Failed to create Kubernetes job procedure", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.String("base_job", resourceName), zap.Error(err))
 		return nil, err
 	}
-	output := make(chan string, 100)
-	consoleID := runtimeConsoleID(scrollID, procedureName)
-	console, doneChan := b.consoleManager.AddConsoleWithChannel(consoleID, domain.ConsoleTypeContainer, "stdin", output)
-	console.WriteInput = func(data string) error {
-		return b.attachToProcedure(root, procedureName, data)
-	}
-	streamStarted := false
 	jobName := createdJob.Name
-	podName, err := b.waitForJobPod(ctx, namespace, jobName, string(createdJob.UID))
-	if err == nil {
-		streamStarted = true
-		logger.Log().Debug("Streaming Kubernetes job procedure logs", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.String("job", jobName), zap.String("pod", podName), zap.String("console_id", consoleID))
-		go b.streamPodLogs(ctx, namespace, podName, output)
-	} else {
-		logger.Log().Warn("Could not find Kubernetes job pod before wait; console logs may be empty", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.String("job", jobName), zap.Error(err))
-	}
-	exitCode, err := b.waitForJobWithIdleStop(ctx, namespace, jobName, b.keepAliveTrafficIdleStopper(namespace, root, commandName, procedureName, procedure, globalPorts))
-	if exitCode != nil {
-		console.MarkExited(*exitCode)
-	}
-	if !streamStarted {
-		close(output)
-	}
-	<-doneChan
+	exitCode, err := b.waitForJobWithIdleStop(ctx, namespace, jobName, b.keepAliveTrafficIdleStopper(namespace, root, commandName, procedureName, procedure, ports))
 	if err != nil {
-		if exitCode != nil && *exitCode == 0 {
-			b.deleteFinishedJob(context.Background(), namespace, jobName)
-		}
 		if exitCode != nil && *exitCode != 0 {
 			logger.Log().Warn("Keeping failed Kubernetes job procedure for debugging", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.String("job", jobName), zap.Int("exit_code", *exitCode))
 		}
@@ -220,7 +183,6 @@ func (b *Backend) runJobProcedure(scrollID string, commandName string, procedure
 		return exitCode, err
 	}
 	if exitCode != nil && *exitCode == 0 {
-		b.deleteFinishedJob(context.Background(), namespace, jobName)
 		logger.Log().Info("Kubernetes job procedure exited", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.String("job", jobName), zap.Int("exit_code", *exitCode))
 	} else if exitCode != nil {
 		logger.Log().Warn("Keeping failed Kubernetes job procedure for debugging", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.String("job", jobName), zap.Int("exit_code", *exitCode))
@@ -228,84 +190,92 @@ func (b *Backend) runJobProcedure(scrollID string, commandName string, procedure
 	return exitCode, nil
 }
 
-func (b *Backend) ensurePersistentProcedure(ctx context.Context, scrollID string, root string, commandName string, procedureName string, resourceName string, procedure *domain.Procedure, globalPorts []domain.Port, env map[string]string, portUse map[string]int, reservedPortNames map[string]struct{}) error {
-	if err := b.ensureExpectedServices(ctx, root, commandName, procedureName, procedure, globalPorts, portUse, reservedPortNames); err != nil {
-		logger.Log().Error("Failed to reconcile Kubernetes persistent procedure Services", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.Error(err))
+func (b *Backend) runPersistentCommand(command ports.RuntimeCommand) error {
+	ctx := context.Background()
+	last := -1
+	for idx, procedure := range command.Command.Procedures {
+		if procedure == nil {
+			continue
+		}
+		procedureName := domain.ProcedureName(command.Name, idx, procedure)
+		if procedure.IsSignal() || procedure.Image == "" {
+			err := fmt.Errorf("kubernetes persistent procedure %s must be a container with an image", procedureName)
+			b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusError, nil)
+			return err
+		}
+		if err := b.ensurePersistentExpectedServices(ctx, command.Root, command.Name, procedureName, procedure, command.Ports); err != nil {
+			b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusError, nil)
+			return err
+		}
+		b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusRunning, nil)
+		last = idx
+	}
+	if last < 0 {
+		return fmt.Errorf("kubernetes persistent command %s requires at least one procedure", command.Name)
+	}
+	mainProcedure := command.Command.Procedures[last]
+	mainName := domain.ProcedureName(command.Name, last, mainProcedure)
+	resourceName := procedureResourceName(command.Root, command.Name, last)
+	namespace, pvc, err := parseRef(command.Root)
+	if err != nil {
+		logger.Log().Error("Kubernetes persistent command root ref invalid", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("root", command.Root), zap.Error(err))
 		return err
 	}
-	namespace, pvc, err := parseRef(root)
+	statefulSet, err := persistentStatefulSetSpec(namespace, command.Root, command.Name, resourceName, command.Command, command.ProcedureEnv, b.config.RegistrySecret)
 	if err != nil {
-		logger.Log().Error("Kubernetes persistent procedure root ref invalid", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("root", root), zap.Error(err))
-		return err
-	}
-	statefulSet, err := procedureStatefulSetSpec(namespace, root, commandName, procedureName, resourceName, procedure, env, b.config.RegistrySecret)
-	if err != nil {
-		logger.Log().Error("Failed to build Kubernetes persistent procedure StatefulSet", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.Error(err))
+		logger.Log().Error("Failed to build Kubernetes persistent command StatefulSet", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("namespace", namespace), zap.Error(err))
 		return err
 	}
 	if err := b.pinPodToRuntimeNode(ctx, namespace, pvc, &statefulSet.Spec.Template.Spec); err != nil {
 		return err
 	}
-	logger.Log().Info("Reconciling Kubernetes persistent procedure",
-		zap.String("scroll_id", scrollID),
-		zap.String("command", commandName),
-		zap.String("procedure", procedureName),
+	if err := b.deleteLegacyPersistentStatefulSets(ctx, namespace, pvc, command.Name, statefulSet.Name); err != nil {
+		return err
+	}
+	logger.Log().Info("Reconciling Kubernetes persistent command",
+		zap.String("scroll_id", command.ScrollID),
+		zap.String("command", command.Name),
+		zap.String("main_procedure", mainName),
 		zap.String("namespace", namespace),
 		zap.String("statefulset", statefulSet.Name),
-	)
-	logger.Log().Debug("Kubernetes persistent procedure details",
-		zap.String("scroll_id", scrollID),
-		zap.String("command", commandName),
-		zap.String("procedure", procedureName),
-		zap.String("resource", resourceName),
-		zap.String("image", procedure.Image),
-		zap.Int("env_count", len(env)),
-		zap.Int("expected_ports", len(procedure.ExpectedPorts)),
-		zap.Int("mounts", len(procedure.Mounts)),
+		zap.Int("init_containers", len(statefulSet.Spec.Template.Spec.InitContainers)),
 	)
 	existing, err := b.client.AppsV1().StatefulSets(namespace).Get(ctx, statefulSet.Name, metav1.GetOptions{})
 	switch {
 	case apierrors.IsNotFound(err):
-		logger.Log().Info("Creating Kubernetes persistent procedure StatefulSet", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.String("statefulset", statefulSet.Name))
+		logger.Log().Info("Creating Kubernetes persistent command StatefulSet", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("namespace", namespace), zap.String("statefulset", statefulSet.Name))
 		if _, err := b.client.AppsV1().StatefulSets(namespace).Create(ctx, statefulSet, metav1.CreateOptions{}); err != nil {
-			logger.Log().Error("Failed to create Kubernetes persistent procedure StatefulSet", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.String("statefulset", statefulSet.Name), zap.Error(err))
+			logger.Log().Error("Failed to create Kubernetes persistent command StatefulSet", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("namespace", namespace), zap.String("statefulset", statefulSet.Name), zap.Error(err))
 			return err
 		}
 	case err != nil:
-		logger.Log().Error("Failed to get Kubernetes persistent procedure StatefulSet", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.String("statefulset", statefulSet.Name), zap.Error(err))
+		logger.Log().Error("Failed to get Kubernetes persistent command StatefulSet", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("namespace", namespace), zap.String("statefulset", statefulSet.Name), zap.Error(err))
 		return err
 	default:
-		logger.Log().Info("Updating Kubernetes persistent procedure StatefulSet", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.String("statefulset", statefulSet.Name), zap.String("resource_version", existing.ResourceVersion))
+		logger.Log().Info("Updating Kubernetes persistent command StatefulSet", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("namespace", namespace), zap.String("statefulset", statefulSet.Name), zap.String("resource_version", existing.ResourceVersion))
 		statefulSet.ResourceVersion = existing.ResourceVersion
 		if _, err := b.client.AppsV1().StatefulSets(namespace).Update(ctx, statefulSet, metav1.UpdateOptions{}); err != nil {
-			logger.Log().Error("Failed to update Kubernetes persistent procedure StatefulSet", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.String("statefulset", statefulSet.Name), zap.Error(err))
+			logger.Log().Error("Failed to update Kubernetes persistent command StatefulSet", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("namespace", namespace), zap.String("statefulset", statefulSet.Name), zap.Error(err))
 			return err
 		}
 	}
-	output := make(chan string, 100)
-	console, _ := b.consoleManager.AddConsoleWithChannel(runtimeConsoleID(scrollID, procedureName), domain.ConsoleTypeContainer, "stdin", output)
-	console.WriteInput = func(data string) error {
-		return b.attachToProcedure(root, procedureName, data)
-	}
-	if err := b.waitForStatefulSet(ctx, namespace, statefulSet.Name); err != nil {
-		close(output)
-		logger.Log().Error("Kubernetes persistent procedure did not become ready", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.String("statefulset", statefulSet.Name), zap.Error(err))
+	logger.Log().Info("Kubernetes persistent command started", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.String("namespace", namespace), zap.String("statefulset", statefulSet.Name))
+	return nil
+}
+
+func (b *Backend) deleteLegacyPersistentStatefulSets(ctx context.Context, namespace string, pvc string, commandName string, keepName string) error {
+	selector := fmt.Sprintf("%s=%s,%s=%s", labelScrollID, dnsLabel(pvc), labelCommand, dnsLabel(commandName))
+	statefulSets, err := b.client.AppsV1().StatefulSets(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
+	if err != nil {
 		return err
 	}
-	logger.Log().Info("Kubernetes persistent procedure ready", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.String("statefulset", statefulSet.Name))
-	go func() {
-		podName, err := b.waitForPodBySelector(context.Background(), namespace, labels.SelectorFromSet(labels.Set{
-			labelScrollID:  statefulSet.Labels[labelScrollID],
-			labelProcedure: statefulSet.Labels[labelProcedure],
-		}).String())
-		if err != nil {
-			logger.Log().Warn("Failed to find Kubernetes persistent procedure pod for logs", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.String("statefulset", statefulSet.Name), zap.Error(err))
-			output <- fmt.Sprintf("failed to find StatefulSet pod logs: %v", err)
-			close(output)
-			return
+	for _, statefulSet := range statefulSets.Items {
+		if statefulSet.Name == keepName {
+			continue
 		}
-		logger.Log().Debug("Streaming Kubernetes persistent procedure logs", zap.String("scroll_id", scrollID), zap.String("command", commandName), zap.String("procedure", procedureName), zap.String("namespace", namespace), zap.String("pod", podName))
-		b.streamPodLogs(context.Background(), namespace, podName, output)
-	}()
+		if err := b.client.AppsV1().StatefulSets(namespace).Delete(ctx, statefulSet.Name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+	}
 	return nil
 }

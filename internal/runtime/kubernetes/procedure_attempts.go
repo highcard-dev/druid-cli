@@ -101,15 +101,12 @@ func (b *Backend) createOrReuseProcedureJob(ctx context.Context, namespace strin
 	var active *batchv1.Job
 	for idx := range jobs.Items {
 		job := &jobs.Items[idx]
-		if job.Status.Succeeded > 0 {
-			if err := b.deleteJobAndWait(ctx, namespace, job.Name); err != nil {
-				return nil, err
-			}
-			continue
-		}
 		attempt := procedureJobAttempt(job, baseName)
 		if attempt >= nextAttempt {
 			nextAttempt = attempt + 1
+		}
+		if job.Status.Succeeded > 0 {
+			continue
 		}
 		if kubernetesJobFailed(job) {
 			logger.Log().Warn("Retaining failed Kubernetes procedure job for retry",

@@ -4,11 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"sync"
 
 	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
@@ -34,58 +31,71 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 		)
 		if command.Command.Run == domain.RunModePersistent {
 			if procedure.IsSignal() {
-				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusRunning, nil)
+				b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusRunning, nil)
 				if err := b.Signal(procedureName, procedure.Target, procedure.Signal, command.Root); err != nil {
-					command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusError, nil)
+					b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusError, nil)
 					return nil, err
 				}
-				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, nil)
+				b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusDone, nil)
 				continue
 			}
 			if procedure.Image == "" {
 				return nil, fmt.Errorf("docker runtime procedure %s requires image", procedureName)
 			}
-			command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusRunning, nil)
-			if err := b.startPersistentContainer(runtimeConsoleID(command.ScrollID, procedureName), command.Name, procedureName, procedureResourceName(command.Name, idx), procedure, command.Root, command.GlobalPorts, command.Routing, env); err != nil {
-				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusError, nil)
+			b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusRunning, nil)
+			if err := b.startPersistentContainer(command.Name, procedureName, procedureResourceName(command.Name, idx), procedure, command.Root, command.Ports, command.Routing, env); err != nil {
+				b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusError, nil)
 				return nil, err
 			}
 			continue
 		}
-		command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusRunning, nil)
-		exitCode, err := b.runProcedure(runtimeConsoleID(command.ScrollID, procedureName), command.Name, procedureName, procedureResourceName(command.Name, idx), procedure, command.Root, command.GlobalPorts, command.Routing, env)
+		b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusRunning, nil)
+		exitCode, err := b.runProcedure(command.Name, procedureName, procedureResourceName(command.Name, idx), procedure, command.Root, command.Ports, command.Routing, env)
 		if err != nil {
 			if exitCode != nil && *exitCode != 0 && procedure.IgnoreFailure {
-				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, exitCode)
+				b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusDone, exitCode)
 				continue
 			}
-			command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusError, exitCode)
+			b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusError, exitCode)
 			return exitCode, err
 		}
 		if exitCode != nil && *exitCode != 0 {
 			if procedure.IgnoreFailure {
-				command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, exitCode)
+				b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusDone, exitCode)
 				continue
 			}
-			command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusError, exitCode)
+			b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusError, exitCode)
 			return exitCode, nil
 		}
-		command.ObserveProcedureStatus(procedureName, domain.ScrollLockStatusDone, exitCode)
+		b.observeProcedureStatus(command, procedureName, domain.ScrollLockStatusDone, exitCode)
 	}
 	return nil, nil
 }
 
-func (b *Backend) runProcedure(consoleID string, commandName string, procedureName string, resourceName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, routing []domain.RuntimeRouteAssignment, env map[string]string) (*int, error) {
+func (b *Backend) observeProcedureStatus(command ports.RuntimeCommand, procedure string, status domain.ScrollLockStatus, exitCode *int) {
+	if b.procedureStatusObserver == nil {
+		return
+	}
+	b.procedureStatusObserver.ObserveProcedureStatus(ports.ProcedureStatusUpdate{
+		RuntimeID: command.ScrollID,
+		Command:   command.Name,
+		Procedure: procedure,
+		Status:    status,
+		ExitCode:  exitCode,
+	})
+}
+
+func (b *Backend) runProcedure(commandName string, procedureName string, resourceName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, routing []domain.RuntimeRouteAssignment, env map[string]string) (*int, error) {
 	if procedure.IsSignal() {
 		return nil, b.Signal(procedureName, procedure.Target, procedure.Signal, root)
 	}
 	if procedure.Image == "" {
 		return nil, fmt.Errorf("docker runtime procedure %s requires image", procedureName)
 	}
-	return b.runContainer(consoleID, commandName, procedureName, resourceName, procedure, root, globalPorts, routing, env)
+	return b.runContainer(commandName, procedureName, resourceName, procedure, root, globalPorts, routing, env)
 }
 
-func (b *Backend) runContainer(consoleID string, commandName string, procedureName string, resourceName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, routing []domain.RuntimeRouteAssignment, env map[string]string) (*int, error) {
+func (b *Backend) runContainer(commandName string, procedureName string, resourceName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, routing []domain.RuntimeRouteAssignment, env map[string]string) (*int, error) {
 	ctx := context.Background()
 	if procedure.Image == "" {
 		return nil, errors.New("docker image is required")
@@ -115,42 +125,6 @@ func (b *Backend) runContainer(consoleID string, commandName string, procedureNa
 		b.clearContainer(procedureName)
 	}()
 
-	attach, err := b.client.ContainerAttach(ctx, selected.ID, container.AttachOptions{
-		Stream: true,
-		Stdin:  true,
-		Stdout: true,
-		Stderr: true,
-	})
-	if err != nil {
-		return nil, err
-	}
-	defer attach.Close()
-	b.setStdin(procedureName, attach.Conn)
-	defer b.clearStdin(procedureName)
-
-	combined := make(chan string, 20)
-	consoleType := domain.ConsoleTypeContainer
-	if procedure.TTY {
-		consoleType = domain.ConsoleTypeTTY
-	}
-	console, doneChan := b.consoleManager.AddConsoleWithChannel(consoleID, consoleType, "stdin", combined)
-	console.WriteInput = func(data string) error {
-		return b.Attach(procedureName, data)
-	}
-
-	var copyWG sync.WaitGroup
-	copyWG.Add(1)
-	go func() {
-		defer copyWG.Done()
-		defer close(combined)
-		writer := channelWriter{channel: combined}
-		if procedure.TTY {
-			_, _ = io.Copy(writer, attach.Reader)
-			return
-		}
-		_, _ = stdcopy.StdCopy(writer, writer, attach.Reader)
-	}()
-
 	if selected.Start {
 		if err := b.client.ContainerStart(ctx, selected.ID, container.StartOptions{}); err != nil {
 			_ = b.client.ContainerRemove(context.Background(), selected.ID, container.RemoveOptions{Force: true})
@@ -168,12 +142,7 @@ func (b *Backend) runContainer(consoleID string, commandName string, procedureNa
 	case status := <-statusCh:
 		exitCode = int(status.StatusCode)
 	}
-	_ = attach.CloseWrite()
-	copyWG.Wait()
-	console.MarkExited(exitCode)
-	<-doneChan
 	if exitCode == 0 {
-		_ = b.client.ContainerRemove(context.Background(), selected.ID, container.RemoveOptions{Force: true})
 		return &exitCode, nil
 	}
 	return &exitCode, &domain.CommandExecutionError{
@@ -183,7 +152,7 @@ func (b *Backend) runContainer(consoleID string, commandName string, procedureNa
 	}
 }
 
-func (b *Backend) startPersistentContainer(consoleID string, commandName string, procedureName string, resourceName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, routing []domain.RuntimeRouteAssignment, env map[string]string) error {
+func (b *Backend) startPersistentContainer(commandName string, procedureName string, resourceName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, routing []domain.RuntimeRouteAssignment, env map[string]string) error {
 	ctx := context.Background()
 	if procedure.Image == "" {
 		return errors.New("docker image is required")
@@ -206,47 +175,11 @@ func (b *Backend) startPersistentContainer(consoleID string, commandName string,
 	if err != nil {
 		return dockerSetupError(err)
 	}
-	attach, err := b.client.ContainerAttach(ctx, selected.ID, container.AttachOptions{
-		Stream: true,
-		Stdin:  true,
-		Stdout: true,
-		Stderr: true,
-	})
-	if err != nil {
-		if selected.Start {
-			_ = b.client.ContainerRemove(context.Background(), selected.ID, container.RemoveOptions{Force: true})
-		}
-		return err
-	}
 	b.setContainer(procedureName, selected.ID)
-	b.setStdin(procedureName, attach.Conn)
-
-	combined := make(chan string, 20)
-	consoleType := domain.ConsoleTypeContainer
-	if procedure.TTY {
-		consoleType = domain.ConsoleTypeTTY
-	}
-	console, _ := b.consoleManager.AddConsoleWithChannel(consoleID, consoleType, "stdin", combined)
-	console.WriteInput = func(data string) error {
-		return b.Attach(procedureName, data)
-	}
-
-	go func() {
-		defer close(combined)
-		defer attach.Close()
-		writer := channelWriter{channel: combined}
-		if procedure.TTY {
-			_, _ = io.Copy(writer, attach.Reader)
-			return
-		}
-		_, _ = stdcopy.StdCopy(writer, writer, attach.Reader)
-	}()
 
 	if selected.Start {
 		if err := b.client.ContainerStart(ctx, selected.ID, container.StartOptions{}); err != nil {
-			attach.Close()
 			b.clearContainer(procedureName)
-			b.clearStdin(procedureName)
 			_ = b.client.ContainerRemove(context.Background(), selected.ID, container.RemoveOptions{Force: true})
 			return dockerSetupError(err)
 		}
@@ -258,10 +191,7 @@ func (b *Backend) startPersistentContainer(consoleID string, commandName string,
 		case <-errCh:
 		case status := <-statusCh:
 			exitCode := int(status.StatusCode)
-			console.MarkExited(exitCode)
-			if exitCode == 0 {
-				_ = b.client.ContainerRemove(context.Background(), selected.ID, container.RemoveOptions{Force: true})
-			} else {
+			if exitCode != 0 {
 				logger.Log().Error("Docker persistent procedure exited",
 					zap.String("container", selected.Name),
 					zap.String("container_id", selected.ID),
@@ -272,7 +202,6 @@ func (b *Backend) startPersistentContainer(consoleID string, commandName string,
 			}
 		}
 		b.clearContainer(procedureName)
-		b.clearStdin(procedureName)
 	}()
 	return nil
 }

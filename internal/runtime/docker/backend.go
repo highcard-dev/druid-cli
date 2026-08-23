@@ -2,7 +2,6 @@ package docker
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -12,12 +11,11 @@ import (
 )
 
 type Backend struct {
-	client         *client.Client
-	consoleManager ports.ConsoleManagerInterface
-	config         Config
-	mu             sync.Mutex
-	containers     map[string]string
-	stdin          map[string]io.Writer
+	client                  *client.Client
+	procedureStatusObserver ports.ProcedureStatusObserver
+	config                  Config
+	mu                      sync.Mutex
+	containers              map[string]string
 }
 
 type Config struct {
@@ -92,11 +90,14 @@ func (c Config) ValidateForUIPublishing() error {
 	return nil
 }
 
-func New(consoleManager ports.ConsoleManagerInterface) (*Backend, error) {
-	return NewWithConfig(Config{}, consoleManager)
+func New(observer ports.ProcedureStatusObserver) (*Backend, error) {
+	return NewWithConfig(Config{}, observer)
 }
 
-func NewWithConfig(config Config, consoleManager ports.ConsoleManagerInterface) (*Backend, error) {
+func NewWithConfig(config Config, observer ports.ProcedureStatusObserver) (*Backend, error) {
+	if observer == nil {
+		return nil, fmt.Errorf("procedure status observer is required")
+	}
 	config = config.WithDefaults()
 	if config.Storage != StorageVolume && config.Storage != StorageBind {
 		return nil, fmt.Errorf("unknown docker storage %q", config.Storage)
@@ -114,11 +115,10 @@ func NewWithConfig(config Config, consoleManager ports.ConsoleManagerInterface) 
 		return nil, err
 	}
 	return &Backend{
-		client:         cli,
-		consoleManager: consoleManager,
-		config:         config,
-		containers:     map[string]string{},
-		stdin:          map[string]io.Writer{},
+		client:                  cli,
+		procedureStatusObserver: observer,
+		config:                  config,
+		containers:              map[string]string{},
 	}, nil
 }
 

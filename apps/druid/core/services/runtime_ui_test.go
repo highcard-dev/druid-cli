@@ -52,7 +52,7 @@ func TestPublishUIPackageRunsOneShotCommandWithEphemeralURL(t *testing.T) {
 		command = got
 		return nil, nil
 	}}
-	supervisor := NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), backend)
+	supervisor := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
 
 	updated, err := supervisor.PublishUIPackage("ui-scroll", "private", "")
 	if err != nil {

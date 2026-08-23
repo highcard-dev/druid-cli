@@ -1,10 +1,8 @@
 package kubernetes
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
@@ -116,11 +114,9 @@ func (b *Backend) waitForJobWithIdleStop(ctx context.Context, namespace string, 
 			logger.Log().Error("Kubernetes job failed", zap.String("namespace", namespace), zap.String("job", jobName), zap.Int("exit_code", exitCode), zap.String("detail", detail), zap.Int32("succeeded", job.Status.Succeeded), zap.Int32("failed", job.Status.Failed), zap.Int32("active", job.Status.Active))
 			return &exitCode, fmt.Errorf("job %s failed: %s", jobName, detail)
 		}
-		if time.Since(startedAt) > time.Minute {
-			if exitCode, detail, ok := b.jobStartupFailure(ctx, namespace, jobName); ok {
-				logger.Log().Error("Kubernetes job startup failed", zap.String("namespace", namespace), zap.String("job", jobName), zap.Int("exit_code", exitCode), zap.String("detail", detail), zap.Int32("succeeded", job.Status.Succeeded), zap.Int32("failed", job.Status.Failed), zap.Int32("active", job.Status.Active))
-				return &exitCode, fmt.Errorf("job %s failed: %s", jobName, detail)
-			}
+		if exitCode, detail, ok := b.jobStartupFailure(ctx, namespace, jobName, time.Since(startedAt) > time.Minute); ok {
+			logger.Log().Error("Kubernetes job startup failed", zap.String("namespace", namespace), zap.String("job", jobName), zap.Int("exit_code", exitCode), zap.String("detail", detail), zap.Int32("succeeded", job.Status.Succeeded), zap.Int32("failed", job.Status.Failed), zap.Int32("active", job.Status.Active))
+			return &exitCode, fmt.Errorf("job %s failed: %s", jobName, detail)
 		}
 		if time.Now().After(deadline) {
 			logger.Log().Error("Timed out waiting for Kubernetes job", zap.String("namespace", namespace), zap.String("job", jobName), zap.Int32("succeeded", job.Status.Succeeded), zap.Int32("failed", job.Status.Failed), zap.Int32("active", job.Status.Active))
@@ -146,19 +142,30 @@ func (b *Backend) waitForJobWithIdleStop(ctx context.Context, namespace string, 
 	}
 }
 
-func (b *Backend) jobStartupFailure(ctx context.Context, namespace string, jobName string) (int, string, bool) {
+func (b *Backend) jobStartupFailure(ctx context.Context, namespace string, jobName string, includeTerminated bool) (int, string, bool) {
 	selector := labels.SelectorFromSet(labels.Set{"job-name": jobName}).String()
 	pods, err := b.client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
 	if err != nil || len(pods.Items) == 0 {
 		return 1, "", false
 	}
 	for _, pod := range pods.Items {
+		for _, condition := range pod.Status.Conditions {
+			if condition.Type == corev1.PodScheduled && condition.Status == corev1.ConditionFalse && condition.Reason == corev1.PodReasonUnschedulable {
+				return 1, fmt.Sprintf("pod %s is unschedulable: %s", pod.Name, condition.Message), true
+			}
+		}
 		for _, status := range pod.Status.InitContainerStatuses {
+			if status.State.Terminated != nil && !includeTerminated {
+				continue
+			}
 			if exitCode, detail, ok := startupContainerFailure(pod.Name, status); ok {
 				return exitCode, detail, true
 			}
 		}
 		for _, status := range pod.Status.ContainerStatuses {
+			if status.State.Terminated != nil && !includeTerminated {
+				continue
+			}
 			if exitCode, detail, ok := startupContainerFailure(pod.Name, status); ok {
 				return exitCode, detail, true
 			}
@@ -233,68 +240,4 @@ func startupContainerFailure(podName string, status corev1.ContainerStatus) (int
 	default:
 		return 1, "", false
 	}
-}
-
-func (b *Backend) podLogs(ctx context.Context, namespace string, podName string) ([]byte, error) {
-	logger.Log().Debug("Reading Kubernetes pod logs", zap.String("namespace", namespace), zap.String("pod", podName))
-	req := b.client.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{})
-	stream, err := req.Stream(ctx)
-	if err != nil {
-		logger.Log().Warn("Failed to open Kubernetes pod log stream", zap.String("namespace", namespace), zap.String("pod", podName), zap.Error(err))
-		return nil, err
-	}
-	defer stream.Close()
-	logs, err := io.ReadAll(stream)
-	if err != nil {
-		logger.Log().Warn("Failed to read Kubernetes pod logs", zap.String("namespace", namespace), zap.String("pod", podName), zap.Error(err))
-		return logs, err
-	}
-	logger.Log().Debug("Read Kubernetes pod logs", zap.String("namespace", namespace), zap.String("pod", podName), zap.Int("bytes", len(logs)))
-	return logs, nil
-}
-
-func (b *Backend) streamPodLogs(ctx context.Context, namespace string, podName string, output chan<- string) {
-	defer close(output)
-	var stream io.ReadCloser
-	deadline := time.Now().Add(30 * time.Second)
-	logger.Log().Debug("Opening Kubernetes follow log stream", zap.String("namespace", namespace), zap.String("pod", podName))
-	for {
-		req := b.client.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{Follow: true})
-		var err error
-		stream, err = req.Stream(ctx)
-		if err == nil {
-			logger.Log().Debug("Kubernetes follow log stream opened", zap.String("namespace", namespace), zap.String("pod", podName))
-			break
-		}
-		if !strings.Contains(err.Error(), "ContainerCreating") &&
-			!strings.Contains(err.Error(), "PodInitializing") &&
-			!strings.Contains(err.Error(), "not available") {
-			logger.Log().Warn("Failed to stream Kubernetes pod logs", zap.String("namespace", namespace), zap.String("pod", podName), zap.Error(err))
-			output <- fmt.Sprintf("failed to stream pod logs: %v", err)
-			return
-		}
-		if time.Now().After(deadline) {
-			logger.Log().Warn("Timed out opening Kubernetes pod log stream", zap.String("namespace", namespace), zap.String("pod", podName), zap.Error(err))
-			output <- fmt.Sprintf("failed to stream pod logs: %v", err)
-			return
-		}
-		logger.Log().Debug("Kubernetes pod logs not ready yet", zap.String("namespace", namespace), zap.String("pod", podName), zap.Error(err))
-		select {
-		case <-ctx.Done():
-			logger.Log().Warn("Context cancelled while opening Kubernetes pod logs", zap.String("namespace", namespace), zap.String("pod", podName), zap.Error(ctx.Err()))
-			output <- fmt.Sprintf("failed to stream pod logs: %v", ctx.Err())
-			return
-		case <-time.After(500 * time.Millisecond):
-		}
-	}
-	defer stream.Close()
-	scanner := bufio.NewScanner(stream)
-	for scanner.Scan() {
-		output <- scanner.Text()
-	}
-	if err := scanner.Err(); err != nil {
-		logger.Log().Warn("Kubernetes pod log stream ended with scanner error", zap.String("namespace", namespace), zap.String("pod", podName), zap.Error(err))
-		return
-	}
-	logger.Log().Debug("Kubernetes pod log stream ended", zap.String("namespace", namespace), zap.String("pod", podName))
 }

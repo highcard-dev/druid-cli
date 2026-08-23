@@ -61,7 +61,13 @@ chown -R 1000:1000 "$DRUID_WORKER_ROOT"`
 const (
 	runtimeWorkerServiceAccount = "druid-runtime-worker"
 	workloadTokenPath           = "/var/run/secrets/druid-cli/token"
+	finishedJobTTLSeconds       = int32(24 * 60 * 60)
 )
+
+func finishedJobTTL() *int32 {
+	ttl := finishedJobTTLSeconds
+	return &ttl
+}
 
 func workloadTokenVolume(audience string) ([]corev1.Volume, []corev1.VolumeMount) {
 	return []corev1.Volume{{Name: "druid-cli-token", VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{Sources: []corev1.VolumeProjection{{ServiceAccountToken: &corev1.ServiceAccountTokenProjection{Audience: audience, ExpirationSeconds: ptrInt64(600), Path: "token"}}}}}}}, []corev1.VolumeMount{{Name: "druid-cli-token", MountPath: "/var/run/secrets/druid-cli", ReadOnly: true}}
@@ -169,7 +175,8 @@ func helperJobSpec(namespace string, jobName string, pvc string, image string, c
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{Name: jobName, Namespace: namespace, Labels: allLabels},
 		Spec: batchv1.JobSpec{
-			BackoffLimit: &backoff,
+			BackoffLimit:            &backoff,
+			TTLSecondsAfterFinished: finishedJobTTL(),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: allLabels},
 				Spec:       podSpec,
@@ -188,6 +195,9 @@ func procedureJobSpec(namespace string, root string, commandName string, procedu
 	labels[labelProcedure] = dnsLabel(procedureName)
 	labels[labelCommand] = dnsLabel(commandName)
 	labels[labelAttempt] = fmt.Sprintf("%d", attempt)
+	for _, expectedPort := range procedure.ExpectedPorts {
+		labels[portSelectorLabel(expectedPort.Name)] = "true"
+	}
 	if len(procedure.ExpectedPorts) == 1 {
 		labels[labelPortName] = dnsLabel(procedure.ExpectedPorts[0].Name)
 	}
@@ -218,7 +228,8 @@ func procedureJobSpec(namespace string, root string, commandName string, procedu
 			Labels:    labels,
 		},
 		Spec: batchv1.JobSpec{
-			BackoffLimit: &backoff,
+			BackoffLimit:            &backoff,
+			TTLSecondsAfterFinished: finishedJobTTL(),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec:       podSpec,
@@ -228,32 +239,92 @@ func procedureJobSpec(namespace string, root string, commandName string, procedu
 }
 
 func procedureStatefulSetSpec(namespace string, root string, commandName string, procedureName string, resourceName string, procedure *domain.Procedure, env map[string]string, registrySecret string) (*appsv1.StatefulSet, error) {
+	procedureCopy := *procedure
+	procedureCopy.Id = &procedureName
+	command := &domain.CommandInstructionSet{Procedures: []*domain.Procedure{&procedureCopy}}
+	return persistentStatefulSetSpec(namespace, root, commandName, resourceName, command, map[string]map[string]string{procedureName: env}, registrySecret)
+}
+
+func persistentStatefulSetSpec(namespace string, root string, commandName string, resourceName string, command *domain.CommandInstructionSet, procedureEnv map[string]map[string]string, registrySecret string) (*appsv1.StatefulSet, error) {
 	_, pvc, err := parseRef(root)
 	if err != nil {
 		return nil, err
 	}
-	labels := baseLabels(pvc)
-	labels[labelRuntimeID] = dnsLabel(runtimeID(root))
-	labels[labelProcedure] = dnsLabel(procedureName)
-	labels[labelCommand] = dnsLabel(commandName)
-	if len(procedure.ExpectedPorts) == 1 {
-		labels[labelPortName] = dnsLabel(procedure.ExpectedPorts[0].Name)
+	if command == nil || len(command.Procedures) == 0 {
+		return nil, fmt.Errorf("persistent command %s requires at least one procedure", commandName)
+	}
+
+	last := len(command.Procedures) - 1
+	for last >= 0 && command.Procedures[last] == nil {
+		last--
+	}
+	if last < 0 {
+		return nil, fmt.Errorf("persistent command %s requires at least one container procedure", commandName)
+	}
+	mainProcedure := command.Procedures[last]
+	if mainProcedure.IsSignal() || mainProcedure.Image == "" {
+		return nil, fmt.Errorf("persistent command %s final procedure must be a container with an image", commandName)
+	}
+	mainName := domain.ProcedureName(commandName, last, mainProcedure)
+
+	selectorLabels := baseLabels(pvc)
+	selectorLabels[labelRuntimeID] = dnsLabel(runtimeID(root))
+	selectorLabels[labelProcedure] = dnsLabel(mainName)
+	selectorLabels[labelCommand] = dnsLabel(commandName)
+	labels := copyLabels(selectorLabels)
+	for _, procedure := range command.Procedures {
+		if procedure == nil {
+			continue
+		}
+		for _, expectedPort := range procedure.ExpectedPorts {
+			labels[portSelectorLabel(expectedPort.Name)] = "true"
+		}
 	}
 	replicas := int32(1)
+	mainEnv := procedureEnv[mainName]
+	if mainEnv == nil {
+		mainEnv = mainProcedure.Env
+	}
 	container := corev1.Container{
 		Name:            "main",
-		Image:           procedure.Image,
-		Command:         procedure.Command,
-		WorkingDir:      procedure.WorkingDir,
-		TTY:             procedure.TTY,
+		Image:           mainProcedure.Image,
+		Command:         mainProcedure.Command,
+		WorkingDir:      mainProcedure.WorkingDir,
+		TTY:             mainProcedure.TTY,
 		Stdin:           true,
 		ImagePullPolicy: corev1.PullIfNotPresent,
-		Env:             envVars(env),
-		VolumeMounts:    volumeMounts(procedure.Mounts),
+		Env:             envVars(mainEnv),
+		VolumeMounts:    volumeMounts(mainProcedure.Mounts),
+	}
+	initContainers := make([]corev1.Container, 0, last)
+	for idx, procedure := range command.Procedures[:last] {
+		if procedure == nil {
+			continue
+		}
+		procedureName := domain.ProcedureName(commandName, idx, procedure)
+		if procedure.IsSignal() || procedure.Image == "" {
+			return nil, fmt.Errorf("persistent command %s init procedure %s must be a container with an image", commandName, procedureName)
+		}
+		env := procedureEnv[procedureName]
+		if env == nil {
+			env = procedure.Env
+		}
+		initContainers = append(initContainers, corev1.Container{
+			Name:            persistentInitContainerName(procedureName),
+			Image:           procedure.Image,
+			Command:         procedure.Command,
+			WorkingDir:      procedure.WorkingDir,
+			TTY:             procedure.TTY,
+			Stdin:           true,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Env:             envVars(env),
+			VolumeMounts:    volumeMounts(procedure.Mounts),
+		})
 	}
 	podSpec := corev1.PodSpec{
-		Containers: []corev1.Container{container},
-		Volumes:    []corev1.Volume{pvcVolume("data", pvc)},
+		InitContainers: initContainers,
+		Containers:     []corev1.Container{container},
+		Volumes:        []corev1.Volume{pvcVolume("data", pvc)},
 	}
 	if registrySecret != "" {
 		podSpec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: registrySecret}}
@@ -267,7 +338,7 @@ func procedureStatefulSetSpec(namespace string, root string, commandName string,
 		Spec: appsv1.StatefulSetSpec{
 			Replicas:    &replicas,
 			ServiceName: resourceName,
-			Selector:    &metav1.LabelSelector{MatchLabels: labels},
+			Selector:    &metav1.LabelSelector{MatchLabels: selectorLabels},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec:       podSpec,
@@ -276,24 +347,24 @@ func procedureStatefulSetSpec(namespace string, root string, commandName string,
 	}, nil
 }
 
-func serviceSpec(namespace string, root string, serviceProcedure string, selector map[string]string, portName string, port domain.Port) (*corev1.Service, error) {
+func persistentInitContainerName(procedureName string) string {
+	return dnsLabel("init-" + procedureName)
+}
+
+func serviceSpec(namespace string, root string, selector map[string]string, portName string, port domain.Port) (*corev1.Service, error) {
 	_, pvc, err := parseRef(root)
 	if err != nil {
 		return nil, err
 	}
 	labels := baseLabels(pvc)
-	labels[labelProcedure] = dnsLabel(serviceProcedure)
 	labels[labelPortName] = dnsLabel(portName)
-	if command := selector[labelCommand]; command != "" {
-		labels[labelCommand] = command
-	}
 	protocol := corev1.ProtocolTCP
 	if normalizeProtocol(port.Protocol) == "udp" {
 		protocol = corev1.ProtocolUDP
 	}
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      serviceName(root, serviceProcedure, portName),
+			Name:      portServiceName(root, portName),
 			Namespace: namespace,
 			Labels:    labels,
 		},
@@ -308,6 +379,14 @@ func serviceSpec(namespace string, root string, serviceProcedure string, selecto
 			}},
 		},
 	}, nil
+}
+
+func copyLabels(source map[string]string) map[string]string {
+	result := make(map[string]string, len(source))
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
 }
 
 func pvcVolume(name string, pvc string) corev1.Volume {

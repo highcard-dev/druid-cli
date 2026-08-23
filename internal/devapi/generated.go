@@ -1209,7 +1209,7 @@ type ServerInterface interface {
 	// Return CORS/WebDAV file access options
 	// (OPTIONS /api/v1/files)
 	OptionsFile(c *fiber.Ctx, params OptionsFileParams) error
-	// Write a file into the runtime root
+	// Write a file into the runtime root; an optional If-Match SHA-256 ETag serializes Druid-managed writes
 	// (PUT /api/v1/files)
 	PutFile(c *fiber.Ctx, params PutFileParams) error
 	// Stop the in-container build watcher
@@ -1438,25 +1438,27 @@ func RegisterHandlersWithOptions(router fiber.Router, si ServerInterface, option
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/8xXTW/bOBP+KwTf96hEyW5OvrVNP3LYNoiBzaEICloc2WwkkhkOnRiB//tiSFm2I+Vj",
-	"2yzam00OyWeeZ750LyvXemfBUpCTe+kVqhYIMP37YBo4V7Tg3xpChcaTcVZO5EW0ZFo4QOfoAKFRZJYg",
-	"atOA8IoWhagdCrhTrecVNEtFUHpVXas5HH4Pzh7KQhq+6SYCrmQhrWpBTiSfloVEuIkGQcsJYYRChmoB",
-	"rWIctPJsFwiNncv1es3GwTsbIGF+q/QF3EQINER9ZpeqMVpgZ7Au5GdHH1y0emjMzgvrSNRpnx/KKNIz",
-	"l4qqxV9Ow85jHp0HJJOBVK5t1djF7++giqRmDYjaNY27BS1mK2EoCIXz2LIWiR6CNoy4XMjW2LO8eVxs",
-	"dhWiWvHmLSP7xjyG4dusZhC9YOQELUC0LloCLTCrKljVn0Hg8NrY+TdtECpyuBriuMwmojd5MaaH+u/G",
-	"ytc958eAFL0sV/1VbvYdqhQMO6LmiBqqCogO+YeNTcMabiJ0QFEgRTGfsbFlcNoEPqFl2kRiQ4avNAPL",
-	"N18952F37RA+Gxpbu0eTVWhYCqYEULw5P0spmjJWVRWEUIgFqIZzV1ktEpEc/qY2leKLUkySIXZZnmI0",
-	"WpzCUkwBl4CykEvAkN87Ojw+PGIKnAervJET+WdaKmQflqXyplwelwwgLcwh5RBznZ4703IiPwJxGqaD",
-	"28L09V7+H6GWE/m/clu+yq1J2Reu9dWD8vDH0VFOTktg04vK+6ZzsXQVAR0EQlAt723LTu2wVSQncmas",
-	"SoE0lIngjkrfKK5r90+XrJFS00EKTNxJRjnmZe9NuVPp0pGT54/01S5Vs9i27MpEXoDSQuVgqNG1KQF3",
-	"E4/dVXOmXmbBrtaFXIDSQ8k+gdL/jWYjnMGdCb+EsXcLqK6FqYXqeap3AI3R5RLyMGTsS954ddJOhqR1",
-	"TwkEimhhGAe8LN59uZiWlzA7ffP3boEQGw/GvPNxJH3P46ukb1LsrdOr3yFz9yeT9UtYT6F6i4YI7A/F",
-	"6p5Il2gINtlqbNcun8nWddFX3FTZy64XpQbnwoh2p9kgtUT5r4ooj3f7NI552s1S5bDnjhTIZAQoAjnv",
-	"B2E7JecTCcYeMCZlLKCYRdN0fSz1pw0laWWMErBPM/Le7hPykrD8YS42yr8g4n6ZFgqJtfjZgJ7yRcKh",
-	"QKicrc08IryCnNv567HRInkyzWa/EasMZ5+hj0DPELI5N85LHuyeouJTtniWhccKZfepx+Po9UiFHbjL",
-	"k2NIk6MwoRs8V6M9Vm8tFxuQGx+7hezkbdhqn+bW1aMOJ7I/7862Dz0/Pjoe+WiB2dRV10Ai+jkqnRuj",
-	"p2FBijM+N0sfM6lOVwtl55Am66ybffD6QDa+MLmdO2bERk5kmTpiZ3u/+WbuaFgX/Uou+zsL+dr11fqf",
-	"AAAA///JD7lP8Q8AAA==",
+	"H4sIAAAAAAAC/8xYT1PcuBP9Kl36/Y4eDNnsHianJCSBQxIKUsshRaV6rLZHwZacljwwS81332rJ8wds",
+	"AptlK7kNUkvqfq/7dZsbVbimdZZs8Gp6o1pkbCgQx7/emppOMMzltyZfsGmDcVZN1Wlng2lows6FCVON",
+	"wSwISlMTtBjmGZSOga6xaWWFzQID5S0Wl1jR3lfv7J7KlJGbvnXES5Upiw2pqZLTKlNM3zrDpNU0cEeZ",
+	"8sWcGhQ/wrIVOx/Y2EqtVisx9q2znqLPr1Cf0reOfBh6fWwXWBsN3BusMvXBhbeus3poLMGDdQHKuC8P",
+	"JS/iM+cYivl7p2nnsZZdSxxMcqRwTYNjF7+5pqILOKsJSlfX7oo0zJZgggfkqmuEiwhPoMaPhJypxtjj",
+	"tHmQrXeRGZeyeSWefREc/fBtYdPDhrDgIMwJGtfZQBo4sQrC6r/xwPGlsdUXbZiK4Hg59OM8mcDG5NE+",
+	"3eV/N1c+3wp+zJFsQ8vF5io3+0pFTIYdUlNGDVklZsfyw3Z1LRyuM3QAkQ8YunTGdo04p42XE1rFTQ5i",
+	"KO6jFsfSzRcPRdhfO3RfDI0t3b3FCpoWIJAQw8uT41iisWKxKMj7DOaEtdQuWg0RSEl/U5oC5aKYk8EE",
+	"CVkdcmc0HNICzogXxCpTC2Kf3tvfO9jbFwhcSxZbo6bqt7iUqU1a5tiafHGQiwNxoaJYQ4J1fO5Yq6l6",
+	"R0HKMB7cCtPnG/V/plJN1f/yrXzlW5N8I1yrizvy8Gx/PxWnDWTji9i2dR9i7opAYeIDEzayt5Wd0nGD",
+	"QU3VzFiMiTSkKdB1yNsaRdduvi9ZI1LTu+QFuOfJy7EoN9HkO0oXjzx/+MhG7aKadU0joUzVKaEGTMlQ",
+	"smtiAe4WnoSLlUCvEmEXq0zNCfWQsiNC/d9wNoIZXRv/UxB7PafiEkwJuMGp3HFoDC4XPfdDxD6mjScH",
+	"7fkQtP4pYAodWxrmgSzD64+nZ/k5zQ5f/rkrELCOYCy6thvpt2fBtVFxaofaQ5hjgAItMF2xCRTTzGMT",
+	"c780VZdAiRMEzKh0LNsLY6sXQNeB2GIdHfJLH6iBeAl70C726VYktTAtBgJj4ejTpxN48wkrKJxjbWy8",
+	"XETsNvwn3ZNoTEyrV04vfwV5uT0+rR6TGrGeBNFA9kcL6uDZPfeutQ2sg9rZihia2GCOy8l7+XEnEc9j",
+	"evSKZGw/Euwq0gtA2yck1ptr4Ozo5eTZ738k3j2xwdr8RR5iv5o0aLEinRJnLI9X2aYxxQaY9y07zgHO",
+	"j3Sow2QQJwf1j3qNTMG3iRzDuh858+FoMtJHohEx+ODadlDdsRoFR2Mn4hMaSwyzztR9u49tfA1JXBmD",
+	"hOz3EXljbwPymML4YSz63HtMzv80LpCDcPEDJXWHPuQAjoFpLZf0BHRux9T7JrAYyVky+4VQFXduI/SO",
+	"wgOArM+N45Lm3+9BcZQsHkThPqnuv4hlar8c0fhBuDJg+zhgg/H9fL4cHUX01nK+dnIdY7+QgrzyW+7j",
+	"eL+8N+AI9ofdT4C7kR/sH4x829HszBWXFKBrK0ad5oc2DAWpm8m5Wfzmi1JfzNFWFD9AEm/2zusD2uTC",
+	"GHbq2R3Xaqry2JN725v1vxZ6GFbZZiXJ/s5CunZ1sfo7AAD//zI33S8YEQAA",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

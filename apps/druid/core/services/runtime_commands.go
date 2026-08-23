@@ -76,10 +76,8 @@ func (s *RuntimeSession) RemoveCommand(command string) error {
 	s.mu.Lock()
 	root := s.runtimeScroll.Root
 	s.mu.Unlock()
-	if stopper, ok := s.runtimeBackend.(interface{ StopCommand(string, string) error }); ok {
-		if err := stopper.StopCommand(root, command); err != nil {
-			return err
-		}
+	if err := s.runtimeBackend.StopCommand(root, command); err != nil {
+		return err
 	}
 
 	s.mu.Lock()

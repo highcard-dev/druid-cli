@@ -29,9 +29,6 @@ func (b *Backend) StopRuntime(root string) error {
 	for key := range b.containers {
 		delete(b.containers, key)
 	}
-	for key := range b.stdin {
-		delete(b.stdin, key)
-	}
 	b.mu.Unlock()
 	return nil
 }
@@ -61,7 +58,6 @@ func (b *Backend) StopCommand(root string, command string) error {
 		for _, item := range items {
 			if id == item.ID {
 				delete(b.containers, key)
-				delete(b.stdin, key)
 			}
 		}
 	}

@@ -31,17 +31,17 @@ func TestRuntimeSessionRunCommandPassesCommandContextToRuntimeBackend(t *testing
 	if seen.Root != session.runtimeScroll.Root {
 		t.Fatalf("Root = %s, want %s", seen.Root, session.runtimeScroll.Root)
 	}
-	if len(seen.GlobalPorts) != 1 || seen.GlobalPorts[0].Name != "http" {
-		t.Fatalf("GlobalPorts = %#v", seen.GlobalPorts)
+	if len(seen.Ports) != 1 || seen.Ports[0].Name != "http" {
+		t.Fatalf("Ports = %#v", seen.Ports)
 	}
 }
 
 func TestRuntimeSessionPersistentCommandRemainsRunningAfterSetup(t *testing.T) {
 	session := newRuntimeSessionExecutionTest(t, executionScrollYAML(), &fakeWorkerBackend{
-		runCommand: func(command ports.RuntimeCommand) (*int, error) {
-			command.ObserveProcedureStatus("web", domain.ScrollLockStatusRunning, nil)
-			return nil, nil
-		},
+		procedureStatusUpdates: []ports.ProcedureStatusUpdate{{
+			Procedure: "web",
+			Status:    domain.ScrollLockStatusRunning,
+		}},
 	})
 	session.Start()
 
@@ -82,8 +82,8 @@ func TestRuntimeSessionRunCommandPassesRoutingAndScrollIdentity(t *testing.T) {
 	if len(seen.Routing) != 1 || seen.Routing[0].PublicPort != 443 {
 		t.Fatalf("Routing = %#v", seen.Routing)
 	}
-	if len(seen.GlobalPorts) != 1 || seen.GlobalPorts[0].Port != 8080 {
-		t.Fatalf("GlobalPorts = %#v, fixed port must remain 8080", seen.GlobalPorts)
+	if len(seen.Ports) != 1 || seen.Ports[0].Port != 8080 {
+		t.Fatalf("Ports = %#v, fixed port must remain 8080", seen.Ports)
 	}
 	env := seen.ProcedureEnv["web"]
 	if env["DRUID_SCROLL_ID"] != "scroll-a" || env["DRUID_SCROLL_NAME"] != "scroll-name" {
@@ -123,8 +123,8 @@ func TestRuntimeSessionRunCommandResolvesDynamicPortsFromRouting(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(seen.GlobalPorts) != 1 || seen.GlobalPorts[0].Port != 11000 {
-		t.Fatalf("GlobalPorts = %#v, want dynamic port 11000", seen.GlobalPorts)
+	if len(seen.Ports) != 1 || seen.Ports[0].Port != 11000 {
+		t.Fatalf("Ports = %#v, want dynamic port 11000", seen.Ports)
 	}
 	env := seen.ProcedureEnv["server"]
 	if env["DRUID_PORT_MAIN"] != "11000" || env["DRUID_PORT_MAIN_1"] != "11000" {
@@ -161,13 +161,12 @@ func TestRuntimeSessionRunCommandRejectsUnassignedDynamicPort(t *testing.T) {
 	}
 }
 
-func TestRuntimeSessionRunCommandPersistsProcedureStatusCallbacks(t *testing.T) {
+func TestRuntimeSessionRunCommandPersistsProcedureStatusUpdates(t *testing.T) {
 	exitCode := 0
 	session := newRuntimeSessionExecutionTest(t, executionScrollYAML(), &fakeWorkerBackend{
-		runCommand: func(command ports.RuntimeCommand) (*int, error) {
-			command.ObserveProcedureStatus("web", domain.ScrollLockStatusRunning, nil)
-			command.ObserveProcedureStatus("web", domain.ScrollLockStatusDone, &exitCode)
-			return nil, nil
+		procedureStatusUpdates: []ports.ProcedureStatusUpdate{
+			{Procedure: "web", Status: domain.ScrollLockStatusRunning},
+			{Procedure: "web", Status: domain.ScrollLockStatusDone, ExitCode: &exitCode},
 		},
 	})
 
@@ -242,6 +241,9 @@ func newRuntimeSessionExecutionTest(t *testing.T, scrollYAML string, backend *fa
 	if err != nil {
 		t.Fatal(err)
 	}
+	backend.procedureStatusObserver = ports.ProcedureStatusObserverFunc(func(update ports.ProcedureStatusUpdate) {
+		session.persistProcedureStatus(update.Command, update.Procedure, update.Status, update.ExitCode)
+	})
 	return session
 }
 

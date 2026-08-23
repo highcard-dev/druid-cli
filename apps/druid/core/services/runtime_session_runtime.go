@@ -24,7 +24,7 @@ func (s *RuntimeSession) Ports() ([]domain.RuntimePortStatus, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.runtimeBackend.ExpectedPorts(runtimeScroll.Root, file.Commands, runtimePorts, reservations)
+	return s.runtimeBackend.ExpectedPorts(runtimeScroll.Root, file.Commands, runtimePorts)
 }
 
 func (s *RuntimeSession) RoutingTargets() ([]domain.RuntimeRoutingTarget, error) {
@@ -37,7 +37,7 @@ func (s *RuntimeSession) RoutingTargets() ([]domain.RuntimeRoutingTarget, error)
 	if err != nil {
 		return nil, err
 	}
-	return s.runtimeBackend.RoutingTargets(runtimeScroll.Root, file.Commands, ports, reservations)
+	return s.runtimeBackend.RoutingTargets(runtimeScroll.Root, file.Commands, ports)
 }
 
 func (s *RuntimeSession) Queue() domain.ProcedureStatusMap {

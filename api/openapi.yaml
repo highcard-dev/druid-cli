@@ -14,8 +14,6 @@ servers:
 tags:
   - name: scroll
     description: Scroll management and command execution
-  - name: logs
-    description: Log streaming and retrieval
   - name: queue
     description: Command queue management
   - name: websocket
@@ -285,12 +283,6 @@ components:
         additionalProperties:
           $ref: '#/components/schemas/LockStatus'
 
-    ScrollLogMap:
-      type: object
-      additionalProperties:
-        type: array
-        items:
-          type: string
     RuntimeScroll:
       type: object
       required:
@@ -645,25 +637,6 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-
-  /api/v1/scrolls/{id}/logs:
-    get:
-      operationId: getScrollLogs
-      summary: Get scroll-scoped logs
-      tags: [logs, runtime]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Logs keyed by procedure
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ScrollLogMap'
 
   /api/v1/scrolls/{id}/ports:
     get:

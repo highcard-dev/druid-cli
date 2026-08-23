@@ -12,6 +12,8 @@ import (
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	coreservices "github.com/highcard-dev/daemon/internal/core/services"
+	"github.com/highcard-dev/daemon/internal/utils/logger"
+	"go.uber.org/zap"
 )
 
 // RuntimeSupervisor is the daemon-facing coordinator. It owns persisted runtime
@@ -53,15 +55,37 @@ func fixedDeveloperPorts() []domain.Port {
 func NewRuntimeSupervisor(
 	store ports.RuntimeScrollStore,
 	manager *coreservices.RuntimeScrollManager,
-	runtimeBackend ports.RuntimeBackendInterface,
-) *RuntimeSupervisor {
-	return &RuntimeSupervisor{
-		store:          store,
-		manager:        manager,
-		runtimeBackend: runtimeBackend,
-		workerTimeout:  20 * time.Minute,
-		sessions:       map[string]*RuntimeSession{},
+	backendFactory ports.RuntimeBackendFactory,
+) (*RuntimeSupervisor, error) {
+	if backendFactory == nil {
+		return nil, fmt.Errorf("runtime backend factory is required")
 	}
+	supervisor := &RuntimeSupervisor{
+		store:         store,
+		manager:       manager,
+		workerTimeout: 20 * time.Minute,
+		sessions:      map[string]*RuntimeSession{},
+	}
+	runtimeBackend, err := backendFactory.Create(supervisor)
+	if err != nil {
+		return nil, err
+	}
+	if runtimeBackend == nil {
+		return nil, fmt.Errorf("runtime backend factory returned nil")
+	}
+	supervisor.runtimeBackend = runtimeBackend
+	return supervisor, nil
+}
+
+func (s *RuntimeSupervisor) ObserveProcedureStatus(update ports.ProcedureStatusUpdate) {
+	s.mu.Lock()
+	session := s.sessions[update.RuntimeID]
+	s.mu.Unlock()
+	if session == nil {
+		logger.Log().Warn("Ignoring procedure status for an unknown runtime", zap.String("runtime", update.RuntimeID), zap.String("command", update.Command), zap.String("procedure", update.Procedure), zap.String("status", string(update.Status)))
+		return
+	}
+	session.persistProcedureStatus(update.Command, update.Procedure, update.Status, update.ExitCode)
 }
 
 func (s *RuntimeSupervisor) SetWorkerCallbacks(callbacks *WorkerCallbackManager, callbackURL string) {

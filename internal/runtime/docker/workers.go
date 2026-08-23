@@ -95,39 +95,39 @@ func (b *Backend) runWorkerRootCommand(ctx context.Context, root string, command
 	return nil
 }
 
-func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorkerAction) error {
+func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorkerAction) (<-chan error, error) {
 	if b.config.WorkerImage == "" {
-		return fmt.Errorf("docker worker image is required; set --docker-worker-image or DRUID_DOCKER_WORKER_IMAGE")
+		return nil, fmt.Errorf("docker worker image is required; set --docker-worker-image or DRUID_DOCKER_WORKER_IMAGE")
 	}
 	root := action.RootRef
 	if root == "" {
-		return fmt.Errorf("worker root ref is required")
+		return nil, fmt.Errorf("worker root ref is required")
 	}
 	if action.MountPath == "" {
 		action.MountPath = "/scroll"
 	}
 	if err := b.pullImage(ctx, b.config.WorkerImage); err != nil {
-		return err
+		return nil, err
 	}
 	if err := b.prepareWritableRoot(ctx, root); err != nil {
-		return err
+		return nil, err
 	}
 	registryConfig, err := json.Marshal(struct {
 		Registries []domain.RegistryCredential `json:"registries"`
 	}{Registries: action.RegistryCredentials})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	rootMount, err := DockerMount(root, action.MountPath, false, "")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	artifact := action.Artifact
 	mounts := []mount.Mount{rootMount}
 	if info, statErr := os.Stat(action.Artifact); statErr == nil {
 		abs, err := filepath.Abs(action.Artifact)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if info.IsDir() {
 			mounts = append(mounts, mount.Mount{Type: mount.TypeBind, Source: abs, Target: "/artifact-src", ReadOnly: true})
@@ -165,32 +165,33 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 		},
 	}, hostConfig, nil, nil, name)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer b.client.ContainerRemove(context.Background(), created.ID, container.RemoveOptions{Force: true})
 	if err := b.client.ContainerStart(ctx, created.ID, container.StartOptions{}); err != nil {
-		return err
+		_ = b.client.ContainerRemove(context.Background(), created.ID, container.RemoveOptions{Force: true})
+		return nil, err
 	}
 	statusCh, errCh := b.client.ContainerWait(ctx, created.ID, container.WaitConditionNotRunning)
-	select {
-	case err := <-errCh:
-		if err != nil {
-			return err
-		}
-	case status := <-statusCh:
-		if status.StatusCode != 0 {
-			logs, _ := b.client.ContainerLogs(context.Background(), created.ID, container.LogsOptions{ShowStdout: true, ShowStderr: true})
-			defer func() {
-				if logs != nil {
-					logs.Close()
+	done := make(chan error, 1)
+	go func() {
+		defer b.client.ContainerRemove(context.Background(), created.ID, container.RemoveOptions{Force: true})
+		for {
+			select {
+			case err, ok := <-errCh:
+				if ok && err != nil {
+					done <- err
+					return
 				}
-			}()
-			var message strings.Builder
-			if logs != nil {
-				_, _ = io.Copy(&message, logs)
+				errCh = nil
+			case status := <-statusCh:
+				if status.StatusCode != 0 {
+					done <- fmt.Errorf("worker container exited with %d", status.StatusCode)
+					return
+				}
+				done <- nil
+				return
 			}
-			return fmt.Errorf("worker container exited with %d: %s", status.StatusCode, strings.TrimSpace(message.String()))
 		}
-	}
-	return nil
+	}()
+	return done, nil
 }

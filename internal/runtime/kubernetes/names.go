@@ -50,6 +50,10 @@ func shortHash(value string) string {
 	return hex.EncodeToString(sum[:])[:10]
 }
 
+func portSelectorLabel(portName string) string {
+	return "druid.gg/port-" + shortHash(portName)
+}
+
 func dataPVCName(id string) string {
 	return dnsLabel("druid-" + id + "-data")
 }
