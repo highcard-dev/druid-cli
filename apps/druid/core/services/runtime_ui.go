@@ -86,15 +86,14 @@ func uiPublishCommand() *domain.CommandInstructionSet {
 			WorkingDir: "/app/resources/deployment",
 			Mounts:     []domain.Mount{{Path: "/app/resources/deployment", SubPath: ".", ReadOnly: true}},
 			Command: []string{"sh", "-ec", `
-source="${DRUID_UI_SOURCE:?DRUID_UI_SOURCE is required}"
-upload_url="${DRUID_UI_UPLOAD_URL:?DRUID_UI_UPLOAD_URL is required}"
-case "$source" in private/*.wasm|public/*.wasm) ;; *) echo "invalid UI package path" >&2; exit 1;; esac
-test -f "$source" && test -s "$source"
+test -n "$(printenv DRUID_UI_SOURCE)" && test -n "$(printenv DRUID_UI_UPLOAD_URL)"
+case "$(printenv DRUID_UI_SOURCE)" in private/*.wasm|public/*.wasm) ;; *) echo "invalid UI package path" >&2; exit 1;; esac
+test -f "$(printenv DRUID_UI_SOURCE)" && test -s "$(printenv DRUID_UI_SOURCE)"
 echo "Uploading Druid UI package"
-curl --fail-with-body --silent --show-error --request PUT --upload-file "$source" \
+curl --fail-with-body --silent --show-error --request PUT --upload-file "$(printenv DRUID_UI_SOURCE)" \
   --header "Content-Type: application/wasm" \
   --header "Cache-Control: public, max-age=31536000, immutable" \
-  "$upload_url"
+  "$(printenv DRUID_UI_UPLOAD_URL)"
 `},
 		}},
 	}

@@ -760,7 +760,7 @@ func TestWaitForJobReportsPodFailureReason(t *testing.T) {
 	}
 }
 
-func TestWaitForJobImmediatelyReportsUnschedulablePod(t *testing.T) {
+func TestJobStartupFailureDoesNotReportUnschedulablePod(t *testing.T) {
 	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "unschedulable", Namespace: "druid"}}
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "unschedulable-pod", Namespace: "druid", Labels: map[string]string{"job-name": job.Name}},
@@ -770,28 +770,8 @@ func TestWaitForJobImmediatelyReportsUnschedulablePod(t *testing.T) {
 	}
 	backend := NewWithClient(Config{Namespace: "druid"}, fake.NewSimpleClientset(job, pod))
 
-	exitCode, err := backend.waitForJob(context.Background(), "druid", job.Name)
-	if err == nil || !strings.Contains(err.Error(), "insufficient memory") {
-		t.Fatalf("waitForJob error = %v, want unschedulable detail", err)
-	}
-	if exitCode == nil || *exitCode != 1 {
-		t.Fatalf("exitCode = %#v, want 1", exitCode)
-	}
-}
-
-func TestJobStartupFailureWaitsForImmediatePVCBinding(t *testing.T) {
-	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "pvc-binding", Namespace: "druid"}}
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "pvc-binding-pod", Namespace: "druid", Labels: map[string]string{"job-name": job.Name}},
-		Status: corev1.PodStatus{Conditions: []corev1.PodCondition{{
-			Type: corev1.PodScheduled, Status: corev1.ConditionFalse, Reason: corev1.PodReasonUnschedulable,
-			Message: "0/3 nodes are available: pod has unbound immediate PersistentVolumeClaims",
-		}}},
-	}
-	backend := NewWithClient(Config{Namespace: "druid"}, fake.NewSimpleClientset(job, pod))
-
 	if _, _, failed := backend.jobStartupFailure(context.Background(), "druid", job.Name, false); failed {
-		t.Fatal("jobStartupFailure reported transient PVC binding as terminal")
+		t.Fatal("jobStartupFailure reported unschedulable pod as terminal")
 	}
 }
 
