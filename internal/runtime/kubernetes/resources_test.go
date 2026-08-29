@@ -162,6 +162,32 @@ func TestPinPodToRuntimeNodeUsesScheduledPendingPVCConsumer(t *testing.T) {
 	}
 }
 
+func TestPinPodToRuntimeNodeUsesOldestScheduledPendingPVCConsumer(t *testing.T) {
+	pvc := "druid-static-web-data"
+	root := ref("druid", pvc)
+	older := runningProcedurePod("druid", root, "start", "coldstart", 1, "runtime", "start-job")
+	older.Name = "runtime-pod"
+	older.Status.Phase = corev1.PodPending
+	older.Spec.Volumes = []corev1.Volume{pvcVolume("data", pvc)}
+	older.CreationTimestamp = metav1.NewTime(time.Unix(1, 0))
+	newer := runningProcedurePod("druid", root, "watch", "watch", 1, "watcher", "watch-job")
+	newer.Name = "watcher-pod"
+	newer.Status.Phase = corev1.PodPending
+	newer.Spec.NodeName = "node-b"
+	newer.Spec.Volumes = []corev1.Volume{pvcVolume("data", pvc)}
+	newer.CreationTimestamp = metav1.NewTime(time.Unix(2, 0))
+	client := fake.NewSimpleClientset(newer, older)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
+	podSpec := corev1.PodSpec{}
+
+	if err := backend.pinPodToRuntimeNode(context.Background(), "druid", pvc, &podSpec); err != nil {
+		t.Fatal(err)
+	}
+	if got := podSpec.NodeSelector[corev1.LabelHostname]; got != "node-a" {
+		t.Fatalf("expected oldest pending consumer node-a, got %q", got)
+	}
+}
+
 func TestPinPodToRuntimeNodeIgnoresInactiveOrUnrelatedPods(t *testing.T) {
 	root := ref("druid", "druid-static-web-data")
 	inactive := runningProcedurePod("druid", root, "start", "start", 1, "inactive", "start-job")

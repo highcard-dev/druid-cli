@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"context"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,6 +32,8 @@ func (b *Backend) runtimePVCNode(ctx context.Context, namespace string, pvc stri
 	if err != nil {
 		return "", err
 	}
+	var pendingNode string
+	var pendingCreated time.Time
 	for idx := range pods.Items {
 		pod := &pods.Items[idx]
 		if pod.Status.Phase != corev1.PodPending && pod.Status.Phase != corev1.PodRunning {
@@ -39,9 +42,16 @@ func (b *Backend) runtimePVCNode(ctx context.Context, namespace string, pvc stri
 		if pod.Spec.NodeName == "" || !podUsesPVC(pod, pvc) {
 			continue
 		}
-		return pod.Spec.NodeName, nil
+		if pod.Status.Phase == corev1.PodRunning {
+			return pod.Spec.NodeName, nil
+		}
+		created := pod.CreationTimestamp.Time
+		if pendingNode == "" || created.Before(pendingCreated) {
+			pendingNode = pod.Spec.NodeName
+			pendingCreated = created
+		}
 	}
-	return "", nil
+	return pendingNode, nil
 }
 
 func podUsesPVC(pod *corev1.Pod, pvc string) bool {
