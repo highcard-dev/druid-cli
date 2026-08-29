@@ -33,7 +33,10 @@ func (b *Backend) runtimePVCNode(ctx context.Context, namespace string, pvc stri
 	}
 	for idx := range pods.Items {
 		pod := &pods.Items[idx]
-		if pod.Status.Phase != corev1.PodRunning || pod.Spec.NodeName == "" || !podUsesPVC(pod, pvc) {
+		if pod.Status.Phase != corev1.PodPending && pod.Status.Phase != corev1.PodRunning {
+			continue
+		}
+		if pod.Spec.NodeName == "" || !podUsesPVC(pod, pvc) {
 			continue
 		}
 		return pod.Spec.NodeName, nil

@@ -145,6 +145,23 @@ func TestPinPodToRuntimeNodeUsesRunningPVCConsumer(t *testing.T) {
 	}
 }
 
+func TestPinPodToRuntimeNodeUsesScheduledPendingPVCConsumer(t *testing.T) {
+	root := ref("druid", "druid-static-web-data")
+	runtimePod := runningProcedurePod("druid", root, "start", "coldstart", 1, "runtime-pod", "start-job")
+	runtimePod.Status.Phase = corev1.PodPending
+	runtimePod.Spec.Volumes = []corev1.Volume{pvcVolume("data", "druid-static-web-data")}
+	client := fake.NewSimpleClientset(runtimePod)
+	backend := NewWithClient(Config{Namespace: "druid"}, client)
+
+	podSpec := corev1.PodSpec{}
+	if err := backend.pinPodToRuntimeNode(context.Background(), "druid", "druid-static-web-data", &podSpec); err != nil {
+		t.Fatal(err)
+	}
+	if got := podSpec.NodeSelector[corev1.LabelHostname]; got != "node-a" {
+		t.Fatalf("node selector = %q, want node-a", got)
+	}
+}
+
 func TestPinPodToRuntimeNodeIgnoresInactiveOrUnrelatedPods(t *testing.T) {
 	root := ref("druid", "druid-static-web-data")
 	inactive := runningProcedurePod("druid", root, "start", "start", 1, "inactive", "start-job")
