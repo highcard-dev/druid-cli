@@ -35,6 +35,7 @@ type RuntimeScroll struct {
 	CreatedAt      time.Time                `json:"created_at"`
 	UpdatedAt      time.Time                `json:"updated_at"`
 	Procedures     ProcedureStatusMap       `json:"procedures,omitempty"`
+	ReservedPorts  []Port                   `json:"reserved_ports,omitempty"`
 }
 
 type RuntimeState struct {
@@ -49,7 +50,6 @@ type RuntimeRoutingTarget struct {
 	Protocol    string            `json:"protocol"`
 	Namespace   string            `json:"namespace,omitempty"`
 	ServiceName string            `json:"service_name"`
-	ServicePort int               `json:"service_port"`
 	Selector    map[string]string `json:"selector,omitempty"`
 }
 
@@ -75,6 +75,5 @@ type RuntimeUIPackages map[RuntimeUIPackageScope]RuntimeUIPackage
 type RuntimeUIPackage struct {
 	URL       string    `json:"url"`
 	Path      string    `json:"path"`
-	SHA256    string    `json:"sha256"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

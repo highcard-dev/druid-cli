@@ -38,7 +38,7 @@ func TestPublicRoutesAnswerCorsPreflight(t *testing.T) {
 	public := fiber.New(fiber.Config{DisableStartupMessage: true})
 	RegisterPublicRoutes(public, handlers)
 
-	req := httptest.NewRequest(http.MethodOptions, "/scroll-1/api/v1/watch/status", nil)
+	req := httptest.NewRequest(http.MethodOptions, "/scroll-1/api/v1/scroll", nil)
 	req.Header.Set("Origin", "http://127.0.0.1:3000")
 	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
 	req.Header.Set("Access-Control-Request-Headers", "authorization")

@@ -32,6 +32,7 @@ const (
 	configMapKeyUpdatedAt      = "updated_at"
 	configMapKeyProceduresJSON = "procedures_json"
 	configMapKeyRoutingJSON    = "routing_json"
+	configMapKeyReservedPorts  = "reserved_ports_json"
 	configMapKeyUIPackagesJSON = "ui_packages_json"
 )
 
@@ -131,6 +132,14 @@ func (s *ConfigMapStateStore) UpdateScroll(scroll *domain.RuntimeScroll) error {
 	if err != nil {
 		return err
 	}
+	currentScroll, err := runtimeScrollFromConfigMap(current)
+	if err != nil {
+		return err
+	}
+	scroll.UIPackages = mergeUIPackages(currentScroll.UIPackages, scroll.UIPackages)
+	if scroll.ReservedPorts == nil {
+		scroll.ReservedPorts = currentScroll.ReservedPorts
+	}
 	scroll.UpdatedAt = time.Now().UTC()
 	next, err := runtimeScrollConfigMap(s.namespace, scroll)
 	if err != nil {
@@ -142,6 +151,21 @@ func (s *ConfigMapStateStore) UpdateScroll(scroll *domain.RuntimeScroll) error {
 		return domain.ErrRuntimeScrollNotFound
 	}
 	return err
+}
+
+// Preserve package scopes recorded by a concurrent command-status update.
+func mergeUIPackages(current, next domain.RuntimeUIPackages) domain.RuntimeUIPackages {
+	merged := make(domain.RuntimeUIPackages, len(current)+len(next))
+	for scope, pkg := range current {
+		merged[scope] = pkg
+	}
+	for scope, pkg := range next {
+		persisted, exists := merged[scope]
+		if !exists || !pkg.UpdatedAt.Before(persisted.UpdatedAt) {
+			merged[scope] = pkg
+		}
+	}
+	return merged
 }
 
 func (s *ConfigMapStateStore) DeleteScroll(id string) error {
@@ -158,6 +182,10 @@ func runtimeScrollConfigMap(namespace string, scroll *domain.RuntimeScroll) (*co
 		return nil, err
 	}
 	routing, err := json.Marshal(scroll.Routing)
+	if err != nil {
+		return nil, err
+	}
+	reservedPorts, err := json.Marshal(scroll.ReservedPorts)
 	if err != nil {
 		return nil, err
 	}
@@ -190,6 +218,7 @@ func runtimeScrollConfigMap(namespace string, scroll *domain.RuntimeScroll) (*co
 			configMapKeyUpdatedAt:      formatRuntimeTime(scroll.UpdatedAt),
 			configMapKeyProceduresJSON: string(procedures),
 			configMapKeyRoutingJSON:    string(routing),
+			configMapKeyReservedPorts:  string(reservedPorts),
 			configMapKeyUIPackagesJSON: string(uiPackages),
 		},
 	}, nil
@@ -211,6 +240,14 @@ func runtimeScrollFromConfigMap(configMap *corev1.ConfigMap) (*domain.RuntimeScr
 	}
 	routing := []domain.RuntimeRouteAssignment{}
 	if err := json.Unmarshal([]byte(routingJSON), &routing); err != nil {
+		return nil, err
+	}
+	reservedPortsJSON := data[configMapKeyReservedPorts]
+	if reservedPortsJSON == "" {
+		reservedPortsJSON = "[]"
+	}
+	reservedPorts := []domain.Port{}
+	if err := json.Unmarshal([]byte(reservedPortsJSON), &reservedPorts); err != nil {
 		return nil, err
 	}
 	uiPackagesJSON := data[configMapKeyUIPackagesJSON]
@@ -236,6 +273,7 @@ func runtimeScrollFromConfigMap(configMap *corev1.ConfigMap) (*domain.RuntimeScr
 		Status:         domain.RuntimeScrollStatus(data[configMapKeyStatus]),
 		LastError:      data[configMapKeyLastError],
 		Routing:        routing,
+		ReservedPorts:  reservedPorts,
 		UIPackages:     uiPackages,
 		CreatedAt:      parseRuntimeTime(data[configMapKeyCreatedAt]),
 		UpdatedAt:      parseRuntimeTime(data[configMapKeyUpdatedAt]),

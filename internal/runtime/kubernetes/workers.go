@@ -3,6 +3,7 @@ package kubernetes
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -18,21 +19,24 @@ import (
 	"go.uber.org/zap"
 )
 
-func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorkerAction) error {
+func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorkerAction) (<-chan error, error) {
 	if err := b.config.ValidateForMaterialization(); err != nil {
 		logger.Log().Error("Kubernetes pull worker config invalid", zap.String("runtime_id", action.RuntimeID), zap.Error(err))
-		return err
+		return nil, err
 	}
 	if _, err := os.Stat(action.Artifact); err == nil {
-		return fmt.Errorf("kubernetes materialization requires an OCI artifact reference; local path %q is only available with Docker runtime", action.Artifact)
+		return nil, fmt.Errorf("kubernetes materialization requires an OCI artifact reference; local path %q is only available with Docker runtime", action.Artifact)
 	}
 	if action.MountPath == "" {
 		action.MountPath = "/scroll"
 	}
+	if action.TokenFile == "" {
+		action.TokenFile = workloadTokenPath
+	}
 	namespace, pvc, err := parseRef(action.RootRef)
 	if err != nil {
 		logger.Log().Error("Kubernetes pull worker root ref invalid", zap.String("runtime_id", action.RuntimeID), zap.String("root_ref", action.RootRef), zap.Error(err))
-		return err
+		return nil, err
 	}
 	logger.Log().Info("Spawning Kubernetes pull worker",
 		zap.String("runtime_id", action.RuntimeID),
@@ -50,27 +54,42 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 		zap.Bool("registry_plain_http", b.config.RegistryPlainHTTP),
 		zap.Bool("has_registry_credentials", len(action.RegistryCredentials) > 0),
 	)
+	// A deployment obtains both workload identities as part of its first
+	// materialization, before creating any runtime resources.
+	if err := b.ensureRuntimeServiceAccounts(ctx, namespace); err != nil {
+		return nil, err
+	}
 	if action.Mode == ports.RuntimeWorkerModeCreate {
 		if err := b.ensurePVC(ctx, namespace, pvc, action.Storage); err != nil {
 			logger.Log().Error("Failed to ensure runtime PVC for pull worker", zap.String("runtime_id", action.RuntimeID), zap.String("namespace", namespace), zap.String("pvc", pvc), zap.Error(err))
-			return err
+			return nil, err
 		}
 	}
 	registryConfigSecret, cleanupRegistryConfig, err := b.createRegistryConfigSecret(ctx, namespace, action.Artifact+action.RuntimeID, action.RegistryCredentials)
 	if err != nil {
 		logger.Log().Error("Failed to create registry config secret for pull worker", zap.String("runtime_id", action.RuntimeID), zap.String("namespace", namespace), zap.Error(err))
-		return err
+		return nil, err
 	}
-	defer cleanupRegistryConfig()
-	job := workerPullJobSpec(namespace, jobName("worker-pull", action.RootRef, shortHash(string(action.Mode)+action.Artifact)), pvc, b.config.PullImage, action, b.config.RegistrySecret, registryConfigSecret, b.config.RegistryPlainHTTP)
+	job := workerPullJobSpec(namespace, jobName("worker-pull", action.RootRef, shortHash(string(action.Mode)+action.Artifact)), pvc, b.config.PullImage, action, b.config.RegistrySecret, registryConfigSecret, b.config.RegistryPlainHTTP, b.config.ServiceAccountAudience)
+	if err := b.pinPodToRuntimeNode(ctx, namespace, pvc, &job.Spec.Template.Spec); err != nil {
+		cleanupRegistryConfig()
+		return nil, err
+	}
 	setJobDeadlineFromContext(ctx, job)
 	logger.Log().Debug("Kubernetes pull worker job built", zap.String("runtime_id", action.RuntimeID), zap.String("namespace", namespace), zap.String("job", job.Name))
-	if err := b.runHelperJob(ctx, job); err != nil {
+	done, err := b.startHelperJob(ctx, job)
+	if err != nil {
+		cleanupRegistryConfig()
 		logger.Log().Error("Kubernetes pull worker failed", zap.String("runtime_id", action.RuntimeID), zap.String("namespace", namespace), zap.String("job", job.Name), zap.Error(err))
-		return err
+		return nil, err
 	}
-	logger.Log().Info("Kubernetes pull worker completed", zap.String("runtime_id", action.RuntimeID), zap.String("namespace", namespace), zap.String("job", job.Name))
-	return nil
+	result := make(chan error, 1)
+	go func() {
+		err := <-done
+		cleanupRegistryConfig()
+		result <- err
+	}()
+	return result, nil
 }
 
 func (b *Backend) BackupRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential) error {
@@ -93,6 +112,9 @@ func (b *Backend) BackupRuntime(ctx context.Context, root string, artifact strin
 	}
 	defer cleanupRegistryConfig()
 	job := backupJobSpec(namespace, jobName("backup", root, shortHash(artifact)), pvc, b.config.PullImage, artifact, b.config.RegistrySecret, registryConfigSecret, b.config.RegistryPlainHTTP)
+	if err := b.pinPodToRuntimeNode(ctx, namespace, pvc, &job.Spec.Template.Spec); err != nil {
+		return err
+	}
 	setJobDeadlineFromContext(ctx, job)
 	if err := b.runHelperJob(ctx, job); err != nil {
 		logger.Log().Error("Kubernetes runtime backup failed", zap.String("namespace", namespace), zap.String("pvc", pvc), zap.String("artifact", artifact), zap.String("job", job.Name), zap.Error(err))
@@ -174,57 +196,42 @@ func (b *Backend) createRegistryConfigSecret(ctx context.Context, namespace stri
 }
 
 func (b *Backend) runHelperJob(ctx context.Context, job *batchv1.Job) error {
-	_, err := b.runJobAndLogs(ctx, job)
+	done, err := b.startHelperJob(ctx, job)
 	if err != nil {
-		logger.Log().Error("Kubernetes helper job failed", zap.String("namespace", job.Namespace), zap.String("job", job.Name), zap.Error(err))
+		return err
 	}
-	return err
+	return <-done
 }
 
-func (b *Backend) runJobAndLogs(ctx context.Context, job *batchv1.Job) ([]byte, error) {
-	if b.jobLogRunner != nil {
-		logger.Log().Debug("Running Kubernetes job through test log runner", zap.String("namespace", job.Namespace), zap.String("job", job.Name))
-		return b.jobLogRunner(ctx, job)
+func (b *Backend) startHelperJob(ctx context.Context, job *batchv1.Job) (<-chan error, error) {
+	done := make(chan error, 1)
+	if b.helperJobRunner != nil {
+		go func() { done <- b.helperJobRunner(ctx, job) }()
+		return done, nil
 	}
 	logger.Log().Info("Starting Kubernetes helper job", zap.String("namespace", job.Namespace), zap.String("job", job.Name))
-	logger.Log().Debug("Kubernetes helper job details", zap.String("namespace", job.Namespace), zap.String("job", job.Name), zap.String("service_account", job.Spec.Template.Spec.ServiceAccountName), zap.Int("containers", len(job.Spec.Template.Spec.Containers)), zap.Int("init_containers", len(job.Spec.Template.Spec.InitContainers)))
 	createdJob, err := b.createFreshJob(ctx, job)
 	if err != nil {
-		logger.Log().Error("Failed to create Kubernetes helper job", zap.String("namespace", job.Namespace), zap.String("job", job.Name), zap.Error(err))
 		return nil, err
 	}
-	jobName := createdJob.Name
-	podName, err := b.waitForJobPod(ctx, job.Namespace, jobName, string(createdJob.UID))
+	go func() { done <- b.waitHelperJob(ctx, createdJob) }()
+	return done, nil
+}
+
+func (b *Backend) waitHelperJob(ctx context.Context, job *batchv1.Job) error {
+	exitCode, err := b.waitForJob(ctx, job.Namespace, job.Name)
 	if err != nil {
-		logger.Log().Error("Failed to find Kubernetes helper job pod", zap.String("namespace", job.Namespace), zap.String("job", jobName), zap.String("uid", string(createdJob.UID)), zap.Error(err))
-		return nil, err
+		if errors.Is(err, context.Canceled) {
+			b.deleteFinishedJob(context.Background(), job.Namespace, job.Name)
+		}
+		return err
 	}
-	logger.Log().Debug("Kubernetes helper job pod found", zap.String("namespace", job.Namespace), zap.String("job", jobName), zap.String("pod", podName))
-	exitCode, waitErr := b.waitForJob(ctx, job.Namespace, jobName)
-	logs, logErr := b.podLogs(ctx, job.Namespace, podName)
-	if logErr != nil {
-		logger.Log().Warn("Failed to collect Kubernetes helper job logs", zap.String("namespace", job.Namespace), zap.String("job", jobName), zap.String("pod", podName), zap.Error(logErr))
-	} else {
-		logger.Log().Debug("Collected Kubernetes helper job logs", zap.String("namespace", job.Namespace), zap.String("job", jobName), zap.String("pod", podName), zap.Int("bytes", len(logs)))
+	if exitCode == nil {
+		return fmt.Errorf("job %s completed without an exit code", job.Name)
 	}
-	if exitCode != nil && *exitCode == 0 {
-		b.deleteFinishedJob(context.Background(), job.Namespace, jobName)
-	} else if exitCode != nil {
-		logger.Log().Warn("Keeping failed Kubernetes helper job for debugging", zap.String("namespace", job.Namespace), zap.String("job", jobName), zap.Int("exit_code", *exitCode))
+	if *exitCode != 0 {
+		return fmt.Errorf("job %s exited with code %d", job.Name, *exitCode)
 	}
-	if logErr != nil && waitErr == nil {
-		waitErr = logErr
-	}
-	if waitErr != nil {
-		logger.Log().Error("Kubernetes helper job wait failed", zap.String("namespace", job.Namespace), zap.String("job", jobName), zap.Any("exit_code", exitCode), zap.Error(waitErr))
-		return logs, waitErr
-	}
-	if exitCode != nil && *exitCode != 0 {
-		logger.Log().Error("Kubernetes helper job exited non-zero", zap.String("namespace", job.Namespace), zap.String("job", jobName), zap.Int("exit_code", *exitCode))
-		return logs, fmt.Errorf("job %s exited with code %d", jobName, *exitCode)
-	}
-	if exitCode != nil {
-		logger.Log().Info("Kubernetes helper job completed", zap.String("namespace", job.Namespace), zap.String("job", jobName), zap.Int("exit_code", *exitCode))
-	}
-	return logs, nil
+	b.deleteFinishedJob(context.Background(), job.Namespace, job.Name)
+	return nil
 }

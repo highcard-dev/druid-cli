@@ -80,7 +80,7 @@ func (b *Backend) resumeRestartProcedureIndex(ctx context.Context, root string, 
 	return resumeIndex, nil
 }
 
-func (b *Backend) createOrReuseProcedureJob(ctx context.Context, namespace string, root string, commandName string, procedureName string, baseName string, procedure *domain.Procedure, globalPorts []domain.Port, env map[string]string) (*batchv1.Job, error) {
+func (b *Backend) createOrReuseProcedureJob(ctx context.Context, namespace string, root string, commandName string, procedureName string, baseName string, procedure *domain.Procedure, env map[string]string) (*batchv1.Job, error) {
 	_, pvc, err := parseRef(root)
 	if err != nil {
 		return nil, err
@@ -101,15 +101,12 @@ func (b *Backend) createOrReuseProcedureJob(ctx context.Context, namespace strin
 	var active *batchv1.Job
 	for idx := range jobs.Items {
 		job := &jobs.Items[idx]
-		if job.Status.Succeeded > 0 {
-			if err := b.deleteJobAndWait(ctx, namespace, job.Name); err != nil {
-				return nil, err
-			}
-			continue
-		}
 		attempt := procedureJobAttempt(job, baseName)
 		if attempt >= nextAttempt {
 			nextAttempt = attempt + 1
+		}
+		if job.Status.Succeeded > 0 {
+			continue
 		}
 		if kubernetesJobFailed(job) {
 			logger.Log().Warn("Retaining failed Kubernetes procedure job for retry",
@@ -134,8 +131,11 @@ func (b *Backend) createOrReuseProcedureJob(ctx context.Context, namespace strin
 		return active, nil
 	}
 	name := procedureAttemptName(baseName, nextAttempt)
-	job, err := procedureJobSpec(namespace, root, commandName, procedureName, name, nextAttempt, procedure, globalPorts, env, b.config.RegistrySecret)
+	job, err := procedureJobSpec(namespace, root, commandName, procedureName, name, nextAttempt, procedure, env, b.config.RegistrySecret, b.config.ServiceAccountAudience)
 	if err != nil {
+		return nil, err
+	}
+	if err := b.pinPodToRuntimeNode(ctx, namespace, pvc, &job.Spec.Template.Spec); err != nil {
 		return nil, err
 	}
 	created, err := b.client.BatchV1().Jobs(namespace).Create(ctx, job, metav1.CreateOptions{})
@@ -181,13 +181,17 @@ func procedureJobAttempt(job *batchv1.Job, baseName string) int {
 }
 
 func (b *Backend) createFreshJob(ctx context.Context, job *batchv1.Job) (*batchv1.Job, error) {
-	propagation := metav1.DeletePropagationBackground
+	propagation := metav1.DeletePropagationForeground
 	deleteCtx, cancelDelete := context.WithTimeout(ctx, 30*time.Second)
 	defer cancelDelete()
 	existing, err := b.client.BatchV1().Jobs(job.Namespace).Get(deleteCtx, job.Name, metav1.GetOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		logger.Log().Error("Failed to check Kubernetes job before create", zap.String("namespace", job.Namespace), zap.String("job", job.Name), zap.Error(err))
 		return nil, err
+	}
+	if err == nil && existing.Status.Succeeded == 0 && !kubernetesJobFailed(existing) {
+		logger.Log().Info("Reusing active Kubernetes job", zap.String("namespace", job.Namespace), zap.String("job", job.Name))
+		return existing, nil
 	}
 	if existing != nil && kubernetesJobFailed(existing) {
 		original := job.Name

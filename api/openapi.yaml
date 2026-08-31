@@ -14,8 +14,6 @@ servers:
 tags:
   - name: scroll
     description: Scroll management and command execution
-  - name: logs
-    description: Log streaming and retrieval
   - name: queue
     description: Command queue management
   - name: websocket
@@ -96,7 +94,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/RegistryCredential'
-
     EnsureScrollRequest:
       type: object
       required:
@@ -120,6 +117,24 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/RegistryCredential'
+    Port:
+      type: object
+      required:
+        - name
+        - port
+        - protocol
+      properties:
+        name:
+          type: string
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        protocol:
+          type: string
+          enum: [http, https, tcp, udp]
+        description:
+          type: string
 
     RegistryCredential:
       type: object
@@ -144,7 +159,6 @@ components:
         - port
         - protocol
         - service_name
-        - service_port
       properties:
         name:
           type: string
@@ -160,8 +174,6 @@ components:
           type: string
         service_name:
           type: string
-        service_port:
-          type: integer
         selector:
           type: object
           additionalProperties:
@@ -233,14 +245,11 @@ components:
       required:
         - url
         - path
-        - sha256
         - updated_at
       properties:
         url:
           type: string
         path:
-          type: string
-        sha256:
           type: string
         updated_at:
           type: string
@@ -274,12 +283,6 @@ components:
         additionalProperties:
           $ref: '#/components/schemas/LockStatus'
 
-    ScrollLogMap:
-      type: object
-      additionalProperties:
-        type: array
-        items:
-          type: string
     RuntimeScroll:
       type: object
       required:
@@ -320,6 +323,11 @@ components:
           format: date-time
         procedures:
           $ref: '#/components/schemas/ProcedureStatusMap'
+        reserved_ports:
+          type: array
+          readOnly: true
+          items:
+            $ref: '#/components/schemas/Port'
 
     DeletedScroll:
       type: object
@@ -555,6 +563,13 @@ paths:
           required: true
           schema:
             type: string
+        - name: sync
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Wait for the requested command to complete before responding.
       responses:
         '200':
           description: Updated runtime scroll
@@ -622,25 +637,6 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-
-  /api/v1/scrolls/{id}/logs:
-    get:
-      operationId: getScrollLogs
-      summary: Get scroll-scoped logs
-      tags: [logs, runtime]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Logs keyed by procedure
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ScrollLogMap'
 
   /api/v1/scrolls/{id}/ports:
     get:

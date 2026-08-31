@@ -11,19 +11,23 @@ const (
 )
 
 type Config struct {
-	Namespace         string
-	StorageClass      string
-	PullImage         string
-	RegistrySecret    string
-	RegistryPlainHTTP bool
-	HelperImage       string
-	Kubeconfig        string
-	UIS3Bucket        string
-	UIS3PublicBaseURL string
-	UIS3Region        string
-	UIS3Endpoint      string
-	UIS3Prefix        string
-	UIS3Secret        string
+	Namespace              string
+	StorageClass           string
+	PullImage              string
+	RegistrySecret         string
+	RegistryPlainHTTP      bool
+	HelperImage            string
+	Kubeconfig             string
+	UIS3Bucket             string
+	UIS3PublicBaseURL      string
+	UIS3Region             string
+	UIS3Endpoint           string
+	UIS3Prefix             string
+	UIS3AccessKey          string
+	UIS3SecretKey          string
+	UIS3SessionToken       string
+	ServiceAccountAudience string
+	OperatorServiceAccount string
 }
 
 func (c Config) WithDefaults() Config {
@@ -66,8 +70,23 @@ func (c Config) WithDefaults() Config {
 	if c.UIS3Prefix == "" {
 		c.UIS3Prefix = os.Getenv("DRUID_K8S_UI_S3_PREFIX")
 	}
-	if c.UIS3Secret == "" {
-		c.UIS3Secret = os.Getenv("DRUID_K8S_UI_S3_CREDENTIALS_SECRET")
+	if c.UIS3AccessKey == "" {
+		c.UIS3AccessKey = os.Getenv("DRUID_K8S_UI_S3_ACCESS_KEY")
+	}
+	if c.UIS3SecretKey == "" {
+		c.UIS3SecretKey = os.Getenv("DRUID_K8S_UI_S3_SECRET_KEY")
+	}
+	if c.UIS3SessionToken == "" {
+		c.UIS3SessionToken = os.Getenv("DRUID_K8S_UI_S3_SESSION_TOKEN")
+	}
+	if c.ServiceAccountAudience == "" {
+		c.ServiceAccountAudience = os.Getenv("DRUID_K8S_SERVICE_ACCOUNT_AUDIENCE")
+	}
+	if c.ServiceAccountAudience == "" {
+		c.ServiceAccountAudience = "druid-cli"
+	}
+	if c.OperatorServiceAccount == "" {
+		c.OperatorServiceAccount = os.Getenv("DRUID_K8S_OPERATOR_SERVICE_ACCOUNT")
 	}
 	return c
 }
@@ -92,11 +111,8 @@ func (c Config) ValidateForMaterialization() error {
 }
 
 func (c Config) ValidateForUIPublishing() error {
-	if c.PullImage == "" {
-		return fmt.Errorf("kubernetes pull image is required for UI publishing; set --k8s-pull-image or DRUID_K8S_PULL_IMAGE")
-	}
-	if c.UIS3Bucket == "" || c.UIS3PublicBaseURL == "" || c.UIS3Region == "" || c.UIS3Secret == "" {
-		return fmt.Errorf("kubernetes UI publishing requires DRUID_K8S_UI_S3_BUCKET, DRUID_K8S_UI_S3_PUBLIC_BASE_URL, DRUID_K8S_UI_S3_REGION, and DRUID_K8S_UI_S3_CREDENTIALS_SECRET")
+	if c.UIS3Bucket == "" || c.UIS3PublicBaseURL == "" || c.UIS3Region == "" || c.UIS3AccessKey == "" || c.UIS3SecretKey == "" {
+		return fmt.Errorf("kubernetes UI publishing requires S3 bucket, public URL, region, access key, and secret key configuration")
 	}
 	return nil
 }

@@ -38,13 +38,13 @@ spec:
             - --public-listen=:{{ .Values.service.publicPort }}
             - --worker-callback-listen=:{{ .Values.service.workerCallbackPort }}
             - --worker-callback-url=http://{{ include "druid-cli.fullname" . }}:{{ .Values.service.workerCallbackPort }}
-            - --worker-daemon-url={{ default (printf "http://%s:%v" (include "druid-cli.fullname" .) .Values.service.managementPort) .Values.runtime.workerDaemonUrl }}
             - --public-jwks-url={{ default (printf "http://%s:%v/.well-known/jwks.json" (include "druid-cli.fullname" .) .Values.service.publicPort) .Values.auth.publicJwksUrl }}
             {{- if .Values.auth.jwksUrl }}
             - --auth-jwks-url={{ .Values.auth.jwksUrl }}
             {{- end }}
             - --runtime={{ .Values.runtime.backend }}
             - --state-dir={{ .Values.runtime.stateDir }}
+            - --socket={{ .Values.runtime.stateDir }}/druid-runtime.sock
           ports:
             - name: management
               containerPort: {{ .Values.service.managementPort }}
@@ -68,16 +68,13 @@ spec:
               value: {{ .Values.runtime.registrySecret | quote }}
             - name: DRUID_REGISTRY_PLAIN_HTTP
               value: {{ ternary "true" "false" .Values.runtime.registryPlainHTTP | quote }}
+            - name: DRUID_K8S_SERVICE_ACCOUNT_AUDIENCE
+              value: {{ .Values.workloadIdentity.audience | quote }}
+            - name: DRUID_K8S_OPERATOR_SERVICE_ACCOUNT
+              value: {{ .Values.workloadIdentity.operatorServiceAccount | quote }}
             {{- if .Values.runtime.kubeconfigSecret.name }}
             - name: DRUID_K8S_KUBECONFIG
               value: /etc/druid/kubeconfig
-            {{- end }}
-            {{- if and .Values.auth.enabled .Values.auth.existingSecret }}
-            - name: DRUID_INTERNAL_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.auth.existingSecret | quote }}
-                  key: {{ .Values.auth.tokenKey | quote }}
             {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}

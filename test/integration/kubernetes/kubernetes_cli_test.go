@@ -5,7 +5,6 @@ package kubernetes_test
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -52,7 +51,6 @@ func TestKubernetesBackendCLIComplexLifecycle(t *testing.T) {
 		"--worker-callback-listen", fmt.Sprintf(":%d", callbackPort),
 		"--worker-callback-url", fmt.Sprintf("http://%s:%d", containerHost, callbackPort),
 		"--listen", fmt.Sprintf(":%d", managementPort),
-		"--worker-daemon-url", fmt.Sprintf("http://%s:%d", containerHost, managementPort),
 		"--unsafe-allow-unauthenticated-management",
 	}, []string{"DRUID_REGISTRY_PLAIN_HTTP=true"})
 	t.Cleanup(func() {
@@ -72,8 +70,8 @@ func TestKubernetesBackendCLIComplexLifecycle(t *testing.T) {
 	pvc := strings.TrimPrefix(created.Root, rootPrefix)
 	targets := e2e.RunClientJSON[[]e2e.RuntimeRoutingTarget](t, bins, socket, "routing", "targets", created.ID)
 	target := findTarget(t, targets, fixture)
-	if target.Namespace != namespace || target.ServicePort != fixture.Port {
-		t.Fatalf("target = %#v, want namespace %s service port %d", target, namespace, fixture.Port)
+	if target.Namespace != namespace || target.Port != fixture.Port {
+		t.Fatalf("target = %#v, want namespace %s port %d", target, namespace, fixture.Port)
 	}
 
 	started := e2e.RunClientJSON[e2e.RuntimeScroll](t, bins, socket, "start", created.ID)
@@ -93,17 +91,7 @@ func TestKubernetesBackendCLIComplexLifecycle(t *testing.T) {
 		t.Fatalf("USER_ENV = %q, want fixture", env["USER_ENV"])
 	}
 
-	e2e.RunClient(t, bins, socket, "dev", created.ID, "--watch", "data", "--command", "record")
-	webdavTarget := findWebDAVTarget(t, e2e.RunClientJSON[[]e2e.RuntimeRoutingTarget](t, bins, socket, "routing", "targets", created.ID))
-	webdavPort := e2e.FreePort(t)
-	waitServiceExists(t, namespace, webdavTarget.ServiceName)
-	webdavForward := startPortForward(t, namespace, webdavTarget.ServiceName, webdavPort, 8084)
-	t.Cleanup(webdavForward)
-	webdavURL := fmt.Sprintf("http://127.0.0.1:%d/webdav/data/dev.txt", webdavPort)
-	httpPut(t, webdavURL, "dev-write\n")
-	if got := e2e.WaitHTTP(t, webdavURL); !strings.Contains(got, "dev-write") {
-		t.Fatalf("webdav file = %q, want dev-write", got)
-	}
+	e2e.UnixJSONRequest(t, socket, http.MethodPost, "/api/v1/scrolls/"+created.ID+"/commands/record?sync=true", "")
 
 	_ = e2e.RunClientJSON[[]e2e.RuntimePortStatus](t, bins, socket, "ports", created.ID)
 	deadline := time.Now().Add(30 * time.Second)
@@ -209,17 +197,6 @@ func findTarget(t *testing.T, targets []e2e.RuntimeRoutingTarget, fixture e2e.Fi
 		}
 	}
 	t.Fatalf("http target for %s not found in %#v", fixture.ServeProc, targets)
-	return e2e.RuntimeRoutingTarget{}
-}
-
-func findWebDAVTarget(t *testing.T, targets []e2e.RuntimeRoutingTarget) e2e.RuntimeRoutingTarget {
-	t.Helper()
-	for _, target := range targets {
-		if target.PortName == "webdav" {
-			return target
-		}
-	}
-	t.Fatalf("webdav target not found in %#v", targets)
 	return e2e.RuntimeRoutingTarget{}
 }
 
@@ -364,23 +341,6 @@ func kubectlOutput(args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "kubectl", args...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
-}
-
-func httpPut(t *testing.T, url string, body string) {
-	t.Helper()
-	req, err := http.NewRequest(http.MethodPut, url, strings.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		data, _ := io.ReadAll(resp.Body)
-		t.Fatalf("PUT %s failed with %d: %s", url, resp.StatusCode, data)
-	}
 }
 
 func waitKubernetesResourcesGone(t *testing.T, namespace string, pvc string, resource string) {

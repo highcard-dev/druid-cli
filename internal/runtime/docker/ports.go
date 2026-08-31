@@ -16,9 +16,9 @@ import (
 	"github.com/highcard-dev/daemon/internal/core/domain"
 )
 
-func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimePortStatus, error) {
+func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, ports []domain.Port) ([]domain.RuntimePortStatus, error) {
 	statuses := []domain.RuntimePortStatus{}
-	portsByName := portsByName(globalPorts)
+	portsByName := portsByName(ports)
 	for commandName, command := range commands {
 		if command == nil {
 			continue
@@ -47,18 +47,10 @@ func (b *Backend) ExpectedPorts(root string, commands map[string]*domain.Command
 	return statuses, nil
 }
 
-func (b *Backend) RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, globalPorts []domain.Port) ([]domain.RuntimeRoutingTarget, error) {
-	portsByName := portsByName(globalPorts)
-	targets := []domain.RuntimeRoutingTarget{{
-		Name:        "webdav",
-		Procedure:   "dev",
-		PortName:    "webdav",
-		Port:        8084,
-		Protocol:    "https",
-		ServiceName: ContainerName(root, "dev"),
-		ServicePort: 8084,
-	}}
-	seen := map[string]struct{}{"webdav": {}}
+func (b *Backend) RoutingTargets(root string, commands map[string]*domain.CommandInstructionSet, ports []domain.Port) ([]domain.RuntimeRoutingTarget, error) {
+	portsByName := portsByName(ports)
+	targets := []domain.RuntimeRoutingTarget{}
+	seen := map[string]struct{}{}
 	commandNames := make([]string, 0, len(commands))
 	for commandName := range commands {
 		commandNames = append(commandNames, commandName)
@@ -79,10 +71,7 @@ func (b *Backend) RoutingTargets(root string, commands map[string]*domain.Comman
 				if _, ok := seen[expectedPort.Name]; ok {
 					continue
 				}
-				port, ok := portsByName[expectedPort.Name]
-				if !ok {
-					return nil, fmt.Errorf("expected port %s is not defined in top-level ports", expectedPort.Name)
-				}
+				port := portsByName[expectedPort.Name]
 				seen[expectedPort.Name] = struct{}{}
 				targets = append(targets, domain.RuntimeRoutingTarget{
 					Name:        expectedPort.Name,
@@ -91,10 +80,20 @@ func (b *Backend) RoutingTargets(root string, commands map[string]*domain.Comman
 					Port:        port.Port,
 					Protocol:    normalizeProtocol(port.Protocol),
 					ServiceName: serviceName,
-					ServicePort: port.Port,
 				})
 			}
 		}
+	}
+	for _, port := range ports {
+		if _, ok := seen[port.Name]; ok {
+			continue
+		}
+		targets = append(targets, domain.RuntimeRoutingTarget{
+			Name:     port.Name,
+			PortName: port.Name,
+			Port:     port.Port,
+			Protocol: normalizeProtocol(port.Protocol),
+		})
 	}
 	sort.Slice(targets, func(i, j int) bool { return targets[i].Name < targets[j].Name })
 	return targets, nil
@@ -198,10 +197,7 @@ func (b *Backend) expectedPortsForProcedure(root string, resourceName string, pr
 	}
 
 	for _, expectedPort := range procedure.ExpectedPorts {
-		port, ok := ports[expectedPort.Name]
-		if !ok {
-			return nil, fmt.Errorf("expected port %s is not defined in top-level ports", expectedPort.Name)
-		}
+		port := ports[expectedPort.Name]
 		status := domain.RuntimePortStatus{
 			Name:             expectedPort.Name,
 			Procedure:        procedureName,

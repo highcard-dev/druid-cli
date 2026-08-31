@@ -29,6 +29,8 @@ type CommandDoneEvent struct {
 	Timestamp  time.Time `json:"timestamp"`
 }
 
+const hotReloadDebounce = 300 * time.Millisecond
+
 // WatchService handles local dev file watching and command triggers.
 type WatchService struct {
 	watcher           *fsnotify.Watcher
@@ -44,6 +46,7 @@ type WatchService struct {
 	scrollService     ports.ScrollServiceInterface
 	buildActive       bool
 	changeAfterBuild  bool
+	hotReloadTimer    *time.Timer
 }
 
 func NewDevService(
@@ -123,7 +126,7 @@ func (uds *WatchService) StartWatching(basePath string, paths ...string) error {
 	}
 
 	// Start the event processing goroutine
-	go uds.processEvents()
+	go uds.processEvents(uds.ctx, watcher)
 
 	// Start the broadcast hub
 	go uds.broadcastChannel.Run()
@@ -157,6 +160,10 @@ func (uds *WatchService) StopWatching() error {
 			logger.Log().Error("Failed to close file watcher", zap.Error(err))
 			return err
 		}
+	}
+	if uds.hotReloadTimer != nil {
+		uds.hotReloadTimer.Stop()
+		uds.hotReloadTimer = nil
 	}
 
 	// Close the broadcast channel to clean up subscribers
@@ -239,12 +246,12 @@ func (uds *WatchService) addWatchPath(path string) error {
 			}
 			return uds.watcher.Add(walkPath)
 		}
-		return nil
+		return uds.watcher.Add(walkPath)
 	})
 }
 
 // processEvents handles file system events and broadcasts them to subscribers
-func (uds *WatchService) processEvents() {
+func (uds *WatchService) processEvents(ctx context.Context, watcher *fsnotify.Watcher) {
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Log().Error("File watcher panic recovered", zap.Any("error", r))
@@ -253,11 +260,11 @@ func (uds *WatchService) processEvents() {
 
 	for {
 		select {
-		case <-uds.ctx.Done():
+		case <-ctx.Done():
 			logger.Log().Info("File watcher context cancelled")
 			return
 
-		case event, ok := <-uds.watcher.Events:
+		case event, ok := <-watcher.Events:
 			if !ok {
 				logger.Log().Info("File watcher events channel closed")
 				return
@@ -268,7 +275,7 @@ func (uds *WatchService) processEvents() {
 			}
 			uds.handleFileEvent(event)
 
-		case err, ok := <-uds.watcher.Errors:
+		case err, ok := <-watcher.Errors:
 			if !ok {
 				logger.Log().Info("File watcher errors channel closed")
 				return
@@ -293,6 +300,10 @@ func (uds *WatchService) handleFileEvent(event fsnotify.Event) {
 			relativePath = relPath
 		}
 	}
+	logger.Log().Info("Druid development file change detected",
+		zap.String("path", relativePath),
+		zap.String("operation", event.Op.String()),
+	)
 
 	changeEvent := FileChangeEvent{
 		Path:      relativePath,
@@ -332,8 +343,30 @@ func (uds *WatchService) handleFileEvent(event fsnotify.Event) {
 		}
 	}
 
-	// Handle hot reload commands in a separate goroutine to avoid blocking the event loop
-	go uds.runHotReloadCommand()
+	uds.scheduleHotReload()
+}
+
+func (uds *WatchService) scheduleHotReload() {
+	uds.mu.Lock()
+	if !uds.isWatching {
+		uds.mu.Unlock()
+		return
+	}
+	if uds.hotReloadTimer != nil {
+		uds.hotReloadTimer.Stop()
+	}
+	ctx := uds.ctx
+	uds.hotReloadTimer = time.AfterFunc(hotReloadDebounce, func() {
+		uds.mu.Lock()
+		if !uds.isWatching || uds.ctx != ctx {
+			uds.mu.Unlock()
+			return
+		}
+		uds.hotReloadTimer = nil
+		uds.mu.Unlock()
+		uds.runHotReloadCommand()
+	})
+	uds.mu.Unlock()
 }
 
 func (uds *WatchService) runHotReloadCommand() {
@@ -371,7 +404,11 @@ func (uds *WatchService) runHotReloadCommand() {
 	for {
 		for _, key := range commands {
 			broadcastEvent("build-started")
-			uds.queueManager.AddTempItemWithWait(key)
+			if err := uds.queueManager.AddTempItemWithWait(key); err != nil {
+				logger.Log().Error("Hot reload build failed", zap.String("command", key), zap.Error(err))
+				broadcastEvent("build-failed")
+				continue
+			}
 			broadcastEvent("build-ended")
 		}
 

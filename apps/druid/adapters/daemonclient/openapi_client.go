@@ -8,7 +8,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -135,7 +134,7 @@ func (c *OpenAPIClient) DeleteScroll(ctx context.Context, id string) (*api.Delet
 }
 
 func (c *OpenAPIClient) RunScrollCommand(ctx context.Context, id string, command string) (*api.RuntimeScroll, error) {
-	res, err := c.client.RunScrollCommandWithResponse(ctx, id, command)
+	res, err := c.client.RunScrollCommandWithResponse(ctx, id, command, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -290,21 +289,6 @@ func (c *OpenAPIClient) PublishScrollUIPackage(ctx context.Context, id string, s
 		return nil, err
 	}
 	return res.JSON200, nil
-}
-
-func (c *OpenAPIClient) EnableWatch(ctx context.Context, id string, request api.DevWatchRequest) (*api.DevWatchResponse, error) {
-	var out api.DevWatchResponse
-	return &out, c.doJSON(ctx, http.MethodPost, fmt.Sprintf("/api/v1/scrolls/%s/dev/enable", url.PathEscape(id)), request, &out)
-}
-
-func (c *OpenAPIClient) DisableWatch(ctx context.Context, id string) (*api.DevWatchResponse, error) {
-	var out api.DevWatchResponse
-	return &out, c.doJSON(ctx, http.MethodPost, fmt.Sprintf("/api/v1/scrolls/%s/dev/disable", url.PathEscape(id)), nil, &out)
-}
-
-func (c *OpenAPIClient) WatchStatus(ctx context.Context, id string) (*api.DevWatchStatus, error) {
-	var out api.DevWatchStatus
-	return &out, c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/api/v1/scrolls/%s/dev/status", url.PathEscape(id)), nil, &out)
 }
 
 func (c *OpenAPIClient) doJSON(ctx context.Context, method string, path string, body any, out any) error {

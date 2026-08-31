@@ -39,6 +39,60 @@ func (b *Backend) StopRuntime(root string) error {
 	return nil
 }
 
+func (b *Backend) StopCommand(root string, command string) error {
+	if command == "" {
+		return fmt.Errorf("command is required")
+	}
+	namespace, pvc, err := parseRef(root)
+	if err != nil {
+		return err
+	}
+	selector := labels.SelectorFromSet(labels.Set{
+		labelScrollID: dnsLabel(pvc),
+		labelCommand:  dnsLabel(command),
+	}).String()
+	propagation := metav1.DeletePropagationForeground
+	options := metav1.DeleteOptions{PropagationPolicy: &propagation}
+	listOptions := metav1.ListOptions{LabelSelector: selector}
+	ctx := context.Background()
+	if err := b.client.BatchV1().Jobs(namespace).DeleteCollection(ctx, options, listOptions); err != nil {
+		return err
+	}
+	if err := b.client.AppsV1().StatefulSets(namespace).DeleteCollection(ctx, options, listOptions); err != nil {
+		return err
+	}
+	if err := b.client.CoreV1().Pods(namespace).DeleteCollection(ctx, options, listOptions); err != nil {
+		return err
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		jobs, jobErr := b.client.BatchV1().Jobs(namespace).List(waitCtx, listOptions)
+		statefulSets, statefulSetErr := b.client.AppsV1().StatefulSets(namespace).List(waitCtx, listOptions)
+		pods, podErr := b.client.CoreV1().Pods(namespace).List(waitCtx, listOptions)
+		if jobErr != nil {
+			return jobErr
+		}
+		if statefulSetErr != nil {
+			return statefulSetErr
+		}
+		if podErr != nil {
+			return podErr
+		}
+		if len(jobs.Items) == 0 && len(statefulSets.Items) == 0 && len(pods.Items) == 0 {
+			return nil
+		}
+		select {
+		case <-waitCtx.Done():
+			return fmt.Errorf("wait for command %s resources to stop: %w", command, waitCtx.Err())
+		case <-ticker.C:
+		}
+	}
+}
+
 func (b *Backend) DeleteRuntime(root string, purgeData bool) error {
 	logger.Log().Info("Deleting Kubernetes runtime", zap.String("root", root), zap.Bool("purge_data", purgeData))
 	propagation := metav1.DeletePropagationBackground

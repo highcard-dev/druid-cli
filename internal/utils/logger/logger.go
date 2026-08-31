@@ -145,6 +145,9 @@ func NewLogger(optFuncs ...LoggerOptionsFunc) *zap.Logger {
 	if options.WithReducedLogging {
 		cores = append(cores, NewReducedEncoder(options.LogLevel))
 	}
+	if localFileCore := NewLocalFileEncoder(options.LogLevel); localFileCore != nil {
+		cores = append(cores, localFileCore)
+	}
 	core := zapcore.NewTee(cores...)
 	l := zap.New(core)
 	if len(options.DefaultFields) > 0 {

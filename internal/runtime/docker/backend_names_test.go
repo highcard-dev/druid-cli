@@ -135,6 +135,17 @@ func TestRoutingTargetsUseFirstConcreteProcedureForSharedDockerPort(t *testing.T
 	t.Fatalf("main target missing: %#v", targets)
 }
 
+func TestDockerRoutingTargetsIncludeAllUnclaimedRuntimePorts(t *testing.T) {
+	ports := []domain.Port{{Name: "ssh", Port: 2222, Protocol: "tcp"}, {Name: "unused-game-port", Port: 25565, Protocol: "tcp"}}
+	targets, err := (&Backend{}).RoutingTargets("docker-volume://druid-tools-data", nil, ports)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targets) != 2 || targets[0].Name != "ssh" || targets[1].Name != "unused-game-port" {
+		t.Fatalf("targets = %#v, want every runtime port", targets)
+	}
+}
+
 func TestContainerSpecAddsHostGatewayExtraHost(t *testing.T) {
 	_, hostConfig, err := containerSpec("start", &domain.Procedure{Image: "busybox"}, "docker-volume://druid-scroll-data", nil, nil, nil)
 	if err != nil {

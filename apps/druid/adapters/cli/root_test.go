@@ -1,9 +1,20 @@
 package cli
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/highcard-dev/daemon/internal/core/ports"
+)
+
+type testWorkloadAuthenticator struct{}
+
+func (testWorkloadAuthenticator) AuthenticateWorkload(context.Context, string) (ports.RuntimeWorkloadIdentity, error) {
+	return ports.RuntimeWorkloadIdentity{}, nil
+}
 
 func TestRootCommandExposesRuntimeAndOCICommands(t *testing.T) {
-	for _, name := range []string{"pull", "push", "login", "dev", "update"} {
+	for _, name := range []string{"pull", "push", "login", "update"} {
 		if cmd, _, err := RootCmd.Find([]string{name}); err != nil || cmd == nil || cmd.Name() != name {
 			t.Fatalf("druid should expose %q", name)
 		}
@@ -22,10 +33,13 @@ func TestDaemonCommandExposesRuntimeListeners(t *testing.T) {
 			t.Fatalf("druid daemon should not expose --%s", name)
 		}
 	}
-	for _, name := range []string{"socket", "listen", "public-listen", "internal-token", "worker-callback-listen", "worker-callback-url", "docker-storage", "docker-bind-root", "docker-volume-prefix"} {
+	for _, name := range []string{"socket", "listen", "public-listen", "worker-callback-listen", "worker-callback-url", "docker-storage", "docker-bind-root", "docker-volume-prefix"} {
 		if flag := DaemonCommand.Flags().Lookup(name); flag == nil {
 			t.Fatalf("druid daemon should expose --%s", name)
 		}
+	}
+	if flag := DaemonCommand.Flags().Lookup("internal-token"); flag != nil {
+		t.Fatal("druid daemon must not expose --internal-token")
 	}
 }
 
@@ -51,6 +65,18 @@ func TestOpenWorkerCallbackListenerEmpty(t *testing.T) {
 	}
 	if listener != nil {
 		t.Fatal("listener should be nil")
+	}
+}
+
+func TestWorkerCallbackUnsafeFallbackRequiresMissingAuthenticator(t *testing.T) {
+	if workerCallbackAllowsUnsafeFallback(testWorkloadAuthenticator{}, true) {
+		t.Fatal("Kubernetes callback listener must authenticate projected workload tokens")
+	}
+	if !workerCallbackAllowsUnsafeFallback(nil, true) {
+		t.Fatal("explicit unsafe mode should remain available to backends without workload identity")
+	}
+	if workerCallbackAllowsUnsafeFallback(nil, false) {
+		t.Fatal("safe mode must never allow unauthenticated callbacks")
 	}
 }
 
