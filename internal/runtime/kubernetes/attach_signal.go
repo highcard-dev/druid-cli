@@ -3,7 +3,9 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,43 +17,132 @@ import (
 	"go.uber.org/zap"
 )
 
-func (b *Backend) Attach(commandName string, data string) error {
-	logger.Log().Debug("Attaching to Kubernetes procedure by command name", zap.String("command", commandName), zap.Int("bytes", len(data)))
-	pods, err := b.client.CoreV1().Pods(b.config.Namespace).List(context.Background(), metav1.ListOptions{
-		LabelSelector: labels.SelectorFromSet(labels.Set{labelProcedure: dnsLabel(commandName)}).String(),
-	})
-	if err != nil {
-		logger.Log().Error("Failed to list Kubernetes pods for attach", zap.String("namespace", b.config.Namespace), zap.String("command", commandName), zap.Error(err))
-		return err
-	}
-	for _, pod := range pods.Items {
-		if pod.Status.Phase == corev1.PodRunning {
-			logger.Log().Debug("Attaching to Kubernetes pod", zap.String("namespace", b.config.Namespace), zap.String("pod", pod.Name), zap.String("command", commandName), zap.Int("bytes", len(data)))
-			return b.attachToPod(context.Background(), b.config.Namespace, pod.Name, data)
-		}
-	}
-	logger.Log().Warn("No running Kubernetes pod found for attach", zap.String("namespace", b.config.Namespace), zap.String("command", commandName), zap.Int("pods", len(pods.Items)))
-	return fmt.Errorf("no running pod found for console %s", commandName)
+type consoleSession struct {
+	io.ReadCloser
+	write func([]byte) (int, error)
 }
 
-func (b *Backend) attachToProcedure(root string, procedureName string, data string) error {
+func (s *consoleSession) Write(data []byte) (int, error) {
+	if s.write == nil {
+		return 0, fmt.Errorf("console input is unavailable")
+	}
+	return s.write(data)
+}
+
+func (b *Backend) OpenConsole(ctx context.Context, root string, procedure string) (io.ReadWriteCloser, error) {
 	namespace, pvc, err := parseRef(root)
 	if err != nil {
-		logger.Log().Error("Cannot attach to Kubernetes procedure for invalid root", zap.String("root", root), zap.String("procedure", procedureName), zap.Error(err))
-		return err
+		return nil, err
 	}
 	selector := baseLabels(pvc)
-	selector[labelProcedure] = dnsLabel(procedureName)
-	podName, err := b.waitForPodBySelector(context.Background(), namespace, labels.SelectorFromSet(selector).String())
+	labelSelector := labels.SelectorFromSet(selector).String()
+	pod, containerName, running, err := b.waitForConsoleContainer(ctx, namespace, labelSelector, procedure)
 	if err != nil {
-		logger.Log().Error("Failed to find Kubernetes procedure pod for attach", zap.String("namespace", namespace), zap.String("procedure", procedureName), zap.Any("selector", selector), zap.Error(err))
-		return err
+		return nil, err
 	}
-	logger.Log().Debug("Attaching to Kubernetes procedure pod", zap.String("namespace", namespace), zap.String("pod", podName), zap.String("procedure", procedureName), zap.Int("bytes", len(data)))
-	return b.attachToPod(context.Background(), namespace, podName, data)
+	if pod == nil || containerName == "" {
+		return nil, fmt.Errorf("no pod found for procedure %s", procedure)
+	}
+	stream, err := b.client.CoreV1().Pods(namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
+		Container: containerName,
+		Follow:    running,
+	}).Stream(ctx)
+	if err != nil {
+		return nil, err
+	}
+	session := &consoleSession{ReadCloser: stream}
+	if running {
+		session.write = func(data []byte) (int, error) {
+			if err := b.attachToPod(ctx, namespace, pod.Name, containerName, string(data)); err != nil {
+				return 0, err
+			}
+			return len(data), nil
+		}
+	}
+	return session, nil
 }
 
-func (b *Backend) attachToPod(ctx context.Context, namespace string, podName string, data string) error {
+func (b *Backend) waitForConsoleContainer(ctx context.Context, namespace string, selector string, procedure string) (*corev1.Pod, string, bool, error) {
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		pods, err := b.client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
+		if err != nil {
+			return nil, "", false, err
+		}
+		pod, containerName, running := selectProcedureConsole(pods.Items, procedure)
+		if pod != nil {
+			return pod, containerName, running, nil
+		}
+		if time.Now().After(deadline) {
+			return nil, "", false, fmt.Errorf("no pod found for procedure %s", procedure)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, "", false, ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+func selectProcedureConsole(pods []corev1.Pod, procedure string) (*corev1.Pod, string, bool) {
+	type candidate struct {
+		pod       *corev1.Pod
+		container string
+		running   bool
+	}
+	candidates := []candidate{}
+	for idx := range pods {
+		pod := &pods[idx]
+		if pod.Labels[labelProcedure] == dnsLabel(procedure) {
+			candidates = append(candidates, candidate{pod: pod, container: "main", running: containerIsRunning(pod.Status.ContainerStatuses, "main")})
+			continue
+		}
+		initName := persistentInitContainerName(procedure)
+		for _, container := range pod.Spec.InitContainers {
+			if container.Name == initName {
+				candidates = append(candidates, candidate{pod: pod, container: initName, running: containerIsRunning(pod.Status.InitContainerStatuses, initName)})
+				break
+			}
+		}
+	}
+	if len(candidates) == 0 {
+		return nil, "", false
+	}
+	selected := candidates[0]
+	for _, candidate := range candidates[1:] {
+		if candidate.running && !selected.running || candidate.running == selected.running && candidate.pod.CreationTimestamp.After(selected.pod.CreationTimestamp.Time) {
+			selected = candidate
+		}
+	}
+	return selected.pod, selected.container, selected.running
+}
+
+func containerIsRunning(statuses []corev1.ContainerStatus, name string) bool {
+	for _, status := range statuses {
+		if status.Name == name {
+			return status.State.Running != nil
+		}
+	}
+	return false
+}
+
+func selectConsolePod(pods []corev1.Pod) *corev1.Pod {
+	if len(pods) == 0 {
+		return nil
+	}
+	selected := &pods[0]
+	for index := 1; index < len(pods); index++ {
+		candidate := &pods[index]
+		candidateRunning := candidate.Status.Phase == corev1.PodRunning
+		selectedRunning := selected.Status.Phase == corev1.PodRunning
+		if candidateRunning && !selectedRunning || candidateRunning == selectedRunning && candidate.CreationTimestamp.After(selected.CreationTimestamp.Time) {
+			selected = candidate
+		}
+	}
+	return selected
+}
+
+func (b *Backend) attachToPod(ctx context.Context, namespace string, podName string, containerName string, data string) error {
 	logger.Log().Debug("Opening Kubernetes pod attach stream", zap.String("namespace", namespace), zap.String("pod", podName), zap.Int("bytes", len(data)))
 	req := b.client.CoreV1().RESTClient().Post().
 		Resource("pods").
@@ -59,7 +150,7 @@ func (b *Backend) attachToPod(ctx context.Context, namespace string, podName str
 		Name(podName).
 		SubResource("attach").
 		VersionedParams(&corev1.PodAttachOptions{
-			Container: "main",
+			Container: containerName,
 			Stdin:     true,
 			Stdout:    false,
 			Stderr:    false,
@@ -98,11 +189,4 @@ func (b *Backend) Signal(_ string, target string, signal string, root string) er
 		logger.Log().Error("Unsupported Kubernetes signal", zap.String("root", root), zap.String("target", target), zap.String("signal", signal))
 		return fmt.Errorf("kubernetes signal %s is unsupported without pod exec", signal)
 	}
-}
-
-func runtimeConsoleID(scrollID string, procedureName string) string {
-	if scrollID == "" {
-		return procedureName
-	}
-	return scrollID + "/" + procedureName
 }

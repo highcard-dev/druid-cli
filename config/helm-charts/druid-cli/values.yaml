@@ -52,7 +52,6 @@ ingress:
 runtime:
   backend: kubernetes
   stateDir: /var/lib/druid/runtime
-  workerDaemonUrl: ""
   namespaces:
     mode: single
     single: ""
@@ -69,8 +68,10 @@ auth:
   enabled: false
   jwksUrl: ""
   publicJwksUrl: ""
-  existingSecret: ""
-  tokenKey: token
+
+workloadIdentity:
+  audience: druid-cli
+  operatorServiceAccount: operator-system/druid-deployment-operator-controller-manager
 
 resources: {}
 

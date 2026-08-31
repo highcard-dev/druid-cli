@@ -3,6 +3,7 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
@@ -17,14 +18,15 @@ import (
 )
 
 type Backend struct {
-	client         k8sclient.Interface
-	restConfig     *rest.Config
-	consoleManager ports.ConsoleManagerInterface
-	config         Config
-	statsReader    nodeStatsReader
-	jobLogRunner   func(context.Context, *batchv1.Job) ([]byte, error)
-	jobExitMu      sync.Mutex
-	jobExits       map[string]recentJobExit
+	client                  k8sclient.Interface
+	restConfig              *rest.Config
+	httpClient              *http.Client
+	procedureStatusObserver ports.ProcedureStatusObserver
+	config                  Config
+	statsReader             nodeStatsReader
+	helperJobRunner         func(context.Context, *batchv1.Job) error
+	jobExitMu               sync.Mutex
+	jobExits                map[string]recentJobExit
 }
 
 type recentJobExit struct {
@@ -37,7 +39,10 @@ const (
 	defaultKubernetesClientBurst int     = 100
 )
 
-func New(config Config, consoleManager ports.ConsoleManagerInterface) (*Backend, error) {
+func New(config Config, observer ports.ProcedureStatusObserver) (*Backend, error) {
+	if observer == nil {
+		return nil, fmt.Errorf("procedure status observer is required")
+	}
 	config = config.WithDefaults()
 
 	restConfig, namespace, source, _, err := runtimeRESTConfig(config)
@@ -56,13 +61,18 @@ func New(config Config, consoleManager ports.ConsoleManagerInterface) (*Backend,
 	if _, err := client.Discovery().ServerVersion(); err != nil {
 		return nil, fmt.Errorf("kubernetes API unavailable: %w", err)
 	}
+	httpClient, err := rest.HTTPClientFor(restConfig)
+	if err != nil {
+		return nil, fmt.Errorf("kubernetes HTTP client unavailable: %w", err)
+	}
 	logger.Log().Info("Using Kubernetes backend settings", zap.String("source", source), zap.String("namespace", config.Namespace))
 	backend := &Backend{
-		client:         client,
-		restConfig:     restConfig,
-		consoleManager: consoleManager,
-		config:         config,
-		jobExits:       make(map[string]recentJobExit),
+		client:                  client,
+		restConfig:              restConfig,
+		httpClient:              httpClient,
+		procedureStatusObserver: observer,
+		config:                  config,
+		jobExits:                make(map[string]recentJobExit),
 	}
 	backend.statsReader = backend.readNodeStatsSummary
 	if config.PullImage == "" {
@@ -128,12 +138,12 @@ func kubeconfigRESTConfig(config Config) (*rest.Config, string, string, error) {
 	return restConfig, namespace, source, nil
 }
 
-func NewWithClient(config Config, consoleManager ports.ConsoleManagerInterface, client k8sclient.Interface) *Backend {
+func NewWithClient(config Config, client k8sclient.Interface) *Backend {
 	config = config.WithDefaults()
 	if config.Namespace == "" {
 		config.Namespace = "default"
 	}
-	backend := &Backend{client: client, consoleManager: consoleManager, config: config, jobExits: make(map[string]recentJobExit)}
+	backend := &Backend{client: client, config: config, jobExits: make(map[string]recentJobExit)}
 	backend.statsReader = backend.readNodeStatsSummary
 	return backend
 }

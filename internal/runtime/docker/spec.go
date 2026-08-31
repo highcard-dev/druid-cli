@@ -22,10 +22,7 @@ func containerSpec(commandName string, procedure *domain.Procedure, root string,
 	portBindings := nat.PortMap{}
 	globalPortsByName := portsByName(globalPorts)
 	for _, expectedPort := range procedure.ExpectedPorts {
-		port, ok := globalPortsByName[expectedPort.Name]
-		if !ok {
-			return nil, nil, fmt.Errorf("expected port %s is not defined in top-level ports", expectedPort.Name)
-		}
+		port := globalPortsByName[expectedPort.Name]
 		dockerPort := dockerRuntimePort(port.Port, port.Protocol)
 		exposedPorts[dockerPort] = struct{}{}
 		if assignment, ok := routeAssignmentForPort(expectedPort.Name, routing); ok && assignment.PublicPort > 0 {

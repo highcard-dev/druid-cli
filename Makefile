@@ -1,7 +1,8 @@
-.PHONY: test build k3d-build-pull-image watch test-integration test-integration-docker test-integration-kubernetes kind-integration-up kind-integration-down
+.PHONY: test build k3d-build-pull-image k3d-build-dev-image k3d-build-local-images build-docker build-dev-docker watch watch-windows test-integration test-integration-docker test-integration-kubernetes kind-integration-up kind-integration-down
 
 VERSION ?= "dev"
 DRUID_K8S_PULL_IMAGE ?= druid:local
+DRUID_DEV_IMAGE ?= artifacts.druid.gg/druid-team/druid-dev:stable
 K3D_CLUSTER ?= druid-gs
 INTEGRATION_TIMEOUT ?= 1200s
 KIND_CLUSTER ?= druid-cli-integration
@@ -10,7 +11,15 @@ GO_BIN ?= $(shell go env GOPATH)/bin
 DRUID_K8S_NAMESPACE ?= druid
 DRUID_WORKER_CALLBACK_LISTEN ?= 0.0.0.0:8083
 DRUID_WORKER_CALLBACK_URL ?= http://host.k3d.internal:8083
+WSL_HOST_IP ?= $(word 1,$(shell hostname -I 2>/dev/null))
+DRUID_WORKER_CALLBACK_URL_WINDOWS ?= http://$(WSL_HOST_IP):8083
 DRUID_WATCH_ARGS ?= daemon --runtime kubernetes --listen 127.0.0.1:8081 --public-listen 127.0.0.1:8082 --worker-callback-listen $(DRUID_WORKER_CALLBACK_LISTEN) --worker-callback-url $(DRUID_WORKER_CALLBACK_URL) --unsafe-allow-unauthenticated-management --unsafe-allow-unauthenticated-public --k8s-namespace $(DRUID_K8S_NAMESPACE) --k8s-pull-image $(DRUID_K8S_PULL_IMAGE)
+export DRUID_K8S_UI_S3_BUCKET ?= druid-ui
+export DRUID_K8S_UI_S3_PUBLIC_BASE_URL ?= http://127.0.0.1:9000/druid-ui
+export DRUID_K8S_UI_S3_REGION ?= us-east-1
+export DRUID_K8S_UI_S3_ENDPOINT ?= http://host.k3d.internal:9000
+export DRUID_K8S_UI_S3_ACCESS_KEY ?= druid
+export DRUID_K8S_UI_S3_SECRET_KEY ?= druidpassword
 
 generate-api: ## Generate API types from OpenAPI spec
 	@echo "Generating API types from OpenAPI spec..."
@@ -30,13 +39,24 @@ validate-api: ## Validate OpenAPI spec
 build: generate-api ## Build Druid and helper binaries
 	CGO_ENABLED=0 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/druid ./apps/druid
 	CGO_ENABLED=0 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/druid-coldstarter ./apps/druid-coldstarter
+	CGO_ENABLED=0 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/druid-dev ./apps/druid-dev
 
 k3d-build-pull-image: ## Build the unified Druid runtime image and import it into local k3d.
 	docker build . -f Dockerfile --build-arg "VERSION=$(VERSION)" -t "$(DRUID_K8S_PULL_IMAGE)"
 	@docker rm -f "k3d-$(K3D_CLUSTER)-tools" >/dev/null 2>&1 || true
 	k3d image import "$(DRUID_K8S_PULL_IMAGE)" -c "$(K3D_CLUSTER)"
+
+k3d-build-dev-image: ## Build the standalone dev image and import it into local k3d.
+	docker build . -f Dockerfile.dev --build-arg "VERSION=$(VERSION)" -t "$(DRUID_DEV_IMAGE)"
+	k3d image import "$(DRUID_DEV_IMAGE)" -c "$(K3D_CLUSTER)"
+
+k3d-build-local-images: k3d-build-pull-image k3d-build-dev-image ## Build and import every Druid runtime image used locally.
+
 build-docker:
 	docker build . -f Dockerfile --build-arg "VERSION=$(VERSION)" -t "$(DRUID_K8S_PULL_IMAGE)"
+
+build-dev-docker:
+	docker build . -f Dockerfile.dev --build-arg "VERSION=$(VERSION)" -t "$(DRUID_DEV_IMAGE)"
 
 build-x86-docker:
 	docker run -e GOOS=linux -e GOARCH=amd64 -it --rm -v ./:/app -w /app --entrypoint=/bin/bash docker.elastic.co/beats-dev/golang-crossbuild:1.22.5-main  -c 'CGO_ENABLED=1 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/x86/druid'
@@ -44,6 +64,7 @@ build-x86-docker:
 install: build ## Build and install Druid binaries
 	install -m 0755 ./bin/druid /usr/local/bin/druid
 	install -m 0755 ./bin/druid-coldstarter /usr/local/bin/druid-coldstarter
+	install -m 0755 ./bin/druid-dev /usr/local/bin/druid-dev
 
 generate-md-docs:
 	go run ./docs_md/main.go
@@ -51,9 +72,13 @@ generate-md-docs:
 run: ## Run Daemon
 	go run ./apps/druid
 
-watch: ## Run Daemon with auto reload
+watch: k3d-build-local-images ## Build local runtime images, then run Daemon with auto reload.
 	@command -v air >/dev/null 2>&1 || go install github.com/air-verse/air@latest
 	air --build.cmd "CGO_ENABLED=0 go build -ldflags '-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)' -o ./bin/druid ./apps/druid" --build.full_bin "DRUID_REGISTRY_PLAIN_HTTP=true ./bin/druid $(DRUID_WATCH_ARGS)"
+
+watch-windows: ## Build local runtime images, then run the daemon with auto reload inside WSL2.
+	@grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null || (echo "watch-windows must run inside WSL2; use make watch on Linux or macOS." >&2; exit 1)
+	@$(MAKE) watch DRUID_WORKER_CALLBACK_URL="$(DRUID_WORKER_CALLBACK_URL_WINDOWS)"
 
 mock:
 	mockgen -source=internal/core/ports/services_ports.go -destination test/mock/services.go

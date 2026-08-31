@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,22 +8,23 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	appservices "github.com/highcard-dev/daemon/apps/druid/core/services"
+	"github.com/highcard-dev/daemon/internal/callbackapi"
 )
 
 func TestRuntimeCallbackHandlerReportsProgress(t *testing.T) {
 	callbacks := appservices.NewWorkerCallbackManager()
-	token, _, err := callbacks.Register("runtime-1")
+	_, err := callbacks.Register("runtime-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := runtimeCallbackHandler{callbacks: callbacks}
+	handler := runtimeCallbackHandler{callbacks: callbacks, allowUnauthenticated: true}
 	app := fiber.New()
-	app.Post("/internal/v1/workers/:runtime_id/progress", handler.ReportProgress)
+	callbackapi.RegisterHandlers(app, handler)
 
 	request := httptest.NewRequest(
 		http.MethodPost,
 		"/internal/v1/workers/runtime-1/progress",
-		strings.NewReader(fmt.Sprintf(`{"token":%q,"percentage":42}`, token)),
+		strings.NewReader(`{"percentage":42}`),
 	)
 	request.Header.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
 	response, err := app.Test(request)

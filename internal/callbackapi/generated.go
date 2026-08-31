@@ -21,12 +21,16 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+// WorkerProgress defines model for WorkerProgress.
+type WorkerProgress struct {
+	Percentage int64 `json:"percentage"`
+}
+
 // WorkerResult defines model for WorkerResult.
 type WorkerResult struct {
 	ArtifactDigest *string `json:"artifact_digest,omitempty"`
 	Error          *string `json:"error,omitempty"`
 	ScrollYaml     *string `json:"scroll_yaml,omitempty"`
-	Token          string  `json:"token"`
 }
 
 // Runtime defines model for Runtime.
@@ -34,6 +38,9 @@ type Runtime = string
 
 // CompleteWorkerJSONRequestBody defines body for CompleteWorker for application/json ContentType.
 type CompleteWorkerJSONRequestBody = WorkerResult
+
+// ReportWorkerProgressJSONRequestBody defines body for ReportWorkerProgress for application/json ContentType.
+type ReportWorkerProgressJSONRequestBody = WorkerProgress
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -112,6 +119,11 @@ type ClientInterface interface {
 	CompleteWorkerWithBody(ctx context.Context, runtimeId Runtime, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	CompleteWorker(ctx context.Context, runtimeId Runtime, body CompleteWorkerJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReportWorkerProgressWithBody request with any body
+	ReportWorkerProgressWithBody(ctx context.Context, runtimeId Runtime, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ReportWorkerProgress(ctx context.Context, runtimeId Runtime, body ReportWorkerProgressJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) CompleteWorkerWithBody(ctx context.Context, runtimeId Runtime, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -128,6 +140,30 @@ func (c *Client) CompleteWorkerWithBody(ctx context.Context, runtimeId Runtime, 
 
 func (c *Client) CompleteWorker(ctx context.Context, runtimeId Runtime, body CompleteWorkerJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCompleteWorkerRequest(c.Server, runtimeId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ReportWorkerProgressWithBody(ctx context.Context, runtimeId Runtime, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReportWorkerProgressRequestWithBody(c.Server, runtimeId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ReportWorkerProgress(ctx context.Context, runtimeId Runtime, body ReportWorkerProgressJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReportWorkerProgressRequest(c.Server, runtimeId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -166,6 +202,53 @@ func NewCompleteWorkerRequestWithBody(server string, runtimeId Runtime, contentT
 	}
 
 	operationPath := fmt.Sprintf("/internal/v1/workers/%s/complete", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewReportWorkerProgressRequest calls the generic ReportWorkerProgress builder with application/json body
+func NewReportWorkerProgressRequest(server string, runtimeId Runtime, body ReportWorkerProgressJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewReportWorkerProgressRequestWithBody(server, runtimeId, "application/json", bodyReader)
+}
+
+// NewReportWorkerProgressRequestWithBody generates requests for ReportWorkerProgress with any type of body
+func NewReportWorkerProgressRequestWithBody(server string, runtimeId Runtime, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "runtime_id", runtime.ParamLocationPath, runtimeId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/v1/workers/%s/progress", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -232,6 +315,11 @@ type ClientWithResponsesInterface interface {
 	CompleteWorkerWithBodyWithResponse(ctx context.Context, runtimeId Runtime, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CompleteWorkerResponse, error)
 
 	CompleteWorkerWithResponse(ctx context.Context, runtimeId Runtime, body CompleteWorkerJSONRequestBody, reqEditors ...RequestEditorFn) (*CompleteWorkerResponse, error)
+
+	// ReportWorkerProgressWithBodyWithResponse request with any body
+	ReportWorkerProgressWithBodyWithResponse(ctx context.Context, runtimeId Runtime, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReportWorkerProgressResponse, error)
+
+	ReportWorkerProgressWithResponse(ctx context.Context, runtimeId Runtime, body ReportWorkerProgressJSONRequestBody, reqEditors ...RequestEditorFn) (*ReportWorkerProgressResponse, error)
 }
 
 type CompleteWorkerResponse struct {
@@ -255,6 +343,27 @@ func (r CompleteWorkerResponse) StatusCode() int {
 	return 0
 }
 
+type ReportWorkerProgressResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r ReportWorkerProgressResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReportWorkerProgressResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 // CompleteWorkerWithBodyWithResponse request with arbitrary body returning *CompleteWorkerResponse
 func (c *ClientWithResponses) CompleteWorkerWithBodyWithResponse(ctx context.Context, runtimeId Runtime, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CompleteWorkerResponse, error) {
 	rsp, err := c.CompleteWorkerWithBody(ctx, runtimeId, contentType, body, reqEditors...)
@@ -270,6 +379,23 @@ func (c *ClientWithResponses) CompleteWorkerWithResponse(ctx context.Context, ru
 		return nil, err
 	}
 	return ParseCompleteWorkerResponse(rsp)
+}
+
+// ReportWorkerProgressWithBodyWithResponse request with arbitrary body returning *ReportWorkerProgressResponse
+func (c *ClientWithResponses) ReportWorkerProgressWithBodyWithResponse(ctx context.Context, runtimeId Runtime, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReportWorkerProgressResponse, error) {
+	rsp, err := c.ReportWorkerProgressWithBody(ctx, runtimeId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReportWorkerProgressResponse(rsp)
+}
+
+func (c *ClientWithResponses) ReportWorkerProgressWithResponse(ctx context.Context, runtimeId Runtime, body ReportWorkerProgressJSONRequestBody, reqEditors ...RequestEditorFn) (*ReportWorkerProgressResponse, error) {
+	rsp, err := c.ReportWorkerProgress(ctx, runtimeId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReportWorkerProgressResponse(rsp)
 }
 
 // ParseCompleteWorkerResponse parses an HTTP response from a CompleteWorkerWithResponse call
@@ -288,11 +414,30 @@ func ParseCompleteWorkerResponse(rsp *http.Response) (*CompleteWorkerResponse, e
 	return response, nil
 }
 
+// ParseReportWorkerProgressResponse parses an HTTP response from a ReportWorkerProgressWithResponse call
+func ParseReportWorkerProgressResponse(rsp *http.Response) (*ReportWorkerProgressResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReportWorkerProgressResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// Complete a pending worker action
 	// (POST /internal/v1/workers/{runtime_id}/complete)
 	CompleteWorker(c *fiber.Ctx, runtimeId Runtime) error
+	// Report progress for a pending worker action
+	// (POST /internal/v1/workers/{runtime_id}/progress)
+	ReportWorkerProgress(c *fiber.Ctx, runtimeId Runtime) error
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -318,6 +463,22 @@ func (siw *ServerInterfaceWrapper) CompleteWorker(c *fiber.Ctx) error {
 	return siw.Handler.CompleteWorker(c, runtimeId)
 }
 
+// ReportWorkerProgress operation middleware
+func (siw *ServerInterfaceWrapper) ReportWorkerProgress(c *fiber.Ctx) error {
+
+	var err error
+
+	// ------------- Path parameter "runtime_id" -------------
+	var runtimeId Runtime
+
+	err = runtime.BindStyledParameterWithOptions("simple", "runtime_id", c.Params("runtime_id"), &runtimeId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter runtime_id: %w", err).Error())
+	}
+
+	return siw.Handler.ReportWorkerProgress(c, runtimeId)
+}
+
 // FiberServerOptions provides options for the Fiber server.
 type FiberServerOptions struct {
 	BaseURL     string
@@ -341,20 +502,24 @@ func RegisterHandlersWithOptions(router fiber.Router, si ServerInterface, option
 
 	router.Post(options.BaseURL+"/internal/v1/workers/:runtime_id/complete", wrapper.CompleteWorker)
 
+	router.Post(options.BaseURL+"/internal/v1/workers/:runtime_id/progress", wrapper.ReportWorkerProgress)
+
 }
 
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/4RTsW4bMQz9FYHteIicNtNtbbpkK7J0CAyDlmhHsU5SKZ4Dw7h/LySdawc9oJtNPr53",
-	"5Hs6g4lDioGCZOjPkJBxICGu/57HIG6g8tMF6CGhvEIHAUsNuHU3zkIHTL9Hx2ShFx6pg2xeacAyKadU",
-	"0FnYhT1M03RpVolfkQ/Ez5RHL/UDOCZicVS7yOJ2aGRj3Z6yLNB1QMyRFzvZcPR+c8LBL/YlHigsfeLt",
-	"Oi8zbN1dYHH7RkbaJi7sYmGwlA27JC6WOz0FIQ7olUHvt2gO6tvPJzVmsmp7Uu915awwWGXpqDLxkTjf",
-	"QQfixBeJHzw6q/7SPN7QQAcF3YRWd/d3q7JKTBQwOejhay111at6Q+1mGn2817O2Pl/Nm3SJgCepPqfY",
-	"zlxcwLLOk4UeHmdEc6uyX3PycobPTDvo4ZO+pklfIfqSo2ndLktZvkd7KjomBqFQJTEl70wV1W85Vmeu",
-	"MVqSmHOkP4Ro+uhfiWMt5BRDbrH6snr417RGoriyKDSGkpAtx31YrZY8PqJ3dnZzHmvo+/+ia6RUZDWG",
-	"Q4jvQaGpwPo4xmFAPt1cXaFKFKwL+8v8DO9AcF8cgFaHdXteLVDVmZE99KDr6Wfw+fKA56FpPf0JAAD/",
-	"/0i8QQ4HBAAA",
+	"H4sIAAAAAAAC/8xVTW8TMRD9K9bAcdXdQIXE3qBceqt64VBFlWtPtm79xXg2EEX735HtzUfbACpcuNXj",
+	"8Xsz771ttqCCi8Gj5wT9FqIk6ZCRyul69Gwc5j+Nhx6i5HtowMtcA6q3t0ZDA4TfRkOooWcasYGk7tHJ",
+	"/JI3MXcnJuMHmKZpd1kovgZ6RLqiMBCmOgKFiMQG6wlJoWc5lClWgZxk6MF4/nAODTj5w7jRQb/ougac",
+	"8fXUNTta4xkHJMi0hxlvjnGX++Zw94CKYWrmsa4xjZZfDiWJzUoqvtVmwMQntmwAiQKdvEmKgrW3G+ns",
+	"KX1eTJNLxq9CbtaYFJnIJmQ/Lj0jeWmFktbeSfUoPl1dijGhFncb8b3skIT0Wmhci4S0Rkpn0AAbtpni",
+	"C41Giz3MxREMNJC7K1F3tjjr8uwhopfRQA/vS6kpmSiitGaGadeLduZut4eQTG2OmkUuTsZQdcuyyrzO",
+	"pYYeLuaOKn9BP+TxZgtvCVfQw5v2kNr20NLu8jotq9mY+HPQm8yjgmf0hVLGaI0qpO1Dyvttj+J6imLO",
+	"a/skFdPTSOXYl0KKwaeak3fd+UvTKoiggiKkUhgZdRb3vOtOebyW1ujZzflZ7V78vtsGqYXR6NnwpgQr",
+	"jc5J2hwJLaSI6LXxw45AqgLVAMshiw61DssM8GeP4/GXfNLja4yB+Nl3/386vR/vH73eifJqt/dq/oXf",
+	"+cXHX45UbRYmCR+EDX7IbDUJz6JS/TrssAr0qtRksPqfpxg7koUe2uLc3Lzd/aLMj6bl9DMAAP//GC/e",
+	"GZgGAAA=",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

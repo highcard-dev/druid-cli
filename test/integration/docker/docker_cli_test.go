@@ -5,7 +5,6 @@ package docker_test
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -36,6 +35,7 @@ func TestDockerBackendCLIComplexLifecycle(t *testing.T) {
 		"--docker-bind-root", filepath.Join(stateDir, "scrolls"),
 		"--worker-callback-listen", fmt.Sprintf(":%d", callbackPort),
 		"--worker-callback-url", fmt.Sprintf("http://%s:%d", containerHost, callbackPort),
+		"--unsafe-allow-unauthenticated-management",
 	}, nil)
 	t.Cleanup(func() {
 		if t.Failed() {
@@ -65,7 +65,7 @@ func TestDockerBackendCLIComplexLifecycle(t *testing.T) {
 	statuses := e2e.RunClientJSON[[]e2e.RuntimePortStatus](t, bins, socket, "ports", created.ID)
 	assertPortBound(t, statuses, fixture)
 
-	e2e.UnixJSONRequest(t, socket, http.MethodPost, "/api/v1/scrolls/"+created.ID+"/commands/record", "")
+	e2e.UnixJSONRequest(t, socket, http.MethodPost, "/api/v1/scrolls/"+created.ID+"/commands/record?sync=true", "")
 	root := strings.TrimPrefix(created.Root, "docker-bind://")
 	if got := readDockerRootFile(t, root, "data/finite.txt"); !strings.Contains(got, "finite-ok") {
 		t.Fatalf("finite file = %q, want finite-ok", got)
@@ -90,8 +90,6 @@ func TestDockerBackendVolumeStorageWorkerLifecycleBackupRestore(t *testing.T) {
 	port := e2e.FreePort(t)
 	routePort := e2e.FreePort(t)
 	callbackPort := e2e.FreePort(t)
-	publicPort := e2e.FreePort(t)
-	managementPort := e2e.FreePort(t)
 	registryPort := e2e.StartRegistry(t)
 	containerHost := e2e.DockerHostAddress(t)
 	name := fmt.Sprintf("docker-volume-%d", time.Now().UnixNano())
@@ -111,8 +109,6 @@ func TestDockerBackendVolumeStorageWorkerLifecycleBackupRestore(t *testing.T) {
 		"--docker-volume-prefix", "druid-e2e",
 		"--worker-callback-listen", fmt.Sprintf(":%d", callbackPort),
 		"--worker-callback-url", fmt.Sprintf("http://%s:%d", containerHost, callbackPort),
-		"--listen", fmt.Sprintf(":%d", managementPort),
-		"--worker-daemon-url", fmt.Sprintf("http://%s:%d", containerHost, managementPort),
 		"--unsafe-allow-unauthenticated-management",
 	}, []string{"DRUID_REGISTRY_PLAIN_HTTP=true"})
 	t.Cleanup(func() {
@@ -124,7 +120,6 @@ func TestDockerBackendVolumeStorageWorkerLifecycleBackupRestore(t *testing.T) {
 	created := e2e.RunClientJSON[e2e.RuntimeScroll](t, bins, socket,
 		"create",
 		"-p", fmt.Sprintf("%d:http", fixture.RoutePort),
-		"-p", fmt.Sprintf("%d:webdav", publicPort),
 		runtimeArtifact,
 		fixture.Name,
 	)
@@ -142,16 +137,17 @@ func TestDockerBackendVolumeStorageWorkerLifecycleBackupRestore(t *testing.T) {
 	env := e2e.ParseEnv(body)
 	e2e.AssertRuntimeEnv(t, env, fixture, "docker", created.ID)
 
-	e2e.RunClient(t, bins, socket, "dev", created.ID, "--watch", "data", "--command", "record")
+	// The standalone druid-dev server owns file watching; this lifecycle test
+	// needs only the Scroll command that produces the backup fixture.
+	e2e.UnixJSONRequest(t, socket, http.MethodPost, "/api/v1/scrolls/"+created.ID+"/commands/record?sync=true", "")
 
-	finiteURL := fmt.Sprintf("http://127.0.0.1:%d/webdav/data/finite.txt", publicPort)
-	if got := e2e.WaitHTTP(t, finiteURL); !strings.Contains(got, "finite-ok") {
+	volume := strings.TrimPrefix(created.Root, "docker-volume://")
+	if got := readDockerRootFile(t, volume, "data/finite.txt"); !strings.Contains(got, "finite-ok") {
 		t.Fatalf("finite file = %q, want finite-ok", got)
 	}
 
 	e2e.UnixJSONRequest(t, socket, http.MethodPost, "/api/v1/scrolls/"+created.ID+"/backup", fmt.Sprintf(`{"artifact":%q}`, backupArtifact))
-	indexURL := fmt.Sprintf("http://127.0.0.1:%d/webdav/data/public/index.txt", publicPort)
-	httpPut(t, indexURL, "mutated\n")
+	writeDockerRootFile(t, volume, "data/public/index.txt", "mutated\n")
 	if got := e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/index.txt", fixture.RoutePort)); !strings.Contains(got, "mutated") {
 		t.Fatalf("mutated index = %q, want mutated", got)
 	}
@@ -183,6 +179,7 @@ func TestDockerBackendColdstarterFrontsRuntime(t *testing.T) {
 		"--docker-bind-root", filepath.Join(stateDir, "scrolls"),
 		"--worker-callback-listen", fmt.Sprintf(":%d", callbackPort),
 		"--worker-callback-url", fmt.Sprintf("http://%s:%d", containerHost, callbackPort),
+		"--unsafe-allow-unauthenticated-management",
 	}, nil)
 	t.Cleanup(func() {
 		if t.Failed() {
@@ -317,6 +314,13 @@ func readDockerRootFile(t *testing.T, root string, path string) string {
 	return ""
 }
 
+func writeDockerRootFile(t *testing.T, root string, path string, body string) {
+	t.Helper()
+	directory := filepath.ToSlash(filepath.Dir(path))
+	script := fmt.Sprintf("mkdir -p /runtime/%s && printf %%s %q > /runtime/%s", directory, body, path)
+	e2e.Run(t, "docker", "run", "--rm", "-v", root+":/runtime", "busybox:1.36", "sh", "-c", script)
+}
+
 func waitDockerContainersGone(t *testing.T, labels ...string) {
 	t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
@@ -334,21 +338,4 @@ func waitDockerContainersGone(t *testing.T, labels ...string) {
 		time.Sleep(500 * time.Millisecond)
 	}
 	t.Fatalf("docker containers still exist for labels %v", labels)
-}
-
-func httpPut(t *testing.T, url string, body string) {
-	t.Helper()
-	req, err := http.NewRequest(http.MethodPut, url, strings.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		data, _ := io.ReadAll(resp.Body)
-		t.Fatalf("PUT %s failed with %d: %s", url, resp.StatusCode, data)
-	}
 }

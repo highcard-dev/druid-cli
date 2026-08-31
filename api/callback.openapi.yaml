@@ -8,6 +8,28 @@ servers:
 tags:
   - name: worker
 paths:
+  /internal/v1/workers/{runtime_id}/progress:
+    post:
+      operationId: reportWorkerProgress
+      tags: [worker]
+      summary: Report progress for a pending worker action
+      parameters:
+        - $ref: '#/components/parameters/Runtime'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkerProgress'
+      responses:
+        '204':
+          description: Worker progress accepted
+        '400':
+          description: Invalid worker progress
+        '401':
+          description: Invalid workload identity
+        '409':
+          description: Worker action is no longer pending
   /internal/v1/workers/{runtime_id}/complete:
     post:
       operationId: completeWorker
@@ -27,7 +49,7 @@ paths:
         '400':
           description: Invalid worker result
         '401':
-          description: Invalid worker token or unknown action
+          description: Invalid workload identity
 components:
   parameters:
     Runtime:
@@ -37,12 +59,18 @@ components:
       schema:
         type: string
   schemas:
+    WorkerProgress:
+      type: object
+      required: [percentage]
+      properties:
+        percentage:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 100
     WorkerResult:
       type: object
-      required: [token]
       properties:
-        token:
-          type: string
         scroll_yaml:
           type: string
         artifact_digest:

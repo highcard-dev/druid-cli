@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -34,8 +33,8 @@ var WorkerPullCommand = &cobra.Command{
 		if workerPullAction.Mode == "" {
 			workerPullAction.Mode = ports.RuntimeWorkerModeCreate
 		}
-		if workerPullAction.CallbackToken == "" {
-			workerPullAction.CallbackToken = os.Getenv("DRUID_WORKER_TOKEN")
+		if workerPullAction.TokenFile == "" {
+			workerPullAction.TokenFile = os.Getenv("DRUID_WORKER_TOKEN_FILE")
 		}
 		result := runWorkerPull(workerPullAction)
 		if result.Error != "" {
@@ -52,7 +51,7 @@ func init() {
 	WorkerPullCommand.Flags().StringVar(&workerPullAction.RuntimeID, "runtime-id", "", "Runtime scroll id")
 	WorkerPullCommand.Flags().StringVar(&workerPullAction.MountPath, "root", "/scroll", "Mounted runtime root path")
 	WorkerPullCommand.Flags().StringVar(&workerPullAction.CallbackURL, "callback-url", "", "Daemon worker callback URL")
-	WorkerPullCommand.Flags().StringVar(&workerPullAction.CallbackToken, "callback-token", "", "One-time worker callback token")
+	WorkerPullCommand.Flags().StringVar(&workerPullAction.TokenFile, "callback-token-file", "", "Projected ServiceAccount token file for callbacks")
 	WorkerPullCommand.Flags().StringVar(&workerPullMode, "mode", string(ports.RuntimeWorkerModeCreate), "Pull mode: create, update, or restore")
 	WorkerPullCommand.MarkFlagRequired("artifact")
 	WorkerPullCommand.MarkFlagRequired("runtime-id")
@@ -321,7 +320,7 @@ func copyPath(src string, dst string) error {
 }
 
 func startWorkerProgressReporter(action ports.RuntimeWorkerAction, progress *domain.SnapshotProgress, interval time.Duration) func() {
-	if action.CallbackURL == "" || action.CallbackToken == "" || progress == nil {
+	if action.CallbackURL == "" || action.TokenFile == "" || progress == nil {
 		return func() {}
 	}
 	suffix := "/internal/v1/workers/" + action.RuntimeID + "/complete"
@@ -329,8 +328,10 @@ func startWorkerProgressReporter(action ports.RuntimeWorkerAction, progress *dom
 	if baseURL == action.CallbackURL {
 		return func() {}
 	}
-	progressURL := baseURL + "/internal/v1/workers/" + action.RuntimeID + "/progress"
-	client := &http.Client{Timeout: 3 * time.Second}
+	client, err := callbackapi.NewClientWithResponses(baseURL)
+	if err != nil {
+		return func() {}
+	}
 	done := make(chan struct{})
 	var wait sync.WaitGroup
 	wait.Add(1)
@@ -344,18 +345,23 @@ func startWorkerProgressReporter(action ports.RuntimeWorkerAction, progress *dom
 			if percentage == lastPercentage {
 				return
 			}
-			body, _ := json.Marshal(struct {
-				Token      string `json:"token"`
-				Percentage int64  `json:"percentage"`
-			}{action.CallbackToken, percentage})
-			request, _ := http.NewRequest(http.MethodPost, progressURL, bytes.NewReader(body))
-			request.Header.Set("Content-Type", "application/json")
-			response, err := client.Do(request)
-			if err == nil {
-				response.Body.Close()
-				if response.StatusCode < http.StatusBadRequest {
-					lastPercentage = percentage
-				}
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			response, err := client.ReportWorkerProgressWithResponse(
+				ctx,
+				action.RuntimeID,
+				callbackapi.WorkerProgress{Percentage: percentage},
+				func(_ context.Context, request *http.Request) error {
+					token, err := os.ReadFile(action.TokenFile)
+					if err != nil {
+						return fmt.Errorf("read worker token: %w", err)
+					}
+					request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
+					return nil
+				},
+			)
+			cancel()
+			if err == nil && response.StatusCode() < http.StatusBadRequest {
+				lastPercentage = percentage
 			}
 		}
 		report()
@@ -398,11 +404,20 @@ func reportWorkerResult(action ports.RuntimeWorkerAction, result ports.RuntimeWo
 		ArtifactDigest: workerString(result.ArtifactDigest),
 		Error:          workerString(result.Error),
 		ScrollYaml:     workerString(result.ScrollYAML),
-		Token:          action.CallbackToken,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	res, err := client.CompleteWorkerWithResponse(ctx, action.RuntimeID, body)
+	res, err := client.CompleteWorkerWithResponse(ctx, action.RuntimeID, body, func(_ context.Context, request *http.Request) error {
+		if action.TokenFile == "" {
+			return nil
+		}
+		token, err := os.ReadFile(action.TokenFile)
+		if err != nil {
+			return fmt.Errorf("read worker token: %w", err)
+		}
+		request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
+		return nil
+	})
 	if err != nil {
 		return err
 	}

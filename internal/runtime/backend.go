@@ -11,6 +11,7 @@ import (
 type Runtime struct {
 	Backend ports.RuntimeBackendInterface
 	Store   ports.RuntimeScrollStore
+	create  ports.RuntimeBackendFactoryFunc
 }
 
 type Options struct {
@@ -32,50 +33,70 @@ func WithDockerConfig(config docker.Config) Option {
 	}
 }
 
-var newDockerBackend = func(config docker.Config, consoleManager ports.ConsoleManagerInterface) (ports.RuntimeBackendInterface, error) {
-	return docker.NewWithConfig(config, consoleManager)
+var newDockerBackend = func(config docker.Config, observer ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) {
+	return docker.NewWithConfig(config, observer)
 }
 
-var newKubernetesBackend = func(config runtimekubernetes.Config, consoleManager ports.ConsoleManagerInterface) (ports.RuntimeBackendInterface, error) {
-	return runtimekubernetes.New(config, consoleManager)
+var newKubernetesBackend = func(config runtimekubernetes.Config, observer ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) {
+	return runtimekubernetes.New(config, observer)
 }
 
 var newKubernetesStateStore = func(config runtimekubernetes.Config) (ports.RuntimeScrollStore, error) {
 	return runtimekubernetes.NewConfigMapStateStore(config)
 }
 
-func NewRuntime(name string, consoleManager ports.ConsoleManagerInterface, stateDir string, opts ...Option) (*Runtime, error) {
+func NewRuntime(name string, stateDir string, opts ...Option) (*Runtime, error) {
 	options := Options{}
 	for _, opt := range opts {
 		opt(&options)
 	}
 	switch name {
 	case "", "docker":
-		backend, err := newDockerBackend(options.Docker, consoleManager)
-		if err != nil {
-			return nil, err
-		}
 		store, err := docker.NewStateStore(stateDir)
 		if err != nil {
 			return nil, err
 		}
 		return &Runtime{
-			Backend: backend,
-			Store:   dockerRuntimeStore{RuntimeScrollStore: store, config: options.Docker.WithDefaults()},
+			Store: dockerRuntimeStore{RuntimeScrollStore: store, config: options.Docker.WithDefaults()},
+			create: func(observer ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) {
+				return newDockerBackend(options.Docker, observer)
+			},
 		}, nil
 	case "kubernetes":
-		backend, err := newKubernetesBackend(options.Kubernetes, consoleManager)
-		if err != nil {
-			return nil, err
-		}
 		store, err := newKubernetesStateStore(options.Kubernetes)
 		if err != nil {
 			return nil, err
 		}
-		return &Runtime{Backend: backend, Store: store}, nil
+		return &Runtime{
+			Store: store,
+			create: func(observer ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) {
+				return newKubernetesBackend(options.Kubernetes, observer)
+			},
+		}, nil
 	default:
 		return nil, fmt.Errorf("unknown runtime backend %q", name)
 	}
+}
+
+func (r *Runtime) Create(observer ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) {
+	if observer == nil {
+		return nil, fmt.Errorf("procedure status observer is required")
+	}
+	if r.Backend != nil {
+		return nil, fmt.Errorf("runtime backend already created")
+	}
+	if r.create == nil {
+		return nil, fmt.Errorf("runtime backend factory is not configured")
+	}
+	backend, err := r.create(observer)
+	if err != nil {
+		return nil, err
+	}
+	if backend == nil {
+		return nil, fmt.Errorf("runtime backend factory returned nil")
+	}
+	r.Backend = backend
+	return backend, nil
 }
 
 type dockerRuntimeStore struct {

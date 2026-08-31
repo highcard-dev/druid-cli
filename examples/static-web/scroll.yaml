@@ -25,7 +25,7 @@ commands:
 
   start:
     needs: [build]
-    run: restart
+    run: persistent
     procedures:
       - image: nginx:1.27-alpine
         expectedPorts:

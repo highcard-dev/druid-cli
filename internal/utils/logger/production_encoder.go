@@ -8,6 +8,10 @@ import (
 )
 
 func NewProductionEncoder(level zapcore.Level) zapcore.Core {
+	return NewProductionEncoderForWriter(level, zapcore.AddSync(os.Stderr))
+}
+
+func NewProductionEncoderForWriter(level zapcore.Level, writer zapcore.WriteSyncer) zapcore.Core {
 
 	structuredEncoder := zap.NewProductionEncoderConfig()
 	structuredEncoder.EncodeLevel = func(level zapcore.Level, encoder zapcore.PrimitiveArrayEncoder) {
@@ -16,5 +20,5 @@ func NewProductionEncoder(level zapcore.Level) zapcore.Core {
 	structuredEncoder.LevelKey = "severity"
 	structuredEncoder.MessageKey = "message"
 	structuredEncoder.EncodeTime = zapcore.ISO8601TimeEncoder
-	return zapcore.NewCore(zapcore.NewJSONEncoder(structuredEncoder), zapcore.AddSync(os.Stderr), level)
+	return zapcore.NewCore(zapcore.NewJSONEncoder(structuredEncoder), writer, level)
 }

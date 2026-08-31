@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 )
@@ -14,23 +15,54 @@ import (
 const (
 	defaultPrivateUIPackagePath = "private/dist/app.wasm"
 	defaultPublicUIPackagePath  = "public/dist/app.wasm"
+	uiPublishImage              = "curlimages/curl:8.12.1"
 )
 
+// PublishUIPackage runs a one-shot command with a short-lived upload URL for a
+// unique, immutable object. The URL is supplied only to that command.
 func (s *RuntimeSupervisor) PublishUIPackage(id string, scope string, sourcePath string) (*domain.RuntimeScroll, error) {
 	runtimeScroll, err := s.store.GetScroll(id)
 	if err != nil {
 		return nil, err
 	}
-	uiScope, path, err := normalizeUIPackageRequest(scope, sourcePath)
+	uiScope, sourcePath, err := normalizeUIPackageRequest(scope, sourcePath)
 	if err != nil {
 		return nil, err
 	}
-	result, err := s.runtimeBackend.PublishUIPackage(context.Background(), ports.RuntimeUIPackageAction{
-		RuntimeID:  runtimeScroll.ID,
-		RootRef:    runtimeScroll.Root,
-		Scope:      uiScope,
-		SourcePath: path,
-	})
+	action := ports.RuntimeUIPackageUploadAction{
+		RuntimeID: runtimeScroll.ID,
+		RootRef:   runtimeScroll.Root,
+		Scope:     uiScope,
+		RequestID: uuid.NewString(),
+	}
+	upload, err := s.runtimeBackend.CreateUIPackageUpload(context.Background(), action)
+	if err != nil {
+		return nil, fmt.Errorf("create UI package upload: %w", err)
+	}
+	if upload.UploadURL == "" || upload.URL == "" {
+		return nil, fmt.Errorf("UI package upload is incomplete")
+	}
+
+	commandName := "ui_publish_" + string(uiScope) + "_" + strings.ReplaceAll(action.RequestID, "-", "")[:12]
+	command := uiPublishCommand()
+	session, err := s.sessionFor(runtimeScroll.ID)
+	if err != nil {
+		return nil, err
+	}
+	if err := session.AddCommand(commandName, command); err != nil {
+		return nil, err
+	}
+	defer func() { _ = session.RemoveCommand(commandName) }()
+	procedureName := domain.ProcedureName(commandName, 0, command.Procedures[0])
+	if err := session.AddTempItemWithWaitEnv(commandName, map[string]map[string]string{
+		procedureName: {
+			"DRUID_UI_SOURCE":     sourcePath,
+			"DRUID_UI_UPLOAD_URL": upload.UploadURL,
+		},
+	}); err != nil {
+		return nil, err
+	}
+	runtimeScroll, err = s.store.GetScroll(id)
 	if err != nil {
 		return nil, err
 	}
@@ -38,15 +70,33 @@ func (s *RuntimeSupervisor) PublishUIPackage(id string, scope string, sourcePath
 		runtimeScroll.UIPackages = domain.RuntimeUIPackages{}
 	}
 	runtimeScroll.UIPackages[uiScope] = domain.RuntimeUIPackage{
-		URL:       result.URL,
-		Path:      result.Path,
-		SHA256:    result.SHA256,
-		UpdatedAt: time.Now().UTC(),
+		URL: upload.URL, Path: sourcePath, UpdatedAt: time.Now().UTC(),
 	}
 	if err := s.store.UpdateScroll(runtimeScroll); err != nil {
 		return nil, err
 	}
 	return s.store.GetScroll(id)
+}
+
+func uiPublishCommand() *domain.CommandInstructionSet {
+	return &domain.CommandInstructionSet{
+		Run: domain.RunModeOnce,
+		Procedures: []*domain.Procedure{{
+			Image:      uiPublishImage,
+			WorkingDir: "/app/resources/deployment",
+			Mounts:     []domain.Mount{{Path: "/app/resources/deployment", SubPath: ".", ReadOnly: true}},
+			Command: []string{"sh", "-ec", `
+test -n "$(printenv DRUID_UI_SOURCE)" && test -n "$(printenv DRUID_UI_UPLOAD_URL)"
+case "$(printenv DRUID_UI_SOURCE)" in private/*.wasm|public/*.wasm) ;; *) echo "invalid UI package path" >&2; exit 1;; esac
+test -f "$(printenv DRUID_UI_SOURCE)" && test -s "$(printenv DRUID_UI_SOURCE)"
+echo "Uploading Druid UI package"
+curl --fail-with-body --silent --show-error --request PUT --upload-file "$(printenv DRUID_UI_SOURCE)" \
+  --header "Content-Type: application/wasm" \
+  --header "Cache-Control: public, max-age=31536000, immutable" \
+  "$(printenv DRUID_UI_UPLOAD_URL)"
+`},
+		}},
+	}
 }
 
 func (s *RuntimeSupervisor) UIPackages(id string) (domain.RuntimeUIPackages, error) {
@@ -79,8 +129,8 @@ func normalizeUIPackageRequest(scope string, sourcePath string) (domain.RuntimeU
 	if strings.HasPrefix(cleaned, "data/private/") || strings.HasPrefix(cleaned, "data/public/") {
 		return "", "", fmt.Errorf("ui package path must be rooted at private/ or public/, not data/")
 	}
-	if filepath.Ext(cleaned) != ".wasm" {
-		return "", "", fmt.Errorf("ui package path must point to a .wasm file")
+	if filepath.Ext(cleaned) != ".wasm" || !strings.HasPrefix(cleaned, string(uiScope)+"/") {
+		return "", "", fmt.Errorf("ui package path must point to a %s .wasm file", uiScope)
 	}
 	return uiScope, cleaned, nil
 }

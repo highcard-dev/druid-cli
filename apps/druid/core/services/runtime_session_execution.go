@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func (s *RuntimeSession) runCommand(cmd string) error {
+func (s *RuntimeSession) runCommand(cmd string, extraEnv ...map[string]map[string]string) error {
 	command, err := s.scrollService.GetCommand(cmd)
 	if err != nil {
 		return err
@@ -27,13 +27,19 @@ func (s *RuntimeSession) runCommand(cmd string) error {
 	scrollName := s.runtimeScroll.ScrollName
 	routing := make([]domain.RuntimeRouteAssignment, len(s.runtimeScroll.Routing))
 	copy(routing, s.runtimeScroll.Routing)
+	reservations := append([]domain.Port(nil), s.runtimeScroll.ReservedPorts...)
 	s.mu.Unlock()
 
 	if root == "" {
 		root = s.scrollService.GetCwd()
 	}
 	file := s.scrollService.GetFile()
-	runtimePorts, err := resolveRuntimePorts(file.Ports, routing, true)
+	mergedPorts, err := mergeRuntimePorts(file.Ports, reservations)
+	if err != nil {
+		s.setCommandProcedureStatus(cmd, command, domain.ScrollLockStatusError, nil)
+		return err
+	}
+	runtimePorts, err := resolveRuntimePorts(mergedPorts, routing, true)
 	if err != nil {
 		s.setCommandProcedureStatus(cmd, command, domain.ScrollLockStatusError, nil)
 		return err
@@ -50,18 +56,27 @@ func (s *RuntimeSession) runCommand(cmd string) error {
 		s.setCommandProcedureStatus(cmd, command, domain.ScrollLockStatusError, nil)
 		return err
 	}
+	var extraProcedureEnv map[string]map[string]string
+	if len(extraEnv) > 0 {
+		extraProcedureEnv = extraEnv[0]
+	}
+	for procedure, values := range extraProcedureEnv {
+		if procedureEnv[procedure] == nil {
+			procedureEnv[procedure] = map[string]string{}
+		}
+		for key, value := range values {
+			procedureEnv[procedure][key] = value
+		}
+	}
 
 	exitCode, err := s.runtimeBackend.RunCommand(ports.RuntimeCommand{
 		Name:         cmd,
 		ScrollID:     scrollID,
 		Command:      command,
 		Root:         root,
-		GlobalPorts:  runtimePorts,
+		Ports:        runtimePorts,
 		Routing:      routing,
 		ProcedureEnv: procedureEnv,
-		ProcedureStatusObserver: func(procedure string, status domain.ScrollLockStatus, exitCode *int) {
-			s.persistProcedureStatus(cmd, procedure, status, exitCode)
-		},
 	})
 	if err != nil {
 		s.setCommandProcedureStatus(cmd, command, domain.ScrollLockStatusError, exitCode)

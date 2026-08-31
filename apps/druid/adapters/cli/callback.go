@@ -8,22 +8,26 @@ import (
 )
 
 type runtimeCallbackHandler struct {
-	callbacks *appservices.WorkerCallbackManager
+	callbacks            *appservices.WorkerCallbackManager
+	allowUnauthenticated bool
 }
 
-func (h runtimeCallbackHandler) ReportProgress(c *fiber.Ctx) error {
-	var report struct {
-		Token      string `json:"token"`
-		Percentage *int64 `json:"percentage"`
-	}
-	if err := c.BodyParser(&report); err != nil || report.Percentage == nil {
+func (h runtimeCallbackHandler) ReportWorkerProgress(c *fiber.Ctx, runtimeID callbackapi.Runtime) error {
+	var report callbackapi.WorkerProgress
+	if err := c.BodyParser(&report); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid progress report")
 	}
-	if *report.Percentage < 0 || *report.Percentage > 100 {
+	if report.Percentage < 0 || report.Percentage > 100 {
 		return fiber.NewError(fiber.StatusBadRequest, "percentage must be between 0 and 100")
 	}
-	if err := h.callbacks.ReportProgress(c.Params("runtime_id"), report.Token, *report.Percentage); err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+	if !h.allowUnauthenticated {
+		identity, ok := c.Locals("druid-workload-identity").(ports.RuntimeWorkloadIdentity)
+		if !ok || identity.Kind != "worker" || identity.RuntimeID != string(runtimeID) {
+			return fiber.NewError(fiber.StatusForbidden, "worker identity does not match runtime")
+		}
+	}
+	if err := h.callbacks.ReportProgress(string(runtimeID), report.Percentage); err != nil {
+		return fiber.NewError(fiber.StatusConflict, err.Error())
 	}
 	return c.SendStatus(fiber.StatusNoContent)
 }
@@ -43,8 +47,14 @@ func (h runtimeCallbackHandler) CompleteWorker(c *fiber.Ctx, runtimeID callbacka
 	if result.Error != nil {
 		runtimeResult.Error = *result.Error
 	}
-	if err := h.callbacks.Complete(string(runtimeID), result.Token, runtimeResult); err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+	if !h.allowUnauthenticated {
+		identity, ok := c.Locals("druid-workload-identity").(ports.RuntimeWorkloadIdentity)
+		if !ok || identity.Kind != "worker" || identity.RuntimeID != string(runtimeID) {
+			return fiber.NewError(fiber.StatusForbidden, "worker identity does not match runtime")
+		}
+	}
+	if err := h.callbacks.Complete(string(runtimeID), runtimeResult); err != nil {
+		return fiber.NewError(fiber.StatusConflict, err.Error())
 	}
 	return c.SendStatus(fiber.StatusNoContent)
 }

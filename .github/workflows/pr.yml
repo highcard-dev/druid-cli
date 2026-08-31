@@ -15,6 +15,8 @@ jobs:
 
   integration-tests:
     runs-on: ubuntu-latest
+    env:
+      GOFLAGS: "-p=2"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -49,12 +51,16 @@ jobs:
           path: |
             bin/druid
             bin/druid-coldstarter
+            bin/druid-dev
             .docker/entrypoint.sh
             .docker/druid-install-command.sh
 
   prerelease:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     needs: [unit-tests, integration-tests, validate-api, build]
+    permissions:
+      contents: write
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -75,10 +81,12 @@ jobs:
           files: |
             bin/druid
             bin/druid-coldstarter
+            bin/druid-dev
             .docker/entrypoint.sh
             .docker/druid-install-command.sh
 
   docker-builds:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     needs: prerelease
     uses: ./.github/workflows/docker-builds.yml
     with:
