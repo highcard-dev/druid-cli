@@ -40,6 +40,9 @@ type options struct {
 	ownerID        string
 	authJWKSURL    string
 	runtimeJWKSURL string
+	watchPaths     []string
+	watchWorkdir   string
+	watchCommand   []string
 }
 
 func NewRootCommand() *cobra.Command {
@@ -57,6 +60,9 @@ func NewRootCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opt.ownerID, "owner-id", "", "Runtime owner id")
 	cmd.Flags().StringVar(&opt.authJWKSURL, "auth-jwks-url", "", "JWKS URL for customer JWTs")
 	cmd.Flags().StringVar(&opt.runtimeJWKSURL, "runtime-jwks-url", "", "JWKS URL for short-lived runtime tokens")
+	cmd.Flags().StringArrayVar(&opt.watchPaths, "watch-path", nil, "Runtime-relative path to watch (repeatable)")
+	cmd.Flags().StringVar(&opt.watchWorkdir, "watch-working-directory", ".", "Runtime-relative working directory for the watcher command")
+	cmd.Flags().StringArrayVar(&opt.watchCommand, "watch-command", nil, "Watcher command argument (repeatable, preserves argument boundaries)")
 	_ = cmd.MarkFlagRequired("root")
 	return cmd
 }
@@ -80,6 +86,15 @@ func run(ctx context.Context, opt options) error {
 		}
 	}
 	server := newDevServer(root, auth)
+	watchRequest, err := startupWatchRequest(opt)
+	if err != nil {
+		return err
+	}
+	if watchRequest != nil {
+		if err := server.startWatch(*watchRequest); err != nil {
+			return fmt.Errorf("start configured watcher: %w", err)
+		}
+	}
 	app := newApp(server)
 	logger.Log().Info("Starting Druid development server",
 		zap.String("root", root),
@@ -101,6 +116,26 @@ func run(ctx context.Context, opt options) error {
 		logger.Log().Info("Druid development server stopped")
 	}
 	return err
+}
+
+func startupWatchRequest(opt options) (*devapi.WatchModeRequest, error) {
+	hasPaths := len(opt.watchPaths) > 0
+	hasCommand := len(opt.watchCommand) > 0
+	if hasPaths != hasCommand {
+		return nil, fmt.Errorf("watch-path and watch-command must be supplied together")
+	}
+	if !hasPaths {
+		return nil, nil
+	}
+	workdir := opt.watchWorkdir
+	if workdir == "" {
+		workdir = "."
+	}
+	return &devapi.WatchModeRequest{
+		WatchPaths:       opt.watchPaths,
+		WorkingDirectory: workdir,
+		Command:          opt.watchCommand,
+	}, nil
 }
 
 type devAuth struct {
@@ -225,20 +260,35 @@ func (s *devServer) EnableWatch(c *fiber.Ctx) error {
 	if err := c.BodyParser(&request); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
+	if err := s.startWatch(request); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+	return c.JSON(s.watchResponse())
+}
+
+func (s *devServer) startWatch(request devapi.WatchModeRequest) error {
 	if len(request.Command) == 0 {
-		return fiber.NewError(fiber.StatusBadRequest, "command is required")
+		return fmt.Errorf("command is required")
 	}
 	if len(request.WatchPaths) == 0 {
-		return fiber.NewError(fiber.StatusBadRequest, "watch_paths is required")
+		return fmt.Errorf("watch_paths is required")
 	}
 	workdir, err := s.directoryPath(request.WorkingDirectory)
 	if err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		return err
 	}
 	paths := make([]string, 0, len(request.WatchPaths))
 	for _, path := range request.WatchPaths {
-		if _, err := s.directoryPath(path); err != nil {
-			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		fullPath, err := s.directoryPath(path)
+		if err != nil {
+			return err
+		}
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			return fmt.Errorf("watch path %q: %w", path, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("watch path %q is not a directory", path)
 		}
 		paths = append(paths, path)
 	}
@@ -252,7 +302,7 @@ func (s *devServer) EnableWatch(c *fiber.Ctx) error {
 			zap.String("working_directory", request.WorkingDirectory),
 			zap.Strings("command", request.Command),
 		)
-		return c.JSON(s.watchResponse())
+		return nil
 	}
 	_ = s.stopWatch()
 	logger.Log().Info("Starting Druid development watcher",
@@ -270,7 +320,7 @@ func (s *devServer) EnableWatch(c *fiber.Ctx) error {
 	if err := s.watch.StartWatching(s.root, paths...); err != nil {
 		s.setWatchError(err)
 		logger.Log().Error("Failed to start Druid development watcher", zap.Error(err))
-		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		return err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	child := exec.CommandContext(ctx, request.Command[0], request.Command[1:]...)
@@ -315,7 +365,7 @@ func (s *devServer) EnableWatch(c *fiber.Ctx) error {
 			_ = s.watch.StopWatching()
 		}
 	}()
-	return c.JSON(s.watchResponse())
+	return nil
 }
 
 func (s *devServer) WatchNotifications(c *fiber.Ctx) error {
