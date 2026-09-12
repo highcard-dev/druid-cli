@@ -114,7 +114,7 @@ func init() {
 	PushCommand.Flags().BoolVarP(&pushSmart, "smart", "s", false, "Indicates, if the scroll is able to run as a smart deployment (Will be added as a manifest annotation gg.druid.scroll.smart)")
 	PushCommand.Flags().StringVar(&pushCategory, "category", pushCategory, "Category of the scroll. (Will be added as a manifest annotation gg.druid.scroll.category)")
 	PushCommand.Flags().StringVarP(&pushImage, "image", "i", pushImage, "Image to use for the scroll. (Will be added as a manifest annotation gg.druid.scroll.image)")
-	PushCommand.Flags().StringSliceVarP(&pushScrollPorts, "port", "p", pushScrollPorts, "Ports to expose. Format webserver=80, dns=53/udp or just ftp (Will be added as a manifest annotation gg.druid.scroll.ports.<name>)")
+	PushCommand.Flags().StringSliceVarP(&pushScrollPorts, "port", "p", pushScrollPorts, "Ports to expose. Format webserver=80, dns=53/udp or just minecraft (Will be added as a manifest annotation gg.druid.scroll.ports.<name>)")
 	PushCommand.Flags().BoolVarP(&pushPackMeta, "pack-meta", "m", pushPackMeta, "Pack the meta folder into the scroll.")
 	PushCommand.PersistentFlags().BoolVar(&pushDisableTarReproducible, "no-tar-reproducible", false, "Preserve file timestamps in pushed tar layers.")
 }
