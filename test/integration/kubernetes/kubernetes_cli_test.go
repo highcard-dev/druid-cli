@@ -97,7 +97,7 @@ func TestKubernetesBackendCLIComplexLifecycle(t *testing.T) {
 	deadline := time.Now().Add(30 * time.Second)
 	var statuses []e2e.RuntimePortStatus
 	for time.Now().Before(deadline) {
-		_ = e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/index.txt", localPort))
+		requestServiceFromRuntimePod(t, namespace, pvc, fixture.ServeProc, target.ServiceName, fixture.Port)
 		time.Sleep(1 * time.Second)
 		statuses = e2e.RunClientJSON[[]e2e.RuntimePortStatus](t, bins, socket, "ports", created.ID)
 		if status, ok := findRuntimePortStatus(statuses, fixture); ok && status.Source == "kubernetes-pod-stats" && status.RXBytes != nil && status.TXBytes != nil && status.TrafficBytes != nil && *status.TrafficBytes > 0 && status.TrafficOK != nil && *status.TrafficOK {
@@ -125,6 +125,18 @@ func TestKubernetesBackendCLIComplexLifecycle(t *testing.T) {
 		t.Fatalf("delete response = %s, want deleted status", deleted)
 	}
 	waitKubernetesResourcesGone(t, namespace, pvc, "service")
+}
+
+func requestServiceFromRuntimePod(t *testing.T, namespace string, pvc string, procedure string, service string, port int) {
+	t.Helper()
+	selector := "app.kubernetes.io/managed-by=druid,druid.gg/scroll-id=" + pvc + ",druid.gg/procedure=" + procedure
+	pod, err := kubectlOutput("get", "pod", "-n", namespace, "-l", selector, "-o", "jsonpath={.items[0].metadata.name}")
+	if err != nil {
+		t.Fatalf("get runtime pod: %v: %s", err, pod)
+	}
+	if out, err := kubectlOutput("exec", "-n", namespace, strings.TrimSpace(pod), "--", "wget", "-qO-", fmt.Sprintf("http://%s:%d/index.txt", service, port)); err != nil {
+		t.Fatalf("request runtime service: %v: %s", err, out)
+	}
 }
 
 func requireKubernetes(t *testing.T) {
