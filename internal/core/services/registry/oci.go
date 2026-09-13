@@ -201,6 +201,13 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 	if progress != nil {
 		progress.Mode.Store(domain.SnapshotProgressModeRestore)
 		progress.Percentage.Store(0)
+		defer progress.Mode.Store(domain.SnapshotProgressModeIdle)
+	}
+	storeProgress := func(done, total int64) {
+		if progress == nil || total <= 0 {
+			return
+		}
+		progress.Percentage.Store(min(99, done*100/total))
 	}
 
 	copyOpts := oras.CopyOptions{
@@ -259,10 +266,7 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 				done := completed.Add(1)
 				total := totalLayers.Load()
 				bytesDownloaded.Add(desc.Size)
-				if progress != nil && total > 0 {
-					pct := done * 100 / total
-					progress.Percentage.Store(pct)
-				}
+				storeProgress(done, total)
 				title := desc.Annotations["org.opencontainers.image.title"]
 				logger.Log().Debug("Pulled layer",
 					zap.String("title", title),
@@ -279,10 +283,7 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 				done := completed.Add(1)
 				total := totalLayers.Load()
 				bytesDownloaded.Add(desc.Size)
-				if progress != nil && total > 0 {
-					pct := done * 100 / total
-					progress.Percentage.Store(pct)
-				}
+				storeProgress(done, total)
 				title := desc.Annotations["org.opencontainers.image.title"]
 				logger.Log().Debug("Layer already exists locally, skipped",
 					zap.String("title", title),
@@ -303,15 +304,7 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 	manifestDescriptor, err := oras.Copy(ctx, repoInstance, ref, fs, dstRef, copyOpts)
 	stopProgress()
 	if err != nil {
-		if progress != nil {
-			progress.Mode.Store(domain.SnapshotProgressModeIdle)
-		}
 		return err
-	}
-
-	if progress != nil {
-		progress.Percentage.Store(100)
-		progress.Mode.Store(domain.SnapshotProgressModeIdle)
 	}
 
 	logger.Log().Info("Manifest pulled", zap.String("digest", manifestDescriptor.Digest.String()), zap.String("mediaType", manifestDescriptor.MediaType))
@@ -347,6 +340,10 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 	err = os.WriteFile(fileName, annotationsJson, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write annotations: %w", err)
+	}
+
+	if progress != nil {
+		progress.Percentage.Store(100)
 	}
 
 	return nil

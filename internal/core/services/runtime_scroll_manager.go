@@ -102,6 +102,10 @@ func RuntimeScrollIDFromName(name string) string {
 }
 
 func MaterializeScrollArtifact(artifact string, root string, ociRegistry ports.OciRegistryInterface, includeData bool) error {
+	return MaterializeScrollArtifactWithProgress(artifact, root, ociRegistry, includeData, nil)
+}
+
+func MaterializeScrollArtifactWithProgress(artifact string, root string, ociRegistry ports.OciRegistryInterface, includeData bool, progress *domain.SnapshotProgress) error {
 	if artifact == "" {
 		return fmt.Errorf("artifact is required")
 	}
@@ -126,7 +130,7 @@ func MaterializeScrollArtifact(artifact string, root string, ociRegistry ports.O
 	if ociRegistry == nil {
 		return fmt.Errorf("OCI registry is required to pull %s", artifact)
 	}
-	if err := ociRegistry.PullSelective(root, artifact, includeData, nil); err != nil {
+	if err := ociRegistry.PullSelective(root, artifact, includeData, progress); err != nil {
 		return err
 	}
 	return os.MkdirAll(filepath.Join(root, domain.RuntimeDataDir), 0755)
