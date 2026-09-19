@@ -211,17 +211,17 @@ func (m *MockRuntimeBackendInterface) EXPECT() *MockRuntimeBackendInterfaceMockR
 }
 
 // BackupRuntime mocks base method.
-func (m *MockRuntimeBackendInterface) BackupRuntime(ctx context.Context, root, artifact string, registryCredentials []domain.RegistryCredential) error {
+func (m *MockRuntimeBackendInterface) BackupRuntime(ctx context.Context, root, artifact string, registryCredentials []domain.RegistryCredential, preserveReleaseManifest bool) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "BackupRuntime", ctx, root, artifact, registryCredentials)
+	ret := m.ctrl.Call(m, "BackupRuntime", ctx, root, artifact, registryCredentials, preserveReleaseManifest)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // BackupRuntime indicates an expected call of BackupRuntime.
-func (mr *MockRuntimeBackendInterfaceMockRecorder) BackupRuntime(ctx, root, artifact, registryCredentials any) *gomock.Call {
+func (mr *MockRuntimeBackendInterfaceMockRecorder) BackupRuntime(ctx, root, artifact, registryCredentials, preserveReleaseManifest any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BackupRuntime", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).BackupRuntime), ctx, root, artifact, registryCredentials)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BackupRuntime", reflect.TypeOf((*MockRuntimeBackendInterface)(nil).BackupRuntime), ctx, root, artifact, registryCredentials, preserveReleaseManifest)
 }
 
 // CreateUIPackageUpload mocks base method.
