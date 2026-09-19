@@ -22,6 +22,7 @@ var pushScrollPorts []string
 var pushPackMeta bool
 var pushSmart bool
 var pushCategory string
+var pushPreserveReleaseManifest bool
 var pushDisableTarReproducible bool
 
 var PushCommand = &cobra.Command{
@@ -96,7 +97,7 @@ var PushCommand = &cobra.Command{
 			overrides[fmt.Sprintf("gg.druid.scroll.port.%s", name)] = port
 		}
 
-		_, err = ociClient.Push(fullPath, repo, tag, overrides, pushPackMeta, &scroll.File)
+		_, err = ociClient.PushWithOptions(fullPath, repo, tag, overrides, pushPackMeta, &scroll.File, registry.TransferOptions{PreserveReleaseManifest: pushPreserveReleaseManifest})
 		if err != nil {
 			return err
 		}
@@ -116,5 +117,6 @@ func init() {
 	PushCommand.Flags().StringVarP(&pushImage, "image", "i", pushImage, "Image to use for the scroll. (Will be added as a manifest annotation gg.druid.scroll.image)")
 	PushCommand.Flags().StringSliceVarP(&pushScrollPorts, "port", "p", pushScrollPorts, "Ports to expose. Format webserver=80, dns=53/udp or just minecraft (Will be added as a manifest annotation gg.druid.scroll.ports.<name>)")
 	PushCommand.Flags().BoolVarP(&pushPackMeta, "pack-meta", "m", pushPackMeta, "Pack the meta folder into the scroll.")
+	PushCommand.Flags().BoolVar(&pushPreserveReleaseManifest, "preserve-release-manifest", false, "Include the installed release manifest.json in this snapshot.")
 	PushCommand.PersistentFlags().BoolVar(&pushDisableTarReproducible, "no-tar-reproducible", false, "Preserve file timestamps in pushed tar layers.")
 }
