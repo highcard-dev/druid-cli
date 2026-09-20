@@ -162,7 +162,7 @@ func (f fakeBackend) DeleteRuntime(root string, purgeData bool) error {
 	return nil
 }
 
-func (f fakeBackend) BackupRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential) error {
+func (f fakeBackend) BackupRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential, preserveReleaseManifest bool) error {
 	return nil
 }
 

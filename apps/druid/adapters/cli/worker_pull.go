@@ -51,6 +51,7 @@ func init() {
 	WorkerPullCommand.Flags().StringVar(&workerPullAction.MountPath, "root", "/scroll", "Mounted runtime root path")
 	WorkerPullCommand.Flags().StringVar(&workerPullAction.CallbackURL, "callback-url", "", "Daemon worker callback URL")
 	WorkerPullCommand.Flags().StringVar(&workerPullAction.TokenFile, "callback-token-file", "", "Projected ServiceAccount token file for callbacks")
+	WorkerPullCommand.Flags().BoolVar(&workerPullAction.PreserveReleaseManifest, "preserve-release-manifest", false, "Restore the release manifest.json carried by a backup")
 	WorkerPullCommand.Flags().StringVar(&workerPullMode, "mode", string(ports.RuntimeWorkerModeCreate), "Pull mode: create, update, or restore")
 	WorkerPullCommand.MarkFlagRequired("artifact")
 	WorkerPullCommand.MarkFlagRequired("runtime-id")
@@ -164,27 +165,101 @@ func pullWorkerUpdate(root string, artifact string, oci ports.OciRegistryInterfa
 }
 
 func pullWorkerRestore(root string, artifact string, oci ports.OciRegistryInterface) error {
-	tmp, err := os.MkdirTemp("", "druid-worker-restore-*")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(tmp)
-	if err := coreservices.MaterializeScrollArtifact(artifact, tmp, oci, true); err != nil {
-		return err
-	}
 	if err := os.MkdirAll(root, 0755); err != nil {
 		return err
 	}
+	stage, err := os.MkdirTemp(root, ".druid-worker-restore-stage-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	puller, ok := oci.(interface {
+		PullSelectiveWithOptions(string, string, bool, *domain.SnapshotProgress, registry.TransferOptions) error
+	})
+	if !ok {
+		return fmt.Errorf("OCI registry does not support preserve-release-manifest")
+	}
+	if err := puller.PullSelectiveWithOptions(stage, artifact, true, nil, registry.TransferOptions{PreserveReleaseManifest: true}); err != nil {
+		return err
+	}
+	return replaceRestoredRoot(root, stage)
+}
+
+const restoreRootUnsafePrefix = "restore root may be partial:"
+
+func replaceRestoredRoot(root string, stage string) error {
+	return replaceRestoredRootWithRename(root, stage, os.Rename)
+}
+
+// replaceRestoredRootWithRename swaps staged artifact entries into a runtime
+// root without copying over a live tree. If an entry move fails, it restores
+// the original entries before returning. An error with restoreRootUnsafePrefix
+// means that rollback itself failed and callers must keep the runtime stopped.
+func replaceRestoredRootWithRename(root string, stage string, rename func(string, string) error) error {
+	rollback, err := os.MkdirTemp(root, ".druid-worker-restore-rollback-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(rollback)
+
+	stageName := filepath.Base(stage)
+	rollbackName := filepath.Base(rollback)
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return err
 	}
+	original := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		if err := os.RemoveAll(filepath.Join(root, entry.Name())); err != nil {
-			return err
+		if entry.Name() != stageName && entry.Name() != rollbackName {
+			original = append(original, entry.Name())
 		}
 	}
-	return copyPath(tmp, root)
+	stagedEntries, err := os.ReadDir(stage)
+	if err != nil {
+		return err
+	}
+
+	restoreOriginal := func(installed []string) error {
+		for _, name := range installed {
+			if err := os.RemoveAll(filepath.Join(root, name)); err != nil {
+				return err
+			}
+		}
+		for _, name := range original {
+			from := filepath.Join(rollback, name)
+			if _, err := os.Lstat(from); os.IsNotExist(err) {
+				continue
+			} else if err != nil {
+				return err
+			}
+			if err := rename(from, filepath.Join(root, name)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	for _, entry := range original {
+		if err := rename(filepath.Join(root, entry), filepath.Join(rollback, entry)); err != nil {
+			if rollbackErr := restoreOriginal(nil); rollbackErr != nil {
+				return fmt.Errorf("%s failed to restore original runtime after moving %s: %w", restoreRootUnsafePrefix, entry, rollbackErr)
+			}
+			return fmt.Errorf("restore transaction rolled back while moving original entry %s: %w", entry, err)
+		}
+	}
+
+	installed := make([]string, 0, len(stagedEntries))
+	for _, entry := range stagedEntries {
+		name := entry.Name()
+		if err := rename(filepath.Join(stage, name), filepath.Join(root, name)); err != nil {
+			if rollbackErr := restoreOriginal(installed); rollbackErr != nil {
+				return fmt.Errorf("%s failed to restore original runtime after staging %s: %w", restoreRootUnsafePrefix, name, rollbackErr)
+			}
+			return fmt.Errorf("restore transaction rolled back while staging %s: %w", name, err)
+		}
+		installed = append(installed, name)
+	}
+	return nil
 }
 
 func collectSkipUpdatePaths(out map[string]bool, parent string, chunks []*domain.Chunks) {

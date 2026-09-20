@@ -2,7 +2,6 @@ package docker
 
 import (
 	"errors"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -150,12 +149,6 @@ func TestContainerSpecAddsHostGatewayExtraHost(t *testing.T) {
 	_, hostConfig, err := containerSpec("start", &domain.Procedure{Image: "busybox"}, "docker-volume://druid-scroll-data", nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if runtime.GOOS != "linux" {
-		if len(hostConfig.ExtraHosts) != 0 {
-			t.Fatalf("extra hosts = %#v, want none on %s", hostConfig.ExtraHosts, runtime.GOOS)
-		}
-		return
 	}
 	for _, extraHost := range hostConfig.ExtraHosts {
 		if extraHost == dockerHostGatewayExtraHost {
