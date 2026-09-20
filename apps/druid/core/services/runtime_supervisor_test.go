@@ -1339,6 +1339,52 @@ func TestRuntimeSupervisorSerializesBackupWithStartAndEnsure(t *testing.T) {
 	}
 }
 
+func TestRuntimeSupervisorStopKeepsRuntimeQueueQuiescent(t *testing.T) {
+	store := newTestStateStore(t)
+	runtimeScroll := &domain.RuntimeScroll{
+		ID:         "stop-quiescent",
+		Artifact:   "registry.local/lab:1.0",
+		Root:       "runtime://stop-quiescent",
+		ScrollName: "stop-quiescent",
+		ScrollYAML: updatedScrollYAML("stop-quiescent"),
+		Status:     domain.RuntimeScrollStatusRunning,
+		Procedures: domain.ProcedureStatusMap{},
+	}
+	if err := store.CreateScroll(runtimeScroll); err != nil {
+		t.Fatal(err)
+	}
+	var runs atomic.Int32
+	backend := &fakeWorkerBackend{runCommand: func(command ports.RuntimeCommand) (*int, error) {
+		runs.Add(1)
+		return nil, errors.New("run should not persist in test")
+	}}
+	supervisor := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
+	session, err := supervisor.sessionFor(runtimeScroll.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AutoStartServe(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(time.Second)
+	for runs.Load() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("runtime queue did not start")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	if _, err := supervisor.Stop(runtimeScroll.ID); err != nil {
+		t.Fatal(err)
+	}
+	count := runs.Load()
+	time.Sleep(100 * time.Millisecond)
+	if got := runs.Load(); got != count {
+		t.Fatalf("runtime queue restarted after stop: runs=%d, want %d", got, count)
+	}
+}
+
 func TestNewRuntimeSessionRequiresPersistedScrollYAML(t *testing.T) {
 	store := newTestStateStore(t)
 	runtimeScroll := &domain.RuntimeScroll{

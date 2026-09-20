@@ -66,7 +66,7 @@ func (s *RuntimeSupervisor) Stop(id string) (*domain.RuntimeScroll, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := session.StopRuntime(); err != nil {
+	if err := session.StopRuntimeForMaintenance(); err != nil {
 		session.markError(err)
 		return nil, err
 	}
