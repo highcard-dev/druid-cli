@@ -40,6 +40,7 @@ func (s *RuntimeSupervisor) startScroll(id string) (*domain.RuntimeScroll, error
 	if err != nil {
 		return nil, err
 	}
+	session.Start()
 	if err := session.AutoStartServe(); err != nil {
 		session.markError(err)
 		return nil, err

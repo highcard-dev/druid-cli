@@ -1385,6 +1385,47 @@ func TestRuntimeSupervisorStopKeepsRuntimeQueueQuiescent(t *testing.T) {
 	}
 }
 
+func TestRuntimeSupervisorStartResumesMaintenanceStoppedQueue(t *testing.T) {
+	store := newTestStateStore(t)
+	runtimeScroll := &domain.RuntimeScroll{
+		ID:         "resume-maintenance",
+		Artifact:   "registry.local/lab:1.0",
+		Root:       "runtime://resume-maintenance",
+		ScrollName: "resume-maintenance",
+		ScrollYAML: updatedScrollYAML("resume-maintenance"),
+		Status:     domain.RuntimeScrollStatusRunning,
+		Procedures: domain.ProcedureStatusMap{},
+	}
+	if err := store.CreateScroll(runtimeScroll); err != nil {
+		t.Fatal(err)
+	}
+	var runs atomic.Int32
+	backend := &fakeWorkerBackend{runCommand: func(command ports.RuntimeCommand) (*int, error) {
+		runs.Add(1)
+		return nil, errors.New("run should not persist in test")
+	}}
+	supervisor := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
+	session, err := supervisor.sessionFor(runtimeScroll.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.StopRuntimeForMaintenance(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := supervisor.StartScroll(runtimeScroll.ID); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(time.Second)
+	for runs.Load() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("start did not resume the maintenance-stopped runtime queue")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+}
+
 func TestNewRuntimeSessionRequiresPersistedScrollYAML(t *testing.T) {
 	store := newTestStateStore(t)
 	runtimeScroll := &domain.RuntimeScroll{
