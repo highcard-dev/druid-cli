@@ -85,24 +85,50 @@ func TestReportWorkerResultUsesTokenOnlyWhenProvided(t *testing.T) {
 	}
 }
 
-func TestWorkerUpdateMergePreservesSkipUpdateAndExtraFiles(t *testing.T) {
-	src := t.TempDir()
-	dst := t.TempDir()
-	mustWrite(t, filepath.Join(src, "scroll.yaml"), "name: next\n")
-	mustWrite(t, filepath.Join(src, "data", "keep", "state.txt"), "new")
-	mustWrite(t, filepath.Join(src, "data", "overwrite.txt"), "new")
-	mustWrite(t, filepath.Join(dst, "scroll.yaml"), "name: old\n")
-	mustWrite(t, filepath.Join(dst, "data", "keep", "state.txt"), "old")
-	mustWrite(t, filepath.Join(dst, "data", "overwrite.txt"), "old")
-	mustWrite(t, filepath.Join(dst, "data", "extra.txt"), "extra")
-
-	if err := mergePulledRoot(src, dst, map[string]bool{"keep": true}); err != nil {
+func TestStagedUpdateReplacesUnprotectedAndPreservesSkipUpdate(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "scroll.yaml"), "name: old\n")
+	mustWrite(t, filepath.Join(root, "data", "keep", "state.txt"), "old")
+	mustWrite(t, filepath.Join(root, "data", "extra.txt"), "old")
+	stage, err := os.MkdirTemp(root, ".druid-worker-update-stage-*")
+	if err != nil {
 		t.Fatal(err)
 	}
-	assertFile(t, filepath.Join(dst, "scroll.yaml"), "name: next\n")
-	assertFile(t, filepath.Join(dst, "data", "keep", "state.txt"), "old")
-	assertFile(t, filepath.Join(dst, "data", "overwrite.txt"), "new")
-	assertFile(t, filepath.Join(dst, "data", "extra.txt"), "extra")
+	defer os.RemoveAll(stage)
+	mustWrite(t, filepath.Join(stage, "scroll.yaml"), "name: new\n")
+	mustWrite(t, filepath.Join(stage, "data", "keep", "state.txt"), "new")
+	mustWrite(t, filepath.Join(stage, "data", "replace.txt"), "new")
+
+	if err := preserveSkippedUpdateData(root, stage, map[string]bool{"keep": true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := replaceRestoredRoot(root, stage); err != nil {
+		t.Fatal(err)
+	}
+
+	assertFile(t, filepath.Join(root, "scroll.yaml"), "name: new\n")
+	assertFile(t, filepath.Join(root, "data", "keep", "state.txt"), "old")
+	assertFile(t, filepath.Join(root, "data", "replace.txt"), "new")
+	if _, err := os.Stat(filepath.Join(root, "data", "extra.txt")); !os.IsNotExist(err) {
+		t.Fatalf("unprotected destination-only file should be removed, stat err = %v", err)
+	}
+}
+
+func TestPreserveSkippedUpdateDataKeepsMissingPathsMissing(t *testing.T) {
+	root := t.TempDir()
+	stage, err := os.MkdirTemp(root, ".druid-worker-update-stage-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(stage)
+	mustWrite(t, filepath.Join(stage, "data", "keep", "state.txt"), "candidate")
+
+	if err := preserveSkippedUpdateData(root, stage, map[string]bool{"keep": true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(stage, "data", "keep")); !os.IsNotExist(err) {
+		t.Fatalf("missing installed skip_update path should remain missing, stat err = %v", err)
+	}
 }
 
 func TestWorkerRestoreStagesBeforeReplacingRoot(t *testing.T) {

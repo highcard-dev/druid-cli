@@ -161,7 +161,48 @@ func pullWorkerUpdate(root string, artifact string, oci ports.OciRegistryInterfa
 	}
 	skipData := map[string]bool{}
 	collectSkipUpdatePaths(skipData, "", scroll.Chunks)
-	return mergePulledRoot(tmp, root, skipData)
+	if err := os.MkdirAll(root, 0755); err != nil {
+		return err
+	}
+	stage, err := os.MkdirTemp(root, ".druid-worker-update-stage-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	if err := copyPath(tmp, stage); err != nil {
+		return err
+	}
+	if err := preserveSkippedUpdateData(root, stage, skipData); err != nil {
+		return err
+	}
+	return replaceRestoredRoot(root, stage)
+}
+
+// preserveSkippedUpdateData copies only the paths a Scroll explicitly marks as
+// skip_update from the installed root into the staged candidate. Candidate
+// content is otherwise complete, so unprotected files absent from the
+// candidate are removed when the staged root replaces the installed root.
+func preserveSkippedUpdateData(root string, stage string, skipData map[string]bool) error {
+	for skip := range skipData {
+		skip = filepath.ToSlash(filepath.Clean(skip))
+		if skip == "." {
+			skip = ""
+		}
+		source := filepath.Join(root, domain.RuntimeDataDir, filepath.FromSlash(skip))
+		target := filepath.Join(stage, domain.RuntimeDataDir, filepath.FromSlash(skip))
+		if err := os.RemoveAll(target); err != nil {
+			return err
+		}
+		if _, err := os.Lstat(source); os.IsNotExist(err) {
+			continue
+		} else if err != nil {
+			return err
+		}
+		if err := copyPath(source, target); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func pullWorkerRestore(root string, artifact string, oci ports.OciRegistryInterface) error {
@@ -276,75 +317,6 @@ func collectSkipUpdatePaths(out map[string]bool, parent string, chunks []*domain
 		}
 		collectSkipUpdatePaths(out, chunkPath, chunk.Chunks)
 	}
-}
-
-func mergePulledRoot(src string, dst string, skipData map[string]bool) error {
-	if err := os.MkdirAll(dst, 0755); err != nil {
-		return err
-	}
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		name := entry.Name()
-		srcPath := filepath.Join(src, name)
-		dstPath := filepath.Join(dst, name)
-		if name == domain.RuntimeDataDir {
-			if err := copyDataUpdate(srcPath, dstPath, skipData); err != nil {
-				return err
-			}
-			continue
-		}
-		if err := os.RemoveAll(dstPath); err != nil {
-			return err
-		}
-		if err := copyPath(srcPath, dstPath); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func copyDataUpdate(srcData string, dstData string, skipData map[string]bool) error {
-	return filepath.WalkDir(srcData, func(srcPath string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(srcData, srcPath)
-		if err != nil {
-			return err
-		}
-		if rel == "." {
-			return os.MkdirAll(dstData, 0755)
-		}
-		rel = filepath.ToSlash(rel)
-		if shouldSkipWorkerUpdate(rel, skipData) {
-			if entry.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		target := filepath.Join(dstData, filepath.FromSlash(rel))
-		if entry.IsDir() {
-			info, err := entry.Info()
-			if err != nil {
-				return err
-			}
-			return os.MkdirAll(target, info.Mode().Perm())
-		}
-		return copyPath(srcPath, target)
-	})
-}
-
-func shouldSkipWorkerUpdate(rel string, skipData map[string]bool) bool {
-	rel = filepath.ToSlash(filepath.Clean(rel))
-	for skip := range skipData {
-		if skip == "" || rel == skip || strings.HasPrefix(rel, skip+"/") {
-			return true
-		}
-	}
-	return false
 }
 
 func copyPath(src string, dst string) error {
