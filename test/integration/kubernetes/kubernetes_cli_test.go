@@ -4,6 +4,7 @@ package kubernetes_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -29,6 +30,25 @@ func TestKubernetesBackendCLIComplexLifecycle(t *testing.T) {
 	namespace := "druid-cli-e2e-" + suffix
 	name := "k8s-cli-" + suffix
 	fixture := e2e.WriteFixture(t, filepath.Join(t.TempDir(), "scroll"), name, port, routePort)
+	fixtureYAML, err := os.ReadFile(filepath.Join(fixture.Dir, "scroll.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixtureYAML = append(fixtureYAML, []byte("\nchunks:\n  - name: finite\n    path: finite.txt\n    skip_update: true\n  - name: version\n    path: version.txt\n")...)
+	if err := os.WriteFile(filepath.Join(fixture.Dir, "scroll.yaml"), fixtureYAML, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(fixture.Dir, "data"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeFixtureData := func(file, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(fixture.Dir, "data", file), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFixtureData("finite.txt", "initial")
+	writeFixtureData("version.txt", "v1")
 	workerImage := e2e.BuildDockerImage(t, "druid-cli-e2e:"+name)
 	importImageIntoCurrentCluster(t, workerImage)
 	pushArtifact := fmt.Sprintf("127.0.0.1:%d/druid-e2e/%s:v1", registryPort, name)
@@ -120,6 +140,53 @@ func TestKubernetesBackendCLIComplexLifecycle(t *testing.T) {
 		t.Fatalf("stopped status = %s, want stopped", stopped.Status)
 	}
 	waitKubernetesResourcesGone(t, namespace, pvc, "statefulset,job,pod")
+
+	// Exercise actual changed workers against an isolated PVC/registry, without
+	// consuming any canonical local ReservedPorts or touching user deployments.
+	releasePath := "/api/v1/scrolls/" + created.ID + "/release"
+	readRelease := func() map[string]string {
+		t.Helper()
+		var release map[string]string
+		if err := json.Unmarshal([]byte(e2e.UnixJSONRequest(t, socket, http.MethodGet, releasePath, "")), &release); err != nil {
+			t.Fatal(err)
+		}
+		return release
+	}
+	originalRelease := readRelease()
+	originalManifest := readPVCFile(t, namespace, pvc, "manifest.json")
+	backupArtifact := strings.TrimSuffix(runtimeArtifact, ":v1") + "-backup:v1"
+	e2e.UnixJSONRequest(t, socket, http.MethodPost, "/api/v1/scrolls/"+created.ID+"/backup", fmt.Sprintf(`{"artifact":%q}`, backupArtifact))
+	writeFixtureData("version.txt", "v2")
+	writeFixtureData("finite.txt", "upstream replacement must not win")
+	e2e.RunEnv(t, []string{"DRUID_REGISTRY_PLAIN_HTTP=true"}, bins.Druid, "push", pushArtifact, fixture.Dir)
+	acceptedDigest := resolveRegistryCandidate(t, fmt.Sprintf("http://127.0.0.1:%d/v2/druid-e2e/%s/manifests/v1", registryPort, name))
+	// Move the tag again after acceptance: update must still install v2.
+	writeFixtureData("version.txt", "v3-unaccepted")
+	e2e.RunEnv(t, []string{"DRUID_REGISTRY_PLAIN_HTTP=true"}, bins.Druid, "push", pushArtifact, fixture.Dir)
+	acceptedArtifact := strings.TrimSuffix(runtimeArtifact, ":v1") + "@" + acceptedDigest
+	e2e.RunClient(t, bins, socket, "update", created.ID, acceptedArtifact)
+	if got := readPVCFile(t, namespace, pvc, "data/version.txt"); strings.TrimSpace(got) != "v2" {
+		t.Fatalf("update followed moved tag: %q", got)
+	}
+	if got := readPVCFile(t, namespace, pvc, "data/finite.txt"); !strings.Contains(got, "finite-ok") {
+		t.Fatalf("update overwrote protected state: %q", got)
+	}
+	if got := readRelease(); got["digest"] != acceptedDigest {
+		t.Fatalf("installed release=%v, want %s", got, acceptedDigest)
+	}
+	e2e.UnixJSONRequest(t, socket, http.MethodPost, "/api/v1/scrolls/"+created.ID+"/restore", fmt.Sprintf(`{"artifact":%q,"restart":false}`, backupArtifact))
+	if got := readPVCFile(t, namespace, pvc, "data/version.txt"); strings.TrimSpace(got) != "v1" {
+		t.Fatalf("restore contents=%q", got)
+	}
+	if got := readPVCFile(t, namespace, pvc, "data/record-env.txt"); !strings.Contains(got, "USER_ENV=finite") {
+		t.Fatalf("backup omitted runtime-created data outside release chunks: %q", got)
+	}
+	if got := readPVCFile(t, namespace, pvc, "manifest.json"); got != originalManifest {
+		t.Fatal("restore changed original installed descriptor bytes")
+	}
+	if got := readRelease(); got["digest"] != originalRelease["digest"] {
+		t.Fatalf("restored release=%v, want %v", got, originalRelease)
+	}
 	deleted := e2e.RunClient(t, bins, socket, "delete", created.ID)
 	if !strings.Contains(deleted, `"status": "deleted"`) {
 		t.Fatalf("delete response = %s, want deleted status", deleted)

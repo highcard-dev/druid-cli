@@ -229,8 +229,8 @@ type RuntimeUIPackages map[string]RuntimeUIPackage
 
 // UpdateScrollRequest defines model for UpdateScrollRequest.
 type UpdateScrollRequest struct {
-	// Artifact Optional target artifact. If omitted, the daemon refreshes the runtime's current artifact.
-	Artifact            *string               `json:"artifact,omitempty"`
+	// Artifact Explicitly accepted immutable target. Missing or mutable tag references are rejected before stopping the runtime.
+	Artifact            string                `json:"artifact"`
 	RegistryCredentials *[]RegistryCredential `json:"registry_credentials,omitempty"`
 }
 
@@ -378,6 +378,9 @@ type ClientInterface interface {
 
 	// GetScrollQueue request
 	GetScrollQueue(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetInstalledRelease request
+	GetInstalledRelease(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RestoreScrollWithBody request with any body
 	RestoreScrollWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -582,6 +585,18 @@ func (c *Client) GetScrollPorts(ctx context.Context, id string, reqEditors ...Re
 
 func (c *Client) GetScrollQueue(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetScrollQueueRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetInstalledRelease(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetInstalledReleaseRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -1184,6 +1199,40 @@ func NewGetScrollQueueRequest(server string, id string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewGetInstalledReleaseRequest generates requests for GetInstalledRelease
+func NewGetInstalledReleaseRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/scrolls/%s/release", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewRestoreScrollRequest calls the generic RestoreScroll builder with application/json body
 func NewRestoreScrollRequest(server string, id string, body RestoreScrollJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -1600,6 +1649,9 @@ type ClientWithResponsesInterface interface {
 	// GetScrollQueueWithResponse request
 	GetScrollQueueWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetScrollQueueResponse, error)
 
+	// GetInstalledReleaseWithResponse request
+	GetInstalledReleaseWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetInstalledReleaseResponse, error)
+
 	// RestoreScrollWithBodyWithResponse request with any body
 	RestoreScrollWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RestoreScrollResponse, error)
 
@@ -1892,6 +1944,31 @@ func (r GetScrollQueueResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetScrollQueueResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetInstalledReleaseResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *struct {
+		Digest     string `json:"digest"`
+		Repository string `json:"repository"`
+	}
+}
+
+// Status returns HTTPResponse.Status
+func (r GetInstalledReleaseResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetInstalledReleaseResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -2204,6 +2281,15 @@ func (c *ClientWithResponses) GetScrollQueueWithResponse(ctx context.Context, id
 		return nil, err
 	}
 	return ParseGetScrollQueueResponse(rsp)
+}
+
+// GetInstalledReleaseWithResponse request returning *GetInstalledReleaseResponse
+func (c *ClientWithResponses) GetInstalledReleaseWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetInstalledReleaseResponse, error) {
+	rsp, err := c.GetInstalledRelease(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetInstalledReleaseResponse(rsp)
 }
 
 // RestoreScrollWithBodyWithResponse request with arbitrary body returning *RestoreScrollResponse
@@ -2629,6 +2715,35 @@ func ParseGetScrollQueueResponse(rsp *http.Response) (*GetScrollQueueResponse, e
 	return response, nil
 }
 
+// ParseGetInstalledReleaseResponse parses an HTTP response from a GetInstalledReleaseWithResponse call
+func ParseGetInstalledReleaseResponse(rsp *http.Response) (*GetInstalledReleaseResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetInstalledReleaseResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest struct {
+			Digest     string `json:"digest"`
+			Repository string `json:"repository"`
+		}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseRestoreScrollResponse parses an HTTP response from a RestoreScrollWithResponse call
 func ParseRestoreScrollResponse(rsp *http.Response) (*RestoreScrollResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -2875,6 +2990,9 @@ type ServerInterface interface {
 	// Get runtime queue state
 	// (GET /api/v1/scrolls/{id}/queue)
 	GetScrollQueue(c *fiber.Ctx, id string) error
+	// Read the installed release descriptor from the runtime volume
+	// (GET /api/v1/scrolls/{id}/release)
+	GetInstalledRelease(c *fiber.Ctx, id string) error
 	// Execute runtime restore
 	// (POST /api/v1/scrolls/{id}/restore)
 	RestoreScroll(c *fiber.Ctx, id string) error
@@ -3084,6 +3202,22 @@ func (siw *ServerInterfaceWrapper) GetScrollQueue(c *fiber.Ctx) error {
 	return siw.Handler.GetScrollQueue(c, id)
 }
 
+// GetInstalledRelease operation middleware
+func (siw *ServerInterfaceWrapper) GetInstalledRelease(c *fiber.Ctx) error {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	return siw.Handler.GetInstalledRelease(c, id)
+}
+
 // RestoreScroll operation middleware
 func (siw *ServerInterfaceWrapper) RestoreScroll(c *fiber.Ctx) error {
 
@@ -3265,6 +3399,8 @@ func RegisterHandlersWithOptions(router fiber.Router, si ServerInterface, option
 
 	router.Get(options.BaseURL+"/api/v1/scrolls/:id/queue", wrapper.GetScrollQueue)
 
+	router.Get(options.BaseURL+"/api/v1/scrolls/:id/release", wrapper.GetInstalledRelease)
+
 	router.Post(options.BaseURL+"/api/v1/scrolls/:id/restore", wrapper.RestoreScroll)
 
 	router.Post(options.BaseURL+"/api/v1/scrolls/:id/routing", wrapper.ApplyScrollRouting)
@@ -3286,54 +3422,57 @@ func RegisterHandlersWithOptions(router fiber.Router, si ServerInterface, option
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/+xbX3MbNw7/KhzezdzLWnKuTR98T65z7blNJz47mTy0GQ1FQhKrXZIhuZZ1Hn33G/7Z",
-	"1f7hSpZiN3anL4klkiDwAwiAIHSPqSyUFCCswWf32NAFFMT/ea5Uvr6WpeVifg2fSzDWfa20VKAtBz+J",
-	"GMPnoqiWcwuF/+PvGmb4DP9tvCU/jrTH16WwvABHGs7r9XiTYbtWgM8w0Zqs8WaTYQ2fS66B4bNfW1t9",
-	"qufK6e9A/eILDcTCDdUyz4f51ZbPCPUjDAzVXFkuBT7D7y4uUTWKNMxAg6CApEa5pCRHxhNGitgFzjDc",
-	"kULlgdmwxoyYLjkbzedjC8b6f87cP7jm1VjNxdzxylmfgTegNFBigSGSc2LQTGokSAEj9M7PcUxYMs0B",
-	"6YAg4mwcJlzOkCy4tcAyZBeAGIFCCjQHAZpYMIgIxNmoxfjvcmpSvDmKCXgeh4V/hTFuVE7WXjpkLM9z",
-	"RGUBBs20LCLSozUp8odzbBShCbZ/LqegBbj961ke2Ip/DUaWmoIZocu5kBoYmq6RkOKksXRK6BIEM6PU",
-	"7nIlQE9SGo2GjvwMxBkqDTC/Oy2NlQXokxmhXMyRdmcBkdIupOb/I259ci8Nc26sXk+oBgbCcpIfcO7i",
-	"4ot67f4zVx2X1IF7AzlYYOHE9Y9aQKQngrHEln7CVrEsUOpL3GGHuymRQIqjfwtT6kNcQI+7anDC+Dyu",
-	"Hji8g+fmL/N8Hub5HyC5XVyDUVIY6NtBIVlCIxel1iAsWvjVKBgb8nObrkguU/IrLecajOmTvYojSIGm",
-	"ICyZBz3nkjCHsGPM4+oc3Ezqglh8hme5JC5+FOSOF2WBz16dnma44CJ8Oq1ZEGUxBR2Pl7YTRmxCto8L",
-	"EE3f7Of6Y1fv6BaeOKvAGRZlnjtfj8+sLmHf2fQQpfTwVtLlTX3o2zqAO24nNCpiYD8uLMyDcDkxdhJU",
-	"MqELIuZ+Xc08F/a7b3FqYcPpCIfcr1iXQjgxMsyk8LrVWmqc4RXhLuNpiDIgcKSZ5CqFw5XUCW/U0tAh",
-	"XkVFcrVtfPf69TevG9bxKgWE0tJKKvMmFAtrFc78fz68UvepZGo/BJ65yEqDdlJ6LSkw5509UL8Q5X0x",
-	"YzzkFVdtHz3w/S7/0bCzTYKBPkflNOdm8eHyitAlmcNgwPAp346EyIebEy2lPdGQE8tvAY1WxBQ+WRyh",
-	"NzAjZW4NshIpzW+JhTHjxo6JUmGe1Eg5bmj7+1EyIPYESTjOngwLORDMFDFmJXU6pJUG9IABdizB028s",
-	"aBBOWUMMPefRf7+rvN9xQXso7LAAPD6bkdxA9nhhyG3pnWeDnamUORBxWIyKODjXMOQip7IULLVP5kGf",
-	"cJXExI9VPqLvB5YA6jznt/Bek9mM0yQN79gItfyW2/WE2JazbUaKw71W0jMFB5Fe1/Bbff3fTaZrG+B6",
-	"SDDwGVWSku2h0YA7Dh60V7VGLnfTXHHB5CrN0yHSDTjoGtu+s86ihW2FrxHaYbHdy3sislvnCvJd9nl4",
-	"wJsMj+4ykOBcdxyHUudpH7dLfi7m74meQ0L6h90FDjkd+4Q/9uwYyIFaqXdF3b5JdlExoG85hcnDgsWA",
-	"VU4G0okO+R1WOXQV3Rk9qK8bsYP828AV0DvMkEimhptXsWEd7o1QiVQqRCTQt8C8lT/81uWzUr+csHci",
-	"X3eS723Ak3Ig+IaT8OjVvwyHxGrY6vtJfVQlzhrpvbFSKf9dleFX1YZPCcWWfKJCOvhQQer80aedpWIH",
-	"GlOqxFHba8S9jUW2vXo0bLe1944zUvM7nOj2UTlYqh0utSmtm5ThWFM9kP+jLwo9IFIe7YNn5vhqcnU7",
-	"sD5C1JXlwTqphpkGswDjv4zln38YRGM9oibwteouHYS806el5nZ94wjFZBWIBn1eBjsKn36ozOWnj+/9",
-	"6Wvi9NPH98jKJYhQ+uWeA7tGSstbzkB703fkXdrkyW3l9/dWx5lbX+3ZJn+zkNqeuDyXoc8l6HW1mdTo",
-	"I0xvJF2CRVQKAbSqvnC30E/GVTYSttjuTBT/GRwsLhSImXQbUylsMIVNV8g3uuQMXby9RDkpBV34YjhD",
-	"BRHOjJFfyQXoE1/IY9VTA1Eq5zRUhTKU8yX8Jua+Yu4cvTYZYsSSKTFgMk9wBdNqbPSbZ5dbX62qGcAZ",
-	"dqOBrdPRq9Gpj0sKBFEcn+Fv/FfhRHqFjoni49tX41AOc9/EfKct4Y9gK0NuFc6wJx7udpcsTAx1Oa8v",
-	"H7V8ec5v9s/T0wrJmFM2IBj/bkKJJNjtPqvuVP+8qto8hxk+0rw+/eYP3PgmZDOoFOSW8FDy8uepLAqi",
-	"1xHOLo6WzI2/aQdNZDjgjT+5pZWaguWYhp7a8L/lxt7EOV8I/iHBPuZlfbfSw6aqSVeCtHFx7NelcVPL",
-	"UUETR5rYuGzSJIBoPhbiEJPA2O8lWz+aIaTeIzftAOhSrU1PD68ejYUO/PvgRlX+1EY9CNLBfTfsfZMc",
-	"g3+b8TE0qZHm280TaST1PPQgjZx+NY0E1LoaCYJ0NILgjhsbQouM6Ue+DkV+c7C67jnbBD/vkuW+usLj",
-	"X60uRTQpwIJ2W9yHGBrTuhhCfWLbBjprgNbNEz89oRLaD5f7lVBdGDYZ/vb02+GHtDhdSItmvqbS1lrY",
-	"9qBzlKXd+I9gXybyB5r/lyLu4ugXui13DsYuLyvVsO/63o8/sUoe3x/uq8I/N98YYEZuaTyQba94B7Rs",
-	"HLCotaM0TmVREMHM+D7+tRnW/nUpAs8XYepTWECWJELrDQ+i1HkVJtz6C5G/eAbVA0ORNrKyBhxNYSa1",
-	"b0pQUjAu5qOB+5JZC4qbXHSfYnqPJl/V64TLPuv6ii/0Ptel6IborcKOskkx4/PB3L4OChdh3jMMDd0a",
-	"Qk8RV0Sb7QU4Ctz36So17VhMjczBPAjVMPMZ4pqugrUKucOYV4KhJaxDe9G2MN+HPr52GyqVdxI1KEeA",
-	"X1eqdyN/JUMC++xgP+QK3HjiPfgajBxQVSXg0VOiFvWj9Pi5hBL26/G/ftoLy1hTjy19fXnRPIawA+/P",
-	"jVlboD9HWCrAh3HWYKzcdYe+DhP+SkSf+pYScH5wJlop7qjT1XhgS2vdN+rHqkac+3JUn/qVwXNT91B6",
-	"2NL5FWjDjY2dnFKfhN8rAIutXUjXuukbgX/y3msC4/CY9ICQ2WpPePGxs91s8ZDwGRagCq9EGhN+xRA7",
-	"pyvd1AuO0FHdD5Y+pDdu+E9atLkJfcS7z4ef9CjVGGOl2gW0VH9anH0rwz6cpepmeCupl7kkzKDVgueA",
-	"VGgWcRbPiCXHqaHk42arxG6H1Hi1f5laabZ5JO6toZcYGPpwiSpU3FXK35NSN9jEAvTh+q35Yl2M7/2e",
-	"m3HcYvikRKY7CvrjqlcBm110qr6e2DWNq06+VGf6E+UnQ13im5ikPJN3ohW3CxQbaJomVYAl/oh3kpUg",
-	"FSICkVwDYeuTaclzi0KnwIdL9PH85peKypE2qapfoaTNr9lh84IS1lRj0Nc2hqepXwaq3Vgy43nsX+le",
-	"ZFO2EXtDK60O9cWcX13i2DKGx9ipLhLtNfQEJkLrTOEbo8S2Vg3+3uVmNpxMhKL3Q6+4JlzKtwS3S8PF",
-	"PFEwTzUOoVArX4LvIYoUVjA1fmaCypXUFnERmum4FDWkZYOACt2Z98nWFUQXQJcmuTB2ifSX/lLmlp9E",
-	"XVaqTUlfabNP4k1o9Mn5DOia5unl0QT6q39wCciKWLpw6YfjncEt5FJ5bcYf2lX4uWkJGudCSBtQc+aI",
-	"CKVgGtKTetzgzafN/wMAAP//k6kvPuU+AAA=",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

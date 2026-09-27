@@ -131,6 +131,29 @@ func TestPreserveSkippedUpdateDataKeepsMissingPathsMissing(t *testing.T) {
 	}
 }
 
+func TestWorkerUpdatePreservesRemovedProtectedChunk(t *testing.T) {
+	for _, chunks := range []string{
+		"  - name: world\n    path: world\n    skip_update: true\n",
+		"  - name: server\n    path: .\n    chunks:\n      - name: world\n        path: world\n        skip_update: true\n",
+	} {
+		t.Run(chunks, func(t *testing.T) {
+			root := t.TempDir()
+			candidate := t.TempDir()
+			mustWrite(t, filepath.Join(root, "scroll.yaml"), "name: example\nchunks:\n"+chunks)
+			mustWrite(t, filepath.Join(root, "data", "world", "save.dat"), "user world")
+			mustWrite(t, filepath.Join(root, "data", "obsolete.txt"), "old release")
+			mustWrite(t, filepath.Join(candidate, "scroll.yaml"), "name: example\n")
+			if err := pullWorkerUpdate(root, candidate, nil); err != nil {
+				t.Fatal(err)
+			}
+			assertFile(t, filepath.Join(root, "data", "world", "save.dat"), "user world")
+			if _, err := os.Stat(filepath.Join(root, "data", "obsolete.txt")); !os.IsNotExist(err) {
+				t.Fatalf("unprotected obsolete file retained: %v", err)
+			}
+		})
+	}
+}
+
 func TestWorkerRestoreStagesBeforeReplacingRoot(t *testing.T) {
 	root := t.TempDir()
 	mustWrite(t, filepath.Join(root, "scroll.yaml"), "name: old\n")
@@ -208,6 +231,11 @@ func TestReplaceRestoredRootMarksFailedRollbackUnsafe(t *testing.T) {
 	if err == nil || !strings.HasPrefix(err.Error(), restoreRootUnsafePrefix) {
 		t.Fatalf("restore error = %v, want unsafe rollback marker", err)
 	}
+	recovery, err := filepath.Glob(filepath.Join(root, ".druid-worker-restore-rollback-*", "original.txt"))
+	if err != nil || len(recovery) != 1 {
+		t.Fatalf("original data must survive failed rollback: files=%v err=%v", recovery, err)
+	}
+	assertFile(t, recovery[0], "original")
 }
 
 func TestWorkerCollectSkipUpdatePaths(t *testing.T) {

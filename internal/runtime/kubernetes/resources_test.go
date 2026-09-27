@@ -487,6 +487,21 @@ func TestWorkerPullJobSpecRunsDruidWorkerPull(t *testing.T) {
 	}
 }
 
+func TestInstalledReleaseInspectionMountsReadOnlyWithoutChown(t *testing.T) {
+	action := ports.RuntimeWorkerAction{Mode: ports.RuntimeWorkerModeInspect, RuntimeID: "inspect", Artifact: "registry.local/source:tag", MountPath: "/scroll"}
+	job := workerPullJobSpec("fixture", "inspect", "runtime-pvc", "druid:test", action, "", "", true, "druid-cli")
+	container := job.Spec.Template.Spec.Containers[0]
+	command := strings.Join(container.Command, " ")
+	if !strings.HasPrefix(command, "druid worker pull ") || strings.Contains(command, "chown") || !strings.Contains(command, "--mode inspect") {
+		t.Fatalf("unsafe inspection command: %s", command)
+	}
+	for _, mount := range container.VolumeMounts {
+		if !mount.ReadOnly {
+			t.Fatalf("inspection mount is writable: %#v", mount)
+		}
+	}
+}
+
 func TestSpawnPullWorkerCreateUsesFinalPVCAndWorkerJob(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	backend := NewWithClient(Config{Namespace: "druid", PullImage: "druid-cli:test"}, client)

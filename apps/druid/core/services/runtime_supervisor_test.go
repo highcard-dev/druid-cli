@@ -960,7 +960,7 @@ func TestRuntimeSupervisorEnsureDoesNotRetryExistingError(t *testing.T) {
 	}
 }
 
-func TestRuntimeSupervisorEnsureUpdatesChangedArtifact(t *testing.T) {
+func TestRuntimeSupervisorEnsureDoesNotApplyUnacceptedArtifact(t *testing.T) {
 	store := newTestStateStore(t)
 	root := "k8s://druid/druid-update-scroll-data"
 	existing := &domain.RuntimeScroll{
@@ -999,26 +999,11 @@ func TestRuntimeSupervisorEnsureUpdatesChangedArtifact(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if backend.stopRoot != root {
-		t.Fatalf("stop root = %s, want %s", backend.stopRoot, root)
+	if backend.spawnCount != 0 || backend.stopRoot != "" {
+		t.Fatalf("reconciliation mutated installed runtime: worker=%#v stop=%s", backend.action, backend.stopRoot)
 	}
-	if backend.action.Mode != ports.RuntimeWorkerModeUpdate || backend.action.Artifact != "registry.local/lab:2.0" || backend.action.RootRef != root {
-		t.Fatalf("worker action = %#v", backend.action)
-	}
-	if updated.Artifact != "registry.local/lab:2.0" || updated.ScrollName != "updated-scroll" {
-		t.Fatalf("updated scroll = %#v", updated)
-	}
-	if updated.Status != domain.RuntimeScrollStatusStopped {
-		t.Fatalf("status = %s, want stopped", updated.Status)
-	}
-	if len(updated.Procedures) != 0 {
-		t.Fatalf("procedures = %#v, want cleared", updated.Procedures)
-	}
-	if len(updated.Routing) != 1 || updated.Routing[0].PortName != "main" {
-		t.Fatalf("routing = %#v, want matching route preserved", updated.Routing)
-	}
-	if !strings.Contains(updated.ScrollYAML, "updated-scroll") {
-		t.Fatalf("scroll yaml = %q", updated.ScrollYAML)
+	if updated.Artifact != existing.Artifact || updated.ScrollYAML != existing.ScrollYAML || updated.Status != domain.RuntimeScrollStatusRunning {
+		t.Fatalf("reconciliation changed installed release: %#v", updated)
 	}
 }
 
@@ -1046,19 +1031,20 @@ func TestRuntimeSupervisorUpdateUsesPullWorkerWhenAvailable(t *testing.T) {
 	)
 	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
 
-	updated, err := supervisor.Ensure(EnsureOptions{Artifact: "registry.local/lab:2.0", Name: "update-worker"})
+	accepted := "registry.local/lab@sha256:" + strings.Repeat("a", 64)
+	updated, err := supervisor.Update("update-worker", accepted, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if backend.action.Mode != ports.RuntimeWorkerModeUpdate || backend.action.RootRef != root {
+	if backend.action.Mode != ports.RuntimeWorkerModeUpdate || backend.action.RootRef != root || backend.action.Artifact != accepted {
 		t.Fatalf("worker action = %#v", backend.action)
 	}
-	if updated.Artifact != "registry.local/lab:2.0" || updated.ArtifactDigest != "sha256:updated" || updated.ScrollName != "updated-worker" {
+	if updated.Artifact != accepted || updated.ArtifactDigest != "sha256:updated" || updated.ScrollName != "updated-worker" {
 		t.Fatalf("updated scroll = %#v", updated)
 	}
 }
 
-func TestRuntimeSupervisorUpdateRefreshesCurrentArtifactAndRestartsRunningScroll(t *testing.T) {
+func TestRuntimeSupervisorUpdateAppliesAcceptedDigestAndRestartsRunningScroll(t *testing.T) {
 	store := newTestStateStore(t)
 	root := "runtime://refresh-worker"
 	existing := &domain.RuntimeScroll{
@@ -1078,7 +1064,8 @@ func TestRuntimeSupervisorUpdateRefreshesCurrentArtifactAndRestartsRunningScroll
 	supervisor := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
 	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
 
-	updated, err := supervisor.Update("refresh-worker", "", nil)
+	accepted := "registry.local/lab@sha256:" + strings.Repeat("b", 64)
+	updated, err := supervisor.Update("refresh-worker", accepted, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1089,7 +1076,7 @@ func TestRuntimeSupervisorUpdateRefreshesCurrentArtifactAndRestartsRunningScroll
 	if backend.stopRoot != root {
 		t.Fatalf("stop root = %s, want %s", backend.stopRoot, root)
 	}
-	if backend.action.Mode != ports.RuntimeWorkerModeUpdate || backend.action.Artifact != "registry.local/lab:1.0" {
+	if backend.action.Mode != ports.RuntimeWorkerModeUpdate || backend.action.Artifact != accepted {
 		t.Fatalf("worker action = %#v", backend.action)
 	}
 	if updated.Status != domain.RuntimeScrollStatusRunning {
@@ -1191,14 +1178,14 @@ func TestRuntimeSupervisorBackupFailureRestartsPriorRunningScroll(t *testing.T) 
 		Artifact:   "registry.local/lab:1.0",
 		Root:       "runtime://backup-recovery",
 		ScrollName: "backup-recovery",
-		ScrollYAML: cachedScrollYAML("start"),
+		ScrollYAML: strings.Replace(cachedScrollYAML("start"), "run: once", "run: persistent", 1),
 		Status:     domain.RuntimeScrollStatusRunning,
 		Procedures: domain.ProcedureStatusMap{},
 	}
 	if err := store.CreateScroll(runtimeScroll); err != nil {
 		t.Fatal(err)
 	}
-	backend := &fakeWorkerBackend{backupErr: errors.New("registry unavailable")}
+	backend := &fakeWorkerBackend{backupErr: errors.New("registry unavailable"), procedureStatusUpdates: []ports.ProcedureStatusUpdate{{Procedure: "start.0", Status: domain.ScrollLockStatusRunning}}}
 	supervisor := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
 
 	if _, err := supervisor.Backup("backup-recovery", "registry.local/backups:1", nil); err == nil {
@@ -1220,7 +1207,7 @@ func TestRuntimeSupervisorRestoreFailureRestartsPriorRunningScroll(t *testing.T)
 		Artifact:   "registry.local/lab:1.0",
 		Root:       "runtime://restore-recovery",
 		ScrollName: "restore-recovery",
-		ScrollYAML: cachedScrollYAML("start"),
+		ScrollYAML: strings.Replace(cachedScrollYAML("start"), "run: once", "run: persistent", 1),
 		Status:     domain.RuntimeScrollStatusRunning,
 		Procedures: domain.ProcedureStatusMap{},
 	}
@@ -1228,7 +1215,7 @@ func TestRuntimeSupervisorRestoreFailureRestartsPriorRunningScroll(t *testing.T)
 		t.Fatal(err)
 	}
 	callbacks := NewWorkerCallbackManager()
-	backend := &fakeWorkerBackend{callbacks: callbacks, workerErr: errors.New("backup pull failed")}
+	backend := &fakeWorkerBackend{callbacks: callbacks, workerErr: errors.New("backup pull failed"), procedureStatusUpdates: []ports.ProcedureStatusUpdate{{Procedure: "start.0", Status: domain.ScrollLockStatusRunning}}}
 	supervisor := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
 	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
 

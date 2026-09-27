@@ -113,8 +113,10 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 	if err := b.pullImage(ctx, b.config.WorkerImage); err != nil {
 		return nil, err
 	}
-	if err := b.prepareWritableRoot(ctx, root); err != nil {
-		return nil, err
+	if action.Mode != ports.RuntimeWorkerModeInspect {
+		if err := b.prepareWritableRoot(ctx, root); err != nil {
+			return nil, err
+		}
 	}
 	registryConfig, err := json.Marshal(struct {
 		Registries []domain.RegistryCredential `json:"registries"`
@@ -122,7 +124,7 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 	if err != nil {
 		return nil, err
 	}
-	rootMount, err := DockerMount(root, action.MountPath, false, "")
+	rootMount, err := DockerMount(root, action.MountPath, action.Mode == ports.RuntimeWorkerModeInspect, "")
 	if err != nil {
 		return nil, err
 	}

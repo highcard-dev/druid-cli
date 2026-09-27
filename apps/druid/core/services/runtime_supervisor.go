@@ -213,15 +213,9 @@ func (s *RuntimeSupervisor) Ensure(options EnsureOptions) (*domain.RuntimeScroll
 			if runtimeScroll.Status == domain.RuntimeScrollStatusError && (options.Artifact == "" || options.Artifact == runtimeScroll.Artifact) {
 				return s.persistEnsureOptions(runtimeScroll, options)
 			}
-			if options.Artifact != "" {
-				nextDigest := resolveArtifactDigest(options.Artifact, options.RegistryCredentials)
-				artifactChanged := options.Artifact != runtimeScroll.Artifact
-				digestChanged := nextDigest != "" && nextDigest != runtimeScroll.ArtifactDigest
-				if artifactChanged || digestChanged {
-					applyEnsureOptions(runtimeScroll, options)
-					return s.updateExistingScroll(runtimeScroll, options.Artifact, nextDigest, options.RegistryCredentials, false)
-				}
-			}
+			// Reconciliation does not accept releases on the user's behalf. In
+			// particular it must neither follow a moved tag nor undo a restore.
+			// Existing workloads change only through the explicit Update operation.
 			return s.persistEnsureOptions(runtimeScroll, options)
 		}
 		if !errors.Is(err, domain.ErrRuntimeScrollNotFound) {

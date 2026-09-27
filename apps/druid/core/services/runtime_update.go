@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"errors"
+	"regexp"
+	"strings"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
@@ -11,17 +13,20 @@ import (
 	"go.uber.org/zap"
 )
 
+var ErrUnacceptedUpdate = errors.New("update requires an explicitly accepted sha256 artifact reference")
+var acceptedUpdateReference = regexp.MustCompile(`^[^@\s]+@sha256:[a-f0-9]{64}$`)
+
 func (s *RuntimeSupervisor) Update(id string, artifact string, registryCredentials []domain.RegistryCredential) (*domain.RuntimeScroll, error) {
+	if !acceptedUpdateReference.MatchString(artifact) {
+		return nil, ErrUnacceptedUpdate
+	}
 	unlock := s.lockRuntimeOperation(id)
 	defer unlock()
 	runtimeScroll, err := s.store.GetScroll(id)
 	if err != nil {
 		return nil, err
 	}
-	if artifact == "" {
-		artifact = runtimeScroll.Artifact
-	}
-	knownDigest := resolveArtifactDigest(artifact, registryCredentials)
+	knownDigest := artifact[strings.LastIndex(artifact, "@")+1:]
 	return s.updateExistingScroll(runtimeScroll, artifact, knownDigest, registryCredentials, true)
 }
 

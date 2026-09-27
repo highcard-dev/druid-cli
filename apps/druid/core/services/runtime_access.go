@@ -7,6 +7,7 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
+	coreservices "github.com/highcard-dev/daemon/internal/core/services"
 )
 
 func (s *RuntimeSupervisor) Run(id string, command string) (*domain.RuntimeScroll, error) {
@@ -14,20 +15,36 @@ func (s *RuntimeSupervisor) Run(id string, command string) (*domain.RuntimeScrol
 }
 
 func (s *RuntimeSupervisor) RunWithContext(ctx context.Context, id string, command string) (*domain.RuntimeScroll, error) {
+	unlock := s.lockRuntimeOperation(id)
 	session, err := s.sessionFor(id)
+	if err != nil {
+		unlock()
+		return nil, err
+	}
+	session.Start()
+	longRunning, err := session.beginRun(command)
+	unlock()
 	if err != nil {
 		return nil, err
 	}
-	return session.RunWithContext(ctx, command)
+	return session.finishRun(ctx, longRunning)
 }
 
 // RunAndWait waits for the requested command rather than every command in the runtime queue.
 func (s *RuntimeSupervisor) RunAndWait(id string, command string) (*domain.RuntimeScroll, error) {
+	unlock := s.lockRuntimeOperation(id)
 	session, err := s.sessionFor(id)
+	if err != nil {
+		unlock()
+		return nil, err
+	}
+	session.Start()
+	wait, err := session.enqueueQueueItem(command, coreservices.AddItemOptions{Wait: true}, nil)
+	unlock()
 	if err != nil {
 		return nil, err
 	}
-	if err := session.AddTempItemWithWait(command); err != nil {
+	if err := wait(); err != nil {
 		return nil, err
 	}
 	return s.store.GetScroll(id)
