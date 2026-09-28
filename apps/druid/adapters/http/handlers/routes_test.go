@@ -3,9 +3,13 @@ package handlers
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
+	appservices "github.com/highcard-dev/daemon/apps/druid/core/services"
+	"github.com/highcard-dev/daemon/internal/core/domain"
+	"github.com/highcard-dev/daemon/internal/core/ports"
 )
 
 func TestRouteSplitKeepsManagementAndPublicSurfacesSeparate(t *testing.T) {
@@ -67,4 +71,64 @@ func requestStatus(t *testing.T, app *fiber.App, path string) int {
 	}
 	defer resp.Body.Close()
 	return resp.StatusCode
+}
+
+type ownerRouteStore struct{ ports.RuntimeScrollStore }
+
+func (ownerRouteStore) GetScroll(id string) (*domain.RuntimeScroll, error) {
+	return &domain.RuntimeScroll{ID: id, OwnerID: "owner"}, nil
+}
+
+type ownerRouteAuth struct {
+	ports.AuthorizerServiceInterface
+}
+
+func (ownerRouteAuth) CheckHeader(c *fiber.Ctx) (*ports.AuthContext, error) {
+	if c.Get("Authorization") == "" {
+		return nil, nil
+	}
+	return &ports.AuthContext{Subject: strings.TrimPrefix(c.Get("Authorization"), "Bearer ")}, nil
+}
+
+type ownerRouteBackend struct{ ports.RuntimeBackendInterface }
+
+func TestPublicReleaseRoutesEnforceOwnerBeforeReadingOrUpdating(t *testing.T) {
+	supervisor, err := appservices.NewRuntimeSupervisor(ownerRouteStore{}, nil, ports.RuntimeBackendFactoryFunc(func(ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) {
+		return ownerRouteBackend{}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := fiber.New()
+	RegisterPublicRoutes(app, RouteHandlers{Server: NewRuntimeServer(NewHealthHandler(), NewScrollHandler(supervisor, ownerRouteAuth{})), Websocket: &WebsocketHandler{}})
+	for _, route := range []struct{ method, path string }{{http.MethodGet, "/owned/api/v1/release"}, {http.MethodPost, "/owned/api/v1/update"}} {
+		for _, auth := range []struct {
+			header string
+			status int
+		}{{"", http.StatusUnauthorized}, {"Bearer other-owner", http.StatusForbidden}} {
+			req := httptest.NewRequest(route.method, route.path, strings.NewReader(`{"artifact":"registry/scroll:mutable"}`))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", auth.header)
+			res, err := app.Test(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			res.Body.Close()
+			if res.StatusCode != auth.status {
+				t.Fatalf("%s %s: got %d, want %d", route.method, route.path, res.StatusCode, auth.status)
+			}
+		}
+	}
+	// An owner reaches the explicit-update validator, not a 404 or another API.
+	req := httptest.NewRequest(http.MethodPost, "/owned/api/v1/update", strings.NewReader(`{"artifact":"registry/scroll:mutable"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer owner")
+	res, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("owner mutable update status = %d, want 400", res.StatusCode)
+	}
 }

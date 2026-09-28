@@ -8,6 +8,7 @@ Verified locally on 2026-09-28. This is runtime acceptance, not complete product
 - Reconciliation no longer changes an installed release. Explicit updates and restores own those transitions.
 - The installed release endpoint reads the actual volume's `manifest.json` and canonical Scroll name through a read-only worker. It does not resolve the deployment tag or add another persisted baseline.
 - Callers can send `expected_installed_digest` with an accepted update. The runtime checks the actual installed descriptor under its maintenance lock and rejects a stale approval with HTTP 409 before stopping or changing the workload.
+- The owner-authenticated public listener exposes installed-release reads and explicit updates, using the same runtime handlers as management. Tests reject missing and cross-owner authorization before either operation.
 - Updates stage the whole candidate, preserve protected paths, and remove obsolete unprotected files. Both installed and candidate `skip_update` declarations protect the current transition, including nested declarations removed by the candidate.
 - Protection longevity is unresolved: if a release removes a protected declaration, this transition retains its data, but indefinite retention across later releases is not guaranteed. No hidden persisted protection list or finalized-metadata rewrite was introduced.
 - Failed rollback retains recovery files and keeps the workload stopped. Recovery locations are included in the error.
