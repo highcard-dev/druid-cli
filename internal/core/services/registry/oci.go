@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -810,6 +811,9 @@ func (c *OciClient) PushWithOptions(folder string, repo string, tag string, over
 		}
 		fsFileNames = append(fsFileNames, "manifest.json")
 	}
+	// Map iteration order must not change the manifest digest of an identical
+	// release. These root paths are disjoint, so sorting preserves extraction.
+	sort.Strings(fsFileNames)
 
 	fs, err := c.newFileStore(folder)
 	if err != nil {

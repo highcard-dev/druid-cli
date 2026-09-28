@@ -15,6 +15,8 @@ Verified locally on 2026-09-28. This is runtime acceptance, not complete product
 - Backup mode snapshots all runtime data, including files outside explicit release chunk selections, and preserves the installed descriptor bytes.
 - Command admission shares the maintenance lock. Waiting for a command does not hold that lock, and waiters do not overwrite state after a release transition.
 - Protected-path copying preserves symlinks without dereferencing them and rejects paths traversing symlink parents.
+- CLI authored pushes honor explicit `SOURCE_DATE_EPOCH` for the OCI creation annotation. Without it ORAS stamps current time; identical CI rebuilds then produce different digests. Normal pushes retain existing timestamp behavior. Invalid explicit timestamps are rejected.
+- Root file layers are sorted before packing; Go map iteration must not change an identical release's manifest digest.
 
 ## Evidence
 
@@ -27,6 +29,9 @@ Verified locally on 2026-09-28. This is runtime acceptance, not complete product
 - Verified real workload start and command execution; stopped backup; installed-descriptor read; acceptance of v2 followed by moving the tag to v3; installation of v2; preservation of protected runtime data; restoration of v1, runtime-created data outside declared chunks, and byte-identical installed descriptor.
 - Test harness failures were diagnosed separately: registry:2 needs an OCI Accept header, and explicit fixture chunks must include the version marker.
 - Recovery-restart tests use persistent workload fixtures. The previous finite `true` command legitimately stopped immediately and was not evidence of a failed restart.
+- Authenticated local publisher acceptance demonstrated the timestamp problem with identical layers and different creation times, then passed with identical finalized digests after rebuilding with a fixed source date (7.10s, including fixture cleanup). Focused CLI timestamp tests passed.
+- A later run exposed a second reproducibility issue: `.meta` and `scroll.yaml` layers changed order. A local OCI regression failed in 0.08s with identical layer digests in different orders. Sorting root paths fixed it; three 32-push regression runs and a race-enabled run passed.
+- After both reproducibility fixes, normal dedicated-account sign-in through the gateway, private import, identical rebuild/retry, shared publication and anonymous visibility passed three consecutive times (8.53s, 6.25s, 6.16s), including fixture cleanup.
 
 ## Remaining product work
 
