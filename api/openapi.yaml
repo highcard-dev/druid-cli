@@ -215,6 +215,10 @@ components:
           type: string
           pattern: '^[^@\s]+@sha256:[a-f0-9]{64}$'
           description: Explicitly accepted immutable target. Missing or mutable tag references are rejected before stopping the runtime.
+        expected_installed_digest:
+          type: string
+          pattern: '^sha256:[a-f0-9]{64}$'
+          description: Optional precondition checked against the actual installed descriptor under the maintenance lock.
         registry_credentials:
           type: array
           items:
@@ -575,6 +579,8 @@ paths:
                 $ref: '#/components/schemas/RuntimeScroll'
         '400':
           description: An explicitly accepted SHA256 artifact reference is required
+        '409':
+          description: Installed release changed since the update was checked
         '404':
           description: Runtime scroll not found
 

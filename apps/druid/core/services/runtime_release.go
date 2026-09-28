@@ -17,7 +17,11 @@ func (s *RuntimeSupervisor) InstalledRelease(ctx context.Context, id string) (ma
 	if err != nil {
 		return nil, err
 	}
-	installed, err := s.runPullWorker(ctx, s.runtimeBackend, ports.RuntimeWorkerModeInspect, id, runtime.Artifact, runtime.Root, nil, "")
+	return s.installedRelease(ctx, runtime)
+}
+
+func (s *RuntimeSupervisor) installedRelease(ctx context.Context, runtime *domain.RuntimeScroll) (map[string]string, error) {
+	installed, err := s.runPullWorker(ctx, s.runtimeBackend, ports.RuntimeWorkerModeInspect, runtime.ID, runtime.Artifact, runtime.Root, nil, "")
 	if err != nil {
 		return nil, err
 	}

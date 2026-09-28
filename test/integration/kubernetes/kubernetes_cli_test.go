@@ -164,7 +164,12 @@ func TestKubernetesBackendCLIComplexLifecycle(t *testing.T) {
 	writeFixtureData("version.txt", "v3-unaccepted")
 	e2e.RunEnv(t, []string{"DRUID_REGISTRY_PLAIN_HTTP=true"}, bins.Druid, "push", pushArtifact, fixture.Dir)
 	acceptedArtifact := strings.TrimSuffix(runtimeArtifact, ":v1") + "@" + acceptedDigest
-	e2e.RunClient(t, bins, socket, "update", created.ID, acceptedArtifact)
+	updatePath := "/api/v1/scrolls/" + created.ID + "/update"
+	acceptedBody := fmt.Sprintf(`{"artifact":%q,"expected_installed_digest":%q}`, acceptedArtifact, originalRelease["digest"])
+	e2e.UnixJSONRequest(t, socket, http.MethodPost, updatePath, acceptedBody)
+	// A concurrent restore/update invalidates an earlier acceptance. The
+	// precondition is checked against the actual PVC before any mutation.
+	e2e.UnixJSONRequest(t, socket, http.MethodPost, updatePath, acceptedBody, http.StatusConflict)
 	if got := readPVCFile(t, namespace, pvc, "data/version.txt"); strings.TrimSpace(got) != "v2" {
 		t.Fatalf("update followed moved tag: %q", got)
 	}

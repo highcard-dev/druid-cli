@@ -14,9 +14,10 @@ import (
 )
 
 var ErrUnacceptedUpdate = errors.New("update requires an explicitly accepted sha256 artifact reference")
+var ErrInstalledReleaseChanged = errors.New("installed release changed; check updates again")
 var acceptedUpdateReference = regexp.MustCompile(`^[^@\s]+@sha256:[a-f0-9]{64}$`)
 
-func (s *RuntimeSupervisor) Update(id string, artifact string, registryCredentials []domain.RegistryCredential) (*domain.RuntimeScroll, error) {
+func (s *RuntimeSupervisor) Update(id string, artifact string, registryCredentials []domain.RegistryCredential, expectedDigest *string) (*domain.RuntimeScroll, error) {
 	if !acceptedUpdateReference.MatchString(artifact) {
 		return nil, ErrUnacceptedUpdate
 	}
@@ -25,6 +26,18 @@ func (s *RuntimeSupervisor) Update(id string, artifact string, registryCredentia
 	runtimeScroll, err := s.store.GetScroll(id)
 	if err != nil {
 		return nil, err
+	}
+	if expectedDigest != nil {
+		if !acceptedUpdateReference.MatchString("expected@" + *expectedDigest) {
+			return nil, ErrUnacceptedUpdate
+		}
+		installed, err := s.installedRelease(context.Background(), runtimeScroll)
+		if err != nil {
+			return nil, err
+		}
+		if installed["digest"] != *expectedDigest {
+			return nil, ErrInstalledReleaseChanged
+		}
 	}
 	knownDigest := artifact[strings.LastIndex(artifact, "@")+1:]
 	return s.updateExistingScroll(runtimeScroll, artifact, knownDigest, registryCredentials, true)

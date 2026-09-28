@@ -1032,7 +1032,7 @@ func TestRuntimeSupervisorUpdateUsesPullWorkerWhenAvailable(t *testing.T) {
 	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
 
 	accepted := "registry.local/lab@sha256:" + strings.Repeat("a", 64)
-	updated, err := supervisor.Update("update-worker", accepted, nil)
+	updated, err := supervisor.Update("update-worker", accepted, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1065,7 +1065,7 @@ func TestRuntimeSupervisorUpdateAppliesAcceptedDigestAndRestartsRunningScroll(t 
 	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
 
 	accepted := "registry.local/lab@sha256:" + strings.Repeat("b", 64)
-	updated, err := supervisor.Update("refresh-worker", accepted, nil)
+	updated, err := supervisor.Update("refresh-worker", accepted, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
