@@ -17,6 +17,7 @@ Verified locally on 2026-09-28. This is runtime acceptance, not complete product
 - Protected-path copying preserves symlinks without dereferencing them and rejects paths traversing symlink parents.
 - CLI authored pushes honor explicit `SOURCE_DATE_EPOCH` for the OCI creation annotation. Without it ORAS stamps current time; identical CI rebuilds then produce different digests. Normal pushes retain existing timestamp behavior. Invalid explicit timestamps are rejected.
 - Root file layers are sorted before packing; Go map iteration must not change an identical release's manifest digest.
+- `druid-scroll-validator` exposes the existing runtime semantic rules as a bounded, read-only stdin/JSON protocol for Core. It does not expand host environment variables, initialize CLI config, extract archives or run commands. `make build` and `make install` include this helper.
 
 ## Evidence
 
@@ -32,6 +33,8 @@ Verified locally on 2026-09-28. This is runtime acceptance, not complete product
 - Authenticated local publisher acceptance demonstrated the timestamp problem with identical layers and different creation times, then passed with identical finalized digests after rebuilding with a fixed source date (7.10s, including fixture cleanup). Focused CLI timestamp tests passed.
 - A later run exposed a second reproducibility issue: `.meta` and `scroll.yaml` layers changed order. A local OCI regression failed in 0.08s with identical layer digests in different orders. Sorting root paths fixed it; three 32-push regression runs and a race-enabled run passed.
 - After both reproducibility fixes, normal dedicated-account sign-in through the gateway, private import, identical rebuild/retry, shared publication and anonymous visibility passed three consecutive times (8.53s, 6.25s, 6.16s), including fixture cleanup.
+- Validator negative cases cover empty procedures, missing images, invalid versions, missing descriptions, unsafe mounts, unknown expected ports, duplicate IDs, invalid signal procedures, legacy fields, malformed/oversized input and literal environment placeholders. Focused race tests and the full CLI Go suite pass.
+- Core reuses this validator for create/import/promote and repository-wide publication. Its Core-only image builds the validator from pinned CLI commit `9490beb01fd32716ea00191f9b97d6e4d14da374`; the actual image passes offline semantic/fail-closed smoke tests, including execution in a read-only container with all capabilities dropped. The live local publisher passes again with validation enabled (8.29s).
 
 ## Remaining product work
 
