@@ -85,11 +85,23 @@ func workerPullJobSpec(namespace string, jobName string, pvc string, image strin
 		"--root", action.MountPath,
 		"--callback-url", action.CallbackURL,
 	}
+	if action.PreserveReleaseManifest {
+		command = append(command, "--preserve-release-manifest")
+	}
+	if action.Mode == ports.RuntimeWorkerModeInspect {
+		// No credential shell or recursive ownership changes for read-only inspection.
+		command = append([]string{"druid"}, command[4:]...)
+	}
 	job := helperJobSpec(namespace, jobName, pvc, image, command, imagePullSecret, map[string]string{
 		labelComponent: "worker-pull",
 		labelRuntimeID: runtimeLabel(action.RuntimeID),
 	})
 	container := &job.Spec.Template.Spec.Containers[0]
+	if action.Mode == ports.RuntimeWorkerModeInspect {
+		for i := range container.VolumeMounts {
+			container.VolumeMounts[i].ReadOnly = true
+		}
+	}
 	runAsRoot := int64(0)
 	runAsNonRoot := false
 	container.SecurityContext = &corev1.SecurityContext{
@@ -128,10 +140,13 @@ func runtimeLabel(runtimeID string) string {
 	return dnsLabel(runtimeID)
 }
 
-func backupJobSpec(namespace string, jobName string, pvc string, image string, artifact string, imagePullSecret string, registryConfigSecret string, registryPlainHTTP bool) *batchv1.Job {
+func backupJobSpec(namespace string, jobName string, pvc string, image string, artifact string, imagePullSecret string, registryConfigSecret string, registryPlainHTTP bool, preserveReleaseManifest bool) *batchv1.Job {
 	command := []string{"druid", "push", artifact, "/scroll"}
 	if registryConfigSecret != "" {
 		command = []string{"sh", "-c", registryConfigScript, "sh", "push", artifact, "/scroll"}
+	}
+	if preserveReleaseManifest {
+		command = append(command, "--preserve-release-manifest")
 	}
 	job := helperJobSpec(namespace, jobName, pvc, image, command, imagePullSecret, map[string]string{
 		labelComponent: "backup",

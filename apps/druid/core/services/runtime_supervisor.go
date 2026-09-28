@@ -27,8 +27,10 @@ type RuntimeSupervisor struct {
 	workerCallbackURL string
 	workerTimeout     time.Duration
 
-	mu       sync.Mutex
-	sessions map[string]*RuntimeSession
+	mu           sync.Mutex
+	sessions     map[string]*RuntimeSession
+	operationsMu sync.Mutex
+	operations   map[string]*sync.Mutex
 }
 
 type EnsureOptions struct {
@@ -65,6 +67,7 @@ func NewRuntimeSupervisor(
 		manager:       manager,
 		workerTimeout: 20 * time.Minute,
 		sessions:      map[string]*RuntimeSession{},
+		operations:    map[string]*sync.Mutex{},
 	}
 	runtimeBackend, err := backendFactory.Create(supervisor)
 	if err != nil {
@@ -179,6 +182,8 @@ func (s *RuntimeSupervisor) createWithOwner(artifact string, name string, ownerI
 func (s *RuntimeSupervisor) Ensure(options EnsureOptions) (*domain.RuntimeScroll, error) {
 	id := coreservices.RuntimeScrollIDFromName(options.Name)
 	if id != "" {
+		unlock := s.lockRuntimeOperation(id)
+		defer unlock()
 		runtimeScroll, err := s.store.GetScroll(id)
 		if err == nil {
 			if options.Namespace != "" && runtimeScroll.Root != "" {
@@ -208,15 +213,9 @@ func (s *RuntimeSupervisor) Ensure(options EnsureOptions) (*domain.RuntimeScroll
 			if runtimeScroll.Status == domain.RuntimeScrollStatusError && (options.Artifact == "" || options.Artifact == runtimeScroll.Artifact) {
 				return s.persistEnsureOptions(runtimeScroll, options)
 			}
-			if options.Artifact != "" {
-				nextDigest := resolveArtifactDigest(options.Artifact, options.RegistryCredentials)
-				artifactChanged := options.Artifact != runtimeScroll.Artifact
-				digestChanged := nextDigest != "" && nextDigest != runtimeScroll.ArtifactDigest
-				if artifactChanged || digestChanged {
-					applyEnsureOptions(runtimeScroll, options)
-					return s.updateExistingScroll(runtimeScroll, options.Artifact, nextDigest, options.RegistryCredentials, false)
-				}
-			}
+			// Reconciliation does not accept releases on the user's behalf. In
+			// particular it must neither follow a moved tag nor undo a restore.
+			// Existing workloads change only through the explicit Update operation.
 			return s.persistEnsureOptions(runtimeScroll, options)
 		}
 		if !errors.Is(err, domain.ErrRuntimeScrollNotFound) {

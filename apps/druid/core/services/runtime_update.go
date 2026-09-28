@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"errors"
+	"regexp"
+	"strings"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
@@ -11,15 +13,33 @@ import (
 	"go.uber.org/zap"
 )
 
-func (s *RuntimeSupervisor) Update(id string, artifact string, registryCredentials []domain.RegistryCredential) (*domain.RuntimeScroll, error) {
+var ErrUnacceptedUpdate = errors.New("update requires an explicitly accepted sha256 artifact reference")
+var ErrInstalledReleaseChanged = errors.New("installed release changed; check updates again")
+var acceptedUpdateReference = regexp.MustCompile(`^[^@\s]+@sha256:[a-f0-9]{64}$`)
+
+func (s *RuntimeSupervisor) Update(id string, artifact string, registryCredentials []domain.RegistryCredential, expectedDigest *string) (*domain.RuntimeScroll, error) {
+	if !acceptedUpdateReference.MatchString(artifact) {
+		return nil, ErrUnacceptedUpdate
+	}
+	unlock := s.lockRuntimeOperation(id)
+	defer unlock()
 	runtimeScroll, err := s.store.GetScroll(id)
 	if err != nil {
 		return nil, err
 	}
-	if artifact == "" {
-		artifact = runtimeScroll.Artifact
+	if expectedDigest != nil {
+		if !acceptedUpdateReference.MatchString("expected@" + *expectedDigest) {
+			return nil, ErrUnacceptedUpdate
+		}
+		installed, err := s.installedRelease(context.Background(), runtimeScroll)
+		if err != nil {
+			return nil, err
+		}
+		if installed["digest"] != *expectedDigest {
+			return nil, ErrInstalledReleaseChanged
+		}
 	}
-	knownDigest := resolveArtifactDigest(artifact, registryCredentials)
+	knownDigest := artifact[strings.LastIndex(artifact, "@")+1:]
 	return s.updateExistingScroll(runtimeScroll, artifact, knownDigest, registryCredentials, true)
 }
 
@@ -100,7 +120,7 @@ func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeSc
 		return nil, err
 	}
 	if wasRunning && restartIfRunning {
-		return s.StartScroll(runtimeScroll.ID)
+		return s.startScroll(runtimeScroll.ID)
 	}
 	return s.store.GetScroll(runtimeScroll.ID)
 }

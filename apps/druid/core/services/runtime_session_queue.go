@@ -57,11 +57,21 @@ func (s *RuntimeSession) addQueueItem(cmd string, options coreservices.AddItemOp
 }
 
 func (s *RuntimeSession) addQueueItemWithEnv(cmd string, options coreservices.AddItemOptions, procedureEnv map[string]map[string]string) error {
+	wait, err := s.enqueueQueueItem(cmd, options, procedureEnv)
+	if err != nil {
+		return err
+	}
+	return wait()
+}
+
+// enqueueQueueItem separates admission from waiting. Supervisors serialize
+// admission with maintenance without holding a lock while a command runs.
+func (s *RuntimeSession) enqueueQueueItem(cmd string, options coreservices.AddItemOptions, procedureEnv map[string]map[string]string) (func() error, error) {
 	logger.Log().Debug("Running command", zap.String("cmd", cmd))
 
 	command, err := s.scrollService.GetCommand(cmd)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	s.queueMu.Lock()
@@ -71,12 +81,12 @@ func (s *RuntimeSession) addQueueItemWithEnv(cmd string, options coreservices.Ad
 	if item != nil {
 		if currentStatus != domain.ScrollLockStatusDone && currentStatus != domain.ScrollLockStatusError {
 			s.queueMu.Unlock()
-			return coreservices.ErrAlreadyInQueue
+			return nil, coreservices.ErrAlreadyInQueue
 		}
 	}
 	if hasCurrentStatus && currentStatus == domain.ScrollLockStatusDone && command.Run == domain.RunModeOnce && !options.Force {
 		s.queueMu.Unlock()
-		return coreservices.ErrCommandDoneOnce
+		return nil, coreservices.ErrCommandDoneOnce
 	}
 
 	var doneChan chan struct{}
@@ -90,21 +100,19 @@ func (s *RuntimeSession) addQueueItemWithEnv(cmd string, options coreservices.Ad
 
 	s.triggerRunQueue()
 
-	if options.Wait {
-		<-doneChan
-		s.queueMu.Lock()
-		item := s.queue[cmd]
-		var itemErr error
-		if item != nil {
-			itemErr = item.err
+	return func() error {
+		if options.Wait {
+			<-doneChan
+			s.queueMu.Lock()
+			itemErr := item.err
+			s.queueMu.Unlock()
+			if itemErr != nil {
+				return itemErr
+			}
 		}
-		s.queueMu.Unlock()
-		if itemErr != nil {
-			return itemErr
-		}
-	}
 
-	return nil
+		return nil
+	}, nil
 }
 
 func (s *RuntimeSession) HydrateFromState(statuses domain.ProcedureStatusMap) error {

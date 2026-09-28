@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -162,6 +163,10 @@ func (c *OciClient) Pull(dir string, artifact string) error {
 }
 
 func (c *OciClient) PullSelective(dir string, artifact string, includeData bool, progress *domain.SnapshotProgress) error {
+	return c.PullSelectiveWithOptions(dir, artifact, includeData, progress, TransferOptions{})
+}
+
+func (c *OciClient) PullSelectiveWithOptions(dir string, artifact string, includeData bool, progress *domain.SnapshotProgress, options TransferOptions) error {
 
 	repo, ref, _ := utils.ParseArtifactRef(artifact)
 	if repo == "" || ref == "" {
@@ -334,8 +339,19 @@ func (c *OciClient) PullSelective(dir string, artifact string, includeData bool,
 
 	annotations := fullDesc.Annotations
 	fileName := filepath.Join(dir, "manifest.json")
-	err = os.WriteFile(fileName, jsonData, 0644)
-	if err != nil {
+	if options.PreserveReleaseManifest {
+		preserved, readErr := os.ReadFile(fileName)
+		if readErr != nil {
+			return fmt.Errorf("preserve-release-manifest requires manifest.json in artifact: %w", readErr)
+		}
+		var descriptor v1.Descriptor
+		if err := json.Unmarshal(preserved, &descriptor); err != nil || descriptor.Digest.String() == "" {
+			if err == nil {
+				err = fmt.Errorf("descriptor digest is empty")
+			}
+			return fmt.Errorf("preserve-release-manifest requires a valid manifest.json in artifact: %w", err)
+		}
+	} else if err = os.WriteFile(fileName, jsonData, 0644); err != nil {
 		return fmt.Errorf("failed to write manifest descriptor: %w", err)
 	}
 
@@ -746,6 +762,10 @@ func copyToRegistry(ctx context.Context, fs *file.Store, repo *remote.Repository
 }
 
 func (c *OciClient) Push(folder string, repo string, tag string, overrides map[string]string, packMeta bool, scrollFile *domain.File) (v1.Descriptor, error) {
+	return c.PushWithOptions(folder, repo, tag, overrides, packMeta, scrollFile, TransferOptions{})
+}
+
+func (c *OciClient) PushWithOptions(folder string, repo string, tag string, overrides map[string]string, packMeta bool, scrollFile *domain.File, options TransferOptions) (v1.Descriptor, error) {
 	ctx := context.Background()
 
 	// Authenticate before doing any expensive local work.
@@ -777,6 +797,23 @@ func (c *OciClient) Push(folder string, repo string, tag string, overrides map[s
 	if len(fsFileNames) == 0 {
 		return v1.Descriptor{}, fmt.Errorf("no files found to push")
 	}
+	if options.PreserveReleaseManifest {
+		manifest, err := os.ReadFile(filepath.Join(folder, "manifest.json"))
+		if err != nil {
+			return v1.Descriptor{}, fmt.Errorf("preserve-release-manifest requires manifest.json: %w", err)
+		}
+		var descriptor v1.Descriptor
+		if err := json.Unmarshal(manifest, &descriptor); err != nil || descriptor.Digest.String() == "" {
+			if err == nil {
+				err = fmt.Errorf("descriptor digest is empty")
+			}
+			return v1.Descriptor{}, fmt.Errorf("preserve-release-manifest requires a valid manifest.json: %w", err)
+		}
+		fsFileNames = append(fsFileNames, "manifest.json")
+	}
+	// Map iteration order must not change the manifest digest of an identical
+	// release. These root paths are disjoint, so sorting preserves extraction.
+	sort.Strings(fsFileNames)
 
 	fs, err := c.newFileStore(folder)
 	if err != nil {
@@ -804,7 +841,9 @@ func (c *OciClient) Push(folder string, repo string, tag string, overrides map[s
 	dataExists, _ := utils.FileExists(dataDir)
 	if dataExists {
 		var explicitChunks []*domain.Chunks
-		if scrollFile != nil {
+		// A backup is a complete runtime snapshot, not the release's curated
+		// chunk selection. Include files created since installation as well.
+		if scrollFile != nil && !options.PreserveReleaseManifest {
 			explicitChunks = scrollFile.Chunks
 		}
 		chunks, err := utils.AutoChunkDataDir(dataDir, explicitChunks)

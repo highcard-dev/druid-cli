@@ -77,6 +77,17 @@ func hasRunningProcedure(procedures domain.ProcedureStatusMap) bool {
 }
 
 func (s *RuntimeSession) StopRuntime() error {
+	return s.stopRuntime(true)
+}
+
+// StopRuntimeForMaintenance keeps the runtime quiescent after the backend has
+// confirmed it stopped. Backup and restore use this to avoid a queued serve
+// command racing the filesystem operation.
+func (s *RuntimeSession) StopRuntimeForMaintenance() error {
+	return s.stopRuntime(false)
+}
+
+func (s *RuntimeSession) stopRuntime(resumeQueue bool) error {
 	s.mu.Lock()
 	root := s.runtimeScroll.Root
 	started := s.started
@@ -111,7 +122,7 @@ func (s *RuntimeSession) StopRuntime() error {
 	s.runtimeScroll.LastError = ""
 	err := s.store.UpdateScroll(s.runtimeScroll)
 	s.mu.Unlock()
-	if err == nil && started {
+	if err == nil && started && resumeQueue {
 		s.mu.Lock()
 		s.started = true
 		s.mu.Unlock()
@@ -131,7 +142,7 @@ func (s *RuntimeSession) Backup(ctx context.Context, artifact string, registryCr
 	s.mu.Lock()
 	root := s.runtimeScroll.Root
 	s.mu.Unlock()
-	return s.runtimeBackend.BackupRuntime(ctx, root, artifact, registryCredentials)
+	return s.runtimeBackend.BackupRuntime(ctx, root, artifact, registryCredentials, true)
 }
 
 func (s *RuntimeSession) ApplyRestore(materialized *ports.RuntimeMaterialization) error {

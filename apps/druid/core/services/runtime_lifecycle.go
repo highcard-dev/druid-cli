@@ -7,6 +7,8 @@ func (s *RuntimeSupervisor) Delete(id string) error {
 }
 
 func (s *RuntimeSupervisor) DeleteWithPolicy(id string, purgeData bool) error {
+	unlock := s.lockRuntimeOperation(id)
+	defer unlock()
 	s.mu.Lock()
 	session := s.sessions[id]
 	delete(s.sessions, id)
@@ -28,10 +30,17 @@ func (s *RuntimeSupervisor) DeleteWithPolicy(id string, purgeData bool) error {
 }
 
 func (s *RuntimeSupervisor) StartScroll(id string) (*domain.RuntimeScroll, error) {
+	unlock := s.lockRuntimeOperation(id)
+	defer unlock()
+	return s.startScroll(id)
+}
+
+func (s *RuntimeSupervisor) startScroll(id string) (*domain.RuntimeScroll, error) {
 	session, err := s.sessionFor(id)
 	if err != nil {
 		return nil, err
 	}
+	session.Start()
 	if err := session.AutoStartServe(); err != nil {
 		session.markError(err)
 		return nil, err
@@ -52,11 +61,13 @@ func (s *RuntimeSupervisor) StartScroll(id string) (*domain.RuntimeScroll, error
 }
 
 func (s *RuntimeSupervisor) Stop(id string) (*domain.RuntimeScroll, error) {
+	unlock := s.lockRuntimeOperation(id)
+	defer unlock()
 	session, err := s.detachSession(id)
 	if err != nil {
 		return nil, err
 	}
-	if err := session.StopRuntime(); err != nil {
+	if err := session.StopRuntimeForMaintenance(); err != nil {
 		session.markError(err)
 		return nil, err
 	}

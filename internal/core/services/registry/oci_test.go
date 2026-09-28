@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +12,52 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	ocidigest "github.com/opencontainers/go-digest"
+	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
+
+func TestPushIdenticalReleaseHasStableDigest(t *testing.T) {
+	folder := t.TempDir()
+	if err := os.WriteFile(filepath.Join(folder, "scroll.yaml"), []byte("name: fixture\napp_version: '1.0.0'\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(folder, ".meta"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(folder, ".meta", "en-US.md"), []byte("---\nname: Fixture\n---\nFixture.\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	srv := fakeRegistry(t)
+	client := &OciClient{credentialStore: NewCredentialStore(nil), plainHTTP: true}
+	repo := strings.TrimPrefix(srv.URL, "http://") + "/test/reproducible"
+	var first v1.Descriptor
+	var firstLayers []string
+	for i := 0; i < 32; i++ {
+		tag := fmt.Sprintf("build-%d", i)
+		desc, err := client.Push(folder, repo, tag, map[string]string{"org.opencontainers.image.created": "1970-01-01T00:00:00Z"}, true, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response, err := http.Get(srv.URL + "/v2/test/reproducible/manifests/" + tag)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var manifest v1.Manifest
+		err = json.NewDecoder(response.Body).Decode(&manifest)
+		response.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var layers []string
+		for _, layer := range manifest.Layers {
+			layers = append(layers, layer.Annotations["org.opencontainers.image.title"]+"@"+layer.Digest.String())
+		}
+		if i == 0 {
+			first, firstLayers = desc, layers
+		} else if desc.Digest != first.Digest {
+			t.Fatalf("identical rebuild changed digest: first layers %v; rebuild layers %v", firstLayers, layers)
+		}
+	}
+}
 
 // fakeRegistry returns a plain-HTTP httptest server that implements the bare
 // minimum of the OCI Distribution spec so that oras.Copy can complete a push.
@@ -291,6 +337,70 @@ func TestPushPullExecutableDataChunkPreservesMode(t *testing.T) {
 	}
 	if got := info.Mode().Perm(); got != 0755 {
 		t.Fatalf("data/arkserver mode = %v, want 0755", got)
+	}
+}
+
+func TestPreserveReleaseManifestRoundTrip(t *testing.T) {
+	t.Setenv("DRUID_REGISTRY_PLAIN_HTTP", "true")
+	srv := fakeRegistry(t)
+	registryHost := strings.TrimPrefix(srv.URL, "http://")
+	folder := t.TempDir()
+	if err := os.WriteFile(filepath.Join(folder, "scroll.yaml"), []byte("name: test\nversion: 0.1.0\napp_version: test\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	want := []byte(`{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":123}`)
+	if err := os.WriteFile(filepath.Join(folder, "manifest.json"), want, 0644); err != nil {
+		t.Fatal(err)
+	}
+	client := &OciClient{credentialStore: NewCredentialStore(nil), plainHTTP: true}
+	repo := registryHost + "/test/preserve-release"
+	if err := os.MkdirAll(filepath.Join(folder, "data"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"declared.txt", "runtime-created.txt"} {
+		if err := os.WriteFile(filepath.Join(folder, "data", name), []byte(name), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scrollFile := &domain.File{Chunks: []*domain.Chunks{{Name: "declared", Path: "declared.txt"}}}
+	if _, err := client.PushWithOptions(folder, repo, "backup", nil, false, scrollFile, TransferOptions{PreserveReleaseManifest: true}); err != nil {
+		t.Fatalf("push backup: %v", err)
+	}
+	pullDir := t.TempDir()
+	if err := client.PullSelectiveWithOptions(pullDir, repo+":backup", true, nil, TransferOptions{PreserveReleaseManifest: true}); err != nil {
+		t.Fatalf("restore backup: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(pullDir, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("restored release manifest = %s, want %s", got, want)
+	}
+	for _, name := range []string{"declared.txt", "runtime-created.txt"} {
+		got, err := os.ReadFile(filepath.Join(pullDir, "data", name))
+		if err != nil || string(got) != name {
+			t.Fatalf("backup omitted runtime data %s: %s (%v)", name, got, err)
+		}
+	}
+}
+
+func TestPreserveReleaseManifestRequiresSnapshotDescriptor(t *testing.T) {
+	t.Setenv("DRUID_REGISTRY_PLAIN_HTTP", "true")
+	srv := fakeRegistry(t)
+	registryHost := strings.TrimPrefix(srv.URL, "http://")
+	folder := t.TempDir()
+	if err := os.WriteFile(filepath.Join(folder, "scroll.yaml"), []byte("name: test\nversion: 0.1.0\napp_version: test\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	client := &OciClient{credentialStore: NewCredentialStore(nil), plainHTTP: true}
+	repo := registryHost + "/test/missing-release"
+	if _, err := client.Push(folder, repo, "release", nil, false, nil); err != nil {
+		t.Fatalf("push normal release: %v", err)
+	}
+	err := client.PullSelectiveWithOptions(t.TempDir(), repo+":release", true, nil, TransferOptions{PreserveReleaseManifest: true})
+	if err == nil || !strings.Contains(err.Error(), "preserve-release-manifest requires manifest.json") {
+		t.Fatalf("preserving missing descriptor error = %v", err)
 	}
 }
 

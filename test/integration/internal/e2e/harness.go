@@ -462,7 +462,7 @@ func DockerHostAddress(t *testing.T) string {
 	return gateway
 }
 
-func UnixJSONRequest(t *testing.T, socket string, method string, path string, body string) string {
+func UnixJSONRequest(t *testing.T, socket string, method string, path string, body string, expectedStatus ...int) string {
 	t.Helper()
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network string, addr string) (net.Conn, error) {
@@ -490,7 +490,7 @@ func UnixJSONRequest(t *testing.T, socket string, method string, path string, bo
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.StatusCode >= 400 {
+	if (len(expectedStatus) == 0 && resp.StatusCode >= 400) || (len(expectedStatus) > 0 && resp.StatusCode != expectedStatus[0]) {
 		t.Fatalf("%s %s failed with %d: %s", method, path, resp.StatusCode, data)
 	}
 	return string(data)

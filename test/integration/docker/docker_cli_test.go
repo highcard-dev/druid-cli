@@ -147,7 +147,13 @@ func TestDockerBackendVolumeStorageWorkerLifecycleBackupRestore(t *testing.T) {
 	}
 
 	e2e.UnixJSONRequest(t, socket, http.MethodPost, "/api/v1/scrolls/"+created.ID+"/backup", fmt.Sprintf(`{"artifact":%q}`, backupArtifact))
+	if got := e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/index.txt", fixture.RoutePort)); !strings.Contains(got, "healthy") {
+		t.Fatalf("backup restart index = %q, want healthy", got)
+	}
 	writeDockerRootFile(t, volume, "data/public/index.txt", "mutated\n")
+	if got := readDockerRootFile(t, volume, "data/public/index.txt"); !strings.Contains(got, "mutated") {
+		t.Fatalf("mutated root index = %q, want mutated", got)
+	}
 	if got := e2e.WaitHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/index.txt", fixture.RoutePort)); !strings.Contains(got, "mutated") {
 		t.Fatalf("mutated index = %q, want mutated", got)
 	}

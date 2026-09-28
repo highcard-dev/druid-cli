@@ -80,10 +80,7 @@ func (c *OpenAPIClient) CreateScroll(ctx context.Context, name string, artifact 
 }
 
 func (c *OpenAPIClient) UpdateScroll(ctx context.Context, id string, artifact string, registryCredentials []api.RegistryCredential) (*api.RuntimeScroll, error) {
-	request := api.UpdateScrollJSONRequestBody{}
-	if artifact != "" {
-		request.Artifact = &artifact
-	}
+	request := api.UpdateScrollJSONRequestBody{Artifact: artifact}
 	if len(registryCredentials) > 0 {
 		request.RegistryCredentials = &registryCredentials
 	}

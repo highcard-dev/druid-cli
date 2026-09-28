@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
@@ -22,6 +24,7 @@ var pushScrollPorts []string
 var pushPackMeta bool
 var pushSmart bool
 var pushCategory string
+var pushPreserveReleaseManifest bool
 var pushDisableTarReproducible bool
 
 var PushCommand = &cobra.Command{
@@ -68,6 +71,9 @@ var PushCommand = &cobra.Command{
 		}
 
 		overrides := map[string]string{}
+		if err := reproducibleCreatedAnnotation(overrides, os.Getenv("SOURCE_DATE_EPOCH")); err != nil {
+			return err
+		}
 		if pushMinRAM != "" {
 			overrides["gg.druid.scroll.minRam"] = pushMinRAM
 		}
@@ -96,7 +102,7 @@ var PushCommand = &cobra.Command{
 			overrides[fmt.Sprintf("gg.druid.scroll.port.%s", name)] = port
 		}
 
-		_, err = ociClient.Push(fullPath, repo, tag, overrides, pushPackMeta, &scroll.File)
+		_, err = ociClient.PushWithOptions(fullPath, repo, tag, overrides, pushPackMeta, &scroll.File, registry.TransferOptions{PreserveReleaseManifest: pushPreserveReleaseManifest})
 		if err != nil {
 			return err
 		}
@@ -104,6 +110,20 @@ var PushCommand = &cobra.Command{
 		logger.Log().Info("Pushed "+scroll.Name+" to registry", zap.String("path", fullPath))
 		return nil
 	},
+}
+
+// ORAS otherwise stamps the current time, making an identical CI rebuild a
+// different immutable revision. Only explicitly reproducible builds override it.
+func reproducibleCreatedAnnotation(annotations map[string]string, epoch string) error {
+	if epoch == "" {
+		return nil
+	}
+	seconds, err := strconv.ParseInt(epoch, 10, 64)
+	if err != nil || seconds < 0 || seconds > 253402300799 {
+		return fmt.Errorf("SOURCE_DATE_EPOCH must be a nonnegative Unix timestamp before year 10000")
+	}
+	annotations["org.opencontainers.image.created"] = time.Unix(seconds, 0).UTC().Format(time.RFC3339)
+	return nil
 }
 
 func init() {
@@ -116,5 +136,6 @@ func init() {
 	PushCommand.Flags().StringVarP(&pushImage, "image", "i", pushImage, "Image to use for the scroll. (Will be added as a manifest annotation gg.druid.scroll.image)")
 	PushCommand.Flags().StringSliceVarP(&pushScrollPorts, "port", "p", pushScrollPorts, "Ports to expose. Format webserver=80, dns=53/udp or just minecraft (Will be added as a manifest annotation gg.druid.scroll.ports.<name>)")
 	PushCommand.Flags().BoolVarP(&pushPackMeta, "pack-meta", "m", pushPackMeta, "Pack the meta folder into the scroll.")
+	PushCommand.Flags().BoolVar(&pushPreserveReleaseManifest, "preserve-release-manifest", false, "Include the installed release manifest.json in this snapshot.")
 	PushCommand.PersistentFlags().BoolVar(&pushDisableTarReproducible, "no-tar-reproducible", false, "Preserve file timestamps in pushed tar layers.")
 }
