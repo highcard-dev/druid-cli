@@ -143,7 +143,7 @@ func TestWorkerUpdatePreservesRemovedProtectedChunk(t *testing.T) {
 			mustWrite(t, filepath.Join(root, "data", "world", "save.dat"), "user world")
 			mustWrite(t, filepath.Join(root, "data", "obsolete.txt"), "old release")
 			mustWrite(t, filepath.Join(candidate, "scroll.yaml"), "name: example\n")
-			if err := pullWorkerUpdate(root, candidate, nil); err != nil {
+			if err := pullWorkerUpdate(root, candidate, nil, nil); err != nil {
 				t.Fatal(err)
 			}
 			assertFile(t, filepath.Join(root, "data", "world", "save.dat"), "user world")
@@ -278,7 +278,9 @@ func runWorkerPullForSkipPathTest(t *testing.T, root string) map[string]bool {
 		t.Fatal(err)
 	}
 	result := map[string]bool{}
-	collectSkipUpdatePaths(result, "", scroll.Chunks)
+	if err := collectSkipUpdatePaths(result, filepath.Join(root, domain.RuntimeDataDir), "", scroll.Chunks); err != nil {
+		t.Fatal(err)
+	}
 	return result
 }
 

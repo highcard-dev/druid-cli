@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -28,7 +29,10 @@ const (
 const dockerFailedProcedureRetention = 3
 
 func dockerExtraHosts() []string {
-	return []string{dockerHostGatewayExtraHost}
+	if runtime.GOOS == "linux" {
+		return []string{dockerHostGatewayExtraHost}
+	}
+	return nil
 }
 
 func ContainerName(root string, commandName string) string {

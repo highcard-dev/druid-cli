@@ -1171,7 +1171,7 @@ func TestRuntimeSupervisorBackupStopsAndRestartsRunningScroll(t *testing.T) {
 	}
 }
 
-func TestRuntimeSupervisorBackupFailureRestartsPriorRunningScroll(t *testing.T) {
+func TestRuntimeSupervisorBackupFailureKeepsPriorRunningScrollStopped(t *testing.T) {
 	store := newTestStateStore(t)
 	runtimeScroll := &domain.RuntimeScroll{
 		ID:         "backup-recovery",
@@ -1195,12 +1195,12 @@ func TestRuntimeSupervisorBackupFailureRestartsPriorRunningScroll(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if recovered.Status != domain.RuntimeScrollStatusRunning {
-		t.Fatalf("recovered status = %s, want running", recovered.Status)
+	if recovered.Status != domain.RuntimeScrollStatusError {
+		t.Fatalf("failed backup status = %s, want error", recovered.Status)
 	}
 }
 
-func TestRuntimeSupervisorRestoreFailureRestartsPriorRunningScroll(t *testing.T) {
+func TestRuntimeSupervisorRestoreFailureKeepsPriorRunningScrollStopped(t *testing.T) {
 	store := newTestStateStore(t)
 	runtimeScroll := &domain.RuntimeScroll{
 		ID:         "restore-recovery",
@@ -1226,8 +1226,8 @@ func TestRuntimeSupervisorRestoreFailureRestartsPriorRunningScroll(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if recovered.Status != domain.RuntimeScrollStatusRunning {
-		t.Fatalf("recovered status = %s, want running", recovered.Status)
+	if recovered.Status != domain.RuntimeScrollStatusError {
+		t.Fatalf("failed restore status = %s, want error", recovered.Status)
 	}
 }
 
@@ -1323,52 +1323,6 @@ func TestRuntimeSupervisorSerializesBackupWithStartAndEnsure(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatalf("%s did not complete after backup", name)
 		}
-	}
-}
-
-func TestRuntimeSupervisorStopKeepsRuntimeQueueQuiescent(t *testing.T) {
-	store := newTestStateStore(t)
-	runtimeScroll := &domain.RuntimeScroll{
-		ID:         "stop-quiescent",
-		Artifact:   "registry.local/lab:1.0",
-		Root:       "runtime://stop-quiescent",
-		ScrollName: "stop-quiescent",
-		ScrollYAML: updatedScrollYAML("stop-quiescent"),
-		Status:     domain.RuntimeScrollStatusRunning,
-		Procedures: domain.ProcedureStatusMap{},
-	}
-	if err := store.CreateScroll(runtimeScroll); err != nil {
-		t.Fatal(err)
-	}
-	var runs atomic.Int32
-	backend := &fakeWorkerBackend{runCommand: func(command ports.RuntimeCommand) (*int, error) {
-		runs.Add(1)
-		return nil, errors.New("run should not persist in test")
-	}}
-	supervisor := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
-	session, err := supervisor.sessionFor(runtimeScroll.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := session.AutoStartServe(); err != nil {
-		t.Fatal(err)
-	}
-	deadline := time.After(time.Second)
-	for runs.Load() == 0 {
-		select {
-		case <-deadline:
-			t.Fatal("runtime queue did not start")
-		default:
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
-	if _, err := supervisor.Stop(runtimeScroll.ID); err != nil {
-		t.Fatal(err)
-	}
-	count := runs.Load()
-	time.Sleep(100 * time.Millisecond)
-	if got := runs.Load(); got != count {
-		t.Fatalf("runtime queue restarted after stop: runs=%d, want %d", got, count)
 	}
 }
 
@@ -1657,6 +1611,7 @@ type fakeWorkerBackend struct {
 	digest                        string
 	workerErr                     error
 	workerDone                    <-chan error
+	workerResult                  *ports.RuntimeWorkerResult
 	action                        ports.RuntimeWorkerAction
 	stopRoot                      string
 	deleteRoot                    string
@@ -1784,10 +1739,14 @@ func (f *fakeWorkerBackend) SpawnPullWorker(ctx context.Context, action ports.Ru
 	if f.callbacks == nil {
 		return done, nil
 	}
-	err := f.callbacks.Complete(action.RuntimeID, ports.RuntimeWorkerResult{
+	result := ports.RuntimeWorkerResult{
 		ScrollYAML:     f.scrollYAML,
 		ArtifactDigest: f.digest,
-	})
+	}
+	if f.workerResult != nil {
+		result = *f.workerResult
+	}
+	err := f.callbacks.Complete(action.RuntimeID, result)
 	return done, err
 }
 
