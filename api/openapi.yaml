@@ -209,10 +209,16 @@ components:
 
     UpdateScrollRequest:
       type: object
+      required: [artifact]
       properties:
         artifact:
           type: string
-          description: Optional target artifact. If omitted, the daemon refreshes the runtime's current artifact.
+          pattern: '^[^@\s]+@sha256:[a-f0-9]{64}$'
+          description: Explicitly accepted immutable target. Missing or mutable tag references are rejected before stopping the runtime.
+        expected_installed_digest:
+          type: string
+          pattern: '^sha256:[a-f0-9]{64}$'
+          description: Optional precondition checked against the actual installed descriptor under the maintenance lock.
         registry_credentials:
           type: array
           items:
@@ -482,6 +488,33 @@ paths:
         '404':
           description: Runtime scroll not found
 
+  /api/v1/scrolls/{id}/release:
+    get:
+      operationId: getInstalledRelease
+      tags: [scrolls]
+      summary: Read the installed release descriptor from the runtime volume
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Installed canonical repository and last successful release digest
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [repository, digest]
+                properties:
+                  repository:
+                    type: string
+                  digest:
+                    type: string
+        '404':
+          description: Runtime scroll not found
+
   /api/v1/scrolls/{id}/start:
     post:
       operationId: startScroll
@@ -532,7 +565,7 @@ paths:
           schema:
             type: string
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
@@ -544,6 +577,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RuntimeScroll'
+        '400':
+          description: An explicitly accepted SHA256 artifact reference is required
+        '409':
+          description: Installed release changed since the update was checked
         '404':
           description: Runtime scroll not found
 

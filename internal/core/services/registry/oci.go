@@ -837,7 +837,9 @@ func (c *OciClient) PushWithOptions(folder string, repo string, tag string, over
 	dataExists, _ := utils.FileExists(dataDir)
 	if dataExists {
 		var explicitChunks []*domain.Chunks
-		if scrollFile != nil {
+		// A backup is a complete runtime snapshot, not the release's curated
+		// chunk selection. Include files created since installation as well.
+		if scrollFile != nil && !options.PreserveReleaseManifest {
 			explicitChunks = scrollFile.Chunks
 		}
 		chunks, err := utils.AutoChunkDataDir(dataDir, explicitChunks)

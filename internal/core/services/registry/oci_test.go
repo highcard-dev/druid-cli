@@ -308,7 +308,16 @@ func TestPreserveReleaseManifestRoundTrip(t *testing.T) {
 	}
 	client := &OciClient{credentialStore: NewCredentialStore(nil), plainHTTP: true}
 	repo := registryHost + "/test/preserve-release"
-	if _, err := client.PushWithOptions(folder, repo, "backup", nil, false, nil, TransferOptions{PreserveReleaseManifest: true}); err != nil {
+	if err := os.MkdirAll(filepath.Join(folder, "data"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"declared.txt", "runtime-created.txt"} {
+		if err := os.WriteFile(filepath.Join(folder, "data", name), []byte(name), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scrollFile := &domain.File{Chunks: []*domain.Chunks{{Name: "declared", Path: "declared.txt"}}}
+	if _, err := client.PushWithOptions(folder, repo, "backup", nil, false, scrollFile, TransferOptions{PreserveReleaseManifest: true}); err != nil {
 		t.Fatalf("push backup: %v", err)
 	}
 	pullDir := t.TempDir()
@@ -321,6 +330,12 @@ func TestPreserveReleaseManifestRoundTrip(t *testing.T) {
 	}
 	if string(got) != string(want) {
 		t.Fatalf("restored release manifest = %s, want %s", got, want)
+	}
+	for _, name := range []string{"declared.txt", "runtime-created.txt"} {
+		got, err := os.ReadFile(filepath.Join(pullDir, "data", name))
+		if err != nil || string(got) != name {
+			t.Fatalf("backup omitted runtime data %s: %s (%v)", name, got, err)
+		}
 	}
 }
 
