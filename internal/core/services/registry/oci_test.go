@@ -294,6 +294,55 @@ func TestPushPullExecutableDataChunkPreservesMode(t *testing.T) {
 	}
 }
 
+func TestPreserveReleaseManifestRoundTrip(t *testing.T) {
+	t.Setenv("DRUID_REGISTRY_PLAIN_HTTP", "true")
+	srv := fakeRegistry(t)
+	registryHost := strings.TrimPrefix(srv.URL, "http://")
+	folder := t.TempDir()
+	if err := os.WriteFile(filepath.Join(folder, "scroll.yaml"), []byte("name: test\nversion: 0.1.0\napp_version: test\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	want := []byte(`{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":123}`)
+	if err := os.WriteFile(filepath.Join(folder, "manifest.json"), want, 0644); err != nil {
+		t.Fatal(err)
+	}
+	client := &OciClient{credentialStore: NewCredentialStore(nil), plainHTTP: true}
+	repo := registryHost + "/test/preserve-release"
+	if _, err := client.PushWithOptions(folder, repo, "backup", nil, false, nil, TransferOptions{PreserveReleaseManifest: true}); err != nil {
+		t.Fatalf("push backup: %v", err)
+	}
+	pullDir := t.TempDir()
+	if err := client.PullSelectiveWithOptions(pullDir, repo+":backup", true, nil, TransferOptions{PreserveReleaseManifest: true}); err != nil {
+		t.Fatalf("restore backup: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(pullDir, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("restored release manifest = %s, want %s", got, want)
+	}
+}
+
+func TestPreserveReleaseManifestRequiresSnapshotDescriptor(t *testing.T) {
+	t.Setenv("DRUID_REGISTRY_PLAIN_HTTP", "true")
+	srv := fakeRegistry(t)
+	registryHost := strings.TrimPrefix(srv.URL, "http://")
+	folder := t.TempDir()
+	if err := os.WriteFile(filepath.Join(folder, "scroll.yaml"), []byte("name: test\nversion: 0.1.0\napp_version: test\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	client := &OciClient{credentialStore: NewCredentialStore(nil), plainHTTP: true}
+	repo := registryHost + "/test/missing-release"
+	if _, err := client.Push(folder, repo, "release", nil, false, nil); err != nil {
+		t.Fatalf("push normal release: %v", err)
+	}
+	err := client.PullSelectiveWithOptions(t.TempDir(), repo+":release", true, nil, TransferOptions{PreserveReleaseManifest: true})
+	if err == nil || !strings.Contains(err.Error(), "preserve-release-manifest requires manifest.json") {
+		t.Fatalf("preserving missing descriptor error = %v", err)
+	}
+}
+
 func TestFetchFileReadsScrollYAMLDescriptor(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Chdir(tmpDir)

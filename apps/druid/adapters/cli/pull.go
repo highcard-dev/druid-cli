@@ -7,6 +7,7 @@ import (
 )
 
 var pullNoData bool
+var pullPreserveReleaseManifest bool
 
 var PullCommand = &cobra.Command{
 	Use:   "pull <artifact> [dir]",
@@ -21,7 +22,7 @@ var PullCommand = &cobra.Command{
 
 		registryClient := registry.NewOciClient(loadRegistryStore())
 
-		err := registryClient.PullSelective(dir, artifact, !pullNoData, nil)
+		err := registryClient.PullSelectiveWithOptions(dir, artifact, !pullNoData, nil, registry.TransferOptions{PreserveReleaseManifest: pullPreserveReleaseManifest})
 		if err != nil {
 			logger.Log().Error("Failed to pull from registry")
 			return err
@@ -35,4 +36,5 @@ var PullCommand = &cobra.Command{
 func init() {
 	RootCmd.AddCommand(PullCommand)
 	PullCommand.Flags().BoolVar(&pullNoData, "no-data", false, "Skip scroll data files")
+	PullCommand.Flags().BoolVar(&pullPreserveReleaseManifest, "preserve-release-manifest", false, "Keep the release manifest.json stored in a backup artifact.")
 }
