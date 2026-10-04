@@ -16,15 +16,19 @@ import (
 	"github.com/highcard-dev/daemon/internal/core/ports"
 )
 
-func (b *Backend) BackupRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential) error {
+func (b *Backend) BackupRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential, preserveReleaseManifest bool) error {
 	if artifact == "" {
 		return fmt.Errorf("backup artifact is required")
 	}
-	return b.runWorkerRootCommand(ctx, root, []string{
+	command := []string{
 		"worker", "push",
 		"--artifact", artifact,
 		"--root", "/scroll",
-	}, registryCredentials)
+	}
+	if preserveReleaseManifest {
+		command = append(command, "--preserve-release-manifest")
+	}
+	return b.runWorkerRootCommand(ctx, root, command, registryCredentials)
 }
 
 func (b *Backend) runWorkerRootCommand(ctx context.Context, root string, command []string, registryCredentials []domain.RegistryCredential) error {
@@ -146,14 +150,7 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 	created, err := b.client.ContainerCreate(ctx, &container.Config{
 		Image:      b.config.WorkerImage,
 		Entrypoint: []string{"druid"},
-		Cmd: []string{
-			"worker", "pull",
-			"--artifact", artifact,
-			"--runtime-id", action.RuntimeID,
-			"--mode", string(action.Mode),
-			"--root", action.MountPath,
-			"--callback-url", action.CallbackURL,
-		},
+		Cmd:        workerPullCommand(action, artifact),
 		Env: dockerWorkerEnv([]string{
 			"DRUID_WORKER_TOKEN_FILE=" + action.TokenFile,
 			"DRUID_RUNTIME_REGISTRY_CONFIG_JSON=" + string(registryConfig),
@@ -194,4 +191,19 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 		}
 	}()
 	return done, nil
+}
+
+func workerPullCommand(action ports.RuntimeWorkerAction, artifact string) []string {
+	command := []string{
+		"worker", "pull",
+		"--artifact", artifact,
+		"--runtime-id", action.RuntimeID,
+		"--mode", string(action.Mode),
+		"--root", action.MountPath,
+		"--callback-url", action.CallbackURL,
+	}
+	if action.PreserveReleaseManifest {
+		command = append(command, "--preserve-release-manifest")
+	}
+	return command
 }

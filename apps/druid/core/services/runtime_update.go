@@ -12,6 +12,8 @@ import (
 )
 
 func (s *RuntimeSupervisor) Update(id string, artifact string, registryCredentials []domain.RegistryCredential) (*domain.RuntimeScroll, error) {
+	unlock := s.lockRuntimeOperation(id)
+	defer unlock()
 	runtimeScroll, err := s.store.GetScroll(id)
 	if err != nil {
 		return nil, err
@@ -100,7 +102,7 @@ func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeSc
 		return nil, err
 	}
 	if wasRunning && restartIfRunning {
-		return s.StartScroll(runtimeScroll.ID)
+		return s.startScroll(runtimeScroll.ID)
 	}
 	return s.store.GetScroll(runtimeScroll.ID)
 }
