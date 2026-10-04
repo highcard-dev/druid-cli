@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
@@ -69,6 +71,9 @@ var PushCommand = &cobra.Command{
 		}
 
 		overrides := map[string]string{}
+		if err := reproducibleCreatedAnnotation(overrides, os.Getenv("SOURCE_DATE_EPOCH")); err != nil {
+			return err
+		}
 		if pushMinRAM != "" {
 			overrides["gg.druid.scroll.minRam"] = pushMinRAM
 		}
@@ -105,6 +110,20 @@ var PushCommand = &cobra.Command{
 		logger.Log().Info("Pushed "+scroll.Name+" to registry", zap.String("path", fullPath))
 		return nil
 	},
+}
+
+// ORAS otherwise stamps the current time, making an identical CI rebuild a
+// different immutable revision. Only explicitly reproducible builds override it.
+func reproducibleCreatedAnnotation(annotations map[string]string, epoch string) error {
+	if epoch == "" {
+		return nil
+	}
+	seconds, err := strconv.ParseInt(epoch, 10, 64)
+	if err != nil || seconds < 0 || seconds > 253402300799 {
+		return fmt.Errorf("SOURCE_DATE_EPOCH must be a nonnegative Unix timestamp before year 10000")
+	}
+	annotations["org.opencontainers.image.created"] = time.Unix(seconds, 0).UTC().Format(time.RFC3339)
+	return nil
 }
 
 func init() {

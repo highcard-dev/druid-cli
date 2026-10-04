@@ -171,6 +171,7 @@ type RuntimeWorkerAction struct {
 	MountPath               string
 	CallbackURL             string
 	TokenFile               string
+	NewDataOwner            string
 	PreserveReleaseManifest bool
 	RegistryCredentials     []domain.RegistryCredential
 }
