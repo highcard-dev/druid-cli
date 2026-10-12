@@ -23,7 +23,7 @@ func TestDockerBackendCLIComplexLifecycle(t *testing.T) {
 	callbackPort := e2e.FreePort(t)
 	name := fmt.Sprintf("docker-cli-%d", time.Now().UnixNano())
 	fixture := e2e.WriteFixture(t, filepath.Join(t.TempDir(), "scroll"), name, port, routePort)
-	workerImage := e2e.BuildDockerImage(t, "druid-cli-e2e:"+name)
+	workerImage := e2e.BuildDockerImage(t, "druid-cli-e2e-"+name+":local")
 	containerHost := e2e.DockerHostAddress(t)
 
 	socket := filepath.Join(os.TempDir(), fmt.Sprintf("druid-docker-%d.sock", time.Now().UnixNano()))
@@ -94,7 +94,7 @@ func TestDockerBackendVolumeStorageWorkerLifecycleBackupRestore(t *testing.T) {
 	containerHost := e2e.DockerHostAddress(t)
 	name := fmt.Sprintf("docker-volume-%d", time.Now().UnixNano())
 	fixture := e2e.WriteFixture(t, filepath.Join(t.TempDir(), "scroll"), name, port, routePort)
-	workerImage := e2e.BuildDockerImage(t, "druid-cli-e2e:"+name)
+	workerImage := e2e.BuildDockerImage(t, "druid-cli-e2e-"+name+":local")
 
 	pushArtifact := fmt.Sprintf("127.0.0.1:%d/druid-e2e/%s:v1", registryPort, name)
 	runtimeArtifact := fmt.Sprintf("%s:%d/druid-e2e/%s:v1", containerHost, registryPort, name)

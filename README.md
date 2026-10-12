@@ -69,6 +69,8 @@ Runtime selection is daemon-only: start the daemon with `druid daemon --runtime 
 
 Kubernetes runtime support is available with `druid daemon --runtime kubernetes` for in-cluster daemons or out-of-cluster daemons using kubeconfig. It stores daemon scroll state in ConfigMaps, materializes OCI artifacts through `druid worker pull` Jobs, and uses kubelet pod stats for procedure-level traffic checks. See `docs/kubernetes_runtime.md` for kubeconfig, RBAC, and PVC setup.
 
+Both backends refresh registry-tagged container images at startup, including `stable`, `latest`, and version tags. Kubernetes uses `imagePullPolicy: Always`; Docker pulls before creating the container. Existing layers are reused when the registry digest is unchanged. Digest-pinned images and explicit `:local` development images use the cache when available. A tag update takes effect on the next container start; running containers are not automatically restarted.
+
 ## Documentation
 
 Read more at https://docs.druid.gg/cli

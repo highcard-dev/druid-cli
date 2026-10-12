@@ -14,7 +14,15 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
+	"github.com/highcard-dev/daemon/internal/runtime/imagepolicy"
 )
+
+func imagePullPolicy(image string) corev1.PullPolicy {
+	if imagepolicy.ShouldRefresh(image) {
+		return corev1.PullAlways
+	}
+	return corev1.PullIfNotPresent
+}
 
 func pvcSpec(namespace string, name string, storageClass string, storageRequest string) *corev1.PersistentVolumeClaim {
 	if storageRequest == "" {
@@ -162,10 +170,11 @@ func helperJobSpec(namespace string, jobName string, pvc string, image string, c
 	podSpec := corev1.PodSpec{
 		RestartPolicy: corev1.RestartPolicyNever,
 		Containers: []corev1.Container{{
-			Name:         "main",
-			Image:        image,
-			Command:      command,
-			VolumeMounts: []corev1.VolumeMount{{Name: "scroll", MountPath: "/scroll"}},
+			Name:            "main",
+			Image:           image,
+			ImagePullPolicy: imagePullPolicy(image),
+			Command:         command,
+			VolumeMounts:    []corev1.VolumeMount{{Name: "scroll", MountPath: "/scroll"}},
 		}},
 		Volumes: []corev1.Volume{pvcVolume("scroll", pvc)},
 	}
@@ -209,7 +218,7 @@ func procedureJobSpec(namespace string, root string, commandName string, procedu
 		WorkingDir:      procedure.WorkingDir,
 		TTY:             procedure.TTY,
 		Stdin:           true,
-		ImagePullPolicy: corev1.PullIfNotPresent,
+		ImagePullPolicy: imagePullPolicy(procedure.Image),
 		Env:             envVars(env),
 		VolumeMounts:    volumeMounts(procedure.Mounts),
 	}
@@ -292,7 +301,7 @@ func persistentStatefulSetSpec(namespace string, root string, commandName string
 		WorkingDir:      mainProcedure.WorkingDir,
 		TTY:             mainProcedure.TTY,
 		Stdin:           true,
-		ImagePullPolicy: corev1.PullIfNotPresent,
+		ImagePullPolicy: imagePullPolicy(mainProcedure.Image),
 		Env:             envVars(mainEnv),
 		VolumeMounts:    volumeMounts(mainProcedure.Mounts),
 	}
@@ -316,7 +325,7 @@ func persistentStatefulSetSpec(namespace string, root string, commandName string
 			WorkingDir:      procedure.WorkingDir,
 			TTY:             procedure.TTY,
 			Stdin:           true,
-			ImagePullPolicy: corev1.PullIfNotPresent,
+			ImagePullPolicy: imagePullPolicy(procedure.Image),
 			Env:             envVars(env),
 			VolumeMounts:    volumeMounts(procedure.Mounts),
 		})
