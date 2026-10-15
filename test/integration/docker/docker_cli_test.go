@@ -166,7 +166,7 @@ func TestDockerBackendColdstarterFrontsRuntime(t *testing.T) {
 	publicPort := e2e.FreePort(t)
 	callbackPort := e2e.FreePort(t)
 	name := fmt.Sprintf("docker-coldstart-%d", time.Now().UnixNano())
-	image := e2e.BuildDockerImage(t, "druid-coldstart-e2e:"+name)
+	image := e2e.BuildDockerImage(t, "druid-coldstart-e2e-"+name+":local")
 	fixtureDir := writeColdstarterFixture(t, filepath.Join(t.TempDir(), "scroll"), name, image, runtimePort)
 	containerHost := e2e.DockerHostAddress(t)
 
