@@ -29,7 +29,7 @@ func TestKubernetesBackendCLIComplexLifecycle(t *testing.T) {
 	namespace := "druid-cli-e2e-" + suffix
 	name := "k8s-cli-" + suffix
 	fixture := e2e.WriteFixture(t, filepath.Join(t.TempDir(), "scroll"), name, port, routePort)
-	workerImage := e2e.BuildDockerImage(t, "druid-cli-e2e:"+name)
+	workerImage := e2e.BuildDockerImage(t, "druid-cli-e2e-"+name+":local")
 	importImageIntoCurrentCluster(t, workerImage)
 	pushArtifact := fmt.Sprintf("127.0.0.1:%d/druid-e2e/%s:v1", registryPort, name)
 	runtimeArtifact := fmt.Sprintf("%s:%d/druid-e2e/%s:v1", containerHost, registryPort, name)
