@@ -299,7 +299,11 @@ func rejectSymlinkParents(root, relative string) error {
 	return nil
 }
 
-func pullWorkerRestore(root string, artifact string, oci ports.OciRegistryInterface) error {
+type restoreArtifactPuller interface {
+	PullSelectiveWithOptions(string, string, bool, *domain.SnapshotProgress, registry.TransferOptions) error
+}
+
+func pullWorkerRestore(root string, artifact string, oci restoreArtifactPuller) error {
 	if err := os.MkdirAll(root, 0755); err != nil {
 		return err
 	}
@@ -308,13 +312,7 @@ func pullWorkerRestore(root string, artifact string, oci ports.OciRegistryInterf
 		return err
 	}
 	defer os.RemoveAll(stage)
-	puller, ok := oci.(interface {
-		PullSelectiveWithOptions(string, string, bool, *domain.SnapshotProgress, registry.TransferOptions) error
-	})
-	if !ok {
-		return fmt.Errorf("OCI registry does not support preserve-release-manifest")
-	}
-	if err := puller.PullSelectiveWithOptions(stage, artifact, true, nil, registry.TransferOptions{PreserveReleaseManifest: true}); err != nil {
+	if err := oci.PullSelectiveWithOptions(stage, artifact, true, nil, registry.TransferOptions{PreserveReleaseManifest: true}); err != nil {
 		return err
 	}
 	return replaceRestoredRoot(root, stage)

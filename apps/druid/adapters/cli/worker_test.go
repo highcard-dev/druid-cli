@@ -13,9 +13,7 @@ import (
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
-	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/spf13/cobra"
-	"oras.land/oras-go/v2/registry/remote"
 )
 
 func TestWorkerPullCommandUsesRuntimeIDOnly(t *testing.T) {
@@ -192,6 +190,34 @@ func TestWorkerRestoreStagesBeforeReplacingRoot(t *testing.T) {
 	}
 }
 
+func TestWorkerRestorePreservesRootWhenPullFails(t *testing.T) {
+	root := t.TempDir()
+	original := map[string]string{
+		"scroll.yaml":          "name: original\n",
+		"manifest.json":        `{"digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}`,
+		"data/logs/latest.log": "original log",
+		"data/old-only.txt":    "original data",
+	}
+	for path, content := range original {
+		mustWrite(t, filepath.Join(root, path), content)
+	}
+	wantErr := errors.New("injected pull failure")
+	err := pullWorkerRestore(root, "registry.local/backup:1", fakeRestoreOCI{t: t, err: wantErr})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("restore error = %v, want %v", err, wantErr)
+	}
+	for path, content := range original {
+		assertFile(t, filepath.Join(root, path), content)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("restore left unexpected root entries: %v", entries)
+	}
+}
+
 func TestReplaceRestoredRootRollsBackAfterStagingBegins(t *testing.T) {
 	root := t.TempDir()
 	mustWrite(t, filepath.Join(root, "scroll.yaml"), "name: original\n")
@@ -326,25 +352,8 @@ func assertFile(t *testing.T, path string, want string) {
 }
 
 type fakeRestoreOCI struct {
-	t *testing.T
-}
-
-func (fakeRestoreOCI) GetRepo(string) (*remote.Repository, error) {
-	return nil, nil
-}
-
-func (fakeRestoreOCI) Push(string, string, string, map[string]string, bool, *domain.File) (v1.Descriptor, error) {
-	return v1.Descriptor{}, nil
-}
-
-func (f fakeRestoreOCI) Pull(dir string, artifact string) error {
-	return f.PullSelective(dir, artifact, true, nil)
-}
-
-func (f fakeRestoreOCI) PullSelective(dir string, artifact string, includeData bool, progress *domain.SnapshotProgress) error {
-	mustWrite(f.t, filepath.Join(dir, "scroll.yaml"), "name: restored\n")
-	mustWrite(f.t, filepath.Join(dir, "data", "logs", "latest.log"), "restored")
-	return nil
+	t   *testing.T
+	err error
 }
 
 func (f fakeRestoreOCI) PullSelectiveWithOptions(dir string, artifact string, includeData bool, progress *domain.SnapshotProgress, options registry.TransferOptions) error {
@@ -354,25 +363,5 @@ func (f fakeRestoreOCI) PullSelectiveWithOptions(dir string, artifact string, in
 	mustWrite(f.t, filepath.Join(dir, "scroll.yaml"), "name: restored\n")
 	mustWrite(f.t, filepath.Join(dir, "manifest.json"), `{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)
 	mustWrite(f.t, filepath.Join(dir, "data", "logs", "latest.log"), "restored")
-	return nil
-}
-
-func (fakeRestoreOCI) FetchFile(string, string) ([]byte, error) {
-	return nil, os.ErrNotExist
-}
-
-func (fakeRestoreOCI) ValidateCredentials(string, string, string) error {
-	return nil
-}
-
-func (fakeRestoreOCI) ResolveDigest(string) (string, error) {
-	return "sha256:restored", nil
-}
-
-func (fakeRestoreOCI) ResolveAnnotationInfo(string) (domain.AnnotationInfo, error) {
-	return domain.AnnotationInfo{}, nil
-}
-
-func (fakeRestoreOCI) CanUpdateTag(v1.Descriptor, string, string) (bool, error) {
-	return false, nil
+	return f.err
 }
