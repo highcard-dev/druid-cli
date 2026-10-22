@@ -159,6 +159,7 @@ const (
 	RuntimeWorkerModeCreate  RuntimeWorkerMode = "create"
 	RuntimeWorkerModeUpdate  RuntimeWorkerMode = "update"
 	RuntimeWorkerModeRestore RuntimeWorkerMode = "restore"
+	RuntimeWorkerModeInspect RuntimeWorkerMode = "inspect"
 )
 
 type RuntimeWorkerAction struct {

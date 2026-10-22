@@ -63,6 +63,8 @@ func RegisterPublicRoutes(app *fiber.App, handlers RouteHandlers) {
 	app.Get("/:id/api/v1/health", handlers.Server.GetHealthAuth)
 	app.Get("/:id/api/v1/token", handlers.Server.CreateDaemonToken)
 	app.Get("/:id/api/v1/scroll", handlers.Server.GetDaemonScroll)
+	app.Get("/:id/api/v1/release", func(c *fiber.Ctx) error { return handlers.Server.GetInstalledRelease(c, c.Params("id")) })
+	app.Post("/:id/api/v1/update", func(c *fiber.Ctx) error { return handlers.Server.UpdateScroll(c, c.Params("id")) })
 	app.Put("/:id/api/v1/scroll/commands/:command", handlers.Server.AddDaemonCommand)
 	app.Delete("/:id/api/v1/scroll/commands/:command", handlers.Server.RemoveDaemonCommand)
 	app.Post("/:id/api/v1/command", handlers.Server.RunDaemonCommand)
