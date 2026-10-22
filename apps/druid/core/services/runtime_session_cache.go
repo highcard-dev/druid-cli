@@ -1,10 +1,24 @@
 package services
 
 import (
+	"sync"
+
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
 	"go.uber.org/zap"
 )
+
+func (s *RuntimeSupervisor) lockRuntimeOperation(id string) func() {
+	s.operationsMu.Lock()
+	operation := s.operations[id]
+	if operation == nil {
+		operation = &sync.Mutex{}
+		s.operations[id] = operation
+	}
+	s.operationsMu.Unlock()
+	operation.Lock()
+	return operation.Unlock
+}
 
 func (s *RuntimeSupervisor) detachSession(id string) (*RuntimeSession, error) {
 	s.mu.Lock()

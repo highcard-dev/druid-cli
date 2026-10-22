@@ -488,6 +488,21 @@ commands:
 	}
 }
 
+func TestRuntimeSessionStopForMaintenanceKeepsQueueQuiescent(t *testing.T) {
+	session := newRuntimeSessionForTest(t, map[string]domain.LockStatus{}, updatedScrollYAML("maintenance"))
+	session.Start()
+
+	if err := session.StopRuntimeForMaintenance(); err != nil {
+		t.Fatal(err)
+	}
+	session.mu.Lock()
+	started := session.started
+	session.mu.Unlock()
+	if started {
+		t.Fatal("maintenance stop should keep the runtime queue paused")
+	}
+}
+
 func TestRuntimeSupervisorStartDoesNotHydrateStoppedScroll(t *testing.T) {
 	store := newTestStateStore(t)
 	runtimeScroll := &domain.RuntimeScroll{
@@ -919,7 +934,7 @@ func TestRuntimeSupervisorEnsureDoesNotRetryExistingError(t *testing.T) {
 		Artifact:   "registry.local/invalid:1.0",
 		Root:       store.Root("invalid-scroll"),
 		ScrollName: "invalid-scroll",
-		ScrollYAML: cachedScrollYAML("start"),
+		ScrollYAML: updatedScrollYAML("backup-worker"),
 		Status:     domain.RuntimeScrollStatusError,
 		LastError:  "procedure field mode is unsupported",
 		Procedures: domain.ProcedureStatusMap{},
@@ -953,7 +968,7 @@ func TestRuntimeSupervisorEnsureUpdatesChangedArtifact(t *testing.T) {
 		Artifact:   "registry.local/lab:1.0",
 		Root:       root,
 		ScrollName: "old-scroll",
-		ScrollYAML: cachedScrollYAML("start"),
+		ScrollYAML: updatedScrollYAML("backup-recovery"),
 		Status:     domain.RuntimeScrollStatusRunning,
 		Procedures: domain.ProcedureStatusMap{
 			"start": {"start.0": {Status: domain.ScrollLockStatusDone}},
@@ -1015,7 +1030,7 @@ func TestRuntimeSupervisorUpdateUsesPullWorkerWhenAvailable(t *testing.T) {
 		Artifact:   "registry.local/lab:1.0",
 		Root:       root,
 		ScrollName: "old-scroll",
-		ScrollYAML: cachedScrollYAML("start"),
+		ScrollYAML: updatedScrollYAML("restore-recovery"),
 		Status:     domain.RuntimeScrollStatusStopped,
 		Procedures: domain.ProcedureStatusMap{},
 	}
@@ -1120,7 +1135,7 @@ func TestRuntimeSupervisorRestoreUsesPullWorkerResult(t *testing.T) {
 	if backend.stopRoot != root {
 		t.Fatalf("stop root = %s, want %s", backend.stopRoot, root)
 	}
-	if backend.action.Mode != ports.RuntimeWorkerModeRestore || backend.action.RootRef != root || backend.action.Artifact != "registry.local/backup:1.0" {
+	if backend.action.Mode != ports.RuntimeWorkerModeRestore || backend.action.RootRef != root || backend.action.Artifact != "registry.local/backup:1.0" || !backend.action.PreserveReleaseManifest {
 		t.Fatalf("worker action = %#v", backend.action)
 	}
 	if restored.Artifact != "registry.local/backup:1.0" || restored.ArtifactDigest != "sha256:restored" || restored.ScrollName != "restored-worker" {
@@ -1134,6 +1149,280 @@ func TestRuntimeSupervisorRestoreUsesPullWorkerResult(t *testing.T) {
 	}
 	if len(restored.Routing) != 1 || restored.Routing[0].PortName != "main" {
 		t.Fatalf("routing = %#v, want matching route preserved", restored.Routing)
+	}
+}
+
+func TestRuntimeSupervisorBackupStopsAndRestartsRunningScroll(t *testing.T) {
+	store := newTestStateStore(t)
+	runtimeScroll := &domain.RuntimeScroll{
+		ID:         "backup-worker",
+		Artifact:   "registry.local/lab:1.0",
+		Root:       "runtime://backup-worker",
+		ScrollName: "backup-worker",
+		ScrollYAML: cachedScrollYAML("start"),
+		Status:     domain.RuntimeScrollStatusRunning,
+		Procedures: domain.ProcedureStatusMap{},
+	}
+	if err := store.CreateScroll(runtimeScroll); err != nil {
+		t.Fatal(err)
+	}
+	backend := &fakeWorkerBackend{}
+	supervisor := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
+
+	backedUp, err := supervisor.Backup("backup-worker", "registry.local/backups:1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if backend.stopRoot != runtimeScroll.Root {
+		t.Fatalf("stop root = %q, want %q", backend.stopRoot, runtimeScroll.Root)
+	}
+	if backend.backupRoot != runtimeScroll.Root || backend.backupArtifact != "registry.local/backups:1" || !backend.backupPreserveReleaseManifest {
+		t.Fatalf("backup = root=%q artifact=%q preserve=%t", backend.backupRoot, backend.backupArtifact, backend.backupPreserveReleaseManifest)
+	}
+	if backedUp.Status != domain.RuntimeScrollStatusRunning {
+		t.Fatalf("backup status = %s, want running", backedUp.Status)
+	}
+}
+
+func TestRuntimeSupervisorBackupFailureRestartsPriorRunningScroll(t *testing.T) {
+	store := newTestStateStore(t)
+	runtimeScroll := &domain.RuntimeScroll{
+		ID:         "backup-recovery",
+		Artifact:   "registry.local/lab:1.0",
+		Root:       "runtime://backup-recovery",
+		ScrollName: "backup-recovery",
+		ScrollYAML: cachedScrollYAML("start"),
+		Status:     domain.RuntimeScrollStatusRunning,
+		Procedures: domain.ProcedureStatusMap{},
+	}
+	if err := store.CreateScroll(runtimeScroll); err != nil {
+		t.Fatal(err)
+	}
+	backend := &fakeWorkerBackend{backupErr: errors.New("registry unavailable")}
+	supervisor := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
+
+	if _, err := supervisor.Backup("backup-recovery", "registry.local/backups:1", nil); err == nil {
+		t.Fatal("backup error = nil, want registry error")
+	}
+	recovered, err := store.GetScroll("backup-recovery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.Status != domain.RuntimeScrollStatusRunning {
+		t.Fatalf("recovered status = %s, want running", recovered.Status)
+	}
+}
+
+func TestRuntimeSupervisorRestoreFailureRestartsPriorRunningScroll(t *testing.T) {
+	store := newTestStateStore(t)
+	runtimeScroll := &domain.RuntimeScroll{
+		ID:         "restore-recovery",
+		Artifact:   "registry.local/lab:1.0",
+		Root:       "runtime://restore-recovery",
+		ScrollName: "restore-recovery",
+		ScrollYAML: cachedScrollYAML("start"),
+		Status:     domain.RuntimeScrollStatusRunning,
+		Procedures: domain.ProcedureStatusMap{},
+	}
+	if err := store.CreateScroll(runtimeScroll); err != nil {
+		t.Fatal(err)
+	}
+	callbacks := NewWorkerCallbackManager()
+	backend := &fakeWorkerBackend{callbacks: callbacks, workerErr: errors.New("backup pull failed")}
+	supervisor := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
+	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
+
+	if _, err := supervisor.Restore("restore-recovery", "registry.local/backups:1", true, nil); err == nil {
+		t.Fatal("restore error = nil, want pull error")
+	}
+	recovered, err := store.GetScroll("restore-recovery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.Status != domain.RuntimeScrollStatusRunning {
+		t.Fatalf("recovered status = %s, want running", recovered.Status)
+	}
+}
+
+func TestRuntimeSupervisorUnsafeRestoreFailureKeepsRuntimeStopped(t *testing.T) {
+	store := newTestStateStore(t)
+	runtimeScroll := &domain.RuntimeScroll{
+		ID:         "restore-unsafe",
+		Artifact:   "registry.local/lab:1.0",
+		Root:       "runtime://restore-unsafe",
+		ScrollName: "restore-unsafe",
+		ScrollYAML: updatedScrollYAML("restore-unsafe"),
+		Status:     domain.RuntimeScrollStatusRunning,
+		Procedures: domain.ProcedureStatusMap{},
+	}
+	if err := store.CreateScroll(runtimeScroll); err != nil {
+		t.Fatal(err)
+	}
+	callbacks := NewWorkerCallbackManager()
+	backend := &fakeWorkerBackend{callbacks: callbacks, workerErr: errors.New("restore root may be partial: injected rollback failure")}
+	supervisor := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
+	supervisor.SetWorkerCallbacks(callbacks, "http://druid-cli:8083")
+
+	if _, err := supervisor.Restore("restore-unsafe", "registry.local/backups:1", true, nil); err == nil {
+		t.Fatal("restore error = nil, want unsafe restore failure")
+	}
+	updated, err := store.GetScroll("restore-unsafe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Status == domain.RuntimeScrollStatusRunning {
+		t.Fatalf("unsafe restore failure must not restart runtime: %#v", updated)
+	}
+	if !strings.Contains(updated.LastError, "restore root may be partial") {
+		t.Fatalf("last error = %q, want unsafe restore detail", updated.LastError)
+	}
+}
+
+func TestRuntimeSupervisorSerializesBackupWithStartAndEnsure(t *testing.T) {
+	store := newTestStateStore(t)
+	runtimeScroll := &domain.RuntimeScroll{
+		ID:         "serialized-operation",
+		Artifact:   "registry.local/lab:1.0",
+		Root:       "runtime://serialized-operation",
+		ScrollName: "serialized-operation",
+		ScrollYAML: updatedScrollYAML("serialized-operation"),
+		Status:     domain.RuntimeScrollStatusRunning,
+		Procedures: domain.ProcedureStatusMap{},
+	}
+	if err := store.CreateScroll(runtimeScroll); err != nil {
+		t.Fatal(err)
+	}
+	backupStarted := make(chan struct{})
+	backupRelease := make(chan struct{})
+	backend := &fakeWorkerBackend{backupStarted: backupStarted, backupRelease: backupRelease}
+	supervisor := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
+
+	backupDone := make(chan error, 1)
+	go func() {
+		_, err := supervisor.Backup(runtimeScroll.ID, "registry.local/backups:1", nil)
+		backupDone <- err
+	}()
+	select {
+	case <-backupStarted:
+	case <-time.After(time.Second):
+		t.Fatal("backup did not reach its stopped operation")
+	}
+
+	startDone := make(chan error, 1)
+	go func() {
+		_, err := supervisor.StartScroll(runtimeScroll.ID)
+		startDone <- err
+	}()
+	ensureDone := make(chan error, 1)
+	go func() {
+		_, err := supervisor.Ensure(EnsureOptions{Name: runtimeScroll.ID})
+		ensureDone <- err
+	}()
+	for name, done := range map[string]<-chan error{"start": startDone, "ensure": ensureDone} {
+		select {
+		case err := <-done:
+			t.Fatalf("%s completed during backup: %v", name, err)
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+
+	close(backupRelease)
+	for name, done := range map[string]<-chan error{"backup": backupDone, "start": startDone, "ensure": ensureDone} {
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("%s error = %v", name, err)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("%s did not complete after backup", name)
+		}
+	}
+}
+
+func TestRuntimeSupervisorStopKeepsRuntimeQueueQuiescent(t *testing.T) {
+	store := newTestStateStore(t)
+	runtimeScroll := &domain.RuntimeScroll{
+		ID:         "stop-quiescent",
+		Artifact:   "registry.local/lab:1.0",
+		Root:       "runtime://stop-quiescent",
+		ScrollName: "stop-quiescent",
+		ScrollYAML: updatedScrollYAML("stop-quiescent"),
+		Status:     domain.RuntimeScrollStatusRunning,
+		Procedures: domain.ProcedureStatusMap{},
+	}
+	if err := store.CreateScroll(runtimeScroll); err != nil {
+		t.Fatal(err)
+	}
+	var runs atomic.Int32
+	backend := &fakeWorkerBackend{runCommand: func(command ports.RuntimeCommand) (*int, error) {
+		runs.Add(1)
+		return nil, errors.New("run should not persist in test")
+	}}
+	supervisor := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
+	session, err := supervisor.sessionFor(runtimeScroll.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AutoStartServe(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(time.Second)
+	for runs.Load() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("runtime queue did not start")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	if _, err := supervisor.Stop(runtimeScroll.ID); err != nil {
+		t.Fatal(err)
+	}
+	count := runs.Load()
+	time.Sleep(100 * time.Millisecond)
+	if got := runs.Load(); got != count {
+		t.Fatalf("runtime queue restarted after stop: runs=%d, want %d", got, count)
+	}
+}
+
+func TestRuntimeSupervisorStartResumesMaintenanceStoppedQueue(t *testing.T) {
+	store := newTestStateStore(t)
+	runtimeScroll := &domain.RuntimeScroll{
+		ID:         "resume-maintenance",
+		Artifact:   "registry.local/lab:1.0",
+		Root:       "runtime://resume-maintenance",
+		ScrollName: "resume-maintenance",
+		ScrollYAML: updatedScrollYAML("resume-maintenance"),
+		Status:     domain.RuntimeScrollStatusRunning,
+		Procedures: domain.ProcedureStatusMap{},
+	}
+	if err := store.CreateScroll(runtimeScroll); err != nil {
+		t.Fatal(err)
+	}
+	var runs atomic.Int32
+	backend := &fakeWorkerBackend{runCommand: func(command ports.RuntimeCommand) (*int, error) {
+		runs.Add(1)
+		return nil, errors.New("run should not persist in test")
+	}}
+	supervisor := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
+	session, err := supervisor.sessionFor(runtimeScroll.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.StopRuntimeForMaintenance(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := supervisor.StartScroll(runtimeScroll.ID); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(time.Second)
+	for runs.Load() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("start did not resume the maintenance-stopped runtime queue")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
 	}
 }
 
@@ -1374,22 +1663,28 @@ func newRuntimeSessionForTest(t *testing.T, commands map[string]domain.LockStatu
 }
 
 type fakeWorkerBackend struct {
-	callbacks               *WorkerCallbackManager
-	procedureStatusObserver ports.ProcedureStatusObserver
-	procedureStatusUpdates  []ports.ProcedureStatusUpdate
-	scrollYAML              string
-	digest                  string
-	workerErr               error
-	workerDone              <-chan error
-	action                  ports.RuntimeWorkerAction
-	stopRoot                string
-	deleteRoot              string
-	spawnCount              int
-	runCommand              func(ports.RuntimeCommand) (*int, error)
-	stopRuntime             func(string) error
-	console                 io.ReadWriteCloser
-	consoleRoot             string
-	consoleProcedure        string
+	callbacks                     *WorkerCallbackManager
+	procedureStatusObserver       ports.ProcedureStatusObserver
+	procedureStatusUpdates        []ports.ProcedureStatusUpdate
+	scrollYAML                    string
+	digest                        string
+	workerErr                     error
+	workerDone                    <-chan error
+	action                        ports.RuntimeWorkerAction
+	stopRoot                      string
+	deleteRoot                    string
+	backupRoot                    string
+	backupArtifact                string
+	backupPreserveReleaseManifest bool
+	backupErr                     error
+	backupStarted                 chan struct{}
+	backupRelease                 <-chan struct{}
+	spawnCount                    int
+	runCommand                    func(ports.RuntimeCommand) (*int, error)
+	stopRuntime                   func(string) error
+	console                       io.ReadWriteCloser
+	consoleRoot                   string
+	consoleProcedure              string
 }
 
 func newRuntimeSupervisorForTest(t *testing.T, store ports.RuntimeScrollStore, manager *coreservices.RuntimeScrollManager, factory ports.RuntimeBackendFactory) *RuntimeSupervisor {
@@ -1474,8 +1769,17 @@ func (f *fakeWorkerBackend) DeleteRuntime(root string, purgeData bool) error {
 	return nil
 }
 
-func (f *fakeWorkerBackend) BackupRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential) error {
-	return nil
+func (f *fakeWorkerBackend) BackupRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential, preserveReleaseManifest bool) error {
+	f.backupRoot = root
+	f.backupArtifact = artifact
+	f.backupPreserveReleaseManifest = preserveReleaseManifest
+	if f.backupStarted != nil {
+		close(f.backupStarted)
+	}
+	if f.backupRelease != nil {
+		<-f.backupRelease
+	}
+	return f.backupErr
 }
 
 func (f *fakeWorkerBackend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorkerAction) (<-chan error, error) {
