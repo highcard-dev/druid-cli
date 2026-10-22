@@ -30,15 +30,14 @@ func (s *RuntimeSupervisor) runPullWorker(ctx context.Context, runtimeService po
 	defer cancel()
 	callbackURL := s.workerCallbackURL + "/internal/v1/workers/" + runtimeID + "/complete"
 	action := ports.RuntimeWorkerAction{
-		Mode:                    mode,
-		RuntimeID:               runtimeID,
-		Artifact:                artifact,
-		Storage:                 storage,
-		RootRef:                 root,
-		MountPath:               "/scroll",
-		CallbackURL:             callbackURL,
-		PreserveReleaseManifest: mode == ports.RuntimeWorkerModeRestore,
-		RegistryCredentials:     registryCredentials,
+		Mode:                mode,
+		RuntimeID:           runtimeID,
+		Artifact:            artifact,
+		Storage:             storage,
+		RootRef:             root,
+		MountPath:           "/scroll",
+		CallbackURL:         callbackURL,
+		RegistryCredentials: registryCredentials,
 	}
 	workerDone, err := runtimeService.SpawnPullWorker(waitCtx, action)
 	if err != nil {
@@ -87,20 +86,4 @@ func resolveArtifactMinDisk(artifact string, registryCredentials []domain.Regist
 		return ""
 	}
 	return info.MinDisk
-}
-
-func resolveArtifactDigest(artifact string, registryCredentials []domain.RegistryCredential) string {
-	if artifact == "" {
-		return ""
-	}
-	if _, err := os.Stat(artifact); err == nil {
-		return ""
-	}
-	oci := registry.NewOciClient(registry.NewCredentialStore(registryCredentials))
-	digest, err := oci.ResolveDigest(artifact)
-	if err != nil {
-		logger.Log().Warn("Unable to resolve artifact digest", zap.String("artifact", artifact), zap.Error(err))
-		return ""
-	}
-	return digest
 }

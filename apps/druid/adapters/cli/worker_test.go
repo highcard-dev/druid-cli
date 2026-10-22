@@ -6,15 +6,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
-	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/spf13/cobra"
-	"oras.land/oras-go/v2/registry/remote"
 )
 
 func TestWorkerPullCommandUsesRuntimeIDOnly(t *testing.T) {
@@ -36,9 +35,26 @@ func TestWorkerPullCommandRequiresRuntimeID(t *testing.T) {
 	}
 }
 
-func TestWorkerPullCommandSupportsReleaseManifestPreservation(t *testing.T) {
-	if flag := WorkerPullCommand.Flags().Lookup("preserve-release-manifest"); flag == nil {
-		t.Fatal("worker pull should expose --preserve-release-manifest")
+func TestWorkerPullCommandAcceptsLegacyManifestFlagWithoutChangingAction(t *testing.T) {
+	flag := WorkerPullCommand.Flags().Lookup("preserve-release-manifest")
+	if flag == nil || !flag.Hidden {
+		t.Fatal("worker pull should accept a hidden legacy --preserve-release-manifest flag")
+	}
+	previousValue, previousChanged := flag.Value.String(), flag.Changed
+	t.Cleanup(func() {
+		if err := flag.Value.Set(previousValue); err != nil {
+			t.Fatal(err)
+		}
+		flag.Changed = previousChanged
+	})
+	before := workerPullAction
+	for _, arg := range []string{"--preserve-release-manifest", "--preserve-release-manifest=false"} {
+		if err := WorkerPullCommand.ParseFlags([]string{arg}); err != nil {
+			t.Fatalf("legacy flag should still be accepted: %v", err)
+		}
+		if !reflect.DeepEqual(workerPullAction, before) {
+			t.Fatal("legacy flag must not change worker action")
+		}
 	}
 }
 
@@ -143,7 +159,7 @@ func TestWorkerUpdatePreservesRemovedProtectedChunk(t *testing.T) {
 			mustWrite(t, filepath.Join(root, "data", "world", "save.dat"), "user world")
 			mustWrite(t, filepath.Join(root, "data", "obsolete.txt"), "old release")
 			mustWrite(t, filepath.Join(candidate, "scroll.yaml"), "name: example\n")
-			if err := pullWorkerUpdate(root, candidate, nil); err != nil {
+			if err := pullWorkerUpdate(root, candidate, nil, nil); err != nil {
 				t.Fatal(err)
 			}
 			assertFile(t, filepath.Join(root, "data", "world", "save.dat"), "user world")
@@ -157,6 +173,7 @@ func TestWorkerUpdatePreservesRemovedProtectedChunk(t *testing.T) {
 func TestWorkerRestoreStagesBeforeReplacingRoot(t *testing.T) {
 	root := t.TempDir()
 	mustWrite(t, filepath.Join(root, "scroll.yaml"), "name: old\n")
+	mustWrite(t, filepath.Join(root, "manifest.json"), `{"digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}`)
 	mustWrite(t, filepath.Join(root, "data", "logs", "latest.log"), "old")
 	mustWrite(t, filepath.Join(root, "data", "old-only.txt"), "old")
 
@@ -166,9 +183,42 @@ func TestWorkerRestoreStagesBeforeReplacingRoot(t *testing.T) {
 	}
 
 	assertFile(t, filepath.Join(root, "scroll.yaml"), "name: restored\n")
+	assertFile(t, filepath.Join(root, "manifest.json"), `{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)
+	result := readInstalledRelease(root, true)
+	if result.Error != "" || result.ArtifactDigest != "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" || result.ScrollYAML != "name: restored\n" {
+		t.Fatalf("restored identity must describe the preserved release: %#v", result)
+	}
 	assertFile(t, filepath.Join(root, "data", "logs", "latest.log"), "restored")
 	if _, err := os.Stat(filepath.Join(root, "data", "old-only.txt")); !os.IsNotExist(err) {
 		t.Fatalf("old root contents should be removed before restore, stat err = %v", err)
+	}
+}
+
+func TestWorkerRestorePreservesRootWhenPullFails(t *testing.T) {
+	root := t.TempDir()
+	original := map[string]string{
+		"scroll.yaml":          "name: original\n",
+		"manifest.json":        `{"digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}`,
+		"data/logs/latest.log": "original log",
+		"data/old-only.txt":    "original data",
+	}
+	for path, content := range original {
+		mustWrite(t, filepath.Join(root, path), content)
+	}
+	wantErr := errors.New("injected pull failure")
+	err := pullWorkerRestore(root, "registry.local/backup:1", fakeRestoreOCI{t: t, err: wantErr})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("restore error = %v, want %v", err, wantErr)
+	}
+	for path, content := range original {
+		assertFile(t, filepath.Join(root, path), content)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("restore left unexpected root entries: %v", entries)
 	}
 }
 
@@ -278,7 +328,9 @@ func runWorkerPullForSkipPathTest(t *testing.T, root string) map[string]bool {
 		t.Fatal(err)
 	}
 	result := map[string]bool{}
-	collectSkipUpdatePaths(result, "", scroll.Chunks)
+	if err := collectSkipUpdatePaths(result, filepath.Join(root, domain.RuntimeDataDir), "", scroll.Chunks); err != nil {
+		t.Fatal(err)
+	}
 	return result
 }
 
@@ -304,25 +356,8 @@ func assertFile(t *testing.T, path string, want string) {
 }
 
 type fakeRestoreOCI struct {
-	t *testing.T
-}
-
-func (fakeRestoreOCI) GetRepo(string) (*remote.Repository, error) {
-	return nil, nil
-}
-
-func (fakeRestoreOCI) Push(string, string, string, map[string]string, bool, *domain.File) (v1.Descriptor, error) {
-	return v1.Descriptor{}, nil
-}
-
-func (f fakeRestoreOCI) Pull(dir string, artifact string) error {
-	return f.PullSelective(dir, artifact, true, nil)
-}
-
-func (f fakeRestoreOCI) PullSelective(dir string, artifact string, includeData bool, progress *domain.SnapshotProgress) error {
-	mustWrite(f.t, filepath.Join(dir, "scroll.yaml"), "name: restored\n")
-	mustWrite(f.t, filepath.Join(dir, "data", "logs", "latest.log"), "restored")
-	return nil
+	t   *testing.T
+	err error
 }
 
 func (f fakeRestoreOCI) PullSelectiveWithOptions(dir string, artifact string, includeData bool, progress *domain.SnapshotProgress, options registry.TransferOptions) error {
@@ -332,25 +367,5 @@ func (f fakeRestoreOCI) PullSelectiveWithOptions(dir string, artifact string, in
 	mustWrite(f.t, filepath.Join(dir, "scroll.yaml"), "name: restored\n")
 	mustWrite(f.t, filepath.Join(dir, "manifest.json"), `{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)
 	mustWrite(f.t, filepath.Join(dir, "data", "logs", "latest.log"), "restored")
-	return nil
-}
-
-func (fakeRestoreOCI) FetchFile(string, string) ([]byte, error) {
-	return nil, os.ErrNotExist
-}
-
-func (fakeRestoreOCI) ValidateCredentials(string, string, string) error {
-	return nil
-}
-
-func (fakeRestoreOCI) ResolveDigest(string) (string, error) {
-	return "sha256:restored", nil
-}
-
-func (fakeRestoreOCI) ResolveAnnotationInfo(string) (domain.AnnotationInfo, error) {
-	return domain.AnnotationInfo{}, nil
-}
-
-func (fakeRestoreOCI) CanUpdateTag(v1.Descriptor, string, string) (bool, error) {
-	return false, nil
+	return f.err
 }

@@ -163,16 +163,16 @@ const (
 )
 
 type RuntimeWorkerAction struct {
-	Mode                    RuntimeWorkerMode
-	RuntimeID               string
-	Artifact                string
-	Storage                 string
-	RootRef                 string
-	MountPath               string
-	CallbackURL             string
-	TokenFile               string
-	PreserveReleaseManifest bool
-	RegistryCredentials     []domain.RegistryCredential
+	Mode                RuntimeWorkerMode
+	RuntimeID           string
+	Artifact            string
+	Storage             string
+	RootRef             string
+	MountPath           string
+	CallbackURL         string
+	TokenFile           string
+	NewDataOwner        string
+	RegistryCredentials []domain.RegistryCredential
 }
 
 type RuntimeWorkerResult struct {

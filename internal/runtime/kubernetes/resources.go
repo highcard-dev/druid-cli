@@ -55,7 +55,9 @@ if [ -n "${DRUID_RUNTIME_REGISTRY_CONFIG_JSON:-}" ]; then
 else
   druid "$@"
 fi
-chown -R 1000:1000 "$DRUID_WORKER_ROOT"`
+if [ "$DRUID_WORKER_MODE" != "update" ]; then
+  chown -R 1000:1000 "$DRUID_WORKER_ROOT"
+fi`
 )
 
 const (
@@ -85,8 +87,8 @@ func workerPullJobSpec(namespace string, jobName string, pvc string, image strin
 		"--root", action.MountPath,
 		"--callback-url", action.CallbackURL,
 	}
-	if action.PreserveReleaseManifest {
-		command = append(command, "--preserve-release-manifest")
+	if action.Mode == ports.RuntimeWorkerModeUpdate {
+		command = append(command, "--new-data-owner", "1000:1000")
 	}
 	if action.Mode == ports.RuntimeWorkerModeInspect {
 		// No credential shell or recursive ownership changes for read-only inspection.
@@ -112,6 +114,7 @@ func workerPullJobSpec(namespace string, jobName string, pvc string, image strin
 	container.Env = append(container.Env,
 		corev1.EnvVar{Name: "DRUID_WORKER_TOKEN_FILE", Value: action.TokenFile},
 		corev1.EnvVar{Name: workerPullRootEnvName, Value: action.MountPath},
+		corev1.EnvVar{Name: "DRUID_WORKER_MODE", Value: string(action.Mode)},
 	)
 	if registryConfigSecret != "" {
 		container.Env = append(container.Env, corev1.EnvVar{

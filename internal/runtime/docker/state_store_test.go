@@ -1,11 +1,55 @@
 package docker
 
 import (
+	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 )
+
+func TestStateStoreMigratesAndPersistsInstalledReleaseState(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Model the previous schema without the confirmation marker.
+	_, err = db.Exec(strings.Replace(scrollsTableSQL, "installed_release_state TEXT NOT NULL DEFAULT '',", "", 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`INSERT INTO scrolls (id, artifact, artifact_digest, root, scroll_name, status, created_at, updated_at) VALUES ('legacy', 'backup:v1', 'old-digest', 'root', 'scroll', 'stopped', '', '')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewStateStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := store.GetScroll("legacy")
+	if err != nil || legacy.InstalledReleaseState != "" || legacy.ArtifactDigest != "old-digest" {
+		t.Fatalf("migration = %#v, %v", legacy, err)
+	}
+	for _, state := range []domain.InstalledReleaseState{domain.InstalledReleasePending, domain.InstalledReleaseReady} {
+		legacy.InstalledReleaseState = state
+		if err := store.UpdateScroll(legacy); err != nil {
+			t.Fatal(err)
+		}
+		got, err := store.GetScroll(legacy.ID)
+		if err != nil || got.InstalledReleaseState != state {
+			t.Fatalf("state = %#v, %v", got, err)
+		}
+		all, err := store.ListScrolls()
+		if err != nil || len(all) != 1 || all[0].InstalledReleaseState != state {
+			t.Fatalf("listed state = %#v, %v", all, err)
+		}
+	}
+}
 
 func TestStateStorePersistsProcedureStatuses(t *testing.T) {
 	store, err := NewStateStore(t.TempDir())

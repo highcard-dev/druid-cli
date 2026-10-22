@@ -16,6 +16,7 @@ import (
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	coreservices "github.com/highcard-dev/daemon/internal/core/services"
 	"github.com/highcard-dev/daemon/internal/core/services/registry"
+	"github.com/highcard-dev/daemon/internal/utils"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -52,7 +53,10 @@ func init() {
 	WorkerPullCommand.Flags().StringVar(&workerPullAction.MountPath, "root", "/scroll", "Mounted runtime root path")
 	WorkerPullCommand.Flags().StringVar(&workerPullAction.CallbackURL, "callback-url", "", "Daemon worker callback URL")
 	WorkerPullCommand.Flags().StringVar(&workerPullAction.TokenFile, "callback-token-file", "", "Projected ServiceAccount token file for callbacks")
-	WorkerPullCommand.Flags().BoolVar(&workerPullAction.PreserveReleaseManifest, "preserve-release-manifest", false, "Restore the release manifest.json carried by a backup")
+	WorkerPullCommand.Flags().StringVar(&workerPullAction.NewDataOwner, "new-data-owner", "", "Default user[:group] for new materialized content; protected paths keep their owners")
+	// Older daemons pass this flag; restore mode always preserves the manifest.
+	WorkerPullCommand.Flags().Bool("preserve-release-manifest", false, "Deprecated compatibility flag; restore always preserves the release manifest")
+	WorkerPullCommand.Flags().MarkHidden("preserve-release-manifest")
 	WorkerPullCommand.Flags().StringVar(&workerPullMode, "mode", string(ports.RuntimeWorkerModeCreate), "Worker mode: create, update, restore, or inspect")
 	WorkerPullCommand.MarkFlagRequired("artifact")
 	WorkerPullCommand.MarkFlagRequired("runtime-id")
@@ -71,14 +75,15 @@ func runWorkerPull(action ports.RuntimeWorkerAction) ports.RuntimeWorkerResult {
 	if action.Mode == ports.RuntimeWorkerModeInspect {
 		return inspectInstalledRelease(root)
 	}
-	oci := registry.NewOciClient(loadWorkerRegistryStore())
-	digest, err := oci.ResolveDigest(action.Artifact)
-	if err == nil {
-		result.ArtifactDigest = digest
+	owner, err := resolveWorkerDataOwner(action.NewDataOwner)
+	if err != nil {
+		result.Error = err.Error()
+		return result
 	}
+	oci := registry.NewOciClient(loadWorkerRegistryStore())
 	switch action.Mode {
 	case ports.RuntimeWorkerModeUpdate:
-		err = pullWorkerUpdate(root, action.Artifact, oci)
+		err = pullWorkerUpdate(root, action.Artifact, oci, owner)
 	case ports.RuntimeWorkerModeRestore:
 		err = pullWorkerRestore(root, action.Artifact, oci)
 	default:
@@ -88,6 +93,18 @@ func runWorkerPull(action ports.RuntimeWorkerAction) ports.RuntimeWorkerResult {
 		result.Error = err.Error()
 		return result
 	}
+	// Read the installed result, not the source tag (or backup artifact digest).
+	// Local directory Scrolls may have no release descriptor.
+	_, localErr := os.Stat(action.Artifact)
+	return readInstalledRelease(root, localErr != nil || action.Mode == ports.RuntimeWorkerModeRestore)
+}
+
+func inspectInstalledRelease(root string) ports.RuntimeWorkerResult {
+	return readInstalledRelease(root, true)
+}
+
+func readInstalledRelease(root string, requireDescriptor bool) ports.RuntimeWorkerResult {
+	result := ports.RuntimeWorkerResult{}
 	scrollYAML, err := os.ReadFile(filepath.Join(root, "scroll.yaml"))
 	if err != nil {
 		result.Error = err.Error()
@@ -98,14 +115,10 @@ func runWorkerPull(action ports.RuntimeWorkerAction) ports.RuntimeWorkerResult {
 		return result
 	}
 	result.ScrollYAML = string(scrollYAML)
-	return result
-}
-
-// Inspection reads the installed descriptor from the volume, never from a
-// mutable registry tag or a separately persisted release baseline.
-func inspectInstalledRelease(root string) ports.RuntimeWorkerResult {
-	result := ports.RuntimeWorkerResult{}
 	file, err := os.Open(filepath.Join(root, "manifest.json"))
+	if os.IsNotExist(err) && !requireDescriptor {
+		return result
+	}
 	if err != nil {
 		result.Error = err.Error()
 		return result
@@ -120,17 +133,7 @@ func inspectInstalledRelease(root string) ports.RuntimeWorkerResult {
 		result.Error = "installed release descriptor requires a valid sha256 digest"
 		return result
 	}
-	yaml, err := os.ReadFile(filepath.Join(root, "scroll.yaml"))
-	if err != nil {
-		result.Error = err.Error()
-		return result
-	}
-	if _, err := domain.NewScrollFromBytes(root, yaml); err != nil {
-		result.Error = err.Error()
-		return result
-	}
 	result.ArtifactDigest = descriptor.Digest.String()
-	result.ScrollYAML = string(yaml)
 	return result
 }
 
@@ -179,7 +182,7 @@ func pullWorkerCreate(root string, artifact string, oci ports.OciRegistryInterfa
 	return oci.PullSelective(root, artifact, true, nil)
 }
 
-func pullWorkerUpdate(root string, artifact string, oci ports.OciRegistryInterface) error {
+func pullWorkerUpdate(root string, artifact string, oci ports.OciRegistryInterface, owner *workerDataOwner) error {
 	tmp, err := os.MkdirTemp("", "druid-worker-update-*")
 	if err != nil {
 		return err
@@ -197,7 +200,6 @@ func pullWorkerUpdate(root string, artifact string, oci ports.OciRegistryInterfa
 		return err
 	}
 	skipData := map[string]bool{}
-	collectSkipUpdatePaths(skipData, "", scroll.Chunks)
 	installedYAML, err := os.ReadFile(filepath.Join(root, "scroll.yaml"))
 	if err != nil {
 		return fmt.Errorf("read installed update protection: %w", err)
@@ -208,7 +210,15 @@ func pullWorkerUpdate(root string, artifact string, oci ports.OciRegistryInterfa
 	}
 	// Honor both sides of this transition, including protected chunks removed
 	// by the candidate. Do not rewrite the candidate's immutable Scroll metadata.
-	collectSkipUpdatePaths(skipData, "", installed.Chunks)
+	// Expand both declarations against both trees: preserve removed matches and
+	// preserve absence when a candidate introduces a protected matching path.
+	for _, base := range []string{root, tmp} {
+		for _, chunks := range [][]*domain.Chunks{installed.Chunks, scroll.Chunks} {
+			if err := collectSkipUpdatePaths(skipData, filepath.Join(base, domain.RuntimeDataDir), "", chunks); err != nil {
+				return err
+			}
+		}
+	}
 	if err := os.MkdirAll(root, 0755); err != nil {
 		return err
 	}
@@ -218,6 +228,9 @@ func pullWorkerUpdate(root string, artifact string, oci ports.OciRegistryInterfa
 	}
 	defer os.RemoveAll(stage)
 	if err := copyPath(tmp, stage); err != nil {
+		return err
+	}
+	if err := applyWorkerDataOwner(stage, owner); err != nil {
 		return err
 	}
 	if err := preserveSkippedUpdateData(root, stage, skipData); err != nil {
@@ -254,7 +267,7 @@ func preserveSkippedUpdateData(root string, stage string, skipData map[string]bo
 		} else if err != nil {
 			return err
 		}
-		if err := copyPath(source, target); err != nil {
+		if err := utils.CopyPath(source, target, true); err != nil {
 			return err
 		}
 	}
@@ -280,7 +293,11 @@ func rejectSymlinkParents(root, relative string) error {
 	return nil
 }
 
-func pullWorkerRestore(root string, artifact string, oci ports.OciRegistryInterface) error {
+type restoreArtifactPuller interface {
+	PullSelectiveWithOptions(string, string, bool, *domain.SnapshotProgress, registry.TransferOptions) error
+}
+
+func pullWorkerRestore(root string, artifact string, oci restoreArtifactPuller) error {
 	if err := os.MkdirAll(root, 0755); err != nil {
 		return err
 	}
@@ -289,13 +306,7 @@ func pullWorkerRestore(root string, artifact string, oci ports.OciRegistryInterf
 		return err
 	}
 	defer os.RemoveAll(stage)
-	puller, ok := oci.(interface {
-		PullSelectiveWithOptions(string, string, bool, *domain.SnapshotProgress, registry.TransferOptions) error
-	})
-	if !ok {
-		return fmt.Errorf("OCI registry does not support preserve-release-manifest")
-	}
-	if err := puller.PullSelectiveWithOptions(stage, artifact, true, nil, registry.TransferOptions{PreserveReleaseManifest: true}); err != nil {
+	if err := oci.PullSelectiveWithOptions(stage, artifact, true, nil, registry.TransferOptions{PreserveReleaseManifest: true}); err != nil {
 		return err
 	}
 	return replaceRestoredRoot(root, stage)
@@ -385,20 +396,29 @@ func replaceRestoredRootWithRename(root string, stage string, rename func(string
 	return nil
 }
 
-func collectSkipUpdatePaths(out map[string]bool, parent string, chunks []*domain.Chunks) {
+func collectSkipUpdatePaths(out map[string]bool, dataDir string, parent string, chunks []*domain.Chunks) error {
 	for _, chunk := range chunks {
 		if chunk == nil {
 			continue
 		}
-		chunkPath := filepath.ToSlash(filepath.Clean(filepath.Join(parent, filepath.FromSlash(chunk.Path))))
-		if chunkPath == "." {
-			chunkPath = ""
+		paths := []string{filepath.ToSlash(filepath.Clean(parent))}
+		if chunk.Path != "." {
+			var err error
+			paths, err = utils.ExpandChunkPaths(dataDir, parent, chunk.Path)
+			if err != nil {
+				return fmt.Errorf("resolve skip_update chunk %q: %w", chunk.Name, err)
+			}
 		}
-		if chunk.SkipUpdate {
-			out[chunkPath] = true
+		for _, chunkPath := range paths {
+			if chunk.SkipUpdate {
+				out[chunkPath] = true
+			}
+			if err := collectSkipUpdatePaths(out, dataDir, chunkPath, chunk.Chunks); err != nil {
+				return err
+			}
 		}
-		collectSkipUpdatePaths(out, chunkPath, chunk.Chunks)
 	}
+	return nil
 }
 
 func copyPath(src string, dst string) error {

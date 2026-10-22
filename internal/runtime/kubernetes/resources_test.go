@@ -443,19 +443,18 @@ func TestProcedureWorkloadsLabelEveryExpectedPort(t *testing.T) {
 
 func TestWorkerPullJobSpecRunsDruidWorkerPull(t *testing.T) {
 	action := ports.RuntimeWorkerAction{
-		Mode:                    ports.RuntimeWorkerModeUpdate,
-		RuntimeID:               "deployment-123",
-		Artifact:                "registry.local/lab:2.0",
-		MountPath:               "/scroll",
-		CallbackURL:             "http://druid-cli:8083/internal/v1/workers/deployment-123/complete",
-		TokenFile:               "token-file",
-		PreserveReleaseManifest: true,
+		Mode:        ports.RuntimeWorkerModeUpdate,
+		RuntimeID:   "deployment-123",
+		Artifact:    "registry.local/lab:2.0",
+		MountPath:   "/scroll",
+		CallbackURL: "http://druid-cli:8083/internal/v1/workers/deployment-123/complete",
+		TokenFile:   "token-file",
 	}
 	job := workerPullJobSpec("druid", "worker-pull", "runtime-pvc", "druid-cli:test", action, "pull-secret", "runtime-registry", true, "druid-cli")
 	assertFinishedJobTTL(t, job)
 	container := job.Spec.Template.Spec.Containers[0]
 	command := strings.Join(container.Command, " ")
-	for _, want := range []string{"druid --config /tmp/druid-registry.json", "worker pull", "--mode update", "--runtime-id deployment-123", "--callback-url", "--preserve-release-manifest", "chown -R 1000:1000"} {
+	for _, want := range []string{"druid --config /tmp/druid-registry.json", "worker pull", "--mode update", "--runtime-id deployment-123", "--callback-url", "--new-data-owner 1000:1000", `if [ "$DRUID_WORKER_MODE" != "update" ]; then`} {
 		if !strings.Contains(command, want) {
 			t.Fatalf("command = %#v, want %s", container.Command, want)
 		}
@@ -472,6 +471,9 @@ func TestWorkerPullJobSpecRunsDruidWorkerPull(t *testing.T) {
 	}
 	if env[workerPullRootEnvName] != "/scroll" {
 		t.Fatalf("%s = %q, want /scroll", workerPullRootEnvName, env[workerPullRootEnvName])
+	}
+	if env["DRUID_WORKER_MODE"] != "update" {
+		t.Fatalf("update must skip recursive ownership changes: %#v", container.Env)
 	}
 	if container.SecurityContext == nil || container.SecurityContext.RunAsUser == nil || *container.SecurityContext.RunAsUser != 0 {
 		t.Fatalf("worker pull must run as root to repair PVC ownership, securityContext = %#v", container.SecurityContext)

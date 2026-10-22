@@ -113,7 +113,19 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 	if err := b.pullImage(ctx, b.config.WorkerImage); err != nil {
 		return nil, err
 	}
-	if action.Mode != ports.RuntimeWorkerModeInspect {
+	workerUser := ""
+	if action.Mode == ports.RuntimeWorkerModeUpdate {
+		// Staging protected data must retain its original ownership and modes.
+		// Do not chmod the installed tree before it has been copied.
+		image, _, err := b.client.ImageInspectWithRaw(ctx, b.config.WorkerImage)
+		if err != nil {
+			return nil, err
+		}
+		if image.Config != nil {
+			action.NewDataOwner = image.Config.User
+		}
+		workerUser = "0"
+	} else if action.Mode != ports.RuntimeWorkerModeInspect {
 		if err := b.prepareWritableRoot(ctx, root); err != nil {
 			return nil, err
 		}
@@ -153,6 +165,7 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 		Image:      b.config.WorkerImage,
 		Entrypoint: []string{"druid"},
 		Cmd:        workerPullCommand(action, artifact),
+		User:       workerUser,
 		Env: dockerWorkerEnv([]string{
 			"DRUID_WORKER_TOKEN_FILE=" + action.TokenFile,
 			"DRUID_RUNTIME_REGISTRY_CONFIG_JSON=" + string(registryConfig),
@@ -204,8 +217,8 @@ func workerPullCommand(action ports.RuntimeWorkerAction, artifact string) []stri
 		"--root", action.MountPath,
 		"--callback-url", action.CallbackURL,
 	}
-	if action.PreserveReleaseManifest {
-		command = append(command, "--preserve-release-manifest")
+	if action.Mode == ports.RuntimeWorkerModeUpdate && action.NewDataOwner != "" {
+		command = append(command, "--new-data-owner", action.NewDataOwner)
 	}
 	return command
 }

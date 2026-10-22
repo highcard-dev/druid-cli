@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"regexp"
-	"strings"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
@@ -39,11 +38,10 @@ func (s *RuntimeSupervisor) Update(id string, artifact string, registryCredentia
 			return nil, ErrInstalledReleaseChanged
 		}
 	}
-	knownDigest := artifact[strings.LastIndex(artifact, "@")+1:]
-	return s.updateExistingScroll(runtimeScroll, artifact, knownDigest, registryCredentials, true)
+	return s.updateExistingScroll(runtimeScroll, artifact, registryCredentials)
 }
 
-func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeScroll, artifact string, knownDigest string, registryCredentials []domain.RegistryCredential, restartIfRunning bool) (*domain.RuntimeScroll, error) {
+func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeScroll, artifact string, registryCredentials []domain.RegistryCredential) (*domain.RuntimeScroll, error) {
 	wasRunning := runtimeScroll.Status == domain.RuntimeScrollStatusRunning
 	existingRouting := make([]domain.RuntimeRouteAssignment, len(runtimeScroll.Routing))
 	copy(existingRouting, runtimeScroll.Routing)
@@ -72,6 +70,10 @@ func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeSc
 		_ = s.store.UpdateScroll(runtimeScroll)
 		return nil, err
 	}
+	runtimeScroll.InstalledReleaseState = domain.InstalledReleasePending
+	if err := s.store.UpdateScroll(runtimeScroll); err != nil {
+		return nil, err
+	}
 	materialized, err := s.runPullWorker(context.Background(), s.runtimeBackend, ports.RuntimeWorkerModeUpdate, runtimeScroll.ID, artifact, runtimeScroll.Root, registryCredentials, "")
 	if err != nil {
 		runtimeScroll.Status = domain.RuntimeScrollStatusError
@@ -92,9 +94,6 @@ func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeSc
 		runtimeScroll.Artifact = artifact
 	}
 	runtimeScroll.ArtifactDigest = materialized.ArtifactDigest
-	if runtimeScroll.ArtifactDigest == "" {
-		runtimeScroll.ArtifactDigest = knownDigest
-	}
 	runtimeScroll.Root = materialized.Root
 	runtimeScroll.ScrollName = scroll.Name
 	runtimeScroll.ScrollYAML = string(materialized.ScrollYAML)
@@ -107,6 +106,7 @@ func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeSc
 		return nil, err
 	}
 	runtimeScroll.Routing = preserveRoutingAssignments(existingRouting, ports)
+	runtimeScroll.InstalledReleaseState = domain.InstalledReleaseReady
 	runtimeScroll.LastError = ""
 	if wasRunning || runtimeScroll.Status == domain.RuntimeScrollStatusStopped {
 		runtimeScroll.Status = domain.RuntimeScrollStatusStopped
@@ -119,7 +119,7 @@ func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeSc
 	if err := s.publishDeclaredPrivateUI(runtimeScroll, scroll); err != nil {
 		return nil, err
 	}
-	if wasRunning && restartIfRunning {
+	if wasRunning {
 		return s.startScroll(runtimeScroll.ID)
 	}
 	return s.store.GetScroll(runtimeScroll.ID)

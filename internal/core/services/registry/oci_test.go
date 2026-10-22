@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +12,52 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	ocidigest "github.com/opencontainers/go-digest"
+	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
+
+func TestPushIdenticalReleaseHasStableDigest(t *testing.T) {
+	folder := t.TempDir()
+	if err := os.WriteFile(filepath.Join(folder, "scroll.yaml"), []byte("name: fixture\napp_version: '1.0.0'\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(folder, ".meta"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(folder, ".meta", "en-US.md"), []byte("---\nname: Fixture\n---\nFixture.\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	srv := fakeRegistry(t)
+	client := &OciClient{credentialStore: NewCredentialStore(nil), plainHTTP: true}
+	repo := strings.TrimPrefix(srv.URL, "http://") + "/test/reproducible"
+	var first v1.Descriptor
+	var firstLayers []string
+	for i := 0; i < 32; i++ {
+		tag := fmt.Sprintf("build-%d", i)
+		desc, err := client.Push(folder, repo, tag, map[string]string{"org.opencontainers.image.created": "1970-01-01T00:00:00Z"}, true, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response, err := http.Get(srv.URL + "/v2/test/reproducible/manifests/" + tag)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var manifest v1.Manifest
+		err = json.NewDecoder(response.Body).Decode(&manifest)
+		response.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var layers []string
+		for _, layer := range manifest.Layers {
+			layers = append(layers, layer.Annotations["org.opencontainers.image.title"]+"@"+layer.Digest.String())
+		}
+		if i == 0 {
+			first, firstLayers = desc, layers
+		} else if desc.Digest != first.Digest {
+			t.Fatalf("identical rebuild changed digest: first layers %v; rebuild layers %v", firstLayers, layers)
+		}
+	}
+}
 
 // fakeRegistry returns a plain-HTTP httptest server that implements the bare
 // minimum of the OCI Distribution spec so that oras.Copy can complete a push.

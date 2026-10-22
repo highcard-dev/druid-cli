@@ -147,13 +147,14 @@ func (s *RuntimeSupervisor) createWithOwner(artifact string, name string, ownerI
 		return nil, err
 	}
 	placeholder := &domain.RuntimeScroll{
-		ID:            id,
-		OwnerID:       ownerID,
-		Artifact:      artifact,
-		Root:          s.runtimeBackend.RootRef(id, namespace),
-		Status:        domain.RuntimeScrollStatusCreated,
-		Procedures:    domain.ProcedureStatusMap{},
-		ReservedPorts: fixedDeveloperPorts(),
+		InstalledReleaseState: domain.InstalledReleasePending,
+		ID:                    id,
+		OwnerID:               ownerID,
+		Artifact:              artifact,
+		Root:                  s.runtimeBackend.RootRef(id, namespace),
+		Status:                domain.RuntimeScrollStatusCreated,
+		Procedures:            domain.ProcedureStatusMap{},
+		ReservedPorts:         fixedDeveloperPorts(),
 	}
 	if err := s.store.CreateScroll(placeholder); err != nil {
 		return nil, err
@@ -197,6 +198,10 @@ func (s *RuntimeSupervisor) Ensure(options EnsureOptions) (*domain.RuntimeScroll
 				artifact := options.Artifact
 				if artifact == "" {
 					artifact = runtimeScroll.Artifact
+				}
+				runtimeScroll.InstalledReleaseState = domain.InstalledReleasePending
+				if err := s.store.UpdateScroll(runtimeScroll); err != nil {
+					return nil, err
 				}
 				materialized, err := s.materializeNewScroll(context.Background(), s.runtimeBackend, artifact, id, options.Namespace, options.RegistryCredentials)
 				if err != nil {
@@ -280,6 +285,7 @@ func (s *RuntimeSupervisor) applyMaterializedScroll(runtimeScroll *domain.Runtim
 	runtimeScroll.Root = materialized.Root
 	runtimeScroll.ScrollName = scroll.Name
 	runtimeScroll.ScrollYAML = string(materialized.ScrollYAML)
+	runtimeScroll.InstalledReleaseState = domain.InstalledReleaseReady
 	runtimeScroll.Status = domain.RuntimeScrollStatusCreated
 	runtimeScroll.LastError = ""
 	runtimeScroll.Procedures = domain.ProcedureStatusMap{}

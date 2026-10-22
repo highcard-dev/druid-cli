@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
-	"github.com/highcard-dev/daemon/internal/core/ports"
 	coreservices "github.com/highcard-dev/daemon/internal/core/services"
 )
 
@@ -34,6 +33,8 @@ func TestRuntimeUpdateRejectsUnacceptedReferenceBeforeStopping(t *testing.T) {
 func TestUpdateRejectsChangedInstalledDescriptorBeforeStopping(t *testing.T) {
 	store := newTestStateStore(t)
 	fixture := &domain.RuntimeScroll{ID: "stale-update", Root: "runtime://fixture", Artifact: "registry.local/deployment:v1", ScrollYAML: cachedScrollYAML("start"), Status: domain.RuntimeScrollStatusRunning}
+	fixture.InstalledReleaseState = domain.InstalledReleaseReady
+	fixture.ArtifactDigest = "sha256:" + strings.Repeat("b", 64)
 	if err := store.CreateScroll(fixture); err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +47,7 @@ func TestUpdateRejectsChangedInstalledDescriptorBeforeStopping(t *testing.T) {
 	if !errors.Is(err, ErrInstalledReleaseChanged) {
 		t.Fatalf("stale update error: %v", err)
 	}
-	if backend.stopRoot != "" || backend.spawnCount != 1 || backend.action.Mode != ports.RuntimeWorkerModeInspect {
+	if backend.stopRoot != "" || backend.spawnCount != 0 {
 		t.Fatal("stale acceptance mutated runtime")
 	}
 }

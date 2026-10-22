@@ -40,6 +40,7 @@ build: generate-api ## Build Druid and helper binaries
 	CGO_ENABLED=0 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/druid ./apps/druid
 	CGO_ENABLED=0 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/druid-coldstarter ./apps/druid-coldstarter
 	CGO_ENABLED=0 go build -ldflags "-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)" -o ./bin/druid-dev ./apps/druid-dev
+	CGO_ENABLED=0 go build -trimpath -o ./bin/druid-scroll-validator ./apps/druid-scroll-validator
 
 k3d-build-pull-image: ## Build the unified Druid runtime image and import it into local k3d.
 	docker build . -f Dockerfile --build-arg "VERSION=$(VERSION)" -t "$(DRUID_K8S_PULL_IMAGE)"
@@ -65,6 +66,7 @@ install: build ## Build and install Druid binaries
 	install -m 0755 ./bin/druid /usr/local/bin/druid
 	install -m 0755 ./bin/druid-coldstarter /usr/local/bin/druid-coldstarter
 	install -m 0755 ./bin/druid-dev /usr/local/bin/druid-dev
+	install -m 0755 ./bin/druid-scroll-validator /usr/local/bin/druid-scroll-validator
 
 generate-md-docs:
 	go run ./docs_md/main.go

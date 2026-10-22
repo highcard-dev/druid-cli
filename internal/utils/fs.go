@@ -178,7 +178,7 @@ func expandChunkNode(dataDir string, parentPath string, chunk *domain.Chunks) ([
 		return nil, fmt.Errorf("chunk %q has empty path", chunk.Name)
 	}
 
-	paths, err := expandChunkPaths(dataDir, parentPath, chunk.Path)
+	paths, err := ExpandChunkPaths(dataDir, parentPath, chunk.Path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to expand chunk %q path %q: %w", chunk.Name, chunk.Path, err)
 	}
@@ -218,7 +218,9 @@ func expandChunkNode(dataDir string, parentPath string, chunk *domain.Chunks) ([
 	return expanded, nil
 }
 
-func expandChunkPaths(dataDir string, parentPath string, chunkPath string) ([]string, error) {
+// ExpandChunkPaths resolves nested chunk paths and globs using the same rules
+// for release packaging and installed-data update protection.
+func ExpandChunkPaths(dataDir string, parentPath string, chunkPath string) ([]string, error) {
 	resolvedPath, err := resolveChunkPath(parentPath, chunkPath)
 	if err != nil {
 		return nil, err
