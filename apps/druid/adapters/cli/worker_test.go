@@ -184,6 +184,10 @@ func TestWorkerRestoreStagesBeforeReplacingRoot(t *testing.T) {
 
 	assertFile(t, filepath.Join(root, "scroll.yaml"), "name: restored\n")
 	assertFile(t, filepath.Join(root, "manifest.json"), `{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)
+	result := readInstalledRelease(root, true)
+	if result.Error != "" || result.ArtifactDigest != "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" || result.ScrollYAML != "name: restored\n" {
+		t.Fatalf("restored identity must describe the preserved release: %#v", result)
+	}
 	assertFile(t, filepath.Join(root, "data", "logs", "latest.log"), "restored")
 	if _, err := os.Stat(filepath.Join(root, "data", "old-only.txt")); !os.IsNotExist(err) {
 		t.Fatalf("old root contents should be removed before restore, stat err = %v", err)

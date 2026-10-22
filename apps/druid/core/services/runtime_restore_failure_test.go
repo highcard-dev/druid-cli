@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -19,6 +20,8 @@ func TestRestoreIndeterminateFailureDoesNotRestart(t *testing.T) {
 				ID: "restore-unknown", Artifact: "registry.local/original:1", Root: "runtime://restore-unknown",
 				ScrollName: "original", ScrollYAML: strings.Replace(cachedScrollYAML("start"), "run: once", "run: persistent", 1),
 				Status: domain.RuntimeScrollStatusRunning, Procedures: domain.ProcedureStatusMap{},
+				InstalledReleaseState: domain.InstalledReleaseReady,
+				ArtifactDigest:        "sha256:" + strings.Repeat("a", 64),
 			}
 			if err := store.CreateScroll(runtime); err != nil {
 				t.Fatal(err)
@@ -48,6 +51,18 @@ func TestRestoreIndeterminateFailureDoesNotRestart(t *testing.T) {
 			}
 			if stored.Status != domain.RuntimeScrollStatusError || stored.LastError == "" {
 				t.Fatalf("unknown restore outcome must remain stopped with an error, got status=%s error=%q", stored.Status, stored.LastError)
+			}
+			if stored.InstalledReleaseState != domain.InstalledReleasePending {
+				t.Fatalf("uncertain release was confirmed: %s", stored.InstalledReleaseState)
+			}
+			// A daemon restart must not serve the old digest or inspect a volume
+			// which an orphaned worker could still be modifying.
+			restarted := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
+			if _, err := restarted.InstalledRelease(context.Background(), runtime.ID); err == nil || !strings.Contains(err.Error(), "unconfirmed") {
+				t.Fatalf("uncertain release query = %v", err)
+			}
+			if backend.spawnCount != 1 {
+				t.Fatal("release query spawned another worker after uncertain restore")
 			}
 		})
 	}

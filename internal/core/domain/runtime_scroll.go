@@ -20,22 +20,33 @@ const (
 	RuntimeScrollStatusDeleted RuntimeScrollStatus = "deleted"
 )
 
+// Empty state denotes a legacy record whose digest may describe the source
+// artifact rather than the installed release. Pending is persisted before a
+// worker can mutate the volume; only its successful result confirms the cache.
+type InstalledReleaseState string
+
+const (
+	InstalledReleasePending InstalledReleaseState = "pending"
+	InstalledReleaseReady   InstalledReleaseState = "ready"
+)
+
 type RuntimeScroll struct {
-	ID             string                   `json:"id"`
-	OwnerID        string                   `json:"owner_id,omitempty"`
-	Artifact       string                   `json:"artifact"`
-	ArtifactDigest string                   `json:"artifact_digest,omitempty"`
-	Root           string                   `json:"root"`
-	ScrollName     string                   `json:"scroll_name"`
-	ScrollYAML     string                   `json:"-"`
-	Status         RuntimeScrollStatus      `json:"status"`
-	LastError      string                   `json:"last_error,omitempty"`
-	Routing        []RuntimeRouteAssignment `json:"routing,omitempty"`
-	UIPackages     RuntimeUIPackages        `json:"ui_packages,omitempty"`
-	CreatedAt      time.Time                `json:"created_at"`
-	UpdatedAt      time.Time                `json:"updated_at"`
-	Procedures     ProcedureStatusMap       `json:"procedures,omitempty"`
-	ReservedPorts  []Port                   `json:"reserved_ports,omitempty"`
+	InstalledReleaseState InstalledReleaseState    `json:"-"`
+	ID                    string                   `json:"id"`
+	OwnerID               string                   `json:"owner_id,omitempty"`
+	Artifact              string                   `json:"artifact"`
+	ArtifactDigest        string                   `json:"artifact_digest,omitempty"`
+	Root                  string                   `json:"root"`
+	ScrollName            string                   `json:"scroll_name"`
+	ScrollYAML            string                   `json:"-"`
+	Status                RuntimeScrollStatus      `json:"status"`
+	LastError             string                   `json:"last_error,omitempty"`
+	Routing               []RuntimeRouteAssignment `json:"routing,omitempty"`
+	UIPackages            RuntimeUIPackages        `json:"ui_packages,omitempty"`
+	CreatedAt             time.Time                `json:"created_at"`
+	UpdatedAt             time.Time                `json:"updated_at"`
+	Procedures            ProcedureStatusMap       `json:"procedures,omitempty"`
+	ReservedPorts         []Port                   `json:"reserved_ports,omitempty"`
 }
 
 type RuntimeState struct {

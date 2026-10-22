@@ -189,6 +189,7 @@ func (s *RuntimeSession) ApplyRestore(materialized *ports.RuntimeMaterialization
 	s.runtimeScroll.Root = root
 	s.runtimeScroll.ScrollName = scrollService.GetCurrent().Name
 	s.runtimeScroll.ScrollYAML = string(scrollYAML)
+	s.runtimeScroll.InstalledReleaseState = domain.InstalledReleaseReady
 	s.runtimeScroll.Routing = routing
 	s.runtimeScroll.Status = domain.RuntimeScrollStatusStopped
 	s.runtimeScroll.LastError = ""

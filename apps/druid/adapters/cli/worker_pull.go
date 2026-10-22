@@ -81,10 +81,6 @@ func runWorkerPull(action ports.RuntimeWorkerAction) ports.RuntimeWorkerResult {
 		return result
 	}
 	oci := registry.NewOciClient(loadWorkerRegistryStore())
-	digest, err := oci.ResolveDigest(action.Artifact)
-	if err == nil {
-		result.ArtifactDigest = digest
-	}
 	switch action.Mode {
 	case ports.RuntimeWorkerModeUpdate:
 		err = pullWorkerUpdate(root, action.Artifact, oci, owner)
@@ -97,6 +93,18 @@ func runWorkerPull(action ports.RuntimeWorkerAction) ports.RuntimeWorkerResult {
 		result.Error = err.Error()
 		return result
 	}
+	// Read the installed result, not the source tag (or backup artifact digest).
+	// Local directory Scrolls may have no release descriptor.
+	_, localErr := os.Stat(action.Artifact)
+	return readInstalledRelease(root, localErr != nil || action.Mode == ports.RuntimeWorkerModeRestore)
+}
+
+func inspectInstalledRelease(root string) ports.RuntimeWorkerResult {
+	return readInstalledRelease(root, true)
+}
+
+func readInstalledRelease(root string, requireDescriptor bool) ports.RuntimeWorkerResult {
+	result := ports.RuntimeWorkerResult{}
 	scrollYAML, err := os.ReadFile(filepath.Join(root, "scroll.yaml"))
 	if err != nil {
 		result.Error = err.Error()
@@ -107,14 +115,10 @@ func runWorkerPull(action ports.RuntimeWorkerAction) ports.RuntimeWorkerResult {
 		return result
 	}
 	result.ScrollYAML = string(scrollYAML)
-	return result
-}
-
-// Inspection reads the installed descriptor from the volume, never from a
-// mutable registry tag or a separately persisted release baseline.
-func inspectInstalledRelease(root string) ports.RuntimeWorkerResult {
-	result := ports.RuntimeWorkerResult{}
 	file, err := os.Open(filepath.Join(root, "manifest.json"))
+	if os.IsNotExist(err) && !requireDescriptor {
+		return result
+	}
 	if err != nil {
 		result.Error = err.Error()
 		return result
@@ -129,17 +133,7 @@ func inspectInstalledRelease(root string) ports.RuntimeWorkerResult {
 		result.Error = "installed release descriptor requires a valid sha256 digest"
 		return result
 	}
-	yaml, err := os.ReadFile(filepath.Join(root, "scroll.yaml"))
-	if err != nil {
-		result.Error = err.Error()
-		return result
-	}
-	if _, err := domain.NewScrollFromBytes(root, yaml); err != nil {
-		result.Error = err.Error()
-		return result
-	}
 	result.ArtifactDigest = descriptor.Digest.String()
-	result.ScrollYAML = string(yaml)
 	return result
 }
 
