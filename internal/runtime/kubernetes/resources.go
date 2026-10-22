@@ -87,9 +87,6 @@ func workerPullJobSpec(namespace string, jobName string, pvc string, image strin
 		"--root", action.MountPath,
 		"--callback-url", action.CallbackURL,
 	}
-	if action.PreserveReleaseManifest {
-		command = append(command, "--preserve-release-manifest")
-	}
 	if action.Mode == ports.RuntimeWorkerModeUpdate {
 		command = append(command, "--new-data-owner", "1000:1000")
 	}

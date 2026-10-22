@@ -217,9 +217,6 @@ func workerPullCommand(action ports.RuntimeWorkerAction, artifact string) []stri
 		"--root", action.MountPath,
 		"--callback-url", action.CallbackURL,
 	}
-	if action.PreserveReleaseManifest {
-		command = append(command, "--preserve-release-manifest")
-	}
 	if action.Mode == ports.RuntimeWorkerModeUpdate && action.NewDataOwner != "" {
 		command = append(command, "--new-data-owner", action.NewDataOwner)
 	}

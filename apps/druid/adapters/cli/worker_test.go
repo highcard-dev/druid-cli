@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -36,9 +37,26 @@ func TestWorkerPullCommandRequiresRuntimeID(t *testing.T) {
 	}
 }
 
-func TestWorkerPullCommandSupportsReleaseManifestPreservation(t *testing.T) {
-	if flag := WorkerPullCommand.Flags().Lookup("preserve-release-manifest"); flag == nil {
-		t.Fatal("worker pull should expose --preserve-release-manifest")
+func TestWorkerPullCommandAcceptsLegacyManifestFlagWithoutChangingAction(t *testing.T) {
+	flag := WorkerPullCommand.Flags().Lookup("preserve-release-manifest")
+	if flag == nil || !flag.Hidden {
+		t.Fatal("worker pull should accept a hidden legacy --preserve-release-manifest flag")
+	}
+	previousValue, previousChanged := flag.Value.String(), flag.Changed
+	t.Cleanup(func() {
+		if err := flag.Value.Set(previousValue); err != nil {
+			t.Fatal(err)
+		}
+		flag.Changed = previousChanged
+	})
+	before := workerPullAction
+	for _, arg := range []string{"--preserve-release-manifest", "--preserve-release-manifest=false"} {
+		if err := WorkerPullCommand.ParseFlags([]string{arg}); err != nil {
+			t.Fatalf("legacy flag should still be accepted: %v", err)
+		}
+		if !reflect.DeepEqual(workerPullAction, before) {
+			t.Fatal("legacy flag must not change worker action")
+		}
 	}
 }
 
@@ -157,6 +175,7 @@ func TestWorkerUpdatePreservesRemovedProtectedChunk(t *testing.T) {
 func TestWorkerRestoreStagesBeforeReplacingRoot(t *testing.T) {
 	root := t.TempDir()
 	mustWrite(t, filepath.Join(root, "scroll.yaml"), "name: old\n")
+	mustWrite(t, filepath.Join(root, "manifest.json"), `{"digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}`)
 	mustWrite(t, filepath.Join(root, "data", "logs", "latest.log"), "old")
 	mustWrite(t, filepath.Join(root, "data", "old-only.txt"), "old")
 
@@ -166,6 +185,7 @@ func TestWorkerRestoreStagesBeforeReplacingRoot(t *testing.T) {
 	}
 
 	assertFile(t, filepath.Join(root, "scroll.yaml"), "name: restored\n")
+	assertFile(t, filepath.Join(root, "manifest.json"), `{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)
 	assertFile(t, filepath.Join(root, "data", "logs", "latest.log"), "restored")
 	if _, err := os.Stat(filepath.Join(root, "data", "old-only.txt")); !os.IsNotExist(err) {
 		t.Fatalf("old root contents should be removed before restore, stat err = %v", err)

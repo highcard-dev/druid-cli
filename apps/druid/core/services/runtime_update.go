@@ -40,10 +40,10 @@ func (s *RuntimeSupervisor) Update(id string, artifact string, registryCredentia
 		}
 	}
 	knownDigest := artifact[strings.LastIndex(artifact, "@")+1:]
-	return s.updateExistingScroll(runtimeScroll, artifact, knownDigest, registryCredentials, true)
+	return s.updateExistingScroll(runtimeScroll, artifact, knownDigest, registryCredentials)
 }
 
-func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeScroll, artifact string, knownDigest string, registryCredentials []domain.RegistryCredential, restartIfRunning bool) (*domain.RuntimeScroll, error) {
+func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeScroll, artifact string, knownDigest string, registryCredentials []domain.RegistryCredential) (*domain.RuntimeScroll, error) {
 	wasRunning := runtimeScroll.Status == domain.RuntimeScrollStatusRunning
 	existingRouting := make([]domain.RuntimeRouteAssignment, len(runtimeScroll.Routing))
 	copy(existingRouting, runtimeScroll.Routing)
@@ -119,7 +119,7 @@ func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeSc
 	if err := s.publishDeclaredPrivateUI(runtimeScroll, scroll); err != nil {
 		return nil, err
 	}
-	if wasRunning && restartIfRunning {
+	if wasRunning {
 		return s.startScroll(runtimeScroll.ID)
 	}
 	return s.store.GetScroll(runtimeScroll.ID)

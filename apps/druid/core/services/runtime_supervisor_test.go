@@ -1122,7 +1122,7 @@ func TestRuntimeSupervisorRestoreUsesPullWorkerResult(t *testing.T) {
 	if backend.stopRoot != root {
 		t.Fatalf("stop root = %s, want %s", backend.stopRoot, root)
 	}
-	if backend.action.Mode != ports.RuntimeWorkerModeRestore || backend.action.RootRef != root || backend.action.Artifact != "registry.local/backup:1.0" || !backend.action.PreserveReleaseManifest {
+	if backend.action.Mode != ports.RuntimeWorkerModeRestore || backend.action.RootRef != root || backend.action.Artifact != "registry.local/backup:1.0" {
 		t.Fatalf("worker action = %#v", backend.action)
 	}
 	if restored.Artifact != "registry.local/backup:1.0" || restored.ArtifactDigest != "sha256:restored" || restored.ScrollName != "restored-worker" {

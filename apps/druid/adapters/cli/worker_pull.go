@@ -54,7 +54,9 @@ func init() {
 	WorkerPullCommand.Flags().StringVar(&workerPullAction.CallbackURL, "callback-url", "", "Daemon worker callback URL")
 	WorkerPullCommand.Flags().StringVar(&workerPullAction.TokenFile, "callback-token-file", "", "Projected ServiceAccount token file for callbacks")
 	WorkerPullCommand.Flags().StringVar(&workerPullAction.NewDataOwner, "new-data-owner", "", "Default user[:group] for new materialized content; protected paths keep their owners")
-	WorkerPullCommand.Flags().BoolVar(&workerPullAction.PreserveReleaseManifest, "preserve-release-manifest", false, "Restore the release manifest.json carried by a backup")
+	// Older daemons pass this flag; restore mode always preserves the manifest.
+	WorkerPullCommand.Flags().Bool("preserve-release-manifest", false, "Deprecated compatibility flag; restore always preserves the release manifest")
+	WorkerPullCommand.Flags().MarkHidden("preserve-release-manifest")
 	WorkerPullCommand.Flags().StringVar(&workerPullMode, "mode", string(ports.RuntimeWorkerModeCreate), "Worker mode: create, update, restore, or inspect")
 	WorkerPullCommand.MarkFlagRequired("artifact")
 	WorkerPullCommand.MarkFlagRequired("runtime-id")

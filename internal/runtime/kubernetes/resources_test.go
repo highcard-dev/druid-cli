@@ -443,19 +443,18 @@ func TestProcedureWorkloadsLabelEveryExpectedPort(t *testing.T) {
 
 func TestWorkerPullJobSpecRunsDruidWorkerPull(t *testing.T) {
 	action := ports.RuntimeWorkerAction{
-		Mode:                    ports.RuntimeWorkerModeUpdate,
-		RuntimeID:               "deployment-123",
-		Artifact:                "registry.local/lab:2.0",
-		MountPath:               "/scroll",
-		CallbackURL:             "http://druid-cli:8083/internal/v1/workers/deployment-123/complete",
-		TokenFile:               "token-file",
-		PreserveReleaseManifest: true,
+		Mode:        ports.RuntimeWorkerModeUpdate,
+		RuntimeID:   "deployment-123",
+		Artifact:    "registry.local/lab:2.0",
+		MountPath:   "/scroll",
+		CallbackURL: "http://druid-cli:8083/internal/v1/workers/deployment-123/complete",
+		TokenFile:   "token-file",
 	}
 	job := workerPullJobSpec("druid", "worker-pull", "runtime-pvc", "druid-cli:test", action, "pull-secret", "runtime-registry", true, "druid-cli")
 	assertFinishedJobTTL(t, job)
 	container := job.Spec.Template.Spec.Containers[0]
 	command := strings.Join(container.Command, " ")
-	for _, want := range []string{"druid --config /tmp/druid-registry.json", "worker pull", "--mode update", "--runtime-id deployment-123", "--callback-url", "--preserve-release-manifest", "--new-data-owner 1000:1000", `if [ "$DRUID_WORKER_MODE" != "update" ]; then`} {
+	for _, want := range []string{"druid --config /tmp/druid-registry.json", "worker pull", "--mode update", "--runtime-id deployment-123", "--callback-url", "--new-data-owner 1000:1000", `if [ "$DRUID_WORKER_MODE" != "update" ]; then`} {
 		if !strings.Contains(command, want) {
 			t.Fatalf("command = %#v, want %s", container.Command, want)
 		}
