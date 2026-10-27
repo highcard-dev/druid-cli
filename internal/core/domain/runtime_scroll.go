@@ -20,9 +20,8 @@ const (
 	RuntimeScrollStatusDeleted RuntimeScrollStatus = "deleted"
 )
 
-// Empty state denotes a legacy record whose digest may describe the source
-// artifact rather than the installed release. Pending is persisted before a
-// worker can mutate the volume; only its successful result confirms the cache.
+// Pending is persisted before a worker can mutate the volume; only its
+// successful result confirms the installed release. Missing state is unconfirmed.
 type InstalledReleaseState string
 
 const (

@@ -57,31 +57,30 @@ func TestMaterializationCachesInstalledReleaseAcrossRestart(t *testing.T) {
 	}
 }
 
-func TestLegacyInstalledReleaseInspectedOnceAndSessionUpdated(t *testing.T) {
-	store := newTestStateStore(t)
-	legacy := &domain.RuntimeScroll{ID: "legacy", Root: "runtime://legacy", Artifact: "registry.local/backup:v1", ArtifactDigest: "sha256:" + strings.Repeat("b", 64), ScrollYAML: cachedScrollYAML(""), Status: domain.RuntimeScrollStatusStopped}
-	if err := store.CreateScroll(legacy); err != nil {
-		t.Fatal(err)
-	}
-	callbacks := NewWorkerCallbackManager()
-	digest := "sha256:" + strings.Repeat("a", 64)
-	backend := &fakeWorkerBackend{callbacks: callbacks, scrollYAML: releaseScrollYAML(), digest: digest}
-	supervisor := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
-	supervisor.SetWorkerCallbacks(callbacks, "http://worker-callback")
-	session, err := supervisor.sessionFor(legacy.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	identity, err := supervisor.InstalledRelease(context.Background(), legacy.ID)
-	if err != nil || identity["digest"] != digest || backend.action.Mode != ports.RuntimeWorkerModeInspect {
-		t.Fatalf("legacy repair = %v, %v", identity, err)
-	}
-	// A normal session write must not resurrect its legacy identity.
-	session.markError(errors.New("unrelated command error"))
-	restarted := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
-	identity, err = restarted.InstalledRelease(context.Background(), legacy.ID)
-	if err != nil || identity["digest"] != digest || backend.spawnCount != 1 {
-		t.Fatalf("persisted repair = %v, %v; workers = %d", identity, err, backend.spawnCount)
+func TestInstalledReleaseRejectsUnconfirmedStateWithoutWorker(t *testing.T) {
+	for _, state := range []domain.InstalledReleaseState{"", domain.InstalledReleasePending, "unknown"} {
+		t.Run(string(state), func(t *testing.T) {
+			store := newTestStateStore(t)
+			runtime := &domain.RuntimeScroll{ID: "unconfirmed", Root: "runtime://unconfirmed", Artifact: "registry.local/backup:v1", ArtifactDigest: "sha256:" + strings.Repeat("a", 64), ScrollYAML: releaseScrollYAML(), InstalledReleaseState: state, Status: domain.RuntimeScrollStatusStopped}
+			if err := store.CreateScroll(runtime); err != nil {
+				t.Fatal(err)
+			}
+			backend := &fakeWorkerBackend{}
+			supervisor := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
+			for i := 0; i < 2; i++ {
+				identity, err := supervisor.InstalledRelease(context.Background(), runtime.ID)
+				if err == nil || !strings.Contains(err.Error(), "unconfirmed") || identity != nil {
+					t.Fatalf("unconfirmed release query = %v, %v", identity, err)
+				}
+			}
+			if backend.spawnCount != 0 {
+				t.Fatal("unconfirmed release query spawned a worker")
+			}
+			stored, err := store.GetScroll(runtime.ID)
+			if err != nil || stored.InstalledReleaseState != state || stored.ArtifactDigest != runtime.ArtifactDigest {
+				t.Fatalf("query changed the recorded release: %#v, %v", stored, err)
+			}
+		})
 	}
 }
 
@@ -98,7 +97,7 @@ func TestInstalledReleaseRejectsInvalidConfirmedIdentityWithoutWorker(t *testing
 				t.Fatalf("invalid release query = %v", err)
 			}
 			if backend.spawnCount != 0 {
-				t.Fatal("invalid confirmed identity triggered inspection")
+				t.Fatal("invalid confirmed identity spawned a worker")
 			}
 		})
 	}
@@ -144,29 +143,6 @@ func TestMaterializationRequiresDurableInvalidation(t *testing.T) {
 				t.Fatalf("materialization proceeded without durable invalidation: %v, %d workers", err, backend.spawnCount)
 			}
 		})
-	}
-}
-
-func TestLegacyInspectionDoesNotConfirmCacheWhenPersistenceFails(t *testing.T) {
-	store := &failReleaseStateStore{RuntimeScrollStore: newTestStateStore(t), state: domain.InstalledReleaseReady}
-	if err := store.CreateScroll(&domain.RuntimeScroll{ID: "legacy", Artifact: "backup:v1", Root: "runtime://legacy", ScrollYAML: cachedScrollYAML("")}); err != nil {
-		t.Fatal(err)
-	}
-	callbacks := NewWorkerCallbackManager()
-	backend := &fakeWorkerBackend{callbacks: callbacks, scrollYAML: releaseScrollYAML(), digest: "sha256:" + strings.Repeat("a", 64)}
-	supervisor := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
-	supervisor.SetWorkerCallbacks(callbacks, "http://worker-callback")
-	session, err := supervisor.sessionFor("legacy")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := supervisor.InstalledRelease(context.Background(), "legacy"); err == nil {
-		t.Fatal("inspection ignored persistence failure")
-	}
-	session.mu.Lock()
-	defer session.mu.Unlock()
-	if session.runtimeScroll.InstalledReleaseState != "" || session.runtimeScroll.ArtifactDigest != "" {
-		t.Fatal("failed write confirmed the in-memory cache")
 	}
 }
 

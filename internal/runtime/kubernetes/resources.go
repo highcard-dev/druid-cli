@@ -90,20 +90,11 @@ func workerPullJobSpec(namespace string, jobName string, pvc string, image strin
 	if action.Mode == ports.RuntimeWorkerModeUpdate {
 		command = append(command, "--new-data-owner", "1000:1000")
 	}
-	if action.Mode == ports.RuntimeWorkerModeInspect {
-		// No credential shell or recursive ownership changes for read-only inspection.
-		command = append([]string{"druid"}, command[4:]...)
-	}
 	job := helperJobSpec(namespace, jobName, pvc, image, command, imagePullSecret, map[string]string{
 		labelComponent: "worker-pull",
 		labelRuntimeID: runtimeLabel(action.RuntimeID),
 	})
 	container := &job.Spec.Template.Spec.Containers[0]
-	if action.Mode == ports.RuntimeWorkerModeInspect {
-		for i := range container.VolumeMounts {
-			container.VolumeMounts[i].ReadOnly = true
-		}
-	}
 	runAsRoot := int64(0)
 	runAsNonRoot := false
 	container.SecurityContext = &corev1.SecurityContext{

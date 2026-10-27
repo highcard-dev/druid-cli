@@ -55,8 +55,7 @@ func TestRestoreIndeterminateFailureDoesNotRestart(t *testing.T) {
 			if stored.InstalledReleaseState != domain.InstalledReleasePending {
 				t.Fatalf("uncertain release was confirmed: %s", stored.InstalledReleaseState)
 			}
-			// A daemon restart must not serve the old digest or inspect a volume
-			// which an orphaned worker could still be modifying.
+			// A daemon restart must not serve the old digest after a worker failure.
 			restarted := newRuntimeSupervisorForTest(t, store, coreservices.NewRuntimeScrollManager(store), backend)
 			if _, err := restarted.InstalledRelease(context.Background(), runtime.ID); err == nil || !strings.Contains(err.Error(), "unconfirmed") {
 				t.Fatalf("uncertain release query = %v", err)

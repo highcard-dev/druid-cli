@@ -492,7 +492,7 @@ paths:
     get:
       operationId: getInstalledRelease
       tags: [scrolls]
-      summary: Read the installed release descriptor from the runtime volume
+      summary: Read the installed release descriptor recorded by the last successful pull
       parameters:
         - name: id
           in: path

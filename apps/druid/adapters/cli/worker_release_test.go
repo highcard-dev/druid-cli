@@ -9,20 +9,24 @@ import (
 	"github.com/highcard-dev/daemon/internal/core/ports"
 )
 
-func TestInspectWorkerReadsInstalledReleaseNotRegistryReference(t *testing.T) {
-	root := t.TempDir()
-	want := "sha256:" + strings.Repeat("a", 64)
-	raw := "{\n  \"digest\": \"" + want + "\"\n}"
-	mustWrite(t, filepath.Join(root, "manifest.json"), raw)
-	mustWrite(t, filepath.Join(root, "scroll.yaml"), "name: registry.local/owned/example\napp_version: '1'\ncommands: {}\n")
-	result := runWorkerPull(ports.RuntimeWorkerAction{Mode: ports.RuntimeWorkerModeInspect, MountPath: root, Artifact: "unreachable.invalid/backup:latest"})
-	if result.Error != "" || result.ArtifactDigest != want {
-		t.Fatalf("inspection = %#v", result)
+func TestPullWorkerRejectsUnsupportedModesWithoutChangingRuntime(t *testing.T) {
+	for _, mode := range []ports.RuntimeWorkerMode{"inspect", "unknown"} {
+		t.Run(string(mode), func(t *testing.T) {
+			source, root := t.TempDir(), t.TempDir()
+			mustWrite(t, filepath.Join(source, "scroll.yaml"), "name: replacement\n")
+			mustWrite(t, filepath.Join(root, "scroll.yaml"), "name: installed\n")
+			mustWrite(t, filepath.Join(root, "manifest.json"), "installed descriptor")
+			result := runWorkerPull(ports.RuntimeWorkerAction{Mode: mode, MountPath: root, Artifact: source})
+			if !strings.Contains(result.Error, "unsupported worker pull mode") || result.ScrollYAML != "" || result.ArtifactDigest != "" {
+				t.Fatalf("unsupported mode result = %#v", result)
+			}
+			assertFile(t, filepath.Join(root, "scroll.yaml"), "name: installed\n")
+			assertFile(t, filepath.Join(root, "manifest.json"), "installed descriptor")
+		})
 	}
-	assertFile(t, filepath.Join(root, "manifest.json"), raw)
 }
 
-func TestInspectWorkerRejectsMissingOrInvalidInstalledDescriptor(t *testing.T) {
+func TestReadInstalledReleaseRejectsMissingOrInvalidDescriptor(t *testing.T) {
 	for _, raw := range []string{"", "{}", `{"digest":"sha256:bad"}`} {
 		t.Run(raw, func(t *testing.T) {
 			root := t.TempDir()
@@ -30,7 +34,7 @@ func TestInspectWorkerRejectsMissingOrInvalidInstalledDescriptor(t *testing.T) {
 			if raw != "" {
 				mustWrite(t, filepath.Join(root, "manifest.json"), raw)
 			}
-			if result := inspectInstalledRelease(root); result.Error == "" {
+			if result := readInstalledRelease(root, true); result.Error == "" {
 				t.Fatal("invalid installed release was accepted")
 			}
 		})

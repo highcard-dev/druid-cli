@@ -57,13 +57,19 @@ func init() {
 	// Older daemons pass this flag; restore mode always preserves the manifest.
 	WorkerPullCommand.Flags().Bool("preserve-release-manifest", false, "Deprecated compatibility flag; restore always preserves the release manifest")
 	WorkerPullCommand.Flags().MarkHidden("preserve-release-manifest")
-	WorkerPullCommand.Flags().StringVar(&workerPullMode, "mode", string(ports.RuntimeWorkerModeCreate), "Worker mode: create, update, restore, or inspect")
+	WorkerPullCommand.Flags().StringVar(&workerPullMode, "mode", string(ports.RuntimeWorkerModeCreate), "Worker mode: create, update, or restore")
 	WorkerPullCommand.MarkFlagRequired("artifact")
 	WorkerPullCommand.MarkFlagRequired("runtime-id")
 }
 
 func runWorkerPull(action ports.RuntimeWorkerAction) ports.RuntimeWorkerResult {
 	result := ports.RuntimeWorkerResult{}
+	switch action.Mode {
+	case ports.RuntimeWorkerModeCreate, ports.RuntimeWorkerModeUpdate, ports.RuntimeWorkerModeRestore:
+	default:
+		result.Error = fmt.Sprintf("unsupported worker pull mode %q", action.Mode)
+		return result
+	}
 	if action.Artifact == "" {
 		result.Error = "artifact is required"
 		return result
@@ -71,9 +77,6 @@ func runWorkerPull(action ports.RuntimeWorkerAction) ports.RuntimeWorkerResult {
 	root := action.MountPath
 	if root == "" {
 		root = "/scroll"
-	}
-	if action.Mode == ports.RuntimeWorkerModeInspect {
-		return inspectInstalledRelease(root)
 	}
 	owner, err := resolveWorkerDataOwner(action.NewDataOwner)
 	if err != nil {
@@ -97,10 +100,6 @@ func runWorkerPull(action ports.RuntimeWorkerAction) ports.RuntimeWorkerResult {
 	// Local directory Scrolls may have no release descriptor.
 	_, localErr := os.Stat(action.Artifact)
 	return readInstalledRelease(root, localErr != nil || action.Mode == ports.RuntimeWorkerModeRestore)
-}
-
-func inspectInstalledRelease(root string) ports.RuntimeWorkerResult {
-	return readInstalledRelease(root, true)
 }
 
 func readInstalledRelease(root string, requireDescriptor bool) ports.RuntimeWorkerResult {

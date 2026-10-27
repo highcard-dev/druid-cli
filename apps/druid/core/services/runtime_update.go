@@ -30,7 +30,7 @@ func (s *RuntimeSupervisor) Update(id string, artifact string, registryCredentia
 		if !acceptedUpdateReference.MatchString("expected@" + *expectedDigest) {
 			return nil, ErrUnacceptedUpdate
 		}
-		installed, err := s.installedRelease(context.Background(), runtimeScroll)
+		installed, err := s.installedRelease(runtimeScroll)
 		if err != nil {
 			return nil, err
 		}

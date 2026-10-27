@@ -125,7 +125,7 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 			action.NewDataOwner = image.Config.User
 		}
 		workerUser = "0"
-	} else if action.Mode != ports.RuntimeWorkerModeInspect {
+	} else {
 		if err := b.prepareWritableRoot(ctx, root); err != nil {
 			return nil, err
 		}
@@ -136,7 +136,7 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 	if err != nil {
 		return nil, err
 	}
-	rootMount, err := DockerMount(root, action.MountPath, action.Mode == ports.RuntimeWorkerModeInspect, "")
+	rootMount, err := DockerMount(root, action.MountPath, false, "")
 	if err != nil {
 		return nil, err
 	}
