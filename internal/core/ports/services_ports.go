@@ -142,8 +142,9 @@ type RuntimeUIPackageUploadAction struct {
 // RuntimeUIPackageUpload exposes a short-lived upload URL and the immutable
 // public URL of the unique object it writes.
 type RuntimeUIPackageUpload struct {
-	UploadURL string
-	URL       string
+	UploadURL         string
+	DocumentUploadURL string
+	URL               string
 }
 
 type RuntimeMaterialization struct {

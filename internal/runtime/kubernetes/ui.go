@@ -22,7 +22,11 @@ func (b *Backend) CreateUIPackageUpload(ctx context.Context, action ports.Runtim
 	if err != nil {
 		return ports.RuntimeUIPackageUpload{}, err
 	}
-	return ports.RuntimeUIPackageUpload{UploadURL: uploadURL, URL: b.uiPackagePublicURL(config, action)}, nil
+	documentURL, err := uipackage.PresignPut(ctx, path.Join(action.RequestID, "app.openui"), config)
+	if err != nil {
+		return ports.RuntimeUIPackageUpload{}, err
+	}
+	return ports.RuntimeUIPackageUpload{UploadURL: uploadURL, DocumentUploadURL: documentURL, URL: b.uiPackagePublicURL(config, action)}, nil
 }
 
 func (b *Backend) uiPackagePublicURL(config uipackage.S3Config, action ports.RuntimeUIPackageUploadAction) string {

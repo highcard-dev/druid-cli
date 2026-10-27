@@ -1678,7 +1678,7 @@ func (f *fakeWorkerBackend) RunCommand(command ports.RuntimeCommand) (*int, erro
 }
 
 func (f *fakeWorkerBackend) CreateUIPackageUpload(ctx context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageUpload, error) {
-	return ports.RuntimeUIPackageUpload{UploadURL: "http://uploads/" + action.RuntimeID + "/" + string(action.Scope), URL: "http://packages/" + action.RuntimeID + "/" + string(action.Scope) + "/app.wasm"}, nil
+	return ports.RuntimeUIPackageUpload{UploadURL: "http://uploads/" + action.RuntimeID + "/" + string(action.Scope), DocumentUploadURL: "http://uploads/" + action.RuntimeID + "/" + string(action.Scope) + "/app.openui", URL: "http://packages/" + action.RuntimeID + "/" + string(action.Scope) + "/app.wasm"}, nil
 }
 
 func (f *fakeWorkerBackend) ExpectedPorts(root string, commands map[string]*domain.CommandInstructionSet, ports []domain.Port) ([]domain.RuntimePortStatus, error) {

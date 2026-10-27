@@ -39,7 +39,7 @@ func (s *RuntimeSupervisor) PublishUIPackage(id string, scope string, sourcePath
 	if err != nil {
 		return nil, fmt.Errorf("create UI package upload: %w", err)
 	}
-	if upload.UploadURL == "" || upload.URL == "" {
+	if upload.UploadURL == "" || upload.DocumentUploadURL == "" || upload.URL == "" {
 		return nil, fmt.Errorf("UI package upload is incomplete")
 	}
 
@@ -56,8 +56,10 @@ func (s *RuntimeSupervisor) PublishUIPackage(id string, scope string, sourcePath
 	procedureName := domain.ProcedureName(commandName, 0, command.Procedures[0])
 	if err := session.AddTempItemWithWaitEnv(commandName, map[string]map[string]string{
 		procedureName: {
-			"DRUID_UI_SOURCE":     sourcePath,
-			"DRUID_UI_UPLOAD_URL": upload.UploadURL,
+			"DRUID_UI_SOURCE":              sourcePath,
+			"DRUID_UI_DOCUMENT_SOURCE":     strings.TrimSuffix(sourcePath, ".wasm") + ".openui",
+			"DRUID_UI_UPLOAD_URL":          upload.UploadURL,
+			"DRUID_UI_DOCUMENT_UPLOAD_URL": upload.DocumentUploadURL,
 		},
 	}); err != nil {
 		return nil, err
@@ -86,10 +88,20 @@ func uiPublishCommand() *domain.CommandInstructionSet {
 			WorkingDir: "/app/resources/deployment",
 			Mounts:     []domain.Mount{{Path: "/app/resources/deployment", SubPath: ".", ReadOnly: true}},
 			Command: []string{"sh", "-ec", `
-test -n "$(printenv DRUID_UI_SOURCE)" && test -n "$(printenv DRUID_UI_UPLOAD_URL)"
+test -n "$(printenv DRUID_UI_SOURCE)"
+test -n "$(printenv DRUID_UI_DOCUMENT_SOURCE)"
+test -n "$(printenv DRUID_UI_UPLOAD_URL)"
+test -n "$(printenv DRUID_UI_DOCUMENT_UPLOAD_URL)"
 case "$(printenv DRUID_UI_SOURCE)" in private/*.wasm|public/*.wasm) ;; *) echo "invalid UI package path" >&2; exit 1;; esac
-test -f "$(printenv DRUID_UI_SOURCE)" && test -s "$(printenv DRUID_UI_SOURCE)"
+test -f "$(printenv DRUID_UI_SOURCE)"
+test -s "$(printenv DRUID_UI_SOURCE)"
+test -f "$(printenv DRUID_UI_DOCUMENT_SOURCE)"
+test -s "$(printenv DRUID_UI_DOCUMENT_SOURCE)"
 echo "Uploading Druid UI package"
+curl --fail-with-body --silent --show-error --request PUT --upload-file "$(printenv DRUID_UI_DOCUMENT_SOURCE)" \
+  --header "Content-Type: text/plain; charset=utf-8" \
+  --header "Cache-Control: public, max-age=31536000, immutable" \
+  "$(printenv DRUID_UI_DOCUMENT_UPLOAD_URL)"
 curl --fail-with-body --silent --show-error --request PUT --upload-file "$(printenv DRUID_UI_SOURCE)" \
   --header "Content-Type: application/wasm" \
   --header "Cache-Control: public, max-age=31536000, immutable" \
