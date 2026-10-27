@@ -121,34 +121,42 @@ func (s *RuntimeSession) Run(command string) (*domain.RuntimeScroll, error) {
 }
 
 func (s *RuntimeSession) RunWithContext(ctx context.Context, command string) (*domain.RuntimeScroll, error) {
+	longRunning, err := s.beginRun(command)
+	if err != nil {
+		return nil, err
+	}
+	return s.finishRun(ctx, longRunning)
+}
+
+func (s *RuntimeSession) beginRun(command string) (bool, error) {
 	s.refreshCommandState()
 	targetCommand, err := s.scrollService.GetCommand(command)
 	if err != nil {
 		s.markError(err)
-		return nil, err
+		return false, err
 	}
 	longRunning := targetCommand.Run == domain.RunModeRestart || targetCommand.Run == domain.RunModePersistent
 	s.rememberDoneDependencies(targetCommand, map[string]bool{})
 
 	if err := s.AddTempItem(command); err != nil {
 		s.markError(err)
-		return nil, err
+		return false, err
 	}
+	return longRunning, nil
+}
+
+func (s *RuntimeSession) finishRun(ctx context.Context, longRunning bool) (*domain.RuntimeScroll, error) {
 	if !longRunning {
 		if err := s.WaitUntilEmptyContext(ctx); err != nil {
-			s.markError(err)
 			return nil, err
 		}
 	}
 
 	s.mu.Lock()
-	s.runtimeScroll.Status = deriveRuntimeScrollStatus(s.runtimeScroll.Procedures, s.scrollService.GetFile().Commands)
-	err = s.store.UpdateScroll(s.runtimeScroll)
 	id := s.runtimeScroll.ID
 	s.mu.Unlock()
-	if err != nil {
-		return nil, err
-	}
+	// Queue callbacks own status updates; a waiter must not overwrite state
+	// after concurrent maintenance has installed a different session/release.
 	return s.store.GetScroll(id)
 }
 

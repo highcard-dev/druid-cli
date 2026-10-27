@@ -92,7 +92,7 @@ func (b *Backend) SpawnPullWorker(ctx context.Context, action ports.RuntimeWorke
 	return result, nil
 }
 
-func (b *Backend) BackupRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential) error {
+func (b *Backend) BackupRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential, preserveReleaseManifest bool) error {
 	if artifact == "" {
 		return fmt.Errorf("backup artifact is required")
 	}
@@ -111,7 +111,7 @@ func (b *Backend) BackupRuntime(ctx context.Context, root string, artifact strin
 		return err
 	}
 	defer cleanupRegistryConfig()
-	job := backupJobSpec(namespace, jobName("backup", root, shortHash(artifact)), pvc, b.config.PullImage, artifact, b.config.RegistrySecret, registryConfigSecret, b.config.RegistryPlainHTTP)
+	job := backupJobSpec(namespace, jobName("backup", root, shortHash(artifact)), pvc, b.config.PullImage, artifact, b.config.RegistrySecret, registryConfigSecret, b.config.RegistryPlainHTTP, preserveReleaseManifest)
 	if err := b.pinPodToRuntimeNode(ctx, namespace, pvc, &job.Spec.Template.Spec); err != nil {
 		return err
 	}

@@ -11,6 +11,7 @@ import (
 
 var workerPushArtifact string
 var workerPushRoot string
+var workerPushPreserveReleaseManifest bool
 
 var WorkerPushCommand = &cobra.Command{
 	Use:   "push",
@@ -29,7 +30,7 @@ var WorkerPushCommand = &cobra.Command{
 		}
 		repo, tag := utils.SplitArtifact(workerPushArtifact)
 		oci := registry.NewOciClient(loadWorkerRegistryStore())
-		_, err = oci.Push(workerPushRoot, repo, tag, nil, false, &scroll.File)
+		_, err = oci.PushWithOptions(workerPushRoot, repo, tag, nil, false, &scroll.File, registry.TransferOptions{PreserveReleaseManifest: workerPushPreserveReleaseManifest})
 		return err
 	},
 }
@@ -38,5 +39,6 @@ func init() {
 	WorkerCommand.AddCommand(WorkerPushCommand)
 	WorkerPushCommand.Flags().StringVar(&workerPushArtifact, "artifact", "", "OCI artifact to push")
 	WorkerPushCommand.Flags().StringVar(&workerPushRoot, "root", "/scroll", "Mounted runtime root path")
+	WorkerPushCommand.Flags().BoolVar(&workerPushPreserveReleaseManifest, "preserve-release-manifest", false, "Include the installed release manifest.json in the backup payload")
 	WorkerPushCommand.MarkFlagRequired("artifact")
 }

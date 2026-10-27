@@ -454,7 +454,7 @@ func TestWorkerPullJobSpecRunsDruidWorkerPull(t *testing.T) {
 	assertFinishedJobTTL(t, job)
 	container := job.Spec.Template.Spec.Containers[0]
 	command := strings.Join(container.Command, " ")
-	for _, want := range []string{"druid --config /tmp/druid-registry.json", "worker pull", "--mode update", "--runtime-id deployment-123", "--callback-url", "chown -R 1000:1000"} {
+	for _, want := range []string{"druid --config /tmp/druid-registry.json", "worker pull", "--mode update", "--runtime-id deployment-123", "--callback-url", "--new-data-owner 1000:1000", `if [ "$DRUID_WORKER_MODE" != "update" ]; then`} {
 		if !strings.Contains(command, want) {
 			t.Fatalf("command = %#v, want %s", container.Command, want)
 		}
@@ -471,6 +471,9 @@ func TestWorkerPullJobSpecRunsDruidWorkerPull(t *testing.T) {
 	}
 	if env[workerPullRootEnvName] != "/scroll" {
 		t.Fatalf("%s = %q, want /scroll", workerPullRootEnvName, env[workerPullRootEnvName])
+	}
+	if env["DRUID_WORKER_MODE"] != "update" {
+		t.Fatalf("update must skip recursive ownership changes: %#v", container.Env)
 	}
 	if container.SecurityContext == nil || container.SecurityContext.RunAsUser == nil || *container.SecurityContext.RunAsUser != 0 {
 		t.Fatalf("worker pull must run as root to repair PVC ownership, securityContext = %#v", container.SecurityContext)
@@ -1628,10 +1631,13 @@ func TestDeleteRuntimePurgesServicesAndDataWhenRequested(t *testing.T) {
 }
 
 func TestBackupJobSpecUsesRuntimePVCAndRegistryEnv(t *testing.T) {
-	backup := backupJobSpec("druid", "backup", "runtime-pvc", "druid-cli:test", "registry.local/scroll:backup", "registry-secret", "", true)
+	backup := backupJobSpec("druid", "backup", "runtime-pvc", "druid-cli:test", "registry.local/scroll:backup", "registry-secret", "", true, true)
 	assertFinishedJobTTL(t, backup)
 	if backup.Spec.Template.Spec.Containers[0].Command[1] != "push" {
 		t.Fatalf("backup command = %#v", backup.Spec.Template.Spec.Containers[0].Command)
+	}
+	if !strings.Contains(strings.Join(backup.Spec.Template.Spec.Containers[0].Command, " "), "--preserve-release-manifest") {
+		t.Fatalf("backup command = %#v, want release manifest preservation", backup.Spec.Template.Spec.Containers[0].Command)
 	}
 	if got := backup.Spec.Template.Spec.Volumes[0].PersistentVolumeClaim.ClaimName; got != "runtime-pvc" {
 		t.Fatalf("backup PVC = %s, want runtime-pvc", got)

@@ -41,7 +41,7 @@ type RuntimeBackendInterface interface {
 	StopCommand(root string, command string) error
 	StopRuntime(root string) error
 	DeleteRuntime(root string, purgeData bool) error
-	BackupRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential) error
+	BackupRuntime(ctx context.Context, root string, artifact string, registryCredentials []domain.RegistryCredential, preserveReleaseManifest bool) error
 	SpawnPullWorker(ctx context.Context, action RuntimeWorkerAction) (<-chan error, error)
 	OpenConsole(ctx context.Context, root string, procedure string) (io.ReadWriteCloser, error)
 	Signal(commandName string, target string, signal string, root string) error
@@ -170,6 +170,7 @@ type RuntimeWorkerAction struct {
 	MountPath           string
 	CallbackURL         string
 	TokenFile           string
+	NewDataOwner        string
 	RegistryCredentials []domain.RegistryCredential
 }
 

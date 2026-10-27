@@ -6,20 +6,33 @@ import (
 	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 )
+
+func TestConfigMapStateStoreLegacyReleaseRemainsUnverified(t *testing.T) {
+	legacy := &corev1.ConfigMap{Data: map[string]string{
+		configMapKeyID:             "legacy",
+		configMapKeyArtifactDigest: "old-source-digest",
+	}}
+	scroll, err := runtimeScrollFromConfigMap(legacy)
+	if err != nil || scroll.InstalledReleaseState != "" || scroll.ArtifactDigest != "old-source-digest" {
+		t.Fatalf("legacy release = %#v, %v", scroll, err)
+	}
+}
 
 func TestConfigMapStateStoreRoundTripsRuntimeScroll(t *testing.T) {
 	store := NewConfigMapStateStoreWithClient("druid", fake.NewSimpleClientset())
 	exitCode := 7
 	scroll := &domain.RuntimeScroll{
-		ID:         "container-lab",
-		Artifact:   "registry.local/container-lab:1.0",
-		Root:       ref("druid", "druid-container-lab-data"),
-		ScrollName: "container-lab",
-		ScrollYAML: "name: container-lab\n",
-		Status:     domain.RuntimeScrollStatusCreated,
+		InstalledReleaseState: domain.InstalledReleasePending,
+		ID:                    "container-lab",
+		Artifact:              "registry.local/container-lab:1.0",
+		Root:                  ref("druid", "druid-container-lab-data"),
+		ScrollName:            "container-lab",
+		ScrollYAML:            "name: container-lab\n",
+		Status:                domain.RuntimeScrollStatusCreated,
 		ReservedPorts: []domain.Port{
 			{Name: "vscode", Port: 3333, Protocol: "http"},
 		},
@@ -41,6 +54,10 @@ func TestConfigMapStateStoreRoundTripsRuntimeScroll(t *testing.T) {
 	if got.Artifact != scroll.Artifact || got.Root != scroll.Root || got.ScrollYAML != scroll.ScrollYAML {
 		t.Fatalf("stored scroll mismatch: %#v", got)
 	}
+	if got.InstalledReleaseState != domain.InstalledReleasePending {
+		t.Fatalf("pending state lost: %q", got.InstalledReleaseState)
+	}
+	got.InstalledReleaseState = domain.InstalledReleaseReady
 	if got.Procedures["verify"]["verify.0"].Status != domain.ScrollLockStatusError {
 		t.Fatalf("procedure status = %s, want error", got.Procedures["verify"]["verify.0"].Status)
 	}
@@ -60,6 +77,9 @@ func TestConfigMapStateStoreRoundTripsRuntimeScroll(t *testing.T) {
 	}
 	if got.ReservedPorts == nil || len(got.ReservedPorts) != 0 {
 		t.Fatalf("reserved ports = %#v, want explicit empty list", got.ReservedPorts)
+	}
+	if got.InstalledReleaseState != domain.InstalledReleaseReady {
+		t.Fatalf("confirmed state lost: %q", got.InstalledReleaseState)
 	}
 
 	got.Status = domain.RuntimeScrollStatusRunning
