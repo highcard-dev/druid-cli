@@ -1,17 +1,19 @@
 package cli
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
-	v1 "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/highcard-dev/daemon/internal/core/services/registry"
 	"github.com/spf13/cobra"
-	"oras.land/oras-go/v2/registry/remote"
 )
 
 func TestWorkerPullCommandUsesRuntimeIDOnly(t *testing.T) {
@@ -30,6 +32,35 @@ func TestWorkerPullCommandRequiresRuntimeID(t *testing.T) {
 	}
 	if got := flag.Annotations[cobra.BashCompOneRequiredFlag]; len(got) != 1 || got[0] != "true" {
 		t.Fatalf("runtime-id required annotation = %#v, want true", got)
+	}
+}
+
+func TestWorkerPullCommandAcceptsLegacyManifestFlagWithoutChangingAction(t *testing.T) {
+	flag := WorkerPullCommand.Flags().Lookup("preserve-release-manifest")
+	if flag == nil || !flag.Hidden {
+		t.Fatal("worker pull should accept a hidden legacy --preserve-release-manifest flag")
+	}
+	previousValue, previousChanged := flag.Value.String(), flag.Changed
+	t.Cleanup(func() {
+		if err := flag.Value.Set(previousValue); err != nil {
+			t.Fatal(err)
+		}
+		flag.Changed = previousChanged
+	})
+	before := workerPullAction
+	for _, arg := range []string{"--preserve-release-manifest", "--preserve-release-manifest=false"} {
+		if err := WorkerPullCommand.ParseFlags([]string{arg}); err != nil {
+			t.Fatalf("legacy flag should still be accepted: %v", err)
+		}
+		if !reflect.DeepEqual(workerPullAction, before) {
+			t.Fatal("legacy flag must not change worker action")
+		}
+	}
+}
+
+func TestWorkerPushCommandSupportsReleaseManifestPreservation(t *testing.T) {
+	if flag := WorkerPushCommand.Flags().Lookup("preserve-release-manifest"); flag == nil {
+		t.Fatal("worker push should expose --preserve-release-manifest")
 	}
 }
 
@@ -70,29 +101,79 @@ func TestReportWorkerResultUsesTokenOnlyWhenProvided(t *testing.T) {
 	}
 }
 
-func TestWorkerUpdateMergePreservesSkipUpdateAndExtraFiles(t *testing.T) {
-	src := t.TempDir()
-	dst := t.TempDir()
-	mustWrite(t, filepath.Join(src, "scroll.yaml"), "name: next\n")
-	mustWrite(t, filepath.Join(src, "data", "keep", "state.txt"), "new")
-	mustWrite(t, filepath.Join(src, "data", "overwrite.txt"), "new")
-	mustWrite(t, filepath.Join(dst, "scroll.yaml"), "name: old\n")
-	mustWrite(t, filepath.Join(dst, "data", "keep", "state.txt"), "old")
-	mustWrite(t, filepath.Join(dst, "data", "overwrite.txt"), "old")
-	mustWrite(t, filepath.Join(dst, "data", "extra.txt"), "extra")
-
-	if err := mergePulledRoot(src, dst, map[string]bool{"keep": true}); err != nil {
+func TestStagedUpdateReplacesUnprotectedAndPreservesSkipUpdate(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "scroll.yaml"), "name: old\n")
+	mustWrite(t, filepath.Join(root, "data", "keep", "state.txt"), "old")
+	mustWrite(t, filepath.Join(root, "data", "extra.txt"), "old")
+	stage, err := os.MkdirTemp(root, ".druid-worker-update-stage-*")
+	if err != nil {
 		t.Fatal(err)
 	}
-	assertFile(t, filepath.Join(dst, "scroll.yaml"), "name: next\n")
-	assertFile(t, filepath.Join(dst, "data", "keep", "state.txt"), "old")
-	assertFile(t, filepath.Join(dst, "data", "overwrite.txt"), "new")
-	assertFile(t, filepath.Join(dst, "data", "extra.txt"), "extra")
+	defer os.RemoveAll(stage)
+	mustWrite(t, filepath.Join(stage, "scroll.yaml"), "name: new\n")
+	mustWrite(t, filepath.Join(stage, "data", "keep", "state.txt"), "new")
+	mustWrite(t, filepath.Join(stage, "data", "replace.txt"), "new")
+
+	if err := preserveSkippedUpdateData(root, stage, map[string]bool{"keep": true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := replaceRestoredRoot(root, stage); err != nil {
+		t.Fatal(err)
+	}
+
+	assertFile(t, filepath.Join(root, "scroll.yaml"), "name: new\n")
+	assertFile(t, filepath.Join(root, "data", "keep", "state.txt"), "old")
+	assertFile(t, filepath.Join(root, "data", "replace.txt"), "new")
+	if _, err := os.Stat(filepath.Join(root, "data", "extra.txt")); !os.IsNotExist(err) {
+		t.Fatalf("unprotected destination-only file should be removed, stat err = %v", err)
+	}
+}
+
+func TestPreserveSkippedUpdateDataKeepsMissingPathsMissing(t *testing.T) {
+	root := t.TempDir()
+	stage, err := os.MkdirTemp(root, ".druid-worker-update-stage-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(stage)
+	mustWrite(t, filepath.Join(stage, "data", "keep", "state.txt"), "candidate")
+
+	if err := preserveSkippedUpdateData(root, stage, map[string]bool{"keep": true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(stage, "data", "keep")); !os.IsNotExist(err) {
+		t.Fatalf("missing installed skip_update path should remain missing, stat err = %v", err)
+	}
+}
+
+func TestWorkerUpdatePreservesRemovedProtectedChunk(t *testing.T) {
+	for _, chunks := range []string{
+		"  - name: world\n    path: world\n    skip_update: true\n",
+		"  - name: server\n    path: .\n    chunks:\n      - name: world\n        path: world\n        skip_update: true\n",
+	} {
+		t.Run(chunks, func(t *testing.T) {
+			root := t.TempDir()
+			candidate := t.TempDir()
+			mustWrite(t, filepath.Join(root, "scroll.yaml"), "name: example\nchunks:\n"+chunks)
+			mustWrite(t, filepath.Join(root, "data", "world", "save.dat"), "user world")
+			mustWrite(t, filepath.Join(root, "data", "obsolete.txt"), "old release")
+			mustWrite(t, filepath.Join(candidate, "scroll.yaml"), "name: example\n")
+			if err := pullWorkerUpdate(root, candidate, nil, nil); err != nil {
+				t.Fatal(err)
+			}
+			assertFile(t, filepath.Join(root, "data", "world", "save.dat"), "user world")
+			if _, err := os.Stat(filepath.Join(root, "data", "obsolete.txt")); !os.IsNotExist(err) {
+				t.Fatalf("unprotected obsolete file retained: %v", err)
+			}
+		})
+	}
 }
 
 func TestWorkerRestoreStagesBeforeReplacingRoot(t *testing.T) {
 	root := t.TempDir()
 	mustWrite(t, filepath.Join(root, "scroll.yaml"), "name: old\n")
+	mustWrite(t, filepath.Join(root, "manifest.json"), `{"digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}`)
 	mustWrite(t, filepath.Join(root, "data", "logs", "latest.log"), "old")
 	mustWrite(t, filepath.Join(root, "data", "old-only.txt"), "old")
 
@@ -102,10 +183,109 @@ func TestWorkerRestoreStagesBeforeReplacingRoot(t *testing.T) {
 	}
 
 	assertFile(t, filepath.Join(root, "scroll.yaml"), "name: restored\n")
+	assertFile(t, filepath.Join(root, "manifest.json"), `{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)
+	result := readInstalledRelease(root, true)
+	if result.Error != "" || result.ArtifactDigest != "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" || result.ScrollYAML != "name: restored\n" {
+		t.Fatalf("restored identity must describe the preserved release: %#v", result)
+	}
 	assertFile(t, filepath.Join(root, "data", "logs", "latest.log"), "restored")
 	if _, err := os.Stat(filepath.Join(root, "data", "old-only.txt")); !os.IsNotExist(err) {
 		t.Fatalf("old root contents should be removed before restore, stat err = %v", err)
 	}
+}
+
+func TestWorkerRestorePreservesRootWhenPullFails(t *testing.T) {
+	root := t.TempDir()
+	original := map[string]string{
+		"scroll.yaml":          "name: original\n",
+		"manifest.json":        `{"digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}`,
+		"data/logs/latest.log": "original log",
+		"data/old-only.txt":    "original data",
+	}
+	for path, content := range original {
+		mustWrite(t, filepath.Join(root, path), content)
+	}
+	wantErr := errors.New("injected pull failure")
+	err := pullWorkerRestore(root, "registry.local/backup:1", fakeRestoreOCI{t: t, err: wantErr})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("restore error = %v, want %v", err, wantErr)
+	}
+	for path, content := range original {
+		assertFile(t, filepath.Join(root, path), content)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("restore left unexpected root entries: %v", entries)
+	}
+}
+
+func TestReplaceRestoredRootRollsBackAfterStagingBegins(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "scroll.yaml"), "name: original\n")
+	mustWrite(t, filepath.Join(root, "data", "world.txt"), "original")
+	stage, err := os.MkdirTemp(root, ".druid-worker-restore-stage-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(stage)
+	mustWrite(t, filepath.Join(stage, "a-new.txt"), "new")
+	mustWrite(t, filepath.Join(stage, "b-new.txt"), "new")
+
+	stagedMoves := 0
+	err = replaceRestoredRootWithRename(root, stage, func(from string, to string) error {
+		if strings.HasPrefix(from, stage+string(os.PathSeparator)) {
+			stagedMoves++
+			if stagedMoves == 2 {
+				return errors.New("injected staging failure")
+			}
+		}
+		return os.Rename(from, to)
+	})
+	if err == nil || !strings.Contains(err.Error(), "restore transaction rolled back") {
+		t.Fatalf("restore error = %v, want successful rollback error", err)
+	}
+	assertFile(t, filepath.Join(root, "scroll.yaml"), "name: original\n")
+	assertFile(t, filepath.Join(root, "data", "world.txt"), "original")
+	if _, err := os.Stat(filepath.Join(root, "a-new.txt")); !os.IsNotExist(err) {
+		t.Fatalf("staged file should be removed during rollback, stat err = %v", err)
+	}
+}
+
+func TestReplaceRestoredRootMarksFailedRollbackUnsafe(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "original.txt"), "original")
+	stage, err := os.MkdirTemp(root, ".druid-worker-restore-stage-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(stage)
+	mustWrite(t, filepath.Join(stage, "a-new.txt"), "new")
+	mustWrite(t, filepath.Join(stage, "b-new.txt"), "new")
+
+	stagedMoves := 0
+	err = replaceRestoredRootWithRename(root, stage, func(from string, to string) error {
+		if strings.HasPrefix(from, stage+string(os.PathSeparator)) {
+			stagedMoves++
+			if stagedMoves == 2 {
+				return errors.New("injected staging failure")
+			}
+		}
+		if strings.Contains(filepath.Base(filepath.Dir(from)), "restore-rollback-") {
+			return errors.New("injected rollback failure")
+		}
+		return os.Rename(from, to)
+	})
+	if err == nil || !strings.HasPrefix(err.Error(), restoreRootUnsafePrefix) {
+		t.Fatalf("restore error = %v, want unsafe rollback marker", err)
+	}
+	recovery, err := filepath.Glob(filepath.Join(root, ".druid-worker-restore-rollback-*", "original.txt"))
+	if err != nil || len(recovery) != 1 {
+		t.Fatalf("original data must survive failed rollback: files=%v err=%v", recovery, err)
+	}
+	assertFile(t, recovery[0], "original")
 }
 
 func TestWorkerCollectSkipUpdatePaths(t *testing.T) {
@@ -148,7 +328,9 @@ func runWorkerPullForSkipPathTest(t *testing.T, root string) map[string]bool {
 		t.Fatal(err)
 	}
 	result := map[string]bool{}
-	collectSkipUpdatePaths(result, "", scroll.Chunks)
+	if err := collectSkipUpdatePaths(result, filepath.Join(root, domain.RuntimeDataDir), "", scroll.Chunks); err != nil {
+		t.Fatal(err)
+	}
 	return result
 }
 
@@ -174,43 +356,16 @@ func assertFile(t *testing.T, path string, want string) {
 }
 
 type fakeRestoreOCI struct {
-	t *testing.T
+	t   *testing.T
+	err error
 }
 
-func (fakeRestoreOCI) GetRepo(string) (*remote.Repository, error) {
-	return nil, nil
-}
-
-func (fakeRestoreOCI) Push(string, string, string, map[string]string, bool, *domain.File) (v1.Descriptor, error) {
-	return v1.Descriptor{}, nil
-}
-
-func (f fakeRestoreOCI) Pull(dir string, artifact string) error {
-	return f.PullSelective(dir, artifact, true, nil)
-}
-
-func (f fakeRestoreOCI) PullSelective(dir string, artifact string, includeData bool, progress *domain.SnapshotProgress) error {
+func (f fakeRestoreOCI) PullSelectiveWithOptions(dir string, artifact string, includeData bool, progress *domain.SnapshotProgress, options registry.TransferOptions) error {
+	if !options.PreserveReleaseManifest {
+		f.t.Fatal("restore must preserve the release manifest")
+	}
 	mustWrite(f.t, filepath.Join(dir, "scroll.yaml"), "name: restored\n")
+	mustWrite(f.t, filepath.Join(dir, "manifest.json"), `{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)
 	mustWrite(f.t, filepath.Join(dir, "data", "logs", "latest.log"), "restored")
-	return nil
-}
-
-func (fakeRestoreOCI) FetchFile(string, string) ([]byte, error) {
-	return nil, os.ErrNotExist
-}
-
-func (fakeRestoreOCI) ValidateCredentials(string, string, string) error {
-	return nil
-}
-
-func (fakeRestoreOCI) ResolveDigest(string) (string, error) {
-	return "sha256:restored", nil
-}
-
-func (fakeRestoreOCI) ResolveAnnotationInfo(string) (domain.AnnotationInfo, error) {
-	return domain.AnnotationInfo{}, nil
-}
-
-func (fakeRestoreOCI) CanUpdateTag(v1.Descriptor, string, string) (bool, error) {
-	return false, nil
+	return f.err
 }

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"regexp"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
@@ -11,19 +12,36 @@ import (
 	"go.uber.org/zap"
 )
 
-func (s *RuntimeSupervisor) Update(id string, artifact string, registryCredentials []domain.RegistryCredential) (*domain.RuntimeScroll, error) {
+var ErrUnacceptedUpdate = errors.New("update requires an explicitly accepted sha256 artifact reference")
+var ErrInstalledReleaseChanged = errors.New("installed release changed; check updates again")
+var acceptedUpdateReference = regexp.MustCompile(`^[^@\s]+@sha256:[a-f0-9]{64}$`)
+
+func (s *RuntimeSupervisor) Update(id string, artifact string, registryCredentials []domain.RegistryCredential, expectedDigest *string) (*domain.RuntimeScroll, error) {
+	if !acceptedUpdateReference.MatchString(artifact) {
+		return nil, ErrUnacceptedUpdate
+	}
+	unlock := s.lockRuntimeOperation(id)
+	defer unlock()
 	runtimeScroll, err := s.store.GetScroll(id)
 	if err != nil {
 		return nil, err
 	}
-	if artifact == "" {
-		artifact = runtimeScroll.Artifact
+	if expectedDigest != nil {
+		if !acceptedUpdateReference.MatchString("expected@" + *expectedDigest) {
+			return nil, ErrUnacceptedUpdate
+		}
+		installed, err := s.installedRelease(context.Background(), runtimeScroll)
+		if err != nil {
+			return nil, err
+		}
+		if installed["digest"] != *expectedDigest {
+			return nil, ErrInstalledReleaseChanged
+		}
 	}
-	knownDigest := resolveArtifactDigest(artifact, registryCredentials)
-	return s.updateExistingScroll(runtimeScroll, artifact, knownDigest, registryCredentials, true)
+	return s.updateExistingScroll(runtimeScroll, artifact, registryCredentials)
 }
 
-func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeScroll, artifact string, knownDigest string, registryCredentials []domain.RegistryCredential, restartIfRunning bool) (*domain.RuntimeScroll, error) {
+func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeScroll, artifact string, registryCredentials []domain.RegistryCredential) (*domain.RuntimeScroll, error) {
 	wasRunning := runtimeScroll.Status == domain.RuntimeScrollStatusRunning
 	existingRouting := make([]domain.RuntimeRouteAssignment, len(runtimeScroll.Routing))
 	copy(existingRouting, runtimeScroll.Routing)
@@ -52,6 +70,10 @@ func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeSc
 		_ = s.store.UpdateScroll(runtimeScroll)
 		return nil, err
 	}
+	runtimeScroll.InstalledReleaseState = domain.InstalledReleasePending
+	if err := s.store.UpdateScroll(runtimeScroll); err != nil {
+		return nil, err
+	}
 	materialized, err := s.runPullWorker(context.Background(), s.runtimeBackend, ports.RuntimeWorkerModeUpdate, runtimeScroll.ID, artifact, runtimeScroll.Root, registryCredentials, "")
 	if err != nil {
 		runtimeScroll.Status = domain.RuntimeScrollStatusError
@@ -72,9 +94,6 @@ func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeSc
 		runtimeScroll.Artifact = artifact
 	}
 	runtimeScroll.ArtifactDigest = materialized.ArtifactDigest
-	if runtimeScroll.ArtifactDigest == "" {
-		runtimeScroll.ArtifactDigest = knownDigest
-	}
 	runtimeScroll.Root = materialized.Root
 	runtimeScroll.ScrollName = scroll.Name
 	runtimeScroll.ScrollYAML = string(materialized.ScrollYAML)
@@ -87,6 +106,7 @@ func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeSc
 		return nil, err
 	}
 	runtimeScroll.Routing = preserveRoutingAssignments(existingRouting, ports)
+	runtimeScroll.InstalledReleaseState = domain.InstalledReleaseReady
 	runtimeScroll.LastError = ""
 	if wasRunning || runtimeScroll.Status == domain.RuntimeScrollStatusStopped {
 		runtimeScroll.Status = domain.RuntimeScrollStatusStopped
@@ -99,8 +119,8 @@ func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeSc
 	if err := s.publishDeclaredPrivateUI(runtimeScroll, scroll); err != nil {
 		return nil, err
 	}
-	if wasRunning && restartIfRunning {
-		return s.StartScroll(runtimeScroll.ID)
+	if wasRunning {
+		return s.startScroll(runtimeScroll.ID)
 	}
 	return s.store.GetScroll(runtimeScroll.ID)
 }

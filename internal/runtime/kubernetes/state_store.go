@@ -19,21 +19,22 @@ import (
 const (
 	runtimeStateComponent = "runtime-state"
 
-	configMapKeyID             = "id"
-	configMapKeyOwnerID        = "owner_id"
-	configMapKeyArtifact       = "artifact"
-	configMapKeyArtifactDigest = "artifact_digest"
-	configMapKeyRoot           = "root"
-	configMapKeyScrollName     = "scroll_name"
-	configMapKeyScrollYAML     = "scroll_yaml"
-	configMapKeyStatus         = "status"
-	configMapKeyLastError      = "last_error"
-	configMapKeyCreatedAt      = "created_at"
-	configMapKeyUpdatedAt      = "updated_at"
-	configMapKeyProceduresJSON = "procedures_json"
-	configMapKeyRoutingJSON    = "routing_json"
-	configMapKeyReservedPorts  = "reserved_ports_json"
-	configMapKeyUIPackagesJSON = "ui_packages_json"
+	configMapKeyID                    = "id"
+	configMapKeyOwnerID               = "owner_id"
+	configMapKeyArtifact              = "artifact"
+	configMapKeyArtifactDigest        = "artifact_digest"
+	configMapKeyInstalledReleaseState = "installed_release_state"
+	configMapKeyRoot                  = "root"
+	configMapKeyScrollName            = "scroll_name"
+	configMapKeyScrollYAML            = "scroll_yaml"
+	configMapKeyStatus                = "status"
+	configMapKeyLastError             = "last_error"
+	configMapKeyCreatedAt             = "created_at"
+	configMapKeyUpdatedAt             = "updated_at"
+	configMapKeyProceduresJSON        = "procedures_json"
+	configMapKeyRoutingJSON           = "routing_json"
+	configMapKeyReservedPorts         = "reserved_ports_json"
+	configMapKeyUIPackagesJSON        = "ui_packages_json"
 )
 
 type ConfigMapStateStore struct {
@@ -205,21 +206,22 @@ func runtimeScrollConfigMap(namespace string, scroll *domain.RuntimeScroll) (*co
 			},
 		},
 		Data: map[string]string{
-			configMapKeyID:             scroll.ID,
-			configMapKeyOwnerID:        scroll.OwnerID,
-			configMapKeyArtifact:       scroll.Artifact,
-			configMapKeyArtifactDigest: scroll.ArtifactDigest,
-			configMapKeyRoot:           scroll.Root,
-			configMapKeyScrollName:     scroll.ScrollName,
-			configMapKeyScrollYAML:     scroll.ScrollYAML,
-			configMapKeyStatus:         string(scroll.Status),
-			configMapKeyLastError:      scroll.LastError,
-			configMapKeyCreatedAt:      formatRuntimeTime(scroll.CreatedAt),
-			configMapKeyUpdatedAt:      formatRuntimeTime(scroll.UpdatedAt),
-			configMapKeyProceduresJSON: string(procedures),
-			configMapKeyRoutingJSON:    string(routing),
-			configMapKeyReservedPorts:  string(reservedPorts),
-			configMapKeyUIPackagesJSON: string(uiPackages),
+			configMapKeyID:                    scroll.ID,
+			configMapKeyOwnerID:               scroll.OwnerID,
+			configMapKeyArtifact:              scroll.Artifact,
+			configMapKeyArtifactDigest:        scroll.ArtifactDigest,
+			configMapKeyInstalledReleaseState: string(scroll.InstalledReleaseState),
+			configMapKeyRoot:                  scroll.Root,
+			configMapKeyScrollName:            scroll.ScrollName,
+			configMapKeyScrollYAML:            scroll.ScrollYAML,
+			configMapKeyStatus:                string(scroll.Status),
+			configMapKeyLastError:             scroll.LastError,
+			configMapKeyCreatedAt:             formatRuntimeTime(scroll.CreatedAt),
+			configMapKeyUpdatedAt:             formatRuntimeTime(scroll.UpdatedAt),
+			configMapKeyProceduresJSON:        string(procedures),
+			configMapKeyRoutingJSON:           string(routing),
+			configMapKeyReservedPorts:         string(reservedPorts),
+			configMapKeyUIPackagesJSON:        string(uiPackages),
 		},
 	}, nil
 }
@@ -263,21 +265,22 @@ func runtimeScrollFromConfigMap(configMap *corev1.ConfigMap) (*domain.RuntimeScr
 		id = configMap.Labels[labelScrollID]
 	}
 	scroll := &domain.RuntimeScroll{
-		ID:             id,
-		OwnerID:        data[configMapKeyOwnerID],
-		Artifact:       data[configMapKeyArtifact],
-		ArtifactDigest: data[configMapKeyArtifactDigest],
-		Root:           data[configMapKeyRoot],
-		ScrollName:     data[configMapKeyScrollName],
-		ScrollYAML:     data[configMapKeyScrollYAML],
-		Status:         domain.RuntimeScrollStatus(data[configMapKeyStatus]),
-		LastError:      data[configMapKeyLastError],
-		Routing:        routing,
-		ReservedPorts:  reservedPorts,
-		UIPackages:     uiPackages,
-		CreatedAt:      parseRuntimeTime(data[configMapKeyCreatedAt]),
-		UpdatedAt:      parseRuntimeTime(data[configMapKeyUpdatedAt]),
-		Procedures:     procedures,
+		ID:                    id,
+		OwnerID:               data[configMapKeyOwnerID],
+		Artifact:              data[configMapKeyArtifact],
+		ArtifactDigest:        data[configMapKeyArtifactDigest],
+		InstalledReleaseState: domain.InstalledReleaseState(data[configMapKeyInstalledReleaseState]),
+		Root:                  data[configMapKeyRoot],
+		ScrollName:            data[configMapKeyScrollName],
+		ScrollYAML:            data[configMapKeyScrollYAML],
+		Status:                domain.RuntimeScrollStatus(data[configMapKeyStatus]),
+		LastError:             data[configMapKeyLastError],
+		Routing:               routing,
+		ReservedPorts:         reservedPorts,
+		UIPackages:            uiPackages,
+		CreatedAt:             parseRuntimeTime(data[configMapKeyCreatedAt]),
+		UpdatedAt:             parseRuntimeTime(data[configMapKeyUpdatedAt]),
+		Procedures:            procedures,
 	}
 	if scroll.Status == "" {
 		scroll.Status = domain.RuntimeScrollStatusCreated

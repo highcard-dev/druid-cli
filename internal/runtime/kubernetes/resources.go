@@ -55,7 +55,9 @@ if [ -n "${DRUID_RUNTIME_REGISTRY_CONFIG_JSON:-}" ]; then
 else
   druid "$@"
 fi
-chown -R 1000:1000 "$DRUID_WORKER_ROOT"`
+if [ "$DRUID_WORKER_MODE" != "update" ]; then
+  chown -R 1000:1000 "$DRUID_WORKER_ROOT"
+fi`
 )
 
 const (
@@ -85,11 +87,23 @@ func workerPullJobSpec(namespace string, jobName string, pvc string, image strin
 		"--root", action.MountPath,
 		"--callback-url", action.CallbackURL,
 	}
+	if action.Mode == ports.RuntimeWorkerModeUpdate {
+		command = append(command, "--new-data-owner", "1000:1000")
+	}
+	if action.Mode == ports.RuntimeWorkerModeInspect {
+		// No credential shell or recursive ownership changes for read-only inspection.
+		command = append([]string{"druid"}, command[4:]...)
+	}
 	job := helperJobSpec(namespace, jobName, pvc, image, command, imagePullSecret, map[string]string{
 		labelComponent: "worker-pull",
 		labelRuntimeID: runtimeLabel(action.RuntimeID),
 	})
 	container := &job.Spec.Template.Spec.Containers[0]
+	if action.Mode == ports.RuntimeWorkerModeInspect {
+		for i := range container.VolumeMounts {
+			container.VolumeMounts[i].ReadOnly = true
+		}
+	}
 	runAsRoot := int64(0)
 	runAsNonRoot := false
 	container.SecurityContext = &corev1.SecurityContext{
@@ -100,6 +114,7 @@ func workerPullJobSpec(namespace string, jobName string, pvc string, image strin
 	container.Env = append(container.Env,
 		corev1.EnvVar{Name: "DRUID_WORKER_TOKEN_FILE", Value: action.TokenFile},
 		corev1.EnvVar{Name: workerPullRootEnvName, Value: action.MountPath},
+		corev1.EnvVar{Name: "DRUID_WORKER_MODE", Value: string(action.Mode)},
 	)
 	if registryConfigSecret != "" {
 		container.Env = append(container.Env, corev1.EnvVar{
@@ -128,10 +143,13 @@ func runtimeLabel(runtimeID string) string {
 	return dnsLabel(runtimeID)
 }
 
-func backupJobSpec(namespace string, jobName string, pvc string, image string, artifact string, imagePullSecret string, registryConfigSecret string, registryPlainHTTP bool) *batchv1.Job {
+func backupJobSpec(namespace string, jobName string, pvc string, image string, artifact string, imagePullSecret string, registryConfigSecret string, registryPlainHTTP bool, preserveReleaseManifest bool) *batchv1.Job {
 	command := []string{"druid", "push", artifact, "/scroll"}
 	if registryConfigSecret != "" {
 		command = []string{"sh", "-c", registryConfigScript, "sh", "push", artifact, "/scroll"}
+	}
+	if preserveReleaseManifest {
+		command = append(command, "--preserve-release-manifest")
 	}
 	job := helperJobSpec(namespace, jobName, pvc, image, command, imagePullSecret, map[string]string{
 		labelComponent: "backup",

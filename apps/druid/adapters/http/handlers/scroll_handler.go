@@ -124,6 +124,17 @@ func (h *ScrollHandler) GetScroll(c *fiber.Ctx, id string) error {
 	return c.JSON(runtimeScroll)
 }
 
+func (h *ScrollHandler) GetInstalledRelease(c *fiber.Ctx, id string) error {
+	if _, err := h.getScroll(id); err != nil {
+		return err
+	}
+	release, err := h.supervisor.InstalledRelease(c.UserContext(), id)
+	if err != nil {
+		return err
+	}
+	return c.JSON(release)
+}
+
 func (h *ScrollHandler) DeleteScroll(c *fiber.Ctx, id string) error {
 	runtimeScroll, err := h.getScroll(id)
 	if err != nil {
@@ -170,12 +181,14 @@ func (h *ScrollHandler) UpdateScroll(c *fiber.Ctx, id string) error {
 			return fiber.NewError(fiber.StatusBadRequest, err.Error())
 		}
 	}
-	artifact := ""
-	if request.Artifact != nil {
-		artifact = *request.Artifact
-	}
-	runtimeScroll, err := h.supervisor.Update(id, artifact, registryCredentials(request.RegistryCredentials))
+	runtimeScroll, err := h.supervisor.Update(id, request.Artifact, registryCredentials(request.RegistryCredentials), request.ExpectedInstalledDigest)
 	if err != nil {
+		if errors.Is(err, appservices.ErrInstalledReleaseChanged) {
+			return fiber.NewError(fiber.StatusConflict, err.Error())
+		}
+		if errors.Is(err, appservices.ErrUnacceptedUpdate) {
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		}
 		return err
 	}
 	return c.JSON(runtimeScroll)

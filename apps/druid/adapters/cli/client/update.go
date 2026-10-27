@@ -3,14 +3,11 @@ package client
 import "github.com/spf13/cobra"
 
 var UpdateCommand = &cobra.Command{
-	Use:   "update <name> [artifact]",
-	Short: "Update a daemon-managed scroll runtime",
-	Args:  cobra.RangeArgs(1, 2),
+	Use:   "update <name> <repository@sha256:digest>",
+	Short: "Apply an explicitly accepted immutable Scroll revision",
+	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		artifact := ""
-		if len(args) == 2 {
-			artifact = args[1]
-		}
+		artifact := args[1]
 		daemon, err := runtimeDaemonClient()
 		if err != nil {
 			return err

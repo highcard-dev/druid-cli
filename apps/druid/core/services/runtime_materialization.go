@@ -87,19 +87,3 @@ func resolveArtifactMinDisk(artifact string, registryCredentials []domain.Regist
 	}
 	return info.MinDisk
 }
-
-func resolveArtifactDigest(artifact string, registryCredentials []domain.RegistryCredential) string {
-	if artifact == "" {
-		return ""
-	}
-	if _, err := os.Stat(artifact); err == nil {
-		return ""
-	}
-	oci := registry.NewOciClient(registry.NewCredentialStore(registryCredentials))
-	digest, err := oci.ResolveDigest(artifact)
-	if err != nil {
-		logger.Log().Warn("Unable to resolve artifact digest", zap.String("artifact", artifact), zap.Error(err))
-		return ""
-	}
-	return digest
-}

@@ -27,8 +27,10 @@ type RuntimeSupervisor struct {
 	workerCallbackURL string
 	workerTimeout     time.Duration
 
-	mu       sync.Mutex
-	sessions map[string]*RuntimeSession
+	mu           sync.Mutex
+	sessions     map[string]*RuntimeSession
+	operationsMu sync.Mutex
+	operations   map[string]*sync.Mutex
 }
 
 type EnsureOptions struct {
@@ -65,6 +67,7 @@ func NewRuntimeSupervisor(
 		manager:       manager,
 		workerTimeout: 20 * time.Minute,
 		sessions:      map[string]*RuntimeSession{},
+		operations:    map[string]*sync.Mutex{},
 	}
 	runtimeBackend, err := backendFactory.Create(supervisor)
 	if err != nil {
@@ -144,13 +147,14 @@ func (s *RuntimeSupervisor) createWithOwner(artifact string, name string, ownerI
 		return nil, err
 	}
 	placeholder := &domain.RuntimeScroll{
-		ID:            id,
-		OwnerID:       ownerID,
-		Artifact:      artifact,
-		Root:          s.runtimeBackend.RootRef(id, namespace),
-		Status:        domain.RuntimeScrollStatusCreated,
-		Procedures:    domain.ProcedureStatusMap{},
-		ReservedPorts: fixedDeveloperPorts(),
+		InstalledReleaseState: domain.InstalledReleasePending,
+		ID:                    id,
+		OwnerID:               ownerID,
+		Artifact:              artifact,
+		Root:                  s.runtimeBackend.RootRef(id, namespace),
+		Status:                domain.RuntimeScrollStatusCreated,
+		Procedures:            domain.ProcedureStatusMap{},
+		ReservedPorts:         fixedDeveloperPorts(),
 	}
 	if err := s.store.CreateScroll(placeholder); err != nil {
 		return nil, err
@@ -179,6 +183,8 @@ func (s *RuntimeSupervisor) createWithOwner(artifact string, name string, ownerI
 func (s *RuntimeSupervisor) Ensure(options EnsureOptions) (*domain.RuntimeScroll, error) {
 	id := coreservices.RuntimeScrollIDFromName(options.Name)
 	if id != "" {
+		unlock := s.lockRuntimeOperation(id)
+		defer unlock()
 		runtimeScroll, err := s.store.GetScroll(id)
 		if err == nil {
 			if options.Namespace != "" && runtimeScroll.Root != "" {
@@ -192,6 +198,10 @@ func (s *RuntimeSupervisor) Ensure(options EnsureOptions) (*domain.RuntimeScroll
 				artifact := options.Artifact
 				if artifact == "" {
 					artifact = runtimeScroll.Artifact
+				}
+				runtimeScroll.InstalledReleaseState = domain.InstalledReleasePending
+				if err := s.store.UpdateScroll(runtimeScroll); err != nil {
+					return nil, err
 				}
 				materialized, err := s.materializeNewScroll(context.Background(), s.runtimeBackend, artifact, id, options.Namespace, options.RegistryCredentials)
 				if err != nil {
@@ -208,15 +218,9 @@ func (s *RuntimeSupervisor) Ensure(options EnsureOptions) (*domain.RuntimeScroll
 			if runtimeScroll.Status == domain.RuntimeScrollStatusError && (options.Artifact == "" || options.Artifact == runtimeScroll.Artifact) {
 				return s.persistEnsureOptions(runtimeScroll, options)
 			}
-			if options.Artifact != "" {
-				nextDigest := resolveArtifactDigest(options.Artifact, options.RegistryCredentials)
-				artifactChanged := options.Artifact != runtimeScroll.Artifact
-				digestChanged := nextDigest != "" && nextDigest != runtimeScroll.ArtifactDigest
-				if artifactChanged || digestChanged {
-					applyEnsureOptions(runtimeScroll, options)
-					return s.updateExistingScroll(runtimeScroll, options.Artifact, nextDigest, options.RegistryCredentials, false)
-				}
-			}
+			// Reconciliation does not accept releases on the user's behalf. In
+			// particular it must neither follow a moved tag nor undo a restore.
+			// Existing workloads change only through the explicit Update operation.
 			return s.persistEnsureOptions(runtimeScroll, options)
 		}
 		if !errors.Is(err, domain.ErrRuntimeScrollNotFound) {
@@ -281,6 +285,7 @@ func (s *RuntimeSupervisor) applyMaterializedScroll(runtimeScroll *domain.Runtim
 	runtimeScroll.Root = materialized.Root
 	runtimeScroll.ScrollName = scroll.Name
 	runtimeScroll.ScrollYAML = string(materialized.ScrollYAML)
+	runtimeScroll.InstalledReleaseState = domain.InstalledReleaseReady
 	runtimeScroll.Status = domain.RuntimeScrollStatusCreated
 	runtimeScroll.LastError = ""
 	runtimeScroll.Procedures = domain.ProcedureStatusMap{}
