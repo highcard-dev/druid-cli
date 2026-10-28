@@ -1,15 +1,25 @@
+# syntax=docker/dockerfile:1
+
 FROM golang:bullseye AS builder
 
 ARG VERSION=docker
 
-COPY . .
-COPY .docker/entrypoint.sh /entrypoint.sh
+WORKDIR /src
 
-WORKDIR /go
+COPY go.mod go.sum ./
+RUN --mount=type=cache,id=druid-go-mod,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,id=druid-go-build,target=/root/.cache/go-build,sharing=locked \
+    go mod download && \
+    go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.5.1
 
 ENV VERSION=${VERSION}
 
-RUN make build
+COPY . .
+COPY .docker/entrypoint.sh /entrypoint.sh
+
+RUN --mount=type=cache,id=druid-go-mod,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,id=druid-go-build,target=/root/.cache/go-build,sharing=locked \
+    make build
 
 # The binaries are in ./bin/ directory after build
 
@@ -34,7 +44,7 @@ RUN ARCH=$(uname -m) && \
     chmod +x /usr/bin/yq
 
 # Copy only the built binaries and entrypoint from builder
-COPY --from=builder /go/bin/druid* /usr/bin/
+COPY --from=builder /src/bin/druid* /usr/bin/
 COPY --from=builder /entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
