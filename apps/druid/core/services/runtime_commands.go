@@ -2,7 +2,6 @@ package services
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -41,7 +40,7 @@ func (s *RuntimeSession) AddCommand(command string, instruction *domain.CommandI
 		return fmt.Errorf("command instruction is required")
 	}
 	s.mu.Lock()
-	existing := s.scrollService.GetFile().Commands[command]
+	defer s.mu.Unlock()
 	file := *s.scrollService.GetFile()
 	file.Commands = make(map[string]*domain.CommandInstructionSet, len(s.scrollService.GetFile().Commands)+1)
 	for name, existing := range s.scrollService.GetFile().Commands {
@@ -51,7 +50,6 @@ func (s *RuntimeSession) AddCommand(command string, instruction *domain.CommandI
 		file.Commands = map[string]*domain.CommandInstructionSet{}
 	}
 	file.Commands[command] = instruction
-	s.mu.Unlock()
 	data, err := yaml.Marshal(file)
 	if err != nil {
 		return err
@@ -60,15 +58,6 @@ func (s *RuntimeSession) AddCommand(command string, instruction *domain.CommandI
 	if err != nil {
 		return err
 	}
-	// A changed definition is a replacement, never an upgrade of the existing
-	// execution's permissions. Validate first, then stop and revoke that run.
-	if existing != nil && !reflect.DeepEqual(existing, instruction) {
-		if err := s.RemoveCommand(command); err != nil {
-			return err
-		}
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.runtimeScroll.ScrollYAML = string(data)
 	if err := s.store.UpdateScroll(s.runtimeScroll); err != nil {
 		return err
