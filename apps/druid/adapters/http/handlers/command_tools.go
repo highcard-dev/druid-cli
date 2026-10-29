@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"strings"
 
@@ -47,64 +46,7 @@ func bearer(header string) string {
 	return parts[1]
 }
 
-func (h *ScrollHandler) commandToolHTTP(name string) fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		token := bearer(c.Get("Authorization"))
-		// Preserve the existing owner-authenticated endpoints.
-		if h.supervisor.CommandToolsRequireIdentity() && (name == "get_queue" || name == "publish_ui") {
-			if c.Get("Authorization") == "" {
-				return c.Next()
-			}
-			if h.authorizer != nil {
-				if owner, err := h.authorizer.CheckHeader(c); err == nil && owner != nil {
-					return c.Next()
-				}
-			}
-		}
-		input := services.ToolInput{}
-		if len(c.Body()) > 0 {
-			decoder := json.NewDecoder(bytes.NewReader(c.Body()))
-			decoder.DisallowUnknownFields()
-			if err := decoder.Decode(&input); err != nil {
-				return fiber.NewError(400, "invalid tool request")
-			}
-			if err := decoder.Decode(new(any)); err != io.EOF {
-				return fiber.NewError(400, "invalid tool request")
-			}
-		}
-		input.Command = c.Params("command", input.Command)
-		input.Console = c.Params("console", input.Console)
-		input.ExecutionID = c.Params("execution", input.ExecutionID)
-		input.Scope = c.Params("scope", input.Scope)
-		if c.Method() == "GET" {
-			input.TailLines = c.QueryInt("tail_lines", 0)
-			input.TimeoutSeconds = c.QueryInt("timeout_seconds", 0)
-		}
-		result, err := h.supervisor.CallCommandTool(c.UserContext(), token, c.Params("id"), name, input)
-		if err != nil {
-			return fiber.NewError(commandToolStatus(err), commandToolMessage(err))
-		}
-		if name == "run_command" {
-			c.Status(202)
-		}
-		if name == "create_command" {
-			c.Status(201)
-		}
-		return c.JSON(result)
-	}
-}
-
-func (h *ScrollHandler) registerCommandTools(app *fiber.App) {
-	app.Get("/:id/api/v1/commands", h.commandToolHTTP("list_commands"))
-	app.Post("/:id/api/v1/commands", h.commandToolHTTP("create_command"))
-	app.Get("/:id/api/v1/queue", h.commandToolHTTP("get_queue"))
-	app.Post("/:id/api/v1/commands/:command", h.commandToolHTTP("run_command"))
-	app.Get("/:id/api/v1/commands/:command/executions/:execution/wait", h.commandToolHTTP("wait_for_command"))
-	app.Get("/:id/api/v1/consoles/:console/logs", h.commandToolHTTP("read_logs"))
-	app.Post("/:id/api/v1/consoles/:console/logs/search", h.commandToolHTTP("search_logs"))
-	app.Post("/:id/api/v1/consoles/:console/stdin", h.commandToolHTTP("send_stdin"))
-	app.Get("/:id/api/v1/status", h.commandToolHTTP("get_deployment_status"))
-	app.Post("/:id/api/v1/ui/packages/:scope/publish", h.commandToolHTTP("publish_ui"))
+func (h *ScrollHandler) registerCommandMCP(app *fiber.App) {
 	app.All("/:id/mcp", func(c *fiber.Ctx) error {
 		deployment, token := c.Params("id"), bearer(c.Get("Authorization"))
 		record, err := h.supervisor.AuthenticateCommand(c.UserContext(), token, deployment)

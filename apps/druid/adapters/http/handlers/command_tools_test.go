@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -143,7 +142,7 @@ func (t authenticatedTransport) RoundTrip(request *http.Request) (*http.Response
 	return http.DefaultTransport.RoundTrip(copy)
 }
 
-func TestCommandToolsHTTPAndRealMCPClient(t *testing.T) {
+func TestCommandToolsRealMCPClient(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	token := "fixture-token"
@@ -178,18 +177,40 @@ func TestCommandToolsHTTPAndRealMCPClient(t *testing.T) {
 	}
 	app := fiber.New(fiber.Config{DisableStartupMessage: true})
 	RegisterPublicRoutes(app, RouteHandlers{Server: NewRuntimeServer(NewHealthHandler(), scrolls), Websocket: NewWebsocketHandler()})
-	request := httptest.NewRequest("GET", "/tools/api/v1/commands", nil)
-	request.Header.Set("Authorization", "Bearer "+string(token))
-	response, err := app.Test(request)
-	if err != nil {
-		t.Fatal(err)
+	for _, route := range []struct{ method, path string }{
+		{"GET", "/:id/api/v1/queue"},
+		{"POST", "/:id/api/v1/ui/packages/:scope/publish"},
+	} {
+		count := 0
+		for _, registered := range app.GetRoutes() {
+			if registered.Method == route.method && registered.Path == route.path {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Fatalf("owner REST route %s is registered %d times", route.path, count)
+		}
 	}
-	data, _ := io.ReadAll(response.Body)
-	response.Body.Close()
-	if response.StatusCode != 200 || strings.Contains(string(data), "must-not-leak") {
-		t.Fatal("metadata HTTP endpoint failed or leaked secrets")
+	for _, route := range []struct{ method, path string }{
+		{"GET", "/tools/api/v1/commands"},
+		{"POST", "/tools/api/v1/commands"},
+		{"POST", "/tools/api/v1/commands/agent"},
+		{"GET", "/tools/api/v1/commands/agent/executions/execution/wait"},
+		{"GET", "/tools/api/v1/consoles/agent.0/logs"},
+		{"POST", "/tools/api/v1/consoles/agent.0/logs/search"},
+		{"POST", "/tools/api/v1/consoles/agent.0/stdin"},
+		{"GET", "/tools/api/v1/status"},
+	} {
+		response, err := app.Test(httptest.NewRequest(route.method, route.path, nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != 404 {
+			t.Fatalf("removed agent REST route %s: %d", route.path, response.StatusCode)
+		}
 	}
-	for _, path := range []string{"/other/api/v1/commands", "/tools/api/v1/token", "/tools/api/v1/scroll"} {
+	for _, path := range []string{"/tools/api/v1/commands", "/other/api/v1/commands", "/tools/api/v1/token", "/tools/api/v1/scroll", "/tools/api/v1/queue", "/tools/api/v1/ui/packages/private/publish"} {
 		request := httptest.NewRequest("GET", path, nil)
 		request.Header.Set("Authorization", "Bearer "+string(token))
 		response, err := app.Test(request)
@@ -216,6 +237,13 @@ func TestCommandToolsHTTPAndRealMCPClient(t *testing.T) {
 	}))
 	defer server.Close()
 	client := mcp.NewClient(&mcp.Implementation{Name: "druid-test", Version: "1"}, nil)
+	for _, denied := range []struct{ deployment, token string }{{"tools", ""}, {"tools", "invalid"}, {"other", token}} {
+		deniedSession, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: server.URL + "/" + denied.deployment + "/mcp", HTTPClient: &http.Client{Transport: authenticatedTransport{denied.token}}}, nil)
+		if err == nil {
+			deniedSession.Close()
+			t.Fatal("MCP accepted an absent, invalid or cross-deployment credential")
+		}
+	}
 	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: server.URL + "/tools/mcp", HTTPClient: &http.Client{Transport: authenticatedTransport{string(token)}}}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -232,52 +260,28 @@ func TestCommandToolsHTTPAndRealMCPClient(t *testing.T) {
 	if err != nil || result.IsError {
 		t.Fatal("MCP command listing failed")
 	}
-	t.Run("HTTP and MCP sanitize workload logs and tool errors identically", func(t *testing.T) {
+	t.Run("MCP sanitizes workload logs and tool errors", func(t *testing.T) {
 		jwt := "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJmaXh0dXJlIn0.c2ln"
 		backend.logs = "application printed " + jwt
 		for _, test := range []struct {
-			tool, method, path, body string
-			arguments                map[string]any
-			failure                  bool
+			tool      string
+			arguments map[string]any
+			failure   bool
 		}{
-			{"read_logs", "GET", "/tools/api/v1/consoles/agent.0/logs", "", map[string]any{"console": "agent.0"}, false},
-			{"search_logs", "POST", "/tools/api/v1/consoles/agent.0/logs/search", `{"query":"application"}`, map[string]any{"console": "agent.0", "query": "application"}, false},
-			{"publish_ui", "POST", "/tools/api/v1/ui/packages/private/publish", `{}`, map[string]any{"scope": "private"}, true},
+			{"read_logs", map[string]any{"console": "agent.0"}, false},
+			{"search_logs", map[string]any{"console": "agent.0", "query": "application"}, false},
+			{"publish_ui", map[string]any{"scope": "private"}, true},
 		} {
 			if test.failure {
 				backend.uploadError = &appservices.ToolError{Status: 400, Message: "upstream error " + jwt}
 			}
-			request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
-			request.Header.Set("Authorization", "Bearer "+token)
-			request.Header.Set("Content-Type", "application/json")
-			response, err := app.Test(request, -1)
-			if err != nil {
-				t.Fatal(err)
+			result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: test.tool, Arguments: test.arguments})
+			if err != nil || result.IsError != test.failure || len(result.Content) != 1 {
+				t.Fatalf("%s MCP response: %v, %v", test.tool, result, err)
 			}
-			data, err := io.ReadAll(response.Body)
-			response.Body.Close()
-			if err != nil {
-				t.Fatal(err)
-			}
-			mcpResult, err := session.CallTool(ctx, &mcp.CallToolParams{Name: test.tool, Arguments: test.arguments})
-			if err != nil || mcpResult.IsError != test.failure || len(mcpResult.Content) != 1 {
-				t.Fatalf("%s MCP response: %v, %v", test.tool, mcpResult, err)
-			}
-			text := mcpResult.Content[0].(*mcp.TextContent).Text
-			for _, output := range []string{string(data), text} {
-				if strings.Contains(output, jwt) || !strings.Contains(output, "[REDACTED]") {
-					t.Fatalf("%s did not sanitize workload content", test.tool)
-				}
-			}
-			if test.failure {
-				if response.StatusCode != 400 || string(data) != text {
-					t.Fatal("HTTP/MCP tool errors differ")
-				}
-			} else {
-				var httpValue, mcpValue any
-				if response.StatusCode != 200 || json.Unmarshal(data, &httpValue) != nil || json.Unmarshal([]byte(text), &mcpValue) != nil || !reflect.DeepEqual(httpValue, mcpValue) {
-					t.Fatal("HTTP/MCP log results differ")
-				}
+			text := result.Content[0].(*mcp.TextContent).Text
+			if strings.Contains(text, jwt) || !strings.Contains(text, "[REDACTED]") {
+				t.Fatalf("%s did not sanitize workload content", test.tool)
 			}
 			backend.uploadError = nil
 		}
@@ -290,30 +294,6 @@ func TestCommandToolsHTTPAndRealMCPClient(t *testing.T) {
 	if !strings.Contains(string(encodedPublication), "published") || strings.Contains(string(encodedPublication), "upload-private") {
 		t.Fatal("unsafe publication projection")
 	}
-	for _, test := range []struct {
-		path, body, token string
-		status            int
-	}{
-		{"/tools/api/v1/ui/packages/public/publish", `{}`, string(token), 200},
-		{"/tools/api/v1/ui/packages/private/publish", `{"path":"public/app.wasm"}`, string(token), 400},
-		{"/other/api/v1/ui/packages/private/publish", `{}`, string(token), 401},
-		// Owner/local requests fall through to the unchanged owner endpoint.
-		{"/tools/api/v1/ui/packages/private/publish", `{}`, "", 200},
-	} {
-		request := httptest.NewRequest("POST", test.path, strings.NewReader(test.body))
-		request.Header.Set("Content-Type", "application/json")
-		if test.token != "" {
-			request.Header.Set("Authorization", "Bearer "+test.token)
-		}
-		response, err := app.Test(request, -1)
-		if err != nil {
-			t.Fatal(err)
-		}
-		response.Body.Close()
-		if response.StatusCode != test.status {
-			t.Fatalf("%s: got %d, want %d", test.path, response.StatusCode, test.status)
-		}
-	}
 	invalid, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "list_commands", Arguments: map[string]any{"environment": map[string]string{"SECRET": "must-not-be-applied"}}})
 	if err == nil && !invalid.IsError {
 		t.Fatal("MCP accepted an unknown override field")
@@ -321,28 +301,6 @@ func TestCommandToolsHTTPAndRealMCPClient(t *testing.T) {
 	encoded, _ := json.Marshal(result)
 	if !strings.Contains(string(encoded), "agent") || strings.Contains(string(encoded), "must-not-leak") || strings.Contains(string(encoded), string(token)) {
 		t.Fatal("MCP metadata projection failed")
-	}
-	for _, test := range []struct {
-		body   string
-		status int
-	}{
-		{`{"command":"http-created","instructions":{"procedures":[{"image":"busybox","command":["true"]}]}}`, 201},
-		{`{"command":"http-created","instructions":{"procedures":[{"image":"busybox"}]}}`, 409},
-		{`{"command":"invalid","instructions":{"procedures":[]}}`, 400},
-		{`{"command":"identity","instructions":{"identity":{},"procedures":[{"image":"busybox"}]}}`, 400},
-		{`{"command":"unknown","instructions":{"arbitrary":true}}`, 400},
-	} {
-		request := httptest.NewRequest("POST", "/tools/api/v1/commands", strings.NewReader(test.body))
-		request.Header.Set("Content-Type", "application/json")
-		request.Header.Set("Authorization", "Bearer "+string(token))
-		response, err := app.Test(request)
-		if err != nil {
-			t.Fatal(err)
-		}
-		response.Body.Close()
-		if response.StatusCode != test.status {
-			t.Fatalf("HTTP create: expected %d, got %d", test.status, response.StatusCode)
-		}
 	}
 	var arguments map[string]any
 	_, example, found := strings.Cut(commandToolDefinitions()[0].Description, "Example: ")
@@ -388,35 +346,31 @@ func TestCommandToolsHTTPAndRealMCPClient(t *testing.T) {
 	if err == nil && !deniedPublish.IsError {
 		t.Fatal("MCP accepted publishing without permission")
 	}
-	request = httptest.NewRequest("POST", "/tools/api/v1/ui/packages/private/publish", strings.NewReader(`{}`))
-	request.Header.Set("Authorization", "Bearer "+string(limitedToken))
-	response, err = app.Test(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	response.Body.Close()
-	if response.StatusCode != 403 {
-		t.Fatal("HTTP accepted publishing without permission")
-	}
 	deniedCreation, err := limitedSession.CallTool(ctx, &mcp.CallToolParams{Name: "create_command", Arguments: arguments})
 	if err == nil && !deniedCreation.IsError {
 		t.Fatal("MCP accepted creation without its permission")
 	}
-	for _, path := range []string{"/tools/api/v1/commands", "/other/api/v1/commands"} {
-		request := httptest.NewRequest("POST", path, strings.NewReader(`{"command":"denied","instructions":{"procedures":[{"image":"busybox"}]}}`))
+	backend.credentials.Delete(token)
+	if _, err := session.ListTools(ctx, nil); err == nil {
+		t.Fatal("MCP discovery accepted a revoked credential")
+	}
+	// Existing dashboard REST endpoints still work with owner authentication.
+	scrolls.authorizer = ownerRouteAuth{}
+	for _, route := range []struct{ method, path string }{
+		{"GET", "/tools/api/v1/queue"},
+		{"POST", "/tools/api/v1/ui/packages/private/publish"},
+		{"POST", "/tools/api/v1/ui/packages/public/publish"},
+	} {
+		request := httptest.NewRequest(route.method, route.path, strings.NewReader(`{}`))
 		request.Header.Set("Content-Type", "application/json")
-		request.Header.Set("Authorization", "Bearer "+string(limitedToken))
-		response, err := app.Test(request)
+		request.Header.Set("Authorization", "Bearer owner")
+		response, err := app.Test(request, -1)
 		if err != nil {
 			t.Fatal(err)
 		}
 		response.Body.Close()
-		if response.StatusCode != 401 && response.StatusCode != 403 {
-			t.Fatalf("unauthorized creation returned %d", response.StatusCode)
+		if response.StatusCode != 200 {
+			t.Fatalf("owner REST %s: %d", route.path, response.StatusCode)
 		}
-	}
-	backend.credentials.Delete(token)
-	if _, err := session.ListTools(ctx, nil); err == nil {
-		t.Fatal("MCP discovery accepted a revoked credential")
 	}
 }

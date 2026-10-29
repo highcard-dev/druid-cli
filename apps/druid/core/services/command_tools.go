@@ -44,7 +44,7 @@ type ToolError struct {
 func (e *ToolError) Error() string               { return e.Message }
 func toolError(status int, message string) error { return &ToolError{Status: status, Message: message} }
 
-// CallCommandTool is the single permission/execution seam shared by HTTP and MCP.
+// CallCommandTool is the permission/execution seam for MCP tools.
 func (s *RuntimeSupervisor) CallCommandTool(ctx context.Context, token, deployment, name string, input ToolInput) (any, error) {
 	record, err := s.AuthenticateCommand(ctx, token, deployment)
 	if err != nil {

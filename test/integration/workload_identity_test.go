@@ -125,7 +125,7 @@ commands:
     procedures:
       - id: agent-console
         image: node:22-alpine
-        command: [node, -e, 'const fs=require("node:fs"); const headers={}; if(process.env.DRUID_TOKEN_FILE){headers.Authorization="Bearer "+fs.readFileSync(process.env.DRUID_TOKEN_FILE,"utf8"); try{fs.writeFileSync(process.env.DRUID_TOKEN_FILE,"bad");process.exit(9)}catch{}} fetch(process.env.DRUID_API_URL+"/api/v1/commands", {headers}).then(r=>{if(!r.ok)process.exit(8); console.log("MOUNT_API_OK")}).catch(()=>process.exit(7)); require("node:readline").createInterface({input:process.stdin}).on("line",line=>console.log("INPUT:"+line)); console.log("READY");']
+        command: [node, -e, 'const fs=require("node:fs"); const headers={}; if(process.env.DRUID_TOKEN_FILE){headers.Authorization="Bearer "+fs.readFileSync(process.env.DRUID_TOKEN_FILE,"utf8"); try{fs.writeFileSync(process.env.DRUID_TOKEN_FILE,"bad");process.exit(9)}catch{}} fetch(process.env.DRUID_API_URL+"/mcp", {method:"POST",headers:{...headers,"Content-Type":"application/json",Accept:"application/json, text/event-stream"},body:JSON.stringify({jsonrpc:"2.0",id:1,method:"initialize",params:{protocolVersion:"2025-03-26",capabilities:{},clientInfo:{name:"mount-fixture",version:"1"}}})}).then(async r=>{if(!r.ok||!(await r.json()).result)process.exit(8); console.log("MOUNT_MCP_OK")}).catch(()=>process.exit(7)); require("node:readline").createInterface({input:process.stdin}).on("line",line=>console.log("INPUT:"+line)); console.log("READY");']
 `}
 	if err := runtime.Store.CreateScroll(scroll); err != nil {
 		t.Fatal(err)
@@ -229,13 +229,13 @@ commands:
 	call := func(name string, input appservices.ToolInput) (any, error) {
 		return supervisor.CallCommandTool(ctx, token, id, name, input)
 	}
-	eventually("read-only mount and workload-to-host HTTP", func() bool {
+	eventually("read-only mount and workload-to-host MCP", func() bool {
 		result, err := call("read_logs", appservices.ToolInput{Console: "agent-console"})
 		if err != nil {
 			return false
 		}
 		data, _ := json.Marshal(result)
-		return bytes.Contains(data, []byte("MOUNT_API_OK"))
+		return bytes.Contains(data, []byte("MOUNT_MCP_OK"))
 	})
 	client := mcp.NewClient(&mcp.Implementation{Name: "runtime-integration", Version: "1"}, nil)
 	connect := func() *mcp.ClientSession {
@@ -409,5 +409,5 @@ commands:
 	if _, err := supervisor.AuthenticateCommand(ctx, oldToken, id); kubernetes != nil && err == nil {
 		t.Fatal("old credential resurrected after replacement")
 	}
-	t.Log("verified runtime HTTP/MCP, tool discovery, command creation/execution, stdin/logs, completed logs, disconnection, daemon reattachment, and backend-specific authentication")
+	t.Log("verified runtime MCP, tool discovery, command creation/execution, stdin/logs, completed logs, disconnection, daemon reattachment, and backend-specific authentication")
 }

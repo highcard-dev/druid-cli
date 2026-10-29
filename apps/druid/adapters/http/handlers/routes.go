@@ -64,9 +64,7 @@ func RegisterPublicRoutes(app *fiber.App, handlers RouteHandlers) {
 	app.Get("/.well-known/jwks.json", RuntimeJWKS(authorizer))
 	app.Get("/:id/ws/v1/serve/:console", websocket.New(handlers.Websocket.AttachScrollConsole))
 	if handlers.Server != nil && handlers.Server.ScrollHandler != nil {
-		handlers.Server.ScrollHandler.registerCommandTools(app)
-	}
-	if handlers.Server != nil && handlers.Server.ScrollHandler != nil {
+		handlers.Server.ScrollHandler.registerCommandMCP(app)
 		app.Use("/:id", handlers.Server.PublicAuth)
 	}
 	app.Get("/:id/api/v1/health", handlers.Server.GetHealthAuth)

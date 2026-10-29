@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
@@ -38,34 +37,23 @@ func TestDockerToolsAreAnonymousWhileOwnerRoutesRemainProtected(t *testing.T) {
 	}
 	app := fiber.New(fiber.Config{DisableStartupMessage: true})
 	RegisterPublicRoutes(app, RouteHandlers{Server: NewRuntimeServer(NewHealthHandler(), NewScrollHandler(supervisor)), Websocket: NewWebsocketHandler()})
-	for _, id := range []string{"one", "other"} {
-		for _, path := range []string{"commands", "queue"} {
-			response, err := app.Test(httptest.NewRequest("GET", "/"+id+"/api/v1/"+path, nil))
-			if err != nil {
-				t.Fatal(err)
-			}
-			response.Body.Close()
-			if response.StatusCode != 200 {
-				t.Fatalf("anonymous Docker %s: %d", path, response.StatusCode)
-			}
+	for _, path := range []string{"/one/api/v1/scroll", "/one/api/v1/queue", "/other/api/v1/queue"} {
+		response, err := app.Test(httptest.NewRequest("GET", path, nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != 401 {
+			t.Fatalf("owner REST route %s must remain protected: %d", path, response.StatusCode)
 		}
 	}
-	// The shared publish route must reach validation, not owner authentication.
-	response, err := app.Test(httptest.NewRequest("POST", "/one/api/v1/ui/packages/invalid/publish", strings.NewReader("{}")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	response.Body.Close()
-	if response.StatusCode != 400 {
-		t.Fatalf("Docker publish unexpectedly requires credentials: %d", response.StatusCode)
-	}
-	response, err = app.Test(httptest.NewRequest("GET", "/one/api/v1/scroll", nil))
+	response, err := app.Test(httptest.NewRequest("POST", "/one/api/v1/ui/packages/private/publish", nil))
 	if err != nil {
 		t.Fatal(err)
 	}
 	response.Body.Close()
 	if response.StatusCode != 401 {
-		t.Fatal("Docker tool exemption reached an unrelated owner route")
+		t.Fatal("Docker MCP exemption reached owner REST publication")
 	}
 	server := httptest.NewServer(adaptor.FiberApp(app))
 	defer server.Close()

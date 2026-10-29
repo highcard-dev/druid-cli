@@ -67,7 +67,10 @@ There is also websocket support for stdout. TTY is also supported.
 
 Runtime selection is daemon-only: start the daemon with `druid daemon --runtime docker`, then use `druid` to create, run, and inspect scrolls without passing a runtime. Docker runtime state stays in SQLite under the runtime state directory. Scroll specs and runtime data live together in one runtime root.
 
-**Docker agent-tool caveat:** HTTP/MCP tool endpoints on the Docker runtime are
+Agent tools are exposed only at `/:id/mcp`. Existing REST endpoints retain owner
+authentication; there are no parallel agent REST routes.
+
+**Docker agent-tool caveat:** MCP tool endpoints on the Docker runtime are
 unauthenticated and ignore command permissions. Anyone who can reach them can
 invoke every tool for any deployment, including command creation/execution,
 stdin, log access and UI publication. Docker creates no workload credentials or
