@@ -7,7 +7,7 @@ import (
 )
 
 func TestCommandIdentityMountedInJobsAndPersistentProcedures(t *testing.T) {
-	identity := &domain.RuntimeCommandIdentity{ExecutionID: "execution", Enabled: true}
+	identity := &domain.RuntimeCommandIdentity{ExecutionID: "execution", DeploymentID: "deployment", Enabled: true, Permissions: []string{"commands:list", "logs:read"}}
 	procedure := &domain.Procedure{Image: "busybox", RuntimeIdentity: identity}
 	job, err := procedureJobSpec("runtime", ref("runtime", "data"), "automation", "automation.0", "job", 1, procedure, nil, "", "")
 	if err != nil {
@@ -17,6 +17,9 @@ func TestCommandIdentityMountedInJobsAndPersistentProcedures(t *testing.T) {
 		t.Fatal("execution label missing")
 	}
 	pod := job.Spec.Template.Spec
+	if job.Spec.Template.Annotations[commandDeploymentAnnotation] != "deployment" || job.Spec.Template.Annotations[commandPermissionsAnnotation] != "commands:list logs:read" {
+		t.Fatal("Pod authorization grants missing")
+	}
 	if len(pod.Volumes) != 2 || pod.Volumes[1].Projected == nil || pod.ServiceAccountName != commandServiceAccount || pod.AutomountServiceAccountToken == nil || *pod.AutomountServiceAccountToken {
 		t.Fatal("bound ServiceAccount token not mounted")
 	}
@@ -36,6 +39,9 @@ func TestCommandIdentityMountedInJobsAndPersistentProcedures(t *testing.T) {
 	}
 	if _, ok := set.Spec.Selector.MatchLabels[workloadidentity.ExecutionLabel]; ok {
 		t.Fatal("execution identity changed immutable StatefulSet selector")
+	}
+	if set.Spec.Template.Annotations[commandPermissionsAnnotation] != "commands:list logs:read" {
+		t.Fatal("persistent Pod authorization grants missing")
 	}
 }
 

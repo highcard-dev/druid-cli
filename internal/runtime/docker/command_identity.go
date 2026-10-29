@@ -18,9 +18,7 @@ func (b *Backend) AuthenticateCommandIdentity(ctx context.Context, token string)
 	if b.identities == nil {
 		return workloadidentity.Record{}, workloadidentity.ErrUnauthorized
 	}
-	record, err := b.identities.Lookup(ctx, token)
-	record.Permissions = append([]string{}, record.Permissions...)
-	return record, err
+	return b.identities.Lookup(ctx, token)
 }
 
 func (b *Backend) ActiveExecutions(ctx context.Context) (map[string]bool, error) {

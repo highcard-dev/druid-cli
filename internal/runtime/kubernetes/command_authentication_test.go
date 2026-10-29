@@ -19,7 +19,7 @@ func agentPod() *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "agent-0", Namespace: "games", UID: types.UID("pod-uid"),
 			Labels:      map[string]string{labelManagedBy: "druid", labelComponent: "runtime", labelScrollID: "data", labelRuntimeID: "data", labelCommand: "agent-command", workloadidentity.ExecutionLabel: "execution"},
-			Annotations: map[string]string{commandDeploymentAnnotation: "full-deployment-id", labelCommand: "agent_command"}},
+			Annotations: map[string]string{commandDeploymentAnnotation: "full-deployment-id", labelCommand: "agent_command", commandPermissionsAnnotation: "commands:list logs:read"}},
 		Spec:   corev1.PodSpec{ServiceAccountName: commandServiceAccount, Volumes: []corev1.Volume{pvcVolume("data", "data")}},
 		Status: corev1.PodStatus{Phase: corev1.PodRunning},
 	}
@@ -32,6 +32,7 @@ func TestCommandServiceAccountAuthentication(t *testing.T) {
 		deleted, unavailable bool
 	}{
 		{name: "valid"},
+		{name: "no grants", mutate: func(p *corev1.Pod, _ *authv1.TokenReviewStatus) { delete(p.Annotations, commandPermissionsAnnotation) }},
 		{name: "wrong audience", mutate: func(_ *corev1.Pod, r *authv1.TokenReviewStatus) { r.Audiences = []string{"druid-cli"} }},
 		{name: "unauthenticated", mutate: func(_ *corev1.Pod, r *authv1.TokenReviewStatus) { r.Authenticated = false }},
 		{name: "unbound token", mutate: func(_ *corev1.Pod, r *authv1.TokenReviewStatus) { r.User.Extra = nil }},
@@ -81,8 +82,9 @@ func TestCommandServiceAccountAuthentication(t *testing.T) {
 			})
 			backend := NewWithClient(Config{Namespace: "default"}, client)
 			record, err := backend.AuthenticateCommandIdentity(context.Background(), "credential")
-			if test.name == "valid" {
-				if err != nil || record.DeploymentID != "full-deployment-id" || record.Command != "agent_command" || record.RuntimeRoot != ref("games", "data") || record.ExecutionID != "execution" || len(record.Permissions) != 0 {
+			if test.name == "valid" || test.name == "no grants" {
+				granted := test.name == "valid"
+				if err != nil || record.DeploymentID != "full-deployment-id" || record.Command != "agent_command" || record.RuntimeRoot != ref("games", "data") || record.ExecutionID != "execution" || record.Allows("commands:list") != granted || record.Allows("logs:read") != granted || record.Allows("commands:run") {
 					t.Fatalf("record=%+v err=%v", record, err)
 				}
 				// No cache or registry is required after daemon reconstruction.

@@ -236,7 +236,6 @@ commands:
       - image: busybox
         command: [true]
 `, Procedures: domain.ProcedureStatusMap{"agent": {"agent-console": {ExecutionID: "agent-execution", Status: domain.ScrollLockStatusRunning}}}}
-	runtime.ScrollYAML = strings.ReplaceAll(runtime.ScrollYAML, "permissions: [commands:list]", "permissions: ["+strings.Join(permissions, ", ")+"]")
 	if err := store.CreateScroll(runtime); err != nil {
 		t.Fatal(err)
 	}

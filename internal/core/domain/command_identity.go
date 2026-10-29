@@ -10,6 +10,7 @@ type RuntimeCommandIdentity struct {
 	ExecutionID  string
 	DeploymentID string
 	Enabled      bool
+	Permissions  []string
 	TokenPath    string
 }
 

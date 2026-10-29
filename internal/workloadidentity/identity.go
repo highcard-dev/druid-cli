@@ -22,12 +22,12 @@ var tokenPattern = regexp.MustCompile(`druid_wl_[A-Za-z0-9_-]{43}|eyJ[A-Za-z0-9_
 var executionFileName = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`)
 
 type Record struct {
-	RuntimeRoot  string   `json:"-"` // Provisioning root or verified Pod volume binding.
+	RuntimeRoot  string   `json:"-"` // Backend runtime binding; not a daemon-session dependency.
 	Recover      bool     `json:"-"`
 	ExecutionID  string   `json:"execution_id"`
 	DeploymentID string   `json:"deployment_id"`
 	Command      string   `json:"command"`
-	Permissions  []string `json:"permissions"` // nil derives grants from the command; non-nil caps them.
+	Permissions  []string `json:"permissions"`
 }
 
 func (r Record) Allows(permission string) bool {

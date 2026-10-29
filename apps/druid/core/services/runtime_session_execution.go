@@ -105,6 +105,7 @@ func (s *RuntimeSession) runCommand(cmd string, extraEnv ...map[string]map[strin
 			return err
 		}
 		identity.Enabled, identity.TokenPath = true, mount.Path
+		identity.Permissions = append([]string(nil), command.Identity.Permissions...)
 	}
 	// Never mutate the persisted Scroll or leak transient mount references.
 	copyCommand := *command

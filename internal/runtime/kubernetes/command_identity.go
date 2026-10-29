@@ -2,6 +2,8 @@ package kubernetes
 
 import (
 	"context"
+	"strings"
+
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/workloadidentity"
 	corev1 "k8s.io/api/core/v1"
@@ -10,12 +12,13 @@ import (
 const commandServiceAccount = "druid-workload-agent"
 const commandTokenAudience = "druid-command-tools"
 const commandDeploymentAnnotation = "druid.gg/deployment-id"
+const commandPermissionsAnnotation = "druid.gg/permissions"
 
 func commandIdentityAnnotations(identity *domain.RuntimeCommandIdentity, command string) map[string]string {
 	if identity == nil || !identity.Enabled {
 		return nil
 	}
-	return map[string]string{commandDeploymentAnnotation: identity.DeploymentID, labelCommand: command}
+	return map[string]string{commandDeploymentAnnotation: identity.DeploymentID, labelCommand: command, commandPermissionsAnnotation: strings.Join(identity.Permissions, " ")}
 }
 
 func (b *Backend) PrepareCommandIdentity(ctx context.Context, record workloadidentity.Record) (workloadidentity.CredentialMount, error) {
@@ -42,7 +45,7 @@ func (b *Backend) AuthenticateCommandIdentity(ctx context.Context, token string)
 			if pod.Labels[labelRuntimeID] != dnsLabel(runtimeID(root)) {
 				return workloadidentity.Record{}, workloadidentity.ErrUnauthorized
 			}
-			return workloadidentity.Record{RuntimeRoot: root, DeploymentID: deployment, Command: command, ExecutionID: execution}, nil
+			return workloadidentity.Record{RuntimeRoot: root, DeploymentID: deployment, Command: command, ExecutionID: execution, Permissions: strings.Fields(pod.Annotations[commandPermissionsAnnotation])}, nil
 		}
 	}
 	return workloadidentity.Record{}, workloadidentity.ErrUnauthorized
