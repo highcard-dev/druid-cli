@@ -6,15 +6,15 @@ metadata:
   labels:
     {{- include "druid-cli.labels" . | nindent 4 }}
 rules:
-  - apiGroups: ["authentication.k8s.io"]
-    resources: ["tokenreviews"]
-    verbs: ["create"]
   - apiGroups: [""]
     resources: ["configmaps"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["create"]
   - apiGroups: [""]
     resources: ["persistentvolumeclaims", "services", "pods"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -47,6 +47,28 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: {{ ternary "ClusterRole" "Role" $clusterWide }}
   name: {{ include "druid-cli.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "druid-cli.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "druid-cli.fullname" . }}-{{ .Release.Namespace }}-token-review
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "druid-cli.fullname" . }}-{{ .Release.Namespace }}-token-review
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "druid-cli.fullname" . }}-{{ .Release.Namespace }}-token-review
 subjects:
   - kind: ServiceAccount
     name: {{ include "druid-cli.serviceAccountName" . }}

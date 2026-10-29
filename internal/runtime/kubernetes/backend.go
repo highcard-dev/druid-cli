@@ -14,13 +14,10 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
-	"github.com/highcard-dev/daemon/internal/workloadidentity"
 	"go.uber.org/zap"
 )
 
 type Backend struct {
-	closeIdentities         context.CancelFunc
-	identities              workloadidentity.Registry
 	client                  k8sclient.Interface
 	restConfig              *rest.Config
 	httpClient              *http.Client
@@ -78,28 +75,11 @@ func New(config Config, observer ports.ProcedureStatusObserver) (*Backend, error
 		jobExits:                make(map[string]recentJobExit),
 	}
 	backend.statsReader = backend.readNodeStatsSummary
-	identityContext, cancelIdentities := context.WithCancel(context.Background())
-	backend.identities, err = newNamespaceIdentities(identityContext, client, namespace)
-	if err != nil {
-		cancelIdentities()
-		return nil, err
-	}
-	backend.closeIdentities = cancelIdentities
 	if config.PullImage == "" {
 		logger.Log().Warn("Kubernetes cluster materialization requires --k8s-pull-image or DRUID_K8S_PULL_IMAGE")
 	}
 	return backend, nil
 }
-
-// Close releases daemon-side watches without stopping surviving workloads.
-func (b *Backend) Close() error {
-	if b.closeIdentities != nil {
-		b.closeIdentities()
-	}
-	return nil
-}
-
-func (b *Backend) WorkloadIdentities() workloadidentity.Registry { return b.identities }
 
 func runtimeRESTConfig(config Config) (*rest.Config, string, string, bool, error) {
 	restConfig, inClusterErr := rest.InClusterConfig()

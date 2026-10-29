@@ -4,28 +4,23 @@ import (
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/highcard-dev/daemon/internal/core/ports"
-	"github.com/highcard-dev/daemon/internal/workloadidentity"
-	"strings"
 )
 
 const ownerLocal = "druid-owner-id"
 
 func (h *ScrollHandler) PublicAuth(c *fiber.Ctx) error {
-	if strings.HasPrefix(bearer(c.Get("Authorization")), workloadidentity.TokenPrefix) {
-		return fiber.NewError(fiber.StatusForbidden, "workload credentials cannot access this endpoint")
-	}
 	if h.authorizer == nil {
-		if h.allowUnauthenticatedPublic {
+		if h.allowUnauthenticatedPublic && c.Get("Authorization") == "" {
 			return c.Next()
 		}
 		return fiber.NewError(fiber.StatusUnauthorized, "public authentication is not configured")
 	}
 	auth, err := h.authorizer.CheckHeader(c)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		return fiber.NewError(fiber.StatusUnauthorized, "invalid owner credential")
 	}
 	if auth == nil {
-		if h.allowUnauthenticatedPublic {
+		if h.allowUnauthenticatedPublic && c.Get("Authorization") == "" {
 			return c.Next()
 		}
 		return fiber.NewError(fiber.StatusUnauthorized, "missing authorization token")
@@ -56,17 +51,18 @@ func (h *ScrollHandler) authorizeRuntimeOwner(id string, subject string) error {
 }
 
 func (h *WebsocketHandler) PublicQueryAuth(c *websocket.Conn) bool {
-	if strings.HasPrefix(c.Query("token"), workloadidentity.TokenPrefix) || strings.HasPrefix(bearer(c.Headers("Authorization")), workloadidentity.TokenPrefix) {
-		return false
+	token := c.Query("token")
+	if token == "" {
+		token = bearer(c.Headers("Authorization"))
 	}
 	if h.authorizer == nil {
-		return h.allowUnauthenticatedPublic
+		return h.allowUnauthenticatedPublic && token == "" && c.Headers("Authorization") == ""
 	}
-	auth, err := h.authorizer.CheckQuery(c.Params("id"), c.Query("token"))
+	auth, err := h.authorizer.CheckQuery(c.Params("id"), token)
 	if err != nil {
 		return false
 	}
-	return auth != nil || h.allowUnauthenticatedPublic
+	return auth != nil || (h.allowUnauthenticatedPublic && token == "" && c.Headers("Authorization") == "")
 }
 
 type jwksProvider interface {

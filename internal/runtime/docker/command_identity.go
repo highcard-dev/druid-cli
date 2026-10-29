@@ -7,6 +7,22 @@ import (
 	"github.com/highcard-dev/daemon/internal/workloadidentity"
 )
 
+func (b *Backend) PrepareCommandIdentity(ctx context.Context, record workloadidentity.Record) (workloadidentity.CredentialMount, error) {
+	if b.identities == nil {
+		return workloadidentity.CredentialMount{}, workloadidentity.ErrUnavailable
+	}
+	return b.identities.Ensure(ctx, record)
+}
+
+func (b *Backend) AuthenticateCommandIdentity(ctx context.Context, token string) (workloadidentity.Record, error) {
+	if b.identities == nil {
+		return workloadidentity.Record{}, workloadidentity.ErrUnauthorized
+	}
+	record, err := b.identities.Lookup(ctx, token)
+	record.Permissions = append([]string{}, record.Permissions...)
+	return record, err
+}
+
 func (b *Backend) ActiveExecutions(ctx context.Context) (map[string]bool, error) {
 	items, err := b.client.ContainerList(ctx, container.ListOptions{All: true, Filters: filters.NewArgs(filters.Arg("label", workloadidentity.ExecutionLabel))})
 	if err != nil {

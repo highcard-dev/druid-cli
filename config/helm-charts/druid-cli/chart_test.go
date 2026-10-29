@@ -17,6 +17,10 @@ func TestChartRendersDefaultAndCustomValues(t *testing.T) {
 		"kind: Service",
 		"kind: Role",
 		"kind: RoleBinding",
+		"kind: ClusterRole",
+		"kind: ClusterRoleBinding",
+		`resources: ["tokenreviews"]`,
+		`resources: ["serviceaccounts"]`,
 		"--runtime=kubernetes",
 		"--listen=:8081",
 		"--public-listen=:8082",
@@ -37,6 +41,18 @@ func TestChartRendersDefaultAndCustomValues(t *testing.T) {
 	}
 	if strings.Contains(defaultManifest, `resources: ["*"]`) || strings.Contains(defaultManifest, `verbs: ["*"]`) {
 		t.Fatal("chart rendered wildcard RBAC")
+	}
+	// TokenReview is cluster-scoped even when all runtime resources are scoped
+	// to one namespace. Agent accounts themselves never receive a binding.
+	for _, document := range strings.Split(defaultManifest, "---") {
+		if strings.Contains(document, `resources: ["tokenreviews"]`) && !strings.Contains(document, "kind: ClusterRole\n") {
+			t.Fatal("TokenReview was placed in a namespaced Role")
+		}
+		if strings.Contains(document, "kind: RoleBinding") || strings.Contains(document, "kind: ClusterRoleBinding") {
+			if strings.Contains(document, "name: druid-workload-agent") {
+				t.Fatal("agent account received Kubernetes RBAC")
+			}
+		}
 	}
 
 	customManifest := helmTemplate(t,

@@ -165,7 +165,7 @@ commands:
 	if _, err := supervisor.Run(id, "agent"); err != nil {
 		t.Fatal(err)
 	}
-	registry := runtime.Backend.(ports.CommandIdentityBackend).WorkloadIdentities()
+	registry := runtime.Backend.(ports.StoredCommandIdentities).WorkloadIdentities()
 	var token string
 	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
 		records, _ := registry.Records(ctx)

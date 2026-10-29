@@ -107,6 +107,12 @@ type toolRouteBackend struct {
 }
 
 func (b *toolRouteBackend) WorkloadIdentities() workloadidentity.Registry { return b.registry }
+func (b *toolRouteBackend) PrepareCommandIdentity(ctx context.Context, record workloadidentity.Record) (workloadidentity.CredentialMount, error) {
+	return b.registry.Ensure(ctx, record)
+}
+func (b *toolRouteBackend) AuthenticateCommandIdentity(ctx context.Context, token string) (workloadidentity.Record, error) {
+	return b.registry.Lookup(ctx, token)
+}
 func (b *toolRouteBackend) Name() string                                  { return "fixture" }
 func (b *toolRouteBackend) RunCommand(ports.RuntimeCommand) (*int, error) { return nil, nil }
 func (b *toolRouteBackend) CreateUIPackageUpload(_ context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageUpload, error) {
@@ -145,7 +151,9 @@ func TestCommandToolsHTTPAndRealMCPClient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtime := &domain.RuntimeScroll{ID: "tools", Root: t.TempDir(), ScrollName: "tools", ScrollYAML: "name: tools\ndesc: Tools fixture\nversion: 0.1.0\napp_version: 1.0\ncommands:\n  agent:\n    run: persistent\n    procedures:\n      - image: busybox\n        env: {SECRET: must-not-leak}\n"}
+	runtime := &domain.RuntimeScroll{ID: "tools", Root: t.TempDir(), ScrollName: "tools", ScrollYAML: "name: tools\ndesc: Tools fixture\nversion: 0.1.0\napp_version: 1.0\ncommands:\n  agent:\n    run: persistent\n    identity:\n      permissions: [commands:list, commands:create, queue:read, ui:publish]\n    procedures:\n      - image: busybox\n        env: {SECRET: must-not-leak}\n"}
+	runtime.ScrollYAML += "  limited-agent:\n    run: persistent\n    identity:\n      permissions: [commands:list]\n    procedures:\n      - image: busybox\n"
+	runtime.Procedures = domain.ProcedureStatusMap{"agent": {"agent.0": {ExecutionID: "execution", Status: domain.ScrollLockStatusRunning}}, "limited-agent": {"limited-agent.0": {ExecutionID: "limited", Status: domain.ScrollLockStatusRunning}}}
 	if err := store.CreateScroll(runtime); err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +323,7 @@ func TestCommandToolsHTTPAndRealMCPClient(t *testing.T) {
 		t.Fatalf("signal procedure schema regressed: %v, %v", err, signal)
 	}
 	// A credential with only commands:list must neither discover nor call creation.
-	limited, err := registry.Ensure(ctx, workloadidentity.Record{ExecutionID: "limited", DeploymentID: "tools", Command: "agent", Permissions: []string{"commands:list"}})
+	limited, err := registry.Ensure(ctx, workloadidentity.Record{ExecutionID: "limited", DeploymentID: "tools", Command: "limited-agent", Permissions: []string{"commands:list"}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,9 +7,10 @@ type CommandIdentity struct {
 
 // RuntimeCommandIdentity is transient mount metadata, never serialized in a Scroll.
 type RuntimeCommandIdentity struct {
-	ExecutionID string
-	SecretName  string
-	TokenPath   string
+	ExecutionID  string
+	DeploymentID string
+	Enabled      bool
+	TokenPath    string
 }
 
 func ValidCommandPermission(permission string) bool {

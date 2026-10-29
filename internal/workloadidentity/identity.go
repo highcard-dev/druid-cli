@@ -17,17 +17,17 @@ const TokenFile = "/run/secrets/druid/token"
 const ExecutionLabel = "druid.execution-id"
 
 var ErrUnauthorized = errors.New("invalid workload credential")
-var ErrUnavailable = errors.New("workload identity registry is not synchronized")
-var tokenPattern = regexp.MustCompile(`druid_wl_[A-Za-z0-9_-]{43}`)
+var ErrUnavailable = errors.New("workload identity verification is unavailable")
+var tokenPattern = regexp.MustCompile(`druid_wl_[A-Za-z0-9_-]{43}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`)
 var executionFileName = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`)
 
 type Record struct {
-	RuntimeRoot  string   `json:"-"` // Provisioning hint; never an authorization field.
+	RuntimeRoot  string   `json:"-"` // Provisioning root or verified Pod volume binding.
 	Recover      bool     `json:"-"`
 	ExecutionID  string   `json:"execution_id"`
 	DeploymentID string   `json:"deployment_id"`
 	Command      string   `json:"command"`
-	Permissions  []string `json:"permissions"`
+	Permissions  []string `json:"permissions"` // nil derives grants from the command; non-nil caps them.
 }
 
 func (r Record) Allows(permission string) bool {
@@ -41,8 +41,7 @@ func (r Record) Allows(permission string) bool {
 
 // CredentialMount contains only a backend-owned reference, never raw token data.
 type CredentialMount struct {
-	Secret string
-	Path   string
+	Path string
 }
 
 type Registry interface {

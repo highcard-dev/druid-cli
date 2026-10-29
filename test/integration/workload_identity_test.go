@@ -6,12 +6,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -29,6 +31,7 @@ import (
 	runtimekubernetes "github.com/highcard-dev/daemon/internal/runtime/kubernetes"
 	"github.com/highcard-dev/daemon/internal/workloadidentity"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	authzv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -157,7 +160,6 @@ commands:
 	if _, err := supervisor.Run(id, "agent"); err != nil {
 		t.Fatal(err)
 	}
-	registry := runtime.Backend.(ports.CommandIdentityBackend).WorkloadIdentities()
 	var token, execution string
 	eventually := func(label string, check func() bool) {
 		t.Helper()
@@ -170,36 +172,61 @@ commands:
 		}
 		t.Fatalf("timed out: %s", label)
 	}
-	eventually("credential provisioning", func() bool {
-		records, err := registry.Records(ctx)
+
+	readCredential := func() bool {
+		queue, err := supervisor.Queue(id)
 		if err != nil {
 			return false
 		}
 		execution = ""
-		for _, record := range records {
-			if record.DeploymentID == id && record.Command == "agent" {
-				execution = record.ExecutionID
-				break
-			}
+		for _, status := range queue["agent"] {
+			execution = status.ExecutionID
+			break
 		}
 		if execution == "" {
 			return false
 		}
 		if kubernetes != nil {
-			secret, err := kubernetes.CoreV1().Secrets(id).Get(ctx, "druid-workload-"+execution, metav1.GetOptions{})
+			pods, err := kubernetes.CoreV1().Pods(id).List(ctx, metav1.ListOptions{LabelSelector: workloadidentity.ExecutionLabel + "=" + execution})
 			if err != nil {
 				return false
 			}
-			token = string(secret.Data["token"])
-		} else {
-			data, err := os.ReadFile(filepath.Join(state, "identities", execution))
-			if err != nil {
-				return false
+			for _, pod := range pods.Items {
+				if pod.Status.Phase != corev1.PodRunning {
+					continue
+				}
+				data, err := exec.CommandContext(ctx, "kubectl", "--context", "k3d-druid-gs", "exec", "-n", id, pod.Name, "--", "cat", workloadidentity.TokenFile).Output()
+				if err == nil {
+					token = strings.TrimSpace(string(data))
+					return token != ""
+				}
 			}
-			token = string(data)
+			return false
 		}
+		data, err := os.ReadFile(filepath.Join(state, "identities", execution))
+		if err != nil {
+			return false
+		}
+		token = string(data)
 		return token != ""
-	})
+	}
+	eventually("credential provisioning", readCredential)
+	if kubernetes != nil {
+		if _, err := runtime.Backend.(ports.RuntimeWorkloadAuthenticator).AuthenticateWorkload(ctx, token); err == nil {
+			t.Fatal("agent token authenticated as infrastructure")
+		}
+		if _, err := supervisor.AuthenticateCommand(ctx, "druid_wl_"+strings.Repeat("A", 43), id); !errors.Is(err, workloadidentity.ErrUnauthorized) {
+			t.Fatal("Kubernetes accepted an opaque-token fallback")
+		}
+		access, err := kubernetes.AuthorizationV1().SubjectAccessReviews().Create(ctx, &authzv1.SubjectAccessReview{Spec: authzv1.SubjectAccessReviewSpec{
+			User: "system:serviceaccount:" + id + ":druid-workload-agent", Groups: []string{"system:serviceaccounts", "system:serviceaccounts:" + id, "system:authenticated"},
+			ResourceAttributes: &authzv1.ResourceAttributes{Namespace: id, Verb: "get", Resource: "pods"},
+		}}, metav1.CreateOptions{})
+		if err != nil || access.Status.Allowed {
+			t.Fatalf("agent Kubernetes access: %v, err=%v", access, err)
+		}
+	}
+
 	call := func(name string, input appservices.ToolInput) (any, error) {
 		return supervisor.CallCommandTool(ctx, token, id, name, input)
 	}
@@ -277,7 +304,7 @@ commands:
 		t.Fatal("completed container logs unavailable")
 	}
 	eventually("healthy identity reconciliation", func() bool { return supervisor.ReconcileCommandIdentities(ctx) == nil })
-	if _, err := registry.Lookup(ctx, token); err != nil {
+	if _, err := supervisor.AuthenticateCommand(ctx, token, id); err != nil {
 		t.Fatal("surviving execution lost its credential")
 	}
 	if launcher := os.Getenv("DRUID_WORKLOAD_TEST_LAUNCHER"); launcher != "" {
@@ -352,7 +379,7 @@ commands:
 	if err := supervisor.RemoveCommand(id, "agent"); err != nil {
 		t.Fatal(err)
 	}
-	eventually("revocation", func() bool { _, err := registry.Lookup(ctx, token); return err != nil })
+	eventually("revocation", func() bool { _, err := supervisor.AuthenticateCommand(ctx, token, id); return err != nil })
 	if _, err := call("list_commands", appservices.ToolInput{}); err == nil {
 		t.Fatal("removed execution remained authorized")
 	}
@@ -363,34 +390,15 @@ commands:
 	if _, err := supervisor.Run(id, "agent"); err != nil {
 		t.Fatal(err)
 	}
+
 	eventually("fresh execution rotates credential", func() bool {
-		records, err := registry.Records(ctx)
-		if err != nil {
+		if !readCredential() {
 			return false
 		}
-		for _, record := range records {
-			if record.DeploymentID != id || record.Command != "agent" || record.ExecutionID == oldExecution {
-				continue
-			}
-			execution = record.ExecutionID
-			if kubernetes != nil {
-				secret, err := kubernetes.CoreV1().Secrets(id).Get(ctx, "druid-workload-"+execution, metav1.GetOptions{})
-				if err != nil {
-					return false
-				}
-				token = string(secret.Data["token"])
-			} else {
-				data, err := os.ReadFile(filepath.Join(state, "identities", execution))
-				if err != nil {
-					return false
-				}
-				token = string(data)
-			}
-			return token != oldToken && strings.HasPrefix(token, workloadidentity.TokenPrefix)
-		}
-		return false
+		return execution != oldExecution && token != oldToken && (kubernetes != nil || strings.HasPrefix(token, workloadidentity.TokenPrefix))
 	})
-	if _, err := registry.Lookup(ctx, oldToken); err == nil {
+
+	if _, err := supervisor.AuthenticateCommand(ctx, oldToken, id); err == nil {
 		t.Fatal("old credential resurrected after replacement")
 	}
 	t.Log("verified real mount/HTTP, all nine tools, command creation/execution, stdin/logs, completed logs, disconnection, daemon reattachment, and removal revocation")

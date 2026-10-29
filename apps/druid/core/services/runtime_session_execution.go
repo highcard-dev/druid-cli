@@ -92,19 +92,19 @@ func (s *RuntimeSession) runCommand(cmd string, extraEnv ...map[string]map[strin
 			return err
 		}
 	}
-	identity := &domain.RuntimeCommandIdentity{ExecutionID: executionID}
+	identity := &domain.RuntimeCommandIdentity{ExecutionID: executionID, DeploymentID: scrollID}
 	s.provisioning.Store(executionID, true)
 	defer s.provisioning.Delete(executionID)
 	if command.Identity != nil {
-		registry := commandRegistry(s.runtimeBackend)
-		if registry == nil || s.workloadAPIURL == "" {
-			return fmt.Errorf("command identity requires a registry and workload API URL")
+		backend, ok := s.runtimeBackend.(ports.CommandIdentityBackend)
+		if !ok || s.workloadAPIURL == "" {
+			return fmt.Errorf("command identity requires runtime support and workload API URL")
 		}
-		mount, err := registry.Ensure(context.Background(), workloadidentity.Record{RuntimeRoot: root, Recover: recovering, ExecutionID: executionID, DeploymentID: scrollID, Command: cmd, Permissions: command.Identity.Permissions})
+		mount, err := backend.PrepareCommandIdentity(context.Background(), workloadidentity.Record{RuntimeRoot: root, Recover: recovering, ExecutionID: executionID, DeploymentID: scrollID, Command: cmd, Permissions: command.Identity.Permissions})
 		if err != nil {
 			return err
 		}
-		identity.SecretName, identity.TokenPath = mount.Secret, mount.Path
+		identity.Enabled, identity.TokenPath = true, mount.Path
 	}
 	// Never mutate the persisted Scroll or leak transient mount references.
 	copyCommand := *command

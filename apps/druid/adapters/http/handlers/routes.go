@@ -6,8 +6,6 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/highcard-dev/daemon/internal/api"
 	"github.com/highcard-dev/daemon/internal/core/ports"
-	"github.com/highcard-dev/daemon/internal/workloadidentity"
-	"strings"
 )
 
 type RouteHandlers struct {
@@ -32,15 +30,15 @@ func RegisterRoutes(app *fiber.App, handlers RouteHandlers) {
 
 func RegisterManagementRoutes(app *fiber.App, handlers RouteHandlers) {
 	app.Use(func(ctx *fiber.Ctx) error {
-		if strings.HasPrefix(bearer(ctx.Get("Authorization")), workloadidentity.TokenPrefix) {
+		if ctx.Get("Authorization") != "" && ctx.Locals("druid-workload-identity") == nil && handlers.Authorizer == nil {
 			return fiber.NewError(fiber.StatusForbidden, "command credentials cannot access management endpoints")
 		}
 		return ctx.Next()
 	})
 	if handlers.Authorizer != nil {
 		app.Use(func(ctx *fiber.Ctx) error {
-			if _, err := handlers.Authorizer.CheckHeader(ctx); err != nil {
-				return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+			if auth, err := handlers.Authorizer.CheckHeader(ctx); err != nil || (ctx.Get("Authorization") != "" && auth == nil) {
+				return fiber.NewError(fiber.StatusUnauthorized, "invalid management credential")
 			}
 			return ctx.Next()
 		})

@@ -188,6 +188,12 @@ type toolTestBackend struct {
 }
 
 func (b *toolTestBackend) WorkloadIdentities() workloadidentity.Registry { return b.registry }
+func (b *toolTestBackend) PrepareCommandIdentity(ctx context.Context, record workloadidentity.Record) (workloadidentity.CredentialMount, error) {
+	return b.registry.Ensure(ctx, record)
+}
+func (b *toolTestBackend) AuthenticateCommandIdentity(ctx context.Context, token string) (workloadidentity.Record, error) {
+	return b.registry.Lookup(ctx, token)
+}
 func (b *toolTestBackend) ActiveExecutions(context.Context) (map[string]bool, error) {
 	return map[string]bool{}, nil
 }
@@ -230,6 +236,7 @@ commands:
       - image: busybox
         command: [true]
 `, Procedures: domain.ProcedureStatusMap{"agent": {"agent-console": {ExecutionID: "agent-execution", Status: domain.ScrollLockStatusRunning}}}}
+	runtime.ScrollYAML = strings.ReplaceAll(runtime.ScrollYAML, "permissions: [commands:list]", "permissions: ["+strings.Join(permissions, ", ")+"]")
 	if err := store.CreateScroll(runtime); err != nil {
 		t.Fatal(err)
 	}

@@ -13,7 +13,7 @@ import (
 )
 
 func commandRegistry(backend ports.RuntimeBackendInterface) workloadidentity.Registry {
-	if provider, ok := backend.(ports.CommandIdentityBackend); ok {
+	if provider, ok := backend.(ports.StoredCommandIdentities); ok {
 		return provider.WorkloadIdentities()
 	}
 	return nil
@@ -88,24 +88,56 @@ func (s *RuntimeSession) revokeCommandIdentities(command string) error {
 }
 
 func (s *RuntimeSupervisor) AuthenticateCommand(ctx context.Context, token string, deployment string) (workloadidentity.Record, error) {
-	registry := commandRegistry(s.runtimeBackend)
-	if registry == nil {
+	backend, ok := s.runtimeBackend.(ports.CommandIdentityBackend)
+	if !ok {
 		return workloadidentity.Record{}, workloadidentity.ErrUnauthorized
 	}
-	record, err := registry.Lookup(ctx, token)
+	record, err := backend.AuthenticateCommandIdentity(ctx, token)
 	if err != nil {
 		return workloadidentity.Record{}, err
 	}
 	if record.DeploymentID != deployment {
 		return workloadidentity.Record{}, workloadidentity.ErrUnauthorized
 	}
+	session, err := s.sessionFor(deployment)
+	if err != nil {
+		return workloadidentity.Record{}, workloadidentity.ErrUnauthorized
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	runtime := session.runtimeScroll
+	definition := session.scrollService.GetFile().Commands[record.Command]
+	if definition == nil || definition.Identity == nil || (record.RuntimeRoot != "" && record.RuntimeRoot != runtime.Root) || runtime.Status == domain.RuntimeScrollStatusDeleted || runtime.Status == domain.RuntimeScrollStatusStopped {
+		return workloadidentity.Record{}, workloadidentity.ErrUnauthorized
+	}
+	statuses := runtime.Procedures[record.Command]
+	status, exists := deriveCommandStatus(statuses, record.Command, definition)
+	if !exists || (status != domain.ScrollLockStatusRunning && status != domain.ScrollLockStatusWaiting) {
+		return workloadidentity.Record{}, workloadidentity.ErrUnauthorized
+	}
+	for _, current := range statuses {
+		if current.ExecutionID != record.ExecutionID || record.ExecutionID == "" {
+			return workloadidentity.Record{}, workloadidentity.ErrUnauthorized
+		}
+	}
+	permissions := append([]string{}, definition.Identity.Permissions...)
+	if record.Permissions != nil {
+		// File-backed identities retain the grants captured at provisioning.
+		permissions = nil
+		for _, permission := range definition.Identity.Permissions {
+			if record.Allows(permission) {
+				permissions = append(permissions, permission)
+			}
+		}
+	}
+	record.Permissions = permissions
 	return record, nil
 }
 
-// ReconcileCommandIdentities is safe to retry: registry removal precedes secret
-// cleanup, and only the runtime resources determine surviving executions.
+// ReconcileCommandIdentities cleans up file credentials using surviving resources.
+// Kubernetes has no daemon-owned credential registry to reconcile.
 func (s *RuntimeSupervisor) ReconcileCommandIdentities(ctx context.Context) error {
-	backend, ok := s.runtimeBackend.(ports.CommandIdentityBackend)
+	backend, ok := s.runtimeBackend.(ports.StoredCommandIdentities)
 	if !ok || backend.WorkloadIdentities() == nil {
 		return nil
 	}
