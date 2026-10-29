@@ -3,7 +3,6 @@ package runtime
 import (
 	"fmt"
 	"io"
-	"path/filepath"
 
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/runtime/docker"
@@ -65,7 +64,6 @@ func NewRuntime(name string, stateDir string, opts ...Option) (*Runtime, error) 
 		if err != nil {
 			return nil, err
 		}
-		options.Docker.IdentityStateDir = filepath.Join(store.StateDir(), "identities")
 		return &Runtime{
 			Store: dockerRuntimeStore{RuntimeScrollStore: store, config: options.Docker.WithDefaults()},
 			create: func(observer ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) {

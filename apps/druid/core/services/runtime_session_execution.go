@@ -73,6 +73,7 @@ func (s *RuntimeSession) runCommand(cmd string, extraEnv ...map[string]map[strin
 			procedureEnv[procedure][key] = value
 		}
 	}
+	requiresIdentity := s.runtimeBackend.Name() != "docker"
 	executionID := ""
 	s.queueMu.Lock()
 	recovering := s.queue[cmd] != nil && s.queue[cmd].recovered
@@ -84,7 +85,7 @@ func (s *RuntimeSession) runCommand(cmd string, extraEnv ...map[string]map[strin
 		}
 	}
 	if executionID == "" {
-		if recovering && command.Identity != nil {
+		if recovering && command.Identity != nil && requiresIdentity {
 			return fmt.Errorf("identity-enabled command requires a fresh execution")
 		}
 		executionID = uuid.NewString()
@@ -93,18 +94,15 @@ func (s *RuntimeSession) runCommand(cmd string, extraEnv ...map[string]map[strin
 		}
 	}
 	identity := &domain.RuntimeCommandIdentity{ExecutionID: executionID, DeploymentID: scrollID}
-	s.provisioning.Store(executionID, true)
-	defer s.provisioning.Delete(executionID)
-	if command.Identity != nil {
+	if command.Identity != nil && requiresIdentity {
 		backend, ok := s.runtimeBackend.(ports.CommandIdentityBackend)
 		if !ok || s.workloadAPIURL == "" {
 			return fmt.Errorf("command identity requires runtime support and workload API URL")
 		}
-		mount, err := backend.PrepareCommandIdentity(context.Background(), workloadidentity.Record{RuntimeRoot: root, Recover: recovering, ExecutionID: executionID, DeploymentID: scrollID, Command: cmd, Permissions: command.Identity.Permissions})
-		if err != nil {
+		if err := backend.PrepareCommandIdentity(context.Background(), workloadidentity.Record{RuntimeRoot: root}); err != nil {
 			return err
 		}
-		identity.Enabled, identity.TokenPath = true, mount.Path
+		identity.Enabled = true
 		identity.Permissions = append([]string(nil), command.Identity.Permissions...)
 	}
 	// Never mutate the persisted Scroll or leak transient mount references.
@@ -119,15 +117,14 @@ func (s *RuntimeSession) runCommand(cmd string, extraEnv ...map[string]map[strin
 			procedureEnv[name] = map[string]string{}
 		}
 		procedureEnv[name]["DRUID_EXECUTION_ID"] = executionID
-		if command.Identity != nil {
-			procedureEnv[name]["DRUID_TOKEN_FILE"] = workloadidentity.TokenFile
+		if s.workloadAPIURL != "" && (command.Identity != nil || !requiresIdentity) {
+			procedureEnv[name]["DRUID_TOKEN_FILE"] = ""
+			if requiresIdentity {
+				procedureEnv[name]["DRUID_TOKEN_FILE"] = workloadidentity.TokenFile
+			}
 			procedureEnv[name]["DRUID_API_URL"] = s.workloadAPIURL + "/" + url.PathEscape(scrollID)
 		}
 	}
-	if command.Identity != nil && command.Run != domain.RunModePersistent {
-		defer s.revokeExecution(executionID)
-	}
-
 	exitCode, err := s.runtimeBackend.RunCommand(ports.RuntimeCommand{
 		ExecutionID:  executionID,
 		Name:         cmd,
@@ -139,9 +136,6 @@ func (s *RuntimeSession) runCommand(cmd string, extraEnv ...map[string]map[strin
 		ProcedureEnv: procedureEnv,
 	})
 	if err != nil {
-		if command.Identity != nil {
-			_ = s.revokeExecution(executionID)
-		}
 		s.setCommandProcedureStatus(cmd, command, domain.ScrollLockStatusError, exitCode)
 		return err
 	}

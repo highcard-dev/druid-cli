@@ -51,7 +51,7 @@ func (h *ScrollHandler) commandToolHTTP(name string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		token := bearer(c.Get("Authorization"))
 		// Preserve the existing owner-authenticated endpoints.
-		if name == "get_queue" || name == "publish_ui" {
+		if h.supervisor.CommandToolsRequireIdentity() && (name == "get_queue" || name == "publish_ui") {
 			if c.Get("Authorization") == "" {
 				return c.Next()
 			}

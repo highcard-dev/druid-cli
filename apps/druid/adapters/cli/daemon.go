@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"os"
@@ -155,25 +154,6 @@ func runRuntimeDaemon() error {
 	if err := supervisor.SetWorkloadAPIURL(runtimeWorkloadAPIURL); err != nil {
 		return err
 	}
-	identityContext, cancelIdentityReconciliation := context.WithCancel(context.Background())
-	defer cancelIdentityReconciliation()
-	if err := supervisor.ReconcileCommandIdentities(identityContext); err != nil {
-		return err
-	}
-	go func() {
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-identityContext.Done():
-				return
-			case <-ticker.C:
-				if err := supervisor.ReconcileCommandIdentities(identityContext); err != nil {
-					logger.Log().Warn("Command identity reconciliation unavailable")
-				}
-			}
-		}
-	}()
 	supervisor.SetWorkerTimeout(runtimeWorkerTimeout)
 	callbackConfig := ports.RuntimeWorkerCallbackConfig{
 		Listen: runtimeWorkerCallbackListen,

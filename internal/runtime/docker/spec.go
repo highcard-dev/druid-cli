@@ -71,9 +71,6 @@ func containerSpec(commandName string, procedure *domain.Procedure, root string,
 	}
 	if identity := procedure.RuntimeIdentity; identity != nil {
 		config.Labels[workloadidentity.ExecutionLabel] = identity.ExecutionID
-		if identity.TokenPath != "" {
-			hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{Type: mount.TypeBind, Source: identity.TokenPath, Target: workloadidentity.TokenFile, ReadOnly: true})
-		}
 	}
 	return config, hostConfig, nil
 }

@@ -44,7 +44,11 @@ type workloadTransport struct{ token string }
 func (t workloadTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 	copy := request.Clone(request.Context())
 	copy.Header = request.Header.Clone()
-	copy.Header.Set("Authorization", "Bearer "+t.token)
+	if t.token != "" {
+		copy.Header.Set("Authorization", "Bearer "+t.token)
+	} else {
+		copy.Header.Del("Authorization")
+	}
 	return http.DefaultTransport.RoundTrip(copy)
 }
 
@@ -121,7 +125,7 @@ commands:
     procedures:
       - id: agent-console
         image: node:22-alpine
-        command: [node, -e, 'const fs=require("node:fs"); const token=fs.readFileSync(process.env.DRUID_TOKEN_FILE,"utf8"); try {fs.writeFileSync(process.env.DRUID_TOKEN_FILE,"bad"); process.exit(9)} catch {} fetch(process.env.DRUID_API_URL+"/api/v1/commands", {headers:{Authorization:"Bearer "+token}}).then(r=>{if(!r.ok)process.exit(8); console.log("MOUNT_API_OK")}).catch(()=>process.exit(7)); require("node:readline").createInterface({input:process.stdin}).on("line",line=>console.log("INPUT:"+line)); console.log("READY");']
+        command: [node, -e, 'const fs=require("node:fs"); const headers={}; if(process.env.DRUID_TOKEN_FILE){headers.Authorization="Bearer "+fs.readFileSync(process.env.DRUID_TOKEN_FILE,"utf8"); try{fs.writeFileSync(process.env.DRUID_TOKEN_FILE,"bad");process.exit(9)}catch{}} fetch(process.env.DRUID_API_URL+"/api/v1/commands", {headers}).then(r=>{if(!r.ok)process.exit(8); console.log("MOUNT_API_OK")}).catch(()=>process.exit(7)); require("node:readline").createInterface({input:process.stdin}).on("line",line=>console.log("INPUT:"+line)); console.log("READY");']
 `}
 	if err := runtime.Store.CreateScroll(scroll); err != nil {
 		t.Fatal(err)
@@ -203,12 +207,7 @@ commands:
 			}
 			return false
 		}
-		data, err := os.ReadFile(filepath.Join(state, "identities", execution))
-		if err != nil {
-			return false
-		}
-		token = string(data)
-		return token != ""
+		return true // Docker tools intentionally need no credential.
 	}
 	eventually("credential provisioning", readCredential)
 	if kubernetes != nil {
@@ -249,7 +248,11 @@ commands:
 	}
 	session := connect()
 	tools, err := session.ListTools(ctx, nil)
-	if err != nil || len(tools.Tools) != 9 {
+	wantTools := len(appservices.ToolPermissions)
+	if kubernetes != nil {
+		wantTools--
+	} // This fixture does not grant ui:publish.
+	if err != nil || len(tools.Tools) != wantTools {
 		t.Fatalf("discovery failed: %v", err)
 	}
 	for _, name := range []string{"list_commands", "get_queue", "get_deployment_status"} {
@@ -303,7 +306,6 @@ commands:
 	if !bytes.Contains(data, []byte("COMPLETED_AFTER_DISCONNECT")) {
 		t.Fatal("completed container logs unavailable")
 	}
-	eventually("healthy identity reconciliation", func() bool { return supervisor.ReconcileCommandIdentities(ctx) == nil })
 	if _, err := supervisor.AuthenticateCommand(ctx, token, id); err != nil {
 		t.Fatal("surviving execution lost its credential")
 	}
@@ -350,9 +352,9 @@ commands:
 			data, _ := json.Marshal(result)
 			return bytes.Contains(data, []byte("list_commands"))
 		})
-		t.Log("verified exact SPA launcher with pinned mcp-remote, mounted token, MCP initialize and tool discovery")
+		t.Log("verified exact SPA launcher with pinned mcp-remote, runtime authentication, MCP initialize and tool discovery")
 	}
-	// Reconnect a new supervisor/registry to persisted running resources.
+	// Reconnect a new supervisor to persisted running resources.
 	reattached, err := runtimebackend.NewRuntime(backendName, state, options...)
 	if err != nil {
 		t.Fatal(err)
@@ -363,9 +365,6 @@ commands:
 		t.Fatal(err)
 	}
 	if err := second.SetWorkloadAPIURL(fmt.Sprintf("http://host.docker.internal:%d", port)); err != nil {
-		t.Fatal(err)
-	}
-	if err := second.ReconcileCommandIdentities(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := second.AuthenticateCommand(ctx, token, id); err != nil {
@@ -379,9 +378,18 @@ commands:
 	if err := supervisor.RemoveCommand(id, "agent"); err != nil {
 		t.Fatal(err)
 	}
-	eventually("revocation", func() bool { _, err := supervisor.AuthenticateCommand(ctx, token, id); return err != nil })
-	if _, err := call("list_commands", appservices.ToolInput{}); err == nil {
-		t.Fatal("removed execution remained authorized")
+	if kubernetes != nil {
+		eventually("revocation", func() bool { _, err := supervisor.AuthenticateCommand(ctx, token, id); return err != nil })
+		if _, err := call("list_commands", appservices.ToolInput{}); err == nil {
+			t.Fatal("removed execution remained authorized")
+		}
+	} else {
+		if _, err := call("list_commands", appservices.ToolInput{}); err != nil {
+			t.Fatal("Docker unexpectedly required a credential")
+		}
+		if _, err := os.Stat(filepath.Join(state, "identities")); !os.IsNotExist(err) {
+			t.Fatal("Docker created identity registry files")
+		}
 	}
 	oldToken, oldExecution := token, execution
 	if err := supervisor.AddCommand(id, "agent", agent); err != nil {
@@ -395,11 +403,11 @@ commands:
 		if !readCredential() {
 			return false
 		}
-		return execution != oldExecution && token != oldToken && (kubernetes != nil || strings.HasPrefix(token, workloadidentity.TokenPrefix))
+		return execution != oldExecution && (kubernetes == nil || token != oldToken)
 	})
 
-	if _, err := supervisor.AuthenticateCommand(ctx, oldToken, id); err == nil {
+	if _, err := supervisor.AuthenticateCommand(ctx, oldToken, id); kubernetes != nil && err == nil {
 		t.Fatal("old credential resurrected after replacement")
 	}
-	t.Log("verified real mount/HTTP, all nine tools, command creation/execution, stdin/logs, completed logs, disconnection, daemon reattachment, and removal revocation")
+	t.Log("verified runtime HTTP/MCP, tool discovery, command creation/execution, stdin/logs, completed logs, disconnection, daemon reattachment, and backend-specific authentication")
 }

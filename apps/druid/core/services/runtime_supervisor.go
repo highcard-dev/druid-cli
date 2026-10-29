@@ -91,13 +91,6 @@ func (s *RuntimeSupervisor) ObserveProcedureStatus(update ports.ProcedureStatusU
 		return
 	}
 	session.persistProcedureExecutionStatus(update.Command, update.Procedure, update.Status, update.ExitCode, update.ExecutionID)
-	command := session.scrollService.GetFile().Commands[update.Command]
-	if command != nil && command.Identity != nil && update.ExecutionID != "" && (update.Status == domain.ScrollLockStatusDone || update.Status == domain.ScrollLockStatusError) {
-		status, ok := deriveCommandStatus(session.Snapshot()[update.Command], update.Command, session.scrollService.GetFile().Commands[update.Command])
-		if ok && (status == domain.ScrollLockStatusDone || status == domain.ScrollLockStatusError) {
-			_ = session.revokeExecution(update.ExecutionID)
-		}
-	}
 }
 
 func (s *RuntimeSupervisor) SetWorkerCallbacks(callbacks *WorkerCallbackManager, callbackURL string) {

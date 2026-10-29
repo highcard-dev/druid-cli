@@ -22,11 +22,9 @@ import (
 	"github.com/highcard-dev/daemon/apps/druid/adapters/http/handlers"
 	appservices "github.com/highcard-dev/daemon/apps/druid/core/services"
 	"github.com/highcard-dev/daemon/internal/core/domain"
-	"github.com/highcard-dev/daemon/internal/core/ports"
 	coreservices "github.com/highcard-dev/daemon/internal/core/services"
 	runtimebackend "github.com/highcard-dev/daemon/internal/runtime"
 	runtimedocker "github.com/highcard-dev/daemon/internal/runtime/docker"
-	"github.com/highcard-dev/daemon/internal/workloadidentity"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -165,23 +163,7 @@ commands:
 	if _, err := supervisor.Run(id, "agent"); err != nil {
 		t.Fatal(err)
 	}
-	registry := runtime.Backend.(ports.StoredCommandIdentities).WorkloadIdentities()
-	var token string
-	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
-		records, _ := registry.Records(ctx)
-		for _, record := range records {
-			if record.DeploymentID == id {
-				data, _ := os.ReadFile(filepath.Join(state, "identities", record.ExecutionID))
-				token = string(data)
-			}
-		}
-		if token != "" {
-			break
-		}
-	}
-	if !strings.HasPrefix(token, workloadidentity.TokenPrefix) {
-		t.Fatal("identity not provisioned")
-	}
+	token := "" // Docker tool endpoints are intentionally unauthenticated.
 	app := fiber.New(fiber.Config{DisableStartupMessage: true})
 	handlers.RegisterPublicRoutes(app, handlers.RouteHandlers{Server: handlers.NewRuntimeServer(handlers.NewHealthHandler(), handlers.NewScrollHandler(supervisor)), Websocket: handlers.NewWebsocketHandler()})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

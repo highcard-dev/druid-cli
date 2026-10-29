@@ -67,6 +67,16 @@ There is also websocket support for stdout. TTY is also supported.
 
 Runtime selection is daemon-only: start the daemon with `druid daemon --runtime docker`, then use `druid` to create, run, and inspect scrolls without passing a runtime. Docker runtime state stays in SQLite under the runtime state directory. Scroll specs and runtime data live together in one runtime root.
 
+**Docker agent-tool caveat:** HTTP/MCP tool endpoints on the Docker runtime are
+unauthenticated and ignore command permissions. Anyone who can reach them can
+invoke every tool for any deployment, including command creation/execution,
+stdin, log access and UI publication. Docker creates no workload credentials or
+identity registry. Use it only for trusted, single-user local development; keep
+the daemon proxy bound to loopback and do not expose it to untrusted networks or
+multi-tenant workloads. Container workloads may also reach these endpoints.
+Existing authentication on unrelated dashboard, management and worker routes is
+unchanged. Kubernetes retains Pod-bound authentication and per-tool permissions.
+
 Kubernetes runtime support is available with `druid daemon --runtime kubernetes` for in-cluster daemons or out-of-cluster daemons using kubeconfig. It stores daemon scroll state in ConfigMaps, materializes OCI artifacts through `druid worker pull` Jobs, and uses kubelet pod stats for procedure-level traffic checks. See `docs/kubernetes_runtime.md` for kubeconfig, RBAC, and PVC setup.
 
 ## Documentation

@@ -21,12 +21,12 @@ func commandIdentityAnnotations(identity *domain.RuntimeCommandIdentity, command
 	return map[string]string{commandDeploymentAnnotation: identity.DeploymentID, labelCommand: command, commandPermissionsAnnotation: strings.Join(identity.Permissions, " ")}
 }
 
-func (b *Backend) PrepareCommandIdentity(ctx context.Context, record workloadidentity.Record) (workloadidentity.CredentialMount, error) {
+func (b *Backend) PrepareCommandIdentity(ctx context.Context, record workloadidentity.Record) error {
 	namespace, _, err := parseRef(record.RuntimeRoot)
 	if err == nil {
 		err = b.ensureRuntimeServiceAccount(ctx, namespace, commandServiceAccount)
 	}
-	return workloadidentity.CredentialMount{}, err
+	return err
 }
 
 func (b *Backend) AuthenticateCommandIdentity(ctx context.Context, token string) (workloadidentity.Record, error) {

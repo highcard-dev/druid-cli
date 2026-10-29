@@ -6,8 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
@@ -103,15 +103,17 @@ func TestCreateCommandSchemaPreservesNestedTypesForOpenHands(t *testing.T) {
 
 type toolRouteBackend struct {
 	ports.RuntimeBackendInterface
-	registry workloadidentity.Registry
+	credentials sync.Map
 }
 
-func (b *toolRouteBackend) WorkloadIdentities() workloadidentity.Registry { return b.registry }
-func (b *toolRouteBackend) PrepareCommandIdentity(ctx context.Context, record workloadidentity.Record) (workloadidentity.CredentialMount, error) {
-	return b.registry.Ensure(ctx, record)
+func (b *toolRouteBackend) PrepareCommandIdentity(context.Context, workloadidentity.Record) error {
+	return nil
 }
-func (b *toolRouteBackend) AuthenticateCommandIdentity(ctx context.Context, token string) (workloadidentity.Record, error) {
-	return b.registry.Lookup(ctx, token)
+func (b *toolRouteBackend) AuthenticateCommandIdentity(_ context.Context, token string) (workloadidentity.Record, error) {
+	if record, ok := b.credentials.Load(token); ok {
+		return record.(workloadidentity.Record), nil
+	}
+	return workloadidentity.Record{}, workloadidentity.ErrUnauthorized
 }
 func (b *toolRouteBackend) Name() string                                  { return "fixture" }
 func (b *toolRouteBackend) RunCommand(ports.RuntimeCommand) (*int, error) { return nil, nil }
@@ -119,9 +121,6 @@ func (b *toolRouteBackend) CreateUIPackageUpload(_ context.Context, action ports
 	return ports.RuntimeUIPackageUpload{UploadURL: "http://upload-private/wasm", DocumentUploadURL: "http://upload-private/document", URL: "http://packages/" + string(action.Scope) + "/app.wasm"}, nil
 }
 func (b *toolRouteBackend) StopCommand(string, string) error { return nil }
-func (b *toolRouteBackend) ActiveExecutions(context.Context) (map[string]bool, error) {
-	return map[string]bool{"execution": true}, nil
-}
 
 type authenticatedTransport struct{ token string }
 
@@ -135,18 +134,7 @@ func (t authenticatedTransport) RoundTrip(request *http.Request) (*http.Response
 func TestCommandToolsHTTPAndRealMCPClient(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	registry, err := workloadidentity.NewFileRegistry(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	mount, err := registry.Ensure(ctx, workloadidentity.Record{ExecutionID: "execution", DeploymentID: "tools", Command: "agent", Permissions: []string{"commands:list", "commands:create", "queue:read", "ui:publish"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	token, err := os.ReadFile(mount.Path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	token := "fixture-token"
 	store, err := docker.NewStateStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -155,7 +143,8 @@ func TestCommandToolsHTTPAndRealMCPClient(t *testing.T) {
 	if err := store.CreateScroll(runtime); err != nil {
 		t.Fatal(err)
 	}
-	backend := &toolRouteBackend{registry: registry}
+	backend := &toolRouteBackend{}
+	backend.credentials.Store(token, workloadidentity.Record{ExecutionID: "execution", DeploymentID: "tools", Command: "agent", Permissions: []string{"commands:list", "commands:create", "queue:read", "ui:publish"}})
 	supervisor, err := appservices.NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), ports.RuntimeBackendFactoryFunc(func(ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) { return backend, nil }))
 	if err != nil {
 		t.Fatal(err)
@@ -321,14 +310,8 @@ func TestCommandToolsHTTPAndRealMCPClient(t *testing.T) {
 		t.Fatalf("signal procedure schema regressed: %v, %v", err, signal)
 	}
 	// A credential with only commands:list must neither discover nor call creation.
-	limited, err := registry.Ensure(ctx, workloadidentity.Record{ExecutionID: "limited", DeploymentID: "tools", Command: "agent", Permissions: []string{"commands:list"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	limitedToken, err := os.ReadFile(limited.Path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	limitedToken := "limited-token"
+	backend.credentials.Store(limitedToken, workloadidentity.Record{ExecutionID: "limited", DeploymentID: "tools", Command: "agent", Permissions: []string{"commands:list"}})
 	limitedSession, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: server.URL + "/tools/mcp", HTTPClient: &http.Client{Transport: authenticatedTransport{string(limitedToken)}}}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -369,9 +352,7 @@ func TestCommandToolsHTTPAndRealMCPClient(t *testing.T) {
 			t.Fatalf("unauthorized creation returned %d", response.StatusCode)
 		}
 	}
-	if err := registry.Revoke(ctx, "execution"); err != nil {
-		t.Fatal(err)
-	}
+	backend.credentials.Delete(token)
 	if _, err := session.ListTools(ctx, nil); err == nil {
 		t.Fatal("MCP discovery accepted a revoked credential")
 	}

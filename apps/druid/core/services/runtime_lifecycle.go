@@ -1,7 +1,6 @@
 package services
 
 import (
-	"context"
 	"github.com/highcard-dev/daemon/internal/core/domain"
 )
 
@@ -17,9 +16,6 @@ func (s *RuntimeSupervisor) DeleteWithPolicy(id string, purgeData bool) error {
 	delete(s.sessions, id)
 	s.mu.Unlock()
 	if session != nil {
-		if err := session.revokeCommandIdentities(""); err != nil {
-			return err
-		}
 		session.stopDeploymentQueue()
 	}
 
@@ -28,19 +24,6 @@ func (s *RuntimeSupervisor) DeleteWithPolicy(id string, purgeData bool) error {
 		return err
 	}
 	if runtimeScroll.Root != "" {
-		if registry := commandRegistry(s.runtimeBackend); registry != nil {
-			records, err := registry.Records(context.Background())
-			if err != nil {
-				return err
-			}
-			for _, record := range records {
-				if record.DeploymentID == id {
-					if err := registry.Revoke(context.Background(), record.ExecutionID); err != nil {
-						return err
-					}
-				}
-			}
-		}
 		if err := s.runtimeBackend.DeleteRuntime(runtimeScroll.Root, purgeData); err != nil {
 			return err
 		}

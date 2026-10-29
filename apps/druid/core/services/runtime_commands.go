@@ -81,9 +81,6 @@ func (s *RuntimeSession) RemoveCommand(command string) error {
 	if command == "" {
 		return fmt.Errorf("command is required")
 	}
-	if err := s.revokeCommandIdentities(command); err != nil {
-		return err
-	}
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
 

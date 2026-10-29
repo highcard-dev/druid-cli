@@ -11,7 +11,6 @@ type RuntimeCommandIdentity struct {
 	DeploymentID string
 	Enabled      bool
 	Permissions  []string
-	TokenPath    string
 }
 
 func ValidCommandPermission(permission string) bool {

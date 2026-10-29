@@ -88,9 +88,6 @@ func (s *RuntimeSession) StopRuntimeForMaintenance() error {
 }
 
 func (s *RuntimeSession) stopRuntime(resumeQueue bool) error {
-	if err := s.revokeCommandIdentities(""); err != nil {
-		return err
-	}
 	s.mu.Lock()
 	root := s.runtimeScroll.Root
 	started := s.started

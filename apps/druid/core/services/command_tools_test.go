@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -71,7 +70,7 @@ func TestCreateCommandRejectionsAndConcurrentDuplicates(t *testing.T) {
 			t.Fatalf("%s: expected %d, got %v", test.input.Command, test.status, err)
 		}
 	}
-	if _, err := backend.registry.Lookup(ctx, token); err != nil {
+	if _, err := backend.AuthenticateCommandIdentity(ctx, token); err != nil {
 		t.Fatal("duplicate creation disturbed existing execution identity")
 	}
 	if _, err := s.CallCommandTool(ctx, token, "other", "create_command", ToolInput{Command: "new", Instructions: definition}); !errors.Is(err, workloadidentity.ErrUnauthorized) {
@@ -168,9 +167,7 @@ func TestPublishUIToolPermissionsProjectionAndPaths(t *testing.T) {
 	if current[domain.RuntimeUIPackageScopePrivate] != previous[domain.RuntimeUIPackageScopePrivate] {
 		t.Fatal("failed publish replaced previous package")
 	}
-	if err := backend.registry.Revoke(ctx, "agent-execution"); err != nil {
-		t.Fatal(err)
-	}
+	backend.credentials.Delete(token)
 	if _, err := s.CallCommandTool(ctx, token, "tools", "publish_ui", ToolInput{Scope: "private"}); !errors.Is(err, workloadidentity.ErrUnauthorized) {
 		t.Fatal("revoked publish accepted")
 	}
@@ -182,20 +179,19 @@ func TestPublishUIToolPermissionsProjectionAndPaths(t *testing.T) {
 
 type toolTestBackend struct {
 	*fakeWorkerBackend
-	registry workloadidentity.Registry
-	logs     string
-	input    string
+	credentials sync.Map
+	logs        string
+	input       string
 }
 
-func (b *toolTestBackend) WorkloadIdentities() workloadidentity.Registry { return b.registry }
-func (b *toolTestBackend) PrepareCommandIdentity(ctx context.Context, record workloadidentity.Record) (workloadidentity.CredentialMount, error) {
-	return b.registry.Ensure(ctx, record)
+func (b *toolTestBackend) PrepareCommandIdentity(context.Context, workloadidentity.Record) error {
+	return nil
 }
-func (b *toolTestBackend) AuthenticateCommandIdentity(ctx context.Context, token string) (workloadidentity.Record, error) {
-	return b.registry.Lookup(ctx, token)
-}
-func (b *toolTestBackend) ActiveExecutions(context.Context) (map[string]bool, error) {
-	return map[string]bool{}, nil
+func (b *toolTestBackend) AuthenticateCommandIdentity(_ context.Context, token string) (workloadidentity.Record, error) {
+	if record, ok := b.credentials.Load(token); ok {
+		return record.(workloadidentity.Record), nil
+	}
+	return workloadidentity.Record{}, workloadidentity.ErrUnauthorized
 }
 func (b *toolTestBackend) ReadConsoleLogs(_ context.Context, _, _ string, _ int, _ int64) (string, bool, error) {
 	return b.logs, false, nil
@@ -211,11 +207,7 @@ func (b *toolTestBackend) Create(observer ports.ProcedureStatusObserver) (ports.
 
 func commandToolsFixture(t *testing.T, permissions ...string) (*RuntimeSupervisor, *toolTestBackend, string) {
 	t.Helper()
-	registry, err := workloadidentity.NewFileRegistry(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	backend := &toolTestBackend{fakeWorkerBackend: &fakeWorkerBackend{}, registry: registry, logs: "hello\nERROR fixture\n"}
+	backend := &toolTestBackend{fakeWorkerBackend: &fakeWorkerBackend{}, logs: "hello\nERROR fixture\n"}
 	store := newTestStateStore(t)
 	runtime := &domain.RuntimeScroll{ID: "tools", Root: t.TempDir(), ScrollName: "tools", ScrollYAML: `name: tools
 desc: Tools fixture
@@ -246,15 +238,9 @@ commands:
 	}
 	supervisor.sessions[runtime.ID] = session
 	t.Cleanup(session.stopDeploymentQueue)
-	mount, err := registry.Ensure(context.Background(), workloadidentity.Record{ExecutionID: "agent-execution", DeploymentID: "tools", Command: "agent", Permissions: permissions})
-	if err != nil {
-		t.Fatal(err)
-	}
-	token, err := os.ReadFile(mount.Path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return supervisor, backend, string(token)
+	token := "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJmaXh0dXJlIn0.c2ln"
+	backend.credentials.Store(token, workloadidentity.Record{ExecutionID: "agent-execution", DeploymentID: "tools", Command: "agent", Permissions: permissions})
+	return supervisor, backend, token
 }
 
 func TestCommandToolsPermissionsProjectionAndConsoles(t *testing.T) {
@@ -295,9 +281,7 @@ func TestCommandToolsPermissionsProjectionAndConsoles(t *testing.T) {
 	if _, err := supervisor.CallCommandTool(ctx, token, "tools", "send_stdin", ToolInput{Console: "agent-console", Text: strings.Repeat("a", 8193)}); err == nil {
 		t.Fatal("oversized stdin accepted")
 	}
-	if err := backend.registry.Revoke(ctx, "agent-execution"); err != nil {
-		t.Fatal(err)
-	}
+	backend.credentials.Delete(token)
 	if _, err := supervisor.CallCommandTool(ctx, token, "tools", "list_commands", ToolInput{}); !errors.Is(err, workloadidentity.ErrUnauthorized) {
 		t.Fatal("revoked token accepted")
 	}
@@ -334,90 +318,5 @@ func TestLateProcedureEventCannotOverwriteReplacementExecution(t *testing.T) {
 	status := session.Snapshot()["agent"]["agent-console"]
 	if status.ExecutionID != "replacement" || status.Status != domain.ScrollLockStatusWaiting {
 		t.Fatal("stale event overwrote replacement")
-	}
-}
-
-func TestReplacingCommandRevokesOldIdentityWithoutUpgradingItsGrants(t *testing.T) {
-	supervisor, backend, token := commandToolsFixture(t, "commands:list")
-	definition, err := supervisor.ScrollFile("tools")
-	if err != nil {
-		t.Fatal(err)
-	}
-	replacement := *definition.Commands["agent"]
-	replacement.Identity = &domain.CommandIdentity{Permissions: []string{"commands:list", "console:write"}}
-	if err := supervisor.AddCommand("tools", "agent", &replacement); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := backend.registry.Lookup(context.Background(), token); !errors.Is(err, workloadidentity.ErrUnauthorized) {
-		t.Fatal("replacement retained old credential")
-	}
-	if len(supervisor.sessions["tools"].Snapshot()["agent"]) != 0 {
-		t.Fatal("replacement kept old execution status")
-	}
-}
-
-func TestCommandIdentityRevokedOnStopDeletionAndStaleResourceReconciliation(t *testing.T) {
-	for _, operation := range []string{"stop", "delete", "reconcile"} {
-		t.Run(operation, func(t *testing.T) {
-			supervisor, backend, token := commandToolsFixture(t, "commands:list")
-			var err error
-			switch operation {
-			case "stop":
-				_, err = supervisor.Stop("tools")
-			case "delete":
-				err = supervisor.DeleteWithPolicy("tools", false)
-			case "reconcile":
-				err = supervisor.ReconcileCommandIdentities(context.Background())
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := backend.registry.Lookup(context.Background(), token); !errors.Is(err, workloadidentity.ErrUnauthorized) {
-				t.Fatal("credential survived " + operation)
-			}
-		})
-	}
-}
-
-func TestCommandIdentityFailedProvisioningRevokesAndRemovesCredential(t *testing.T) {
-	supervisor, backend, _ := commandToolsFixture(t)
-	session := supervisor.sessions["tools"]
-	session.workloadAPIURL = "http://workload.test"
-	command := &domain.CommandInstructionSet{Identity: &domain.CommandIdentity{Permissions: []string{"logs:read"}}, Procedures: []*domain.Procedure{{Image: "busybox"}}}
-	if err := supervisor.AddCommand("tools", "fail", command); err != nil {
-		t.Fatal(err)
-	}
-	var tokenPath, token string
-	backend.runCommand = func(command ports.RuntimeCommand) (*int, error) {
-		identity := command.Command.Procedures[0].RuntimeIdentity
-		if identity == nil {
-			t.Fatal("identity not provisioned")
-		}
-		tokenPath = identity.TokenPath
-		data, err := os.ReadFile(tokenPath)
-		if err != nil {
-			t.Error(err)
-		}
-		token = string(data)
-		for _, env := range command.ProcedureEnv {
-			for key, value := range env {
-				if value == token {
-					t.Errorf("raw token injected in environment %s", key)
-				}
-			}
-		}
-		return nil, errors.New("fixture provisioning failure")
-	}
-	if _, err := supervisor.RunAndWait("tools", "fail"); err == nil {
-		t.Fatal("provisioning failure swallowed")
-	}
-	if token == "" {
-		t.Fatal("provisioning path not exercised")
-	}
-	if _, err := backend.registry.Lookup(context.Background(), token); !errors.Is(err, workloadidentity.ErrUnauthorized) {
-		t.Fatal("failed provisioning left credential active")
-	}
-	if _, err := os.Stat(tokenPath); !os.IsNotExist(err) {
-		t.Fatal("failed provisioning left raw credential file")
 	}
 }
