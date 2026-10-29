@@ -108,14 +108,14 @@ type toolRouteBackend struct {
 	uploadError error
 }
 
-func (b *toolRouteBackend) PrepareCommandIdentity(context.Context, workloadidentity.Record) error {
+func (b *toolRouteBackend) PrepareCommandIdentity(context.Context, string) error {
 	return nil
 }
-func (b *toolRouteBackend) AuthenticateCommandIdentity(_ context.Context, token string) (workloadidentity.Record, error) {
+func (b *toolRouteBackend) AuthenticateCommandIdentity(_ context.Context, token string) (workloadidentity.Identity, error) {
 	if record, ok := b.credentials.Load(token); ok {
-		return record.(workloadidentity.Record), nil
+		return record.(workloadidentity.Identity), nil
 	}
-	return workloadidentity.Record{}, workloadidentity.ErrUnauthorized
+	return workloadidentity.Identity{}, workloadidentity.ErrUnauthorized
 }
 func (b *toolRouteBackend) Name() string                                  { return "fixture" }
 func (b *toolRouteBackend) RunCommand(ports.RuntimeCommand) (*int, error) { return nil, nil }
@@ -156,7 +156,7 @@ func TestCommandToolsRealMCPClient(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend := &toolRouteBackend{}
-	backend.credentials.Store(token, workloadidentity.Record{ExecutionID: "execution", DeploymentID: "tools", Command: "agent", Permissions: []string{"commands:list", "commands:create", "queue:read", "ui:publish", "logs:read"}})
+	backend.credentials.Store(token, workloadidentity.Identity{DeploymentID: "tools", Permissions: []string{"commands:list", "commands:create", "queue:read", "ui:publish", "logs:read"}})
 	supervisor, err := appservices.NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), ports.RuntimeBackendFactoryFunc(func(ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) { return backend, nil }))
 	if err != nil {
 		t.Fatal(err)
@@ -332,7 +332,7 @@ func TestCommandToolsRealMCPClient(t *testing.T) {
 	}
 	// A credential with only commands:list must neither discover nor call creation.
 	limitedToken := "limited-token"
-	backend.credentials.Store(limitedToken, workloadidentity.Record{ExecutionID: "limited", DeploymentID: "tools", Command: "agent", Permissions: []string{"commands:list"}})
+	backend.credentials.Store(limitedToken, workloadidentity.Identity{DeploymentID: "tools", Permissions: []string{"commands:list"}})
 	limitedSession, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: server.URL + "/tools/mcp", HTTPClient: &http.Client{Transport: authenticatedTransport{string(limitedToken)}}}, nil)
 	if err != nil {
 		t.Fatal(err)

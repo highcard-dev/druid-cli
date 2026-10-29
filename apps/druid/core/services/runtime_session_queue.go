@@ -13,8 +13,6 @@ import (
 )
 
 type runtimeQueueItem struct {
-	recovered    bool
-	executionID  string
 	err          error
 	doneChan     chan struct{}
 	inFlight     bool
@@ -100,8 +98,8 @@ func (s *RuntimeSession) enqueueExecution(cmd string, options coreservices.AddIt
 	if options.Wait {
 		doneChan = make(chan struct{})
 	}
-	item = &runtimeQueueItem{doneChan: doneChan, procedureEnv: procedureEnv, executionID: executionID}
-	if err := s.beginExecution(cmd, item.executionID); err != nil {
+	item = &runtimeQueueItem{doneChan: doneChan, procedureEnv: procedureEnv}
+	if err := s.beginExecution(cmd, executionID); err != nil {
 		s.queueMu.Unlock()
 		return nil, err
 	}
@@ -164,13 +162,6 @@ func (s *RuntimeSession) rememberHydratedItem(cmd string) {
 	item.err = nil
 	item.rememberDone = false
 	item.runRequested = true
-	item.recovered = true
-	for _, status := range s.Snapshot()[cmd] {
-		if status.ExecutionID != "" {
-			item.executionID = status.ExecutionID
-			break
-		}
-	}
 }
 
 func (s *RuntimeSession) triggerRunQueue() {
@@ -294,12 +285,10 @@ func (s *RuntimeSession) RunQueue() {
 				logger.Log().Info("Persistent command running", zap.String("command", c))
 			} else if isRestartMode {
 				s.queueMu.Lock()
-				i.executionID = uuid.NewString()
-				i.recovered = false
-				identityErr := s.beginExecution(c, i.executionID)
+				executionErr := s.beginExecution(c, uuid.NewString())
 				s.queueMu.Unlock()
-				if identityErr != nil {
-					s.setQueueError(c, identityErr)
+				if executionErr != nil {
+					s.setQueueError(c, executionErr)
 					return
 				}
 				s.setQueueStatus(c, domain.ScrollLockStatusWaiting, nil)

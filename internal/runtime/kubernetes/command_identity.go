@@ -21,32 +21,31 @@ func commandIdentityAnnotations(identity *domain.RuntimeCommandIdentity, command
 	return map[string]string{commandDeploymentAnnotation: identity.DeploymentID, labelCommand: command, commandPermissionsAnnotation: strings.Join(identity.Permissions, " ")}
 }
 
-func (b *Backend) PrepareCommandIdentity(ctx context.Context, record workloadidentity.Record) error {
-	namespace, _, err := parseRef(record.RuntimeRoot)
+func (b *Backend) PrepareCommandIdentity(ctx context.Context, root string) error {
+	namespace, _, err := parseRef(root)
 	if err == nil {
 		err = b.ensureRuntimeServiceAccount(ctx, namespace, commandServiceAccount)
 	}
 	return err
 }
 
-func (b *Backend) AuthenticateCommandIdentity(ctx context.Context, token string) (workloadidentity.Record, error) {
+func (b *Backend) AuthenticateCommandIdentity(ctx context.Context, token string) (workloadidentity.Identity, error) {
 	pod, err := b.authenticateBoundPod(ctx, token, commandTokenAudience)
 	if err != nil {
-		return workloadidentity.Record{}, err
+		return workloadidentity.Identity{}, err
 	}
 	deployment, command := pod.Annotations[commandDeploymentAnnotation], pod.Annotations[labelCommand]
-	execution := pod.Labels[workloadidentity.ExecutionLabel]
-	if pod.Spec.ServiceAccountName != commandServiceAccount || pod.DeletionTimestamp != nil || (pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodPending) || pod.Labels[labelManagedBy] != "druid" || pod.Labels[labelComponent] != "runtime" || deployment == "" || command == "" || execution == "" || pod.Labels[labelCommand] != dnsLabel(command) {
-		return workloadidentity.Record{}, workloadidentity.ErrUnauthorized
+	if pod.Spec.ServiceAccountName != commandServiceAccount || pod.DeletionTimestamp != nil || (pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodPending) || pod.Labels[labelManagedBy] != "druid" || pod.Labels[labelComponent] != "runtime" || deployment == "" || command == "" || pod.Labels[labelCommand] != dnsLabel(command) {
+		return workloadidentity.Identity{}, workloadidentity.ErrUnauthorized
 	}
 	for _, volume := range pod.Spec.Volumes {
 		if volume.Name == "data" && volume.PersistentVolumeClaim != nil && pod.Labels[labelScrollID] == dnsLabel(volume.PersistentVolumeClaim.ClaimName) {
 			root := ref(pod.Namespace, volume.PersistentVolumeClaim.ClaimName)
 			if pod.Labels[labelRuntimeID] != dnsLabel(runtimeID(root)) {
-				return workloadidentity.Record{}, workloadidentity.ErrUnauthorized
+				return workloadidentity.Identity{}, workloadidentity.ErrUnauthorized
 			}
-			return workloadidentity.Record{RuntimeRoot: root, DeploymentID: deployment, Command: command, ExecutionID: execution, Permissions: strings.Fields(pod.Annotations[commandPermissionsAnnotation])}, nil
+			return workloadidentity.Identity{DeploymentID: deployment, Permissions: strings.Fields(pod.Annotations[commandPermissionsAnnotation])}, nil
 		}
 	}
-	return workloadidentity.Record{}, workloadidentity.ErrUnauthorized
+	return workloadidentity.Identity{}, workloadidentity.ErrUnauthorized
 }

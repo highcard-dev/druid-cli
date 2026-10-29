@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"fmt"
-	"io"
 
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/runtime/docker"
@@ -13,13 +12,6 @@ type Runtime struct {
 	Backend ports.RuntimeBackendInterface
 	Store   ports.RuntimeScrollStore
 	create  ports.RuntimeBackendFactoryFunc
-}
-
-func (r *Runtime) Close() error {
-	if closer, ok := r.Backend.(io.Closer); ok {
-		return closer.Close()
-	}
-	return nil
 }
 
 type Options struct {

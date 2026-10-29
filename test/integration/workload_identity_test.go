@@ -98,7 +98,6 @@ func TestWorkloadIdentityRealRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = runtime.Close() })
 	supervisor, err := appservices.NewRuntimeSupervisor(runtime.Store, coreservices.NewRuntimeScrollManager(runtime.Store), runtime)
 	if err != nil {
 		t.Fatal(err)
@@ -359,7 +358,6 @@ commands:
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = reattached.Close() })
 	second, err := appservices.NewRuntimeSupervisor(reattached.Store, coreservices.NewRuntimeScrollManager(reattached.Store), reattached)
 	if err != nil {
 		t.Fatal(err)

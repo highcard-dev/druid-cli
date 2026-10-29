@@ -144,7 +144,6 @@ func runRuntimeDaemon() error {
 	if err != nil {
 		return err
 	}
-	defer runtime.Close()
 	manager := services.NewRuntimeScrollManager(runtime.Store)
 	supervisor, err := appservices.NewRuntimeSupervisor(runtime.Store, manager, runtime)
 	if err != nil {

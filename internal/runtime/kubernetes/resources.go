@@ -369,7 +369,6 @@ func applyCommandIdentity(pod *corev1.PodSpec, labels map[string]string, identit
 		return
 	}
 	pod.ServiceAccountName = commandServiceAccount
-	pod.AutomountServiceAccountToken = ptrBool(false)
 	expiration := int64(3600)
 	pod.Volumes = append(pod.Volumes, corev1.Volume{Name: "command-identity", VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{Sources: []corev1.VolumeProjection{{ServiceAccountToken: &corev1.ServiceAccountTokenProjection{Audience: commandTokenAudience, ExpirationSeconds: &expiration, Path: "token"}}}}}})
 	mount := corev1.VolumeMount{Name: "command-identity", MountPath: "/run/secrets/druid", ReadOnly: true}

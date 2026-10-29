@@ -51,10 +51,10 @@ func (s *RuntimeSession) assignExecutionIdentity(command, execution string) erro
 	return s.store.UpdateScroll(s.runtimeScroll)
 }
 
-func (s *RuntimeSupervisor) AuthenticateCommand(ctx context.Context, token string, deployment string) (workloadidentity.Record, error) {
+func (s *RuntimeSupervisor) AuthenticateCommand(ctx context.Context, token string, deployment string) (workloadidentity.Identity, error) {
 	// Docker MCP tools are deliberately unauthenticated: trusted local use only.
 	if s.runtimeBackend.Name() == "docker" {
-		record := workloadidentity.Record{DeploymentID: deployment}
+		record := workloadidentity.Identity{DeploymentID: deployment}
 		for _, permission := range ToolPermissions {
 			record.Permissions = append(record.Permissions, permission)
 		}
@@ -62,14 +62,14 @@ func (s *RuntimeSupervisor) AuthenticateCommand(ctx context.Context, token strin
 	}
 	backend, ok := s.runtimeBackend.(ports.CommandIdentityBackend)
 	if !ok {
-		return workloadidentity.Record{}, workloadidentity.ErrUnauthorized
+		return workloadidentity.Identity{}, workloadidentity.ErrUnauthorized
 	}
 	record, err := backend.AuthenticateCommandIdentity(ctx, token)
 	if err != nil {
-		return workloadidentity.Record{}, err
+		return workloadidentity.Identity{}, err
 	}
 	if record.DeploymentID != deployment {
-		return workloadidentity.Record{}, workloadidentity.ErrUnauthorized
+		return workloadidentity.Identity{}, workloadidentity.ErrUnauthorized
 	}
 	return record, nil
 }

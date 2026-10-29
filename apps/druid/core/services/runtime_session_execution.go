@@ -75,9 +75,6 @@ func (s *RuntimeSession) runCommand(cmd string, extraEnv ...map[string]map[strin
 	}
 	requiresIdentity := s.runtimeBackend.Name() != "docker"
 	executionID := ""
-	s.queueMu.Lock()
-	recovering := s.queue[cmd] != nil && s.queue[cmd].recovered
-	s.queueMu.Unlock()
 	for _, status := range s.Snapshot()[cmd] {
 		if status.ExecutionID != "" {
 			executionID = status.ExecutionID
@@ -85,9 +82,6 @@ func (s *RuntimeSession) runCommand(cmd string, extraEnv ...map[string]map[strin
 		}
 	}
 	if executionID == "" {
-		if recovering && command.Identity != nil && requiresIdentity {
-			return fmt.Errorf("identity-enabled command requires a fresh execution")
-		}
 		executionID = uuid.NewString()
 		if err := s.assignExecutionIdentity(cmd, executionID); err != nil {
 			return err
@@ -99,7 +93,7 @@ func (s *RuntimeSession) runCommand(cmd string, extraEnv ...map[string]map[strin
 		if !ok || s.workloadAPIURL == "" {
 			return fmt.Errorf("command identity requires runtime support and workload API URL")
 		}
-		if err := backend.PrepareCommandIdentity(context.Background(), workloadidentity.Record{RuntimeRoot: root}); err != nil {
+		if err := backend.PrepareCommandIdentity(context.Background(), root); err != nil {
 			return err
 		}
 		identity.Enabled = true
@@ -116,7 +110,6 @@ func (s *RuntimeSession) runCommand(cmd string, extraEnv ...map[string]map[strin
 		if procedureEnv[name] == nil {
 			procedureEnv[name] = map[string]string{}
 		}
-		procedureEnv[name]["DRUID_EXECUTION_ID"] = executionID
 		if s.workloadAPIURL != "" && (command.Identity != nil || !requiresIdentity) {
 			procedureEnv[name]["DRUID_TOKEN_FILE"] = ""
 			if requiresIdentity {

@@ -5,21 +5,47 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/workloadidentity"
 )
 
+func TestHydratedIdentityCommandUsesExecutionStatusWithoutRecoveryFlags(t *testing.T) {
+	for _, execution := range []string{"existing-run", ""} {
+		t.Run("execution="+execution, func(t *testing.T) {
+			supervisor, backend, _ := commandToolsFixture(t)
+			session := supervisor.sessions["tools"]
+			session.workloadAPIURL = "http://runtime.local"
+			session.runtimeScroll.Procedures["agent"]["agent-console"] = domain.LockStatus{ExecutionID: execution, Status: domain.ScrollLockStatusRunning}
+			if err := session.HydrateFromState(session.Snapshot()); err != nil {
+				t.Fatal(err)
+			}
+			var seen ports.RuntimeCommand
+			backend.runCommand = func(command ports.RuntimeCommand) (*int, error) { seen = command; return nil, nil }
+			if err := session.runCommand("agent"); err != nil {
+				t.Fatal(err)
+			}
+			if seen.ExecutionID == "" || (execution != "" && seen.ExecutionID != execution) || !seen.Command.Procedures[0].RuntimeIdentity.Enabled {
+				t.Fatal("hydration lost execution identity or token projection")
+			}
+			if _, present := seen.ProcedureEnv["agent-console"]["DRUID_EXECUTION_ID"]; present {
+				t.Fatal("unused execution metadata leaked into workload environment")
+			}
+		})
+	}
+}
+
 type podIdentityBackend struct {
 	ports.RuntimeBackendInterface
-	record workloadidentity.Record
+	record workloadidentity.Identity
 	name   string
 }
 
-func (b podIdentityBackend) AuthenticateCommandIdentity(context.Context, string) (workloadidentity.Record, error) {
+func (b podIdentityBackend) AuthenticateCommandIdentity(context.Context, string) (workloadidentity.Identity, error) {
 	return b.record, nil
 }
 
-func (b podIdentityBackend) PrepareCommandIdentity(context.Context, workloadidentity.Record) error {
+func (b podIdentityBackend) PrepareCommandIdentity(context.Context, string) error {
 	return nil
 }
 func (b podIdentityBackend) Name() string {
@@ -30,7 +56,7 @@ func (b podIdentityBackend) Name() string {
 }
 
 func TestCommandAuthenticationNeedsNoDaemonState(t *testing.T) {
-	backend := podIdentityBackend{record: workloadidentity.Record{DeploymentID: "deployment", Permissions: []string{"commands:list"}}}
+	backend := podIdentityBackend{record: workloadidentity.Identity{DeploymentID: "deployment", Permissions: []string{"commands:list"}}}
 	supervisor, err := NewRuntimeSupervisor(nil, nil, ports.RuntimeBackendFactoryFunc(func(ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) { return backend, nil }))
 	if err != nil {
 		t.Fatal(err)

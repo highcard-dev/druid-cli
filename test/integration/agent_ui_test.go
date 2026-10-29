@@ -92,7 +92,6 @@ func TestAgentUIBuildAndPublish(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer runtime.Close()
 	supervisor, err := appservices.NewRuntimeSupervisor(runtime.Store, coreservices.NewRuntimeScrollManager(runtime.Store), runtime)
 	if err != nil {
 		t.Fatal(err)

@@ -1,8 +1,6 @@
 package services
 
-import (
-	"github.com/highcard-dev/daemon/internal/core/domain"
-)
+import "github.com/highcard-dev/daemon/internal/core/domain"
 
 func (s *RuntimeSupervisor) Delete(id string) error {
 	return s.DeleteWithPolicy(id, false)

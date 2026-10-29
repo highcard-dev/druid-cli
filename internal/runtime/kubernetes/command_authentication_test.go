@@ -48,7 +48,7 @@ func TestCommandServiceAccountAuthentication(t *testing.T) {
 		{name: "worker pod", mutate: func(p *corev1.Pod, _ *authv1.TokenReviewStatus) { p.Labels[labelComponent] = "worker-pull" }},
 		{name: "missing deployment", mutate: func(p *corev1.Pod, _ *authv1.TokenReviewStatus) { delete(p.Annotations, commandDeploymentAnnotation) }},
 		{name: "mismatched command", mutate: func(p *corev1.Pod, _ *authv1.TokenReviewStatus) { p.Annotations[labelCommand] = "other" }},
-		{name: "missing execution", mutate: func(p *corev1.Pod, _ *authv1.TokenReviewStatus) { delete(p.Labels, workloadidentity.ExecutionLabel) }},
+		{name: "no execution label", mutate: func(p *corev1.Pod, _ *authv1.TokenReviewStatus) { delete(p.Labels, workloadidentity.ExecutionLabel) }},
 		{name: "wrong runtime root", mutate: func(p *corev1.Pod, _ *authv1.TokenReviewStatus) {
 			p.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = "other-data"
 		}},
@@ -82,9 +82,9 @@ func TestCommandServiceAccountAuthentication(t *testing.T) {
 			})
 			backend := NewWithClient(Config{Namespace: "default"}, client)
 			record, err := backend.AuthenticateCommandIdentity(context.Background(), "credential")
-			if test.name == "valid" || test.name == "no grants" {
-				granted := test.name == "valid"
-				if err != nil || record.DeploymentID != "full-deployment-id" || record.Command != "agent_command" || record.RuntimeRoot != ref("games", "data") || record.ExecutionID != "execution" || record.Allows("commands:list") != granted || record.Allows("logs:read") != granted || record.Allows("commands:run") {
+			if test.name == "valid" || test.name == "no grants" || test.name == "no execution label" {
+				granted := test.name != "no grants"
+				if err != nil || record.DeploymentID != "full-deployment-id" || record.Allows("commands:list") != granted || record.Allows("logs:read") != granted || record.Allows("commands:run") {
 					t.Fatalf("record=%+v err=%v", record, err)
 				}
 				// No cache or registry is required after daemon reconstruction.
@@ -108,7 +108,7 @@ func TestCommandIdentityProvisioningOnlyCreatesAnUnprivilegedServiceAccount(t *t
 	client := fake.NewSimpleClientset()
 	backend := NewWithClient(Config{Namespace: "default"}, client)
 	for index := 0; index < 2; index++ {
-		if err := backend.PrepareCommandIdentity(context.Background(), workloadidentity.Record{RuntimeRoot: ref("games", "data")}); err != nil {
+		if err := backend.PrepareCommandIdentity(context.Background(), ref("games", "data")); err != nil {
 			t.Fatal(err)
 		}
 	}

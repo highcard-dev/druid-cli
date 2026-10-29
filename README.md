@@ -70,6 +70,10 @@ Runtime selection is daemon-only: start the daemon with `druid daemon --runtime 
 Agent tools are exposed only at `/:id/mcp`. Existing REST endpoints retain owner
 authentication; there are no parallel agent REST routes.
 
+Kubernetes authorizes each tool request when it is accepted. An accepted command
+wait may finish after its caller's credential is revoked (at most 30 seconds);
+subsequent requests must pass authentication again.
+
 **Docker agent-tool caveat:** MCP tool endpoints on the Docker runtime are
 unauthenticated and ignore command permissions. Anyone who can reach them can
 invoke every tool for any deployment, including command creation/execution,

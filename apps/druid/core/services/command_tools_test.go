@@ -6,7 +6,9 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
@@ -179,19 +181,21 @@ func TestPublishUIToolPermissionsProjectionAndPaths(t *testing.T) {
 
 type toolTestBackend struct {
 	*fakeWorkerBackend
-	credentials sync.Map
-	logs        string
-	input       string
+	credentials     sync.Map
+	authentications atomic.Int32
+	logs            string
+	input           string
 }
 
-func (b *toolTestBackend) PrepareCommandIdentity(context.Context, workloadidentity.Record) error {
+func (b *toolTestBackend) PrepareCommandIdentity(context.Context, string) error {
 	return nil
 }
-func (b *toolTestBackend) AuthenticateCommandIdentity(_ context.Context, token string) (workloadidentity.Record, error) {
+func (b *toolTestBackend) AuthenticateCommandIdentity(_ context.Context, token string) (workloadidentity.Identity, error) {
 	if record, ok := b.credentials.Load(token); ok {
-		return record.(workloadidentity.Record), nil
+		b.authentications.Add(1)
+		return record.(workloadidentity.Identity), nil
 	}
-	return workloadidentity.Record{}, workloadidentity.ErrUnauthorized
+	return workloadidentity.Identity{}, workloadidentity.ErrUnauthorized
 }
 func (b *toolTestBackend) ReadConsoleLogs(_ context.Context, _, _ string, _ int, _ int64) (string, bool, error) {
 	return b.logs, false, nil
@@ -239,7 +243,7 @@ commands:
 	supervisor.sessions[runtime.ID] = session
 	t.Cleanup(session.stopDeploymentQueue)
 	token := "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJmaXh0dXJlIn0.c2ln"
-	backend.credentials.Store(token, workloadidentity.Record{ExecutionID: "agent-execution", DeploymentID: "tools", Command: "agent", Permissions: permissions})
+	backend.credentials.Store(token, workloadidentity.Identity{DeploymentID: "tools", Permissions: permissions})
 	return supervisor, backend, token
 }
 
@@ -307,6 +311,33 @@ func TestCommandToolsEnqueueWaitAndReplacedExecution(t *testing.T) {
 	}
 	if _, err := supervisor.CallCommandTool(ctx, token, "tools", "run_command", ToolInput{Command: "unknown"}); err == nil {
 		t.Fatal("unknown command accepted")
+	}
+}
+
+func TestCommandWaitAuthenticatesOnceAndRejectsSubsequentRevokedRequests(t *testing.T) {
+	supervisor, backend, token := commandToolsFixture(t, "queue:read")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := supervisor.CallCommandTool(ctx, token, "tools", "wait_for_command", ToolInput{Command: "agent", ExecutionID: "agent-execution", TimeoutSeconds: 1})
+		done <- err
+	}()
+	for backend.authentications.Load() == 0 {
+		if ctx.Err() != nil {
+			t.Fatal("wait was not accepted")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	backend.credentials.Delete(token)
+	// Keep the wait pending beyond a poll, then complete its accepted execution.
+	time.Sleep(150 * time.Millisecond)
+	supervisor.sessions["tools"].SetCommandStatus("agent", domain.ScrollLockStatusDone, nil)
+	if err := <-done; err != nil || backend.authentications.Load() != 1 {
+		t.Fatalf("accepted wait repeated authentication: %v", err)
+	}
+	if _, err := supervisor.CallCommandTool(ctx, token, "tools", "get_queue", ToolInput{}); !errors.Is(err, workloadidentity.ErrUnauthorized) {
+		t.Fatal("new request accepted a revoked credential")
 	}
 }
 

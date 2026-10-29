@@ -97,7 +97,7 @@ func (s *RuntimeSupervisor) CallCommandTool(ctx context.Context, token, deployme
 	case "run_command":
 		return s.enqueueToolCommand(deployment, input.Command)
 	case "wait_for_command":
-		return s.waitToolCommand(ctx, token, deployment, input)
+		return s.waitToolCommand(ctx, deployment, input)
 	case "get_deployment_status":
 		runtime, err := s.Get(deployment)
 		if err != nil {
@@ -175,7 +175,7 @@ func (s *RuntimeSupervisor) enqueueToolCommand(deployment, command string) (any,
 	return map[string]any{"command": command, "execution_id": execution, "accepted": true}, nil
 }
 
-func (s *RuntimeSupervisor) waitToolCommand(ctx context.Context, token, deployment string, input ToolInput) (any, error) {
+func (s *RuntimeSupervisor) waitToolCommand(ctx context.Context, deployment string, input ToolInput) (any, error) {
 	if input.Command == "" || input.ExecutionID == "" {
 		return nil, toolError(400, "command and execution_id are required")
 	}
@@ -188,13 +188,6 @@ func (s *RuntimeSupervisor) waitToolCommand(ctx context.Context, token, deployme
 	}
 	deadline := time.Now().Add(time.Duration(timeout) * time.Second)
 	for {
-		record, err := s.AuthenticateCommand(ctx, token, deployment)
-		if err != nil {
-			return nil, err
-		}
-		if !record.Allows("queue:read") {
-			return nil, toolError(403, "workload permission denied")
-		}
 		queue, err := s.Queue(deployment)
 		if err != nil {
 			return nil, err
