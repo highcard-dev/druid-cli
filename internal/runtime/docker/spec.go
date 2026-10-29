@@ -11,7 +11,6 @@ import (
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/go-connections/nat"
 	"github.com/highcard-dev/daemon/internal/core/domain"
-	"github.com/highcard-dev/daemon/internal/workloadidentity"
 )
 
 func containerSpec(commandName string, procedure *domain.Procedure, root string, globalPorts []domain.Port, routing []domain.RuntimeRouteAssignment, env map[string]string) (*container.Config, *container.HostConfig, error) {
@@ -48,31 +47,26 @@ func containerSpec(commandName string, procedure *domain.Procedure, root string,
 		mounts = append(mounts, dockerMount)
 	}
 
-	config := &container.Config{
-		Image:        procedure.Image,
-		Cmd:          procedure.Command,
-		WorkingDir:   procedure.WorkingDir,
-		Env:          envArgs(env),
-		ExposedPorts: exposedPorts,
-		AttachStdin:  true,
-		AttachStdout: true,
-		AttachStderr: true,
-		OpenStdin:    true,
-		Tty:          procedure.TTY,
-		Labels: map[string]string{
-			"druid.command":   commandName,
-			"druid.root-hash": rootHash(root),
-		},
-	}
-	hostConfig := &container.HostConfig{
-		Mounts:       mounts,
-		PortBindings: portBindings,
-		ExtraHosts:   dockerExtraHosts(),
-	}
-	if identity := procedure.RuntimeIdentity; identity != nil {
-		config.Labels[workloadidentity.ExecutionLabel] = identity.ExecutionID
-	}
-	return config, hostConfig, nil
+	return &container.Config{
+			Image:        procedure.Image,
+			Cmd:          procedure.Command,
+			WorkingDir:   procedure.WorkingDir,
+			Env:          envArgs(env),
+			ExposedPorts: exposedPorts,
+			AttachStdin:  true,
+			AttachStdout: true,
+			AttachStderr: true,
+			OpenStdin:    true,
+			Tty:          procedure.TTY,
+			Labels: map[string]string{
+				"druid.command":   commandName,
+				"druid.root-hash": rootHash(root),
+			},
+		}, &container.HostConfig{
+			Mounts:       mounts,
+			PortBindings: portBindings,
+			ExtraHosts:   dockerExtraHosts(),
+		}, nil
 }
 
 func routeAssignmentForPort(portName string, routing []domain.RuntimeRouteAssignment) (domain.RuntimeRouteAssignment, bool) {

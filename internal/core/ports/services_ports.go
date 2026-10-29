@@ -95,7 +95,6 @@ type RuntimeScrollStore interface {
 }
 
 type RuntimeCommand struct {
-	ExecutionID string
 	// Name identifies the command within the Scroll.
 	Name string
 	// ScrollID identifies the runtime Scroll whose command is being executed.
@@ -114,12 +113,11 @@ type RuntimeCommand struct {
 
 // ProcedureStatusUpdate identifies one backend-reported procedure transition.
 type ProcedureStatusUpdate struct {
-	ExecutionID string
-	RuntimeID   string
-	Command     string
-	Procedure   string
-	Status      domain.ScrollLockStatus
-	ExitCode    *int
+	RuntimeID string
+	Command   string
+	Procedure string
+	Status    domain.ScrollLockStatus
+	ExitCode  *int
 }
 
 // ProcedureStatusObserver receives procedure transitions from a runtime backend.

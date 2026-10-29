@@ -43,10 +43,10 @@ func TestCreateCommandPersistsWithoutRunningAndCanExecute(t *testing.T) {
 		t.Fatal("new command was not listed")
 	}
 	run, err := s.CallCommandTool(ctx, token, "tools", "run_command", ToolInput{Command: "created"})
-	if err != nil {
+	if err != nil || run.(map[string]any)["accepted"] != true {
 		t.Fatal(err)
 	}
-	_, err = s.CallCommandTool(ctx, token, "tools", "wait_for_command", ToolInput{Command: "created", ExecutionID: run.(map[string]any)["execution_id"].(string), TimeoutSeconds: 1})
+	_, err = s.CallCommandTool(ctx, token, "tools", "wait_for_command", ToolInput{Command: "created", TimeoutSeconds: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestCreateCommandRejectionsAndConcurrentDuplicates(t *testing.T) {
 		}
 	}
 	if _, err := backend.AuthenticateCommandIdentity(ctx, token); err != nil {
-		t.Fatal("duplicate creation disturbed existing execution identity")
+		t.Fatal("duplicate creation disturbed existing workload credentials")
 	}
 	if _, err := s.CallCommandTool(ctx, token, "other", "create_command", ToolInput{Command: "new", Instructions: definition}); !errors.Is(err, workloadidentity.ErrUnauthorized) {
 		t.Fatal("cross-deployment creation accepted")
@@ -185,6 +185,51 @@ type toolTestBackend struct {
 	authentications atomic.Int32
 	logs            string
 	input           string
+	stopped         string
+	stopError       error
+}
+
+func (b *toolTestBackend) StopCommand(_ string, command string) error {
+	b.stopped = command
+	return b.stopError
+}
+
+func TestRemoveCommandStopsAndPersistsRemoval(t *testing.T) {
+	supervisor, backend, token := commandToolsFixture(t, "commands:remove")
+	result, err := supervisor.CallCommandTool(context.Background(), token, "tools", "remove_command", ToolInput{Command: "agent"})
+	if err != nil || result.(map[string]any)["removed"] != true || backend.stopped != "agent" {
+		t.Fatalf("command removal failed: %v, %v", result, err)
+	}
+	stored, err := supervisor.store.GetScroll("tools")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := NewRuntimeSession(supervisor.store, stored, backend)
+	if err != nil || reloaded.scrollService.GetFile().Commands["agent"] != nil || reloaded.Snapshot()["agent"] != nil || reloaded.scrollService.GetFile().Commands["echo"] == nil {
+		t.Fatal("removal did not persist or changed another command")
+	}
+}
+
+func TestRemoveCommandPermissionsBindingValidationAndStopFailure(t *testing.T) {
+	ctx := context.Background()
+	supervisor, backend, token := commandToolsFixture(t, "commands:list")
+	if _, err := supervisor.CallCommandTool(ctx, token, "tools", "remove_command", ToolInput{Command: "agent"}); err == nil || backend.stopped != "" {
+		t.Fatal("removal bypassed permission checks")
+	}
+	backend.credentials.Store(token, workloadidentity.Identity{DeploymentID: "tools", Permissions: []string{"commands:remove"}})
+	if _, err := supervisor.CallCommandTool(ctx, token, "other", "remove_command", ToolInput{Command: "agent"}); !errors.Is(err, workloadidentity.ErrUnauthorized) || backend.stopped != "" {
+		t.Fatal("removal crossed deployment binding")
+	}
+	if _, err := supervisor.CallCommandTool(ctx, token, "tools", "remove_command", ToolInput{}); err == nil || backend.stopped != "" {
+		t.Fatal("removal accepted an empty command")
+	}
+	backend.stopError = errors.New("fixture stop failed")
+	if _, err := supervisor.CallCommandTool(ctx, token, "tools", "remove_command", ToolInput{Command: "agent"}); !errors.Is(err, backend.stopError) {
+		t.Fatal("stop failure was not propagated")
+	}
+	if supervisor.sessions["tools"].scrollService.GetFile().Commands["agent"] == nil {
+		t.Fatal("failed stop removed the definition")
+	}
 }
 
 func (b *toolTestBackend) PrepareCommandIdentity(context.Context, string) error {
@@ -231,7 +276,7 @@ commands:
     procedures:
       - image: busybox
         command: [true]
-`, Procedures: domain.ProcedureStatusMap{"agent": {"agent-console": {ExecutionID: "agent-execution", Status: domain.ScrollLockStatusRunning}}}}
+`, Procedures: domain.ProcedureStatusMap{"agent": {"agent-console": {Status: domain.ScrollLockStatusRunning}}}}
 	if err := store.CreateScroll(runtime); err != nil {
 		t.Fatal(err)
 	}
@@ -291,26 +336,33 @@ func TestCommandToolsPermissionsProjectionAndConsoles(t *testing.T) {
 	}
 }
 
-func TestCommandToolsEnqueueWaitAndReplacedExecution(t *testing.T) {
+func TestCommandToolsEnqueueAndWaitForCurrentCommand(t *testing.T) {
 	supervisor, _, token := commandToolsFixture(t, "commands:run", "queue:read")
 	ctx := context.Background()
 	result, err := supervisor.CallCommandTool(ctx, token, "tools", "run_command", ToolInput{Command: "echo"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	execution := result.(map[string]any)["execution_id"].(string)
-	if execution == "" {
-		t.Fatal("missing execution ID")
+	if result.(map[string]any)["accepted"] != true || result.(map[string]any)["command"] != "echo" {
+		t.Fatal("command was not accepted")
 	}
-	waited, err := supervisor.CallCommandTool(ctx, token, "tools", "wait_for_command", ToolInput{Command: "echo", ExecutionID: execution, TimeoutSeconds: 1})
+	waited, err := supervisor.CallCommandTool(ctx, token, "tools", "wait_for_command", ToolInput{Command: "echo", TimeoutSeconds: 1})
 	if err != nil || waited.(map[string]any)["timed_out"] != false {
 		t.Fatalf("execution did not complete: %v", err)
 	}
-	if _, err := supervisor.CallCommandTool(ctx, token, "tools", "wait_for_command", ToolInput{Command: "echo", ExecutionID: "different", TimeoutSeconds: 1}); err == nil {
-		t.Fatal("replaced execution accepted")
+	if _, err := supervisor.CallCommandTool(ctx, token, "tools", "wait_for_command", ToolInput{Command: "missing", TimeoutSeconds: 1}); err == nil {
+		t.Fatal("missing command accepted")
 	}
 	if _, err := supervisor.CallCommandTool(ctx, token, "tools", "run_command", ToolInput{Command: "unknown"}); err == nil {
 		t.Fatal("unknown command accepted")
+	}
+}
+
+func TestCommandWaitReturnsCurrentStatusOnTimeout(t *testing.T) {
+	supervisor, _, token := commandToolsFixture(t, "queue:read")
+	result, err := supervisor.CallCommandTool(context.Background(), token, "tools", "wait_for_command", ToolInput{Command: "agent", TimeoutSeconds: 1})
+	if err != nil || result.(map[string]any)["timed_out"] != true || result.(map[string]any)["status"] != domain.ScrollLockStatusRunning {
+		t.Fatalf("wait did not return the current running status: %v, %v", result, err)
 	}
 }
 
@@ -320,7 +372,7 @@ func TestCommandWaitAuthenticatesOnceAndRejectsSubsequentRevokedRequests(t *test
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		_, err := supervisor.CallCommandTool(ctx, token, "tools", "wait_for_command", ToolInput{Command: "agent", ExecutionID: "agent-execution", TimeoutSeconds: 1})
+		_, err := supervisor.CallCommandTool(ctx, token, "tools", "wait_for_command", ToolInput{Command: "agent", TimeoutSeconds: 1})
 		done <- err
 	}()
 	for backend.authentications.Load() == 0 {
@@ -341,13 +393,13 @@ func TestCommandWaitAuthenticatesOnceAndRejectsSubsequentRevokedRequests(t *test
 	}
 }
 
-func TestLateProcedureEventCannotOverwriteReplacementExecution(t *testing.T) {
+func TestProcedureEventsUpdateCurrentCommandStatus(t *testing.T) {
 	supervisor, _, _ := commandToolsFixture(t)
 	session := supervisor.sessions["tools"]
-	session.beginExecution("agent", "replacement")
-	supervisor.ObserveProcedureStatus(ports.ProcedureStatusUpdate{RuntimeID: "tools", Command: "agent", Procedure: "agent-console", ExecutionID: "agent-execution", Status: domain.ScrollLockStatusError})
+	session.SetCommandStatus("agent", domain.ScrollLockStatusWaiting, nil)
+	supervisor.ObserveProcedureStatus(ports.ProcedureStatusUpdate{RuntimeID: "tools", Command: "agent", Procedure: "agent-console", Status: domain.ScrollLockStatusError})
 	status := session.Snapshot()["agent"]["agent-console"]
-	if status.ExecutionID != "replacement" || status.Status != domain.ScrollLockStatusWaiting {
-		t.Fatal("stale event overwrote replacement")
+	if status.Status != domain.ScrollLockStatusError {
+		t.Fatal("procedure event did not update the named command")
 	}
 }

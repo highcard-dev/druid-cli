@@ -67,14 +67,46 @@ There is also websocket support for stdout. TTY is also supported.
 
 Runtime selection is daemon-only: start the daemon with `druid daemon --runtime docker`, then use `druid` to create, run, and inspect scrolls without passing a runtime. Docker runtime state stays in SQLite under the runtime state directory. Scroll specs and runtime data live together in one runtime root.
 
-Agent tools are exposed only at `/:id/mcp`. Existing REST endpoints retain owner
-authentication; there are no parallel agent REST routes.
+Agent tools are exposed through `/:id/mcp` and normal REST resource routes.
+Existing queue, command-run/removal and UI-publication routes are registered once
+and accept either their existing owner authentication or scoped workload credentials.
+Other owner REST endpoints are unchanged.
+
+REST paths below are relative to `/:id/api/v1`. Tool arguments are JSON bodies;
+GET limits use `tail_lines` or `timeout_seconds` query parameters. Workload
+responses use the same result objects as MCP. Existing owner handlers preserve
+their previous response shapes and status codes.
+
+| MCP tool | REST operation |
+| --- | --- |
+| `list_commands` | `GET /commands` |
+| `create_command` | `POST /commands` |
+| `remove_command` | `DELETE /scroll/commands/:command` |
+| `run_command` | `POST /command` |
+| `wait_for_command` | `GET /commands/:command/wait` |
+| `get_queue` | `GET /queue` |
+| `read_logs` | `GET /consoles/:console/logs` |
+| `search_logs` | `POST /consoles/:console/logs/search` |
+| `send_stdin` | `POST /consoles/:console/stdin` |
+| `get_deployment_status` | `GET /status` |
+| `publish_ui` | `POST /ui/packages/:scope/publish` |
+
+`remove_command` requires `commands:remove`, stops the command and removes its
+definition, queue/status and runtime containers. Its console/log access is also
+removed; deployment data and other commands are retained. New OpenHands commands
+request this permission; existing Kubernetes agents require explicit recreation
+to gain it.
 
 Kubernetes authorizes each tool request when it is accepted. An accepted command
 wait may finish after its caller's credential is revoked (at most 30 seconds);
 subsequent requests must pass authentication again.
 
-**Docker agent-tool caveat:** MCP tool endpoints on the Docker runtime are
+Commands have no execution IDs. `run_command` acknowledges the command name and
+`wait_for_command` observes its current status. Restarted/replaced runs are not
+distinguished, and delayed status events from older containers may update the
+current command status.
+
+**Docker agent-tool caveat:** HTTP/MCP tool endpoints on the Docker runtime are
 unauthenticated and ignore command permissions. Anyone who can reach them can
 invoke every tool for any deployment, including command creation/execution,
 stdin, log access and UI publication. Docker creates no workload credentials or

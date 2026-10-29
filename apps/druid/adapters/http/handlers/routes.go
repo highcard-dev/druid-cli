@@ -64,7 +64,7 @@ func RegisterPublicRoutes(app *fiber.App, handlers RouteHandlers) {
 	app.Get("/.well-known/jwks.json", RuntimeJWKS(authorizer))
 	app.Get("/:id/ws/v1/serve/:console", websocket.New(handlers.Websocket.AttachScrollConsole))
 	if handlers.Server != nil && handlers.Server.ScrollHandler != nil {
-		handlers.Server.ScrollHandler.registerCommandMCP(app)
+		handlers.Server.ScrollHandler.registerCommandTools(app)
 		app.Use("/:id", handlers.Server.PublicAuth)
 	}
 	app.Get("/:id/api/v1/health", handlers.Server.GetHealthAuth)
@@ -73,11 +73,7 @@ func RegisterPublicRoutes(app *fiber.App, handlers RouteHandlers) {
 	app.Get("/:id/api/v1/release", func(c *fiber.Ctx) error { return handlers.Server.GetInstalledRelease(c, c.Params("id")) })
 	app.Post("/:id/api/v1/update", func(c *fiber.Ctx) error { return handlers.Server.UpdateScroll(c, c.Params("id")) })
 	app.Put("/:id/api/v1/scroll/commands/:command", handlers.Server.AddDaemonCommand)
-	app.Delete("/:id/api/v1/scroll/commands/:command", handlers.Server.RemoveDaemonCommand)
-	app.Post("/:id/api/v1/command", handlers.Server.RunDaemonCommand)
-	app.Get("/:id/api/v1/queue", handlers.Server.GetDaemonQueue)
 	app.Get("/:id/api/v1/consoles", handlers.Server.GetDaemonConsoles)
 	app.Get("/:id/api/v1/ports", handlers.Server.GetDaemonPorts)
 	app.Get("/:id/api/v1/ui/packages", handlers.Server.GetDaemonUIPackages)
-	app.Post("/:id/api/v1/ui/packages/:scope/publish", handlers.Server.PublishDaemonUIPackage)
 }

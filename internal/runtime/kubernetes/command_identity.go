@@ -15,7 +15,7 @@ const commandDeploymentAnnotation = "druid.gg/deployment-id"
 const commandPermissionsAnnotation = "druid.gg/permissions"
 
 func commandIdentityAnnotations(identity *domain.RuntimeCommandIdentity, command string) map[string]string {
-	if identity == nil || !identity.Enabled {
+	if identity == nil {
 		return nil
 	}
 	return map[string]string{commandDeploymentAnnotation: identity.DeploymentID, labelCommand: command, commandPermissionsAnnotation: strings.Join(identity.Permissions, " ")}

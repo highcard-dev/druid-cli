@@ -90,7 +90,7 @@ func (s *RuntimeSupervisor) ObserveProcedureStatus(update ports.ProcedureStatusU
 		logger.Log().Warn("Ignoring procedure status for an unknown runtime", zap.String("runtime", update.RuntimeID), zap.String("command", update.Command), zap.String("procedure", update.Procedure), zap.String("status", string(update.Status)))
 		return
 	}
-	session.persistProcedureExecutionStatus(update.Command, update.Procedure, update.Status, update.ExitCode, update.ExecutionID)
+	session.persistProcedureStatus(update.Command, update.Procedure, update.Status, update.ExitCode)
 }
 
 func (s *RuntimeSupervisor) SetWorkerCallbacks(callbacks *WorkerCallbackManager, callbackURL string) {

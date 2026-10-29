@@ -230,7 +230,6 @@ func (s *RuntimeSession) persistCommandStatus(command string, status domain.Scro
 	for idx, procedure := range commandDefinition.Procedures {
 		procedureName := domain.ProcedureName(command, idx, procedure)
 		s.runtimeScroll.Procedures[command][procedureName] = domain.LockStatus{
-			ExecutionID:      s.runtimeScroll.Procedures[command][procedureName].ExecutionID,
 			Status:           status,
 			ExitCode:         exitCode,
 			LastStatusChange: time.Now().Unix(),
@@ -253,10 +252,6 @@ func (s *RuntimeSession) SetCommandStatus(command string, status domain.ScrollLo
 }
 
 func (s *RuntimeSession) persistProcedureStatus(command string, procedure string, status domain.ScrollLockStatus, exitCode *int) {
-	s.persistProcedureExecutionStatus(command, procedure, status, exitCode, "")
-}
-
-func (s *RuntimeSession) persistProcedureExecutionStatus(command string, procedure string, status domain.ScrollLockStatus, exitCode *int, executionID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	commands := s.scrollService.GetFile().Commands
@@ -269,12 +264,7 @@ func (s *RuntimeSession) persistProcedureExecutionStatus(command string, procedu
 	if s.runtimeScroll.Procedures[command] == nil {
 		s.runtimeScroll.Procedures[command] = map[string]domain.LockStatus{}
 	}
-	currentExecution := s.runtimeScroll.Procedures[command][procedure].ExecutionID
-	if executionID != "" && currentExecution != "" && executionID != currentExecution {
-		return
-	}
 	s.runtimeScroll.Procedures[command][procedure] = domain.LockStatus{
-		ExecutionID:      currentExecution,
 		Status:           status,
 		ExitCode:         exitCode,
 		LastStatusChange: time.Now().Unix(),

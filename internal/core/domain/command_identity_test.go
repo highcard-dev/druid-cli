@@ -6,7 +6,7 @@ import (
 )
 
 func TestCommandIdentityValidation(t *testing.T) {
-	for _, permission := range []string{"commands:list", "queue:read", "commands:run", "commands:create", "logs:read", "console:write", "runtime:read", "ui:publish"} {
+	for _, permission := range []string{"commands:list", "queue:read", "commands:run", "commands:create", "commands:remove", "logs:read", "console:write", "runtime:read", "ui:publish"} {
 		if !ValidCommandPermission(permission) {
 			t.Fatalf("known permission rejected: %s", permission)
 		}

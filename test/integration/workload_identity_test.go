@@ -120,7 +120,7 @@ commands:
   agent:
     run: persistent
     identity:
-      permissions: [commands:list, commands:create, queue:read, commands:run, logs:read, console:write, runtime:read]
+      permissions: [commands:list, commands:create, commands:remove, queue:read, commands:run, logs:read, console:write, runtime:read]
     procedures:
       - id: agent-console
         image: node:22-alpine
@@ -163,7 +163,7 @@ commands:
 	if _, err := supervisor.Run(id, "agent"); err != nil {
 		t.Fatal(err)
 	}
-	var token, execution string
+	var token string
 	eventually := func(label string, check func() bool) {
 		t.Helper()
 		deadline := time.Now().Add(90 * time.Second)
@@ -181,21 +181,16 @@ commands:
 		if err != nil {
 			return false
 		}
-		execution = ""
-		for _, status := range queue["agent"] {
-			execution = status.ExecutionID
-			break
-		}
-		if execution == "" {
+		if len(queue["agent"]) == 0 {
 			return false
 		}
 		if kubernetes != nil {
-			pods, err := kubernetes.CoreV1().Pods(id).List(ctx, metav1.ListOptions{LabelSelector: workloadidentity.ExecutionLabel + "=" + execution})
+			pods, err := kubernetes.CoreV1().Pods(id).List(ctx, metav1.ListOptions{LabelSelector: "druid.gg/command=agent"})
 			if err != nil {
 				return false
 			}
 			for _, pod := range pods.Items {
-				if pod.Status.Phase != corev1.PodRunning {
+				if pod.Status.Phase != corev1.PodRunning || pod.DeletionTimestamp != nil {
 					continue
 				}
 				data, err := exec.CommandContext(ctx, "kubectl", "--context", "k3d-druid-gs", "exec", "-n", id, pod.Name, "--", "cat", workloadidentity.TokenFile).Output()
@@ -287,14 +282,8 @@ commands:
 	if err != nil || accepted.IsError {
 		t.Fatal("MCP enqueue failed")
 	}
-	var run struct {
-		ExecutionID string `json:"execution_id"`
-	}
-	if err := json.Unmarshal([]byte(accepted.Content[0].(*mcp.TextContent).Text), &run); err != nil {
-		t.Fatal(err)
-	}
 	_ = session.Close() // Accepted work must survive the caller going away.
-	if _, err := call("wait_for_command", appservices.ToolInput{Command: "echo", ExecutionID: run.ExecutionID, TimeoutSeconds: 30}); err != nil {
+	if _, err := call("wait_for_command", appservices.ToolInput{Command: "echo", TimeoutSeconds: 30}); err != nil {
 		t.Fatal(err)
 	}
 	result, err := call("read_logs", appservices.ToolInput{Console: "echo-console"})
@@ -305,8 +294,18 @@ commands:
 	if !bytes.Contains(data, []byte("COMPLETED_AFTER_DISCONNECT")) {
 		t.Fatal("completed container logs unavailable")
 	}
+	removeSession := connect()
+	removed, err := removeSession.CallTool(ctx, &mcp.CallToolParams{Name: "remove_command", Arguments: map[string]any{"command": "echo"}})
+	_ = removeSession.Close()
+	if err != nil || removed.IsError {
+		t.Fatalf("real MCP command removal failed: %v, %v", removed, err)
+	}
+	updated, err := supervisor.ScrollFile(id)
+	if err != nil || updated.Commands["echo"] != nil {
+		t.Fatal("removed command remained in runtime definition")
+	}
 	if _, err := supervisor.AuthenticateCommand(ctx, token, id); err != nil {
-		t.Fatal("surviving execution lost its credential")
+		t.Fatal("surviving agent lost its credential")
 	}
 	if launcher := os.Getenv("DRUID_WORKLOAD_TEST_LAUNCHER"); launcher != "" {
 		bridgeConsole := "bridge-console"
@@ -389,7 +388,7 @@ commands:
 			t.Fatal("Docker created identity registry files")
 		}
 	}
-	oldToken, oldExecution := token, execution
+	oldToken := token
 	if err := supervisor.AddCommand(id, "agent", agent); err != nil {
 		t.Fatal(err)
 	}
@@ -401,7 +400,7 @@ commands:
 		if !readCredential() {
 			return false
 		}
-		return execution != oldExecution && (kubernetes == nil || token != oldToken)
+		return kubernetes == nil || token != oldToken
 	})
 
 	if _, err := supervisor.AuthenticateCommand(ctx, oldToken, id); kubernetes != nil && err == nil {

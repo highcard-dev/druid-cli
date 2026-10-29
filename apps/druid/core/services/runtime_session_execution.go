@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"net/url"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -74,20 +73,7 @@ func (s *RuntimeSession) runCommand(cmd string, extraEnv ...map[string]map[strin
 		}
 	}
 	requiresIdentity := s.runtimeBackend.Name() != "docker"
-	executionID := ""
-	for _, status := range s.Snapshot()[cmd] {
-		if status.ExecutionID != "" {
-			executionID = status.ExecutionID
-			break
-		}
-	}
-	if executionID == "" {
-		executionID = uuid.NewString()
-		if err := s.assignExecutionIdentity(cmd, executionID); err != nil {
-			return err
-		}
-	}
-	identity := &domain.RuntimeCommandIdentity{ExecutionID: executionID, DeploymentID: scrollID}
+	var identity *domain.RuntimeCommandIdentity
 	if command.Identity != nil && requiresIdentity {
 		backend, ok := s.runtimeBackend.(ports.CommandIdentityBackend)
 		if !ok || s.workloadAPIURL == "" {
@@ -96,8 +82,7 @@ func (s *RuntimeSession) runCommand(cmd string, extraEnv ...map[string]map[strin
 		if err := backend.PrepareCommandIdentity(context.Background(), root); err != nil {
 			return err
 		}
-		identity.Enabled = true
-		identity.Permissions = append([]string(nil), command.Identity.Permissions...)
+		identity = &domain.RuntimeCommandIdentity{DeploymentID: scrollID, Permissions: command.Identity.Permissions}
 	}
 	// Never mutate the persisted Scroll or leak transient mount references.
 	copyCommand := *command
@@ -119,7 +104,6 @@ func (s *RuntimeSession) runCommand(cmd string, extraEnv ...map[string]map[strin
 		}
 	}
 	exitCode, err := s.runtimeBackend.RunCommand(ports.RuntimeCommand{
-		ExecutionID:  executionID,
 		Name:         cmd,
 		ScrollID:     scrollID,
 		Command:      &copyCommand,

@@ -7,15 +7,13 @@ type CommandIdentity struct {
 
 // RuntimeCommandIdentity is transient mount metadata, never serialized in a Scroll.
 type RuntimeCommandIdentity struct {
-	ExecutionID  string
 	DeploymentID string
-	Enabled      bool
 	Permissions  []string
 }
 
 func ValidCommandPermission(permission string) bool {
 	switch permission {
-	case "commands:list", "commands:run", "commands:create", "queue:read", "logs:read", "console:write", "runtime:read", "ui:publish":
+	case "commands:list", "commands:run", "commands:create", "commands:remove", "queue:read", "logs:read", "console:write", "runtime:read", "ui:publish":
 		return true
 	}
 	return false

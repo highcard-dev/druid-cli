@@ -46,7 +46,51 @@ func bearer(header string) string {
 	return parts[1]
 }
 
-func (h *ScrollHandler) registerCommandMCP(app *fiber.App) {
+func commandToolInput(data []byte) (services.ToolInput, error) {
+	var input services.ToolInput
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	err := decoder.Decode(&input)
+	return input, err
+}
+
+func (h *ScrollHandler) commandToolHTTP(name string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		var input services.ToolInput
+		if len(c.Body()) > 0 {
+			var err error
+			input, err = commandToolInput(c.Body())
+			if err != nil {
+				return fiber.NewError(400, "invalid tool request")
+			}
+		}
+		input.Command = c.Params("command", input.Command)
+		input.Console = c.Params("console", input.Console)
+		input.Scope = c.Params("scope", input.Scope)
+		if c.Method() == "GET" {
+			input.TailLines = c.QueryInt("tail_lines", 0)
+			input.TimeoutSeconds = c.QueryInt("timeout_seconds", 0)
+		}
+		result, err := h.supervisor.CallCommandTool(c.UserContext(), bearer(c.Get("Authorization")), c.Params("id"), name, input)
+		if err != nil {
+			return fiber.NewError(commandToolStatus(err), commandToolMessage(err))
+		}
+		return c.JSON(result)
+	}
+}
+
+func (h *ScrollHandler) registerCommandTools(app *fiber.App) {
+	app.Get("/:id/api/v1/commands", h.commandToolHTTP("list_commands"))
+	app.Post("/:id/api/v1/commands", h.commandToolHTTP("create_command"))
+	app.Get("/:id/api/v1/commands/:command/wait", h.commandToolHTTP("wait_for_command"))
+	app.Get("/:id/api/v1/consoles/:console/logs", h.commandToolHTTP("read_logs"))
+	app.Post("/:id/api/v1/consoles/:console/logs/search", h.commandToolHTTP("search_logs"))
+	app.Post("/:id/api/v1/consoles/:console/stdin", h.commandToolHTTP("send_stdin"))
+	app.Get("/:id/api/v1/status", h.commandToolHTTP("get_deployment_status"))
+	app.Get("/:id/api/v1/queue", h.ownerOrWorkload(h.commandToolHTTP("get_queue")), h.PublicAuth, h.GetDaemonQueue)
+	app.Post("/:id/api/v1/command", h.ownerOrWorkload(h.commandToolHTTP("run_command")), h.PublicAuth, h.RunDaemonCommand)
+	app.Delete("/:id/api/v1/scroll/commands/:command", h.ownerOrWorkload(h.commandToolHTTP("remove_command")), h.PublicAuth, h.RemoveDaemonCommand)
+	app.Post("/:id/api/v1/ui/packages/:scope/publish", h.ownerOrWorkload(h.commandToolHTTP("publish_ui")), h.PublicAuth, h.PublishDaemonUIPackage)
 	app.All("/:id/mcp", func(c *fiber.Ctx) error {
 		deployment, token := c.Params("id"), bearer(c.Get("Authorization"))
 		record, err := h.supervisor.AuthenticateCommand(c.UserContext(), token, deployment)
@@ -61,10 +105,8 @@ func (h *ScrollHandler) registerCommandMCP(app *fiber.App) {
 					continue
 				}
 				server.AddTool(definition, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-					var input services.ToolInput
-					decoder := json.NewDecoder(bytes.NewReader(request.Params.Arguments))
-					decoder.DisallowUnknownFields()
-					if err := decoder.Decode(&input); err != nil {
+					input, err := commandToolInput(request.Params.Arguments)
+					if err != nil {
 						return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "invalid tool request"}}}, nil
 					}
 					result, err := h.supervisor.CallCommandTool(ctx, token, deployment, name, input)
@@ -140,10 +182,11 @@ func commandToolDefinitions() []*mcp.Tool {
 	return []*mcp.Tool{
 		tool("create_command", `Register a new persistent deployment command without executing it. Instructions define container images, arguments, environments and deployment-data mounts; this creates container workloads, not host-shell execution. Existing names and workload identity grants are rejected. Use run_command afterward. Example: {"command":"example-echo","instructions":{"procedures":[{"image":"busybox:1.37","command":["echo","hello"]}]}}`, map[string]any{"command": stringField("New command name"), "instructions": instructions}, "command", "instructions"),
 		tool("list_commands", "List existing Scroll commands and console IDs, without secrets.", nil),
-		tool("get_queue", "Read current command/procedure status and execution IDs.", nil),
+		tool("remove_command", "Stop a named command and remove its stored definition, queue/status entry and runtime containers. This does not delete the deployment or its data. Removing a command also removes its console/log access.", map[string]any{"command": stringField("Command name to stop and remove")}, "command"),
+		tool("get_queue", "Read current command/procedure status.", nil),
 		tool("get_deployment_status", "Read deployment state, installed release and ports/endpoints.", nil),
-		tool("run_command", "Enqueue an existing named command; inspect completion using its execution ID.", map[string]any{"command": stringField("Existing command name")}, "command"),
-		tool("wait_for_command", "Wait up to 30 seconds for a specific execution; never switches to a replacement.", map[string]any{"command": stringField("Command name"), "execution_id": stringField("Execution ID returned by run_command"), "timeout_seconds": integerField(30)}, "command", "execution_id"),
+		tool("run_command", "Enqueue an existing named command; inspect its current status and logs for completion.", map[string]any{"command": stringField("Existing command name")}, "command"),
+		tool("wait_for_command", "Wait up to 30 seconds for the named command's current status. A restart or replacement under the same name is not distinguished.", map[string]any{"command": stringField("Command name"), "timeout_seconds": integerField(30)}, "command"),
 		tool("read_logs", "Read a finite recent console snapshot (default 200 lines, maximum 64 KiB). Application logs may contain secrets.", map[string]any{"console": stringField("Console ID from list_commands"), "tail_lines": integerField(1000)}, "console"),
 		tool("search_logs", "Case-insensitive literal search of recent logs; maximum 50 matches and 1 MiB scanned.", map[string]any{"console": stringField("Console ID"), "query": stringField("Literal search text"), "tail_lines": integerField(10000)}, "console", "query"),
 		tool("send_stdin", "Write exact text to an existing running console. Include a newline to submit a line. Does not start a shell.", map[string]any{"console": stringField("Console ID"), "text": stringField("Exact UTF-8 input, at most 8 KiB")}, "console", "text"),

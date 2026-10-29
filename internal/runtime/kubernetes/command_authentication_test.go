@@ -18,7 +18,7 @@ import (
 func agentPod() *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "agent-0", Namespace: "games", UID: types.UID("pod-uid"),
-			Labels:      map[string]string{labelManagedBy: "druid", labelComponent: "runtime", labelScrollID: "data", labelRuntimeID: "data", labelCommand: "agent-command", workloadidentity.ExecutionLabel: "execution"},
+			Labels:      map[string]string{labelManagedBy: "druid", labelComponent: "runtime", labelScrollID: "data", labelRuntimeID: "data", labelCommand: "agent-command"},
 			Annotations: map[string]string{commandDeploymentAnnotation: "full-deployment-id", labelCommand: "agent_command", commandPermissionsAnnotation: "commands:list logs:read"}},
 		Spec:   corev1.PodSpec{ServiceAccountName: commandServiceAccount, Volumes: []corev1.Volume{pvcVolume("data", "data")}},
 		Status: corev1.PodStatus{Phase: corev1.PodRunning},
@@ -48,7 +48,6 @@ func TestCommandServiceAccountAuthentication(t *testing.T) {
 		{name: "worker pod", mutate: func(p *corev1.Pod, _ *authv1.TokenReviewStatus) { p.Labels[labelComponent] = "worker-pull" }},
 		{name: "missing deployment", mutate: func(p *corev1.Pod, _ *authv1.TokenReviewStatus) { delete(p.Annotations, commandDeploymentAnnotation) }},
 		{name: "mismatched command", mutate: func(p *corev1.Pod, _ *authv1.TokenReviewStatus) { p.Annotations[labelCommand] = "other" }},
-		{name: "no execution label", mutate: func(p *corev1.Pod, _ *authv1.TokenReviewStatus) { delete(p.Labels, workloadidentity.ExecutionLabel) }},
 		{name: "wrong runtime root", mutate: func(p *corev1.Pod, _ *authv1.TokenReviewStatus) {
 			p.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = "other-data"
 		}},
@@ -82,7 +81,7 @@ func TestCommandServiceAccountAuthentication(t *testing.T) {
 			})
 			backend := NewWithClient(Config{Namespace: "default"}, client)
 			record, err := backend.AuthenticateCommandIdentity(context.Background(), "credential")
-			if test.name == "valid" || test.name == "no grants" || test.name == "no execution label" {
+			if test.name == "valid" || test.name == "no grants" {
 				granted := test.name != "no grants"
 				if err != nil || record.DeploymentID != "full-deployment-id" || record.Allows("commands:list") != granted || record.Allows("logs:read") != granted || record.Allows("commands:run") {
 					t.Fatalf("record=%+v err=%v", record, err)

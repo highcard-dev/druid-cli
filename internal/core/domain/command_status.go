@@ -12,7 +12,6 @@ const (
 )
 
 type LockStatus struct {
-	ExecutionID      string           `json:"execution_id,omitempty"`
 	Status           ScrollLockStatus `json:"status"`
 	ExitCode         *int             `json:"exit_code"`
 	LastStatusChange int64            `json:"last_status_change"`

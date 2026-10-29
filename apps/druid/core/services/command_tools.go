@@ -9,7 +9,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/google/uuid"
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	coreservices "github.com/highcard-dev/daemon/internal/core/services"
@@ -21,7 +20,6 @@ type ToolInput struct {
 	Path           string                        `json:"path,omitempty"`
 	Instructions   *domain.CommandInstructionSet `json:"instructions,omitempty"`
 	Command        string                        `json:"command,omitempty"`
-	ExecutionID    string                        `json:"execution_id,omitempty"`
 	Console        string                        `json:"console,omitempty"`
 	Text           string                        `json:"text,omitempty"`
 	Query          string                        `json:"query,omitempty"`
@@ -32,6 +30,7 @@ type ToolInput struct {
 var ToolPermissions = map[string]string{
 	"publish_ui":     "ui:publish",
 	"create_command": "commands:create",
+	"remove_command": "commands:remove",
 	"list_commands":  "commands:list", "get_queue": "queue:read", "run_command": "commands:run", "wait_for_command": "queue:read",
 	"read_logs": "logs:read", "search_logs": "logs:read", "send_stdin": "console:write", "get_deployment_status": "runtime:read",
 }
@@ -44,7 +43,7 @@ type ToolError struct {
 func (e *ToolError) Error() string               { return e.Message }
 func toolError(status int, message string) error { return &ToolError{Status: status, Message: message} }
 
-// CallCommandTool is the permission/execution seam for MCP tools.
+// CallCommandTool is the permission/execution seam shared by HTTP and MCP.
 func (s *RuntimeSupervisor) CallCommandTool(ctx context.Context, token, deployment, name string, input ToolInput) (any, error) {
 	record, err := s.AuthenticateCommand(ctx, token, deployment)
 	if err != nil {
@@ -70,6 +69,14 @@ func (s *RuntimeSupervisor) CallCommandTool(ctx context.Context, token, deployme
 		return map[string]any{"scope": scope, "published": true, "package": updated.UIPackages[scope]}, nil
 	case "create_command":
 		return s.createToolCommand(deployment, input)
+	case "remove_command":
+		if input.Command == "" {
+			return nil, toolError(400, "command is required")
+		}
+		if err := s.RemoveCommand(deployment, input.Command); err != nil {
+			return nil, err
+		}
+		return map[string]any{"command": input.Command, "removed": true}, nil
 	case "list_commands":
 		file, err := s.ScrollFile(deployment)
 		if err != nil {
@@ -164,20 +171,19 @@ func (s *RuntimeSupervisor) enqueueToolCommand(deployment, command string) (any,
 	}
 	session.Start()
 	session.rememberDoneDependencies(definition, map[string]bool{})
-	execution := uuid.NewString()
-	_, err = session.enqueueExecution(command, coreservices.AddItemOptions{}, nil, execution)
+	_, err = session.enqueueQueueItem(command, coreservices.AddItemOptions{}, nil)
 	if errors.Is(err, coreservices.ErrAlreadyInQueue) || errors.Is(err, coreservices.ErrCommandDoneOnce) {
 		return nil, toolError(409, err.Error())
 	}
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"command": command, "execution_id": execution, "accepted": true}, nil
+	return map[string]any{"command": command, "accepted": true}, nil
 }
 
 func (s *RuntimeSupervisor) waitToolCommand(ctx context.Context, deployment string, input ToolInput) (any, error) {
-	if input.Command == "" || input.ExecutionID == "" {
-		return nil, toolError(400, "command and execution_id are required")
+	if input.Command == "" {
+		return nil, toolError(400, "command is required")
 	}
 	timeout := input.TimeoutSeconds
 	if timeout == 0 {
@@ -194,14 +200,11 @@ func (s *RuntimeSupervisor) waitToolCommand(ctx context.Context, deployment stri
 		}
 		statuses := queue[input.Command]
 		if len(statuses) == 0 {
-			return nil, toolError(410, "execution stopped or unavailable")
+			return nil, toolError(410, "command stopped or unavailable")
 		}
 		state := domain.ScrollLockStatusDone
 		var exitCode *int
 		for _, status := range statuses {
-			if status.ExecutionID != input.ExecutionID {
-				return nil, toolError(409, "execution was replaced")
-			}
 			if status.Status == domain.ScrollLockStatusError {
 				state = domain.ScrollLockStatusError
 				exitCode = status.ExitCode
@@ -218,7 +221,7 @@ func (s *RuntimeSupervisor) waitToolCommand(ctx context.Context, deployment stri
 		terminal := state == domain.ScrollLockStatusDone || state == domain.ScrollLockStatusError
 		timedOut := !terminal && !time.Now().Before(deadline)
 		if terminal || timedOut {
-			return map[string]any{"command": input.Command, "execution_id": input.ExecutionID, "status": state, "exit_code": exitCode, "timed_out": timedOut}, nil
+			return map[string]any{"command": input.Command, "status": state, "exit_code": exitCode, "timed_out": timedOut}, nil
 		}
 		select {
 		case <-ctx.Done():

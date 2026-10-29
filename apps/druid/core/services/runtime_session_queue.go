@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"errors"
-	"github.com/google/uuid"
 	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -68,10 +67,6 @@ func (s *RuntimeSession) addQueueItemWithEnv(cmd string, options coreservices.Ad
 // enqueueQueueItem separates admission from waiting. Supervisors serialize
 // admission with maintenance without holding a lock while a command runs.
 func (s *RuntimeSession) enqueueQueueItem(cmd string, options coreservices.AddItemOptions, procedureEnv map[string]map[string]string) (func() error, error) {
-	return s.enqueueExecution(cmd, options, procedureEnv, uuid.NewString())
-}
-
-func (s *RuntimeSession) enqueueExecution(cmd string, options coreservices.AddItemOptions, procedureEnv map[string]map[string]string, executionID string) (func() error, error) {
 	logger.Log().Debug("Running command", zap.String("cmd", cmd))
 
 	command, err := s.scrollService.GetCommand(cmd)
@@ -99,10 +94,6 @@ func (s *RuntimeSession) enqueueExecution(cmd string, options coreservices.AddIt
 		doneChan = make(chan struct{})
 	}
 	item = &runtimeQueueItem{doneChan: doneChan, procedureEnv: procedureEnv}
-	if err := s.beginExecution(cmd, executionID); err != nil {
-		s.queueMu.Unlock()
-		return nil, err
-	}
 	s.queue[cmd] = item
 	s.setQueueStatusLocked(cmd, item, domain.ScrollLockStatusWaiting, nil)
 	s.queueMu.Unlock()
@@ -284,13 +275,6 @@ func (s *RuntimeSession) RunQueue() {
 			if isPersistentMode {
 				logger.Log().Info("Persistent command running", zap.String("command", c))
 			} else if isRestartMode {
-				s.queueMu.Lock()
-				executionErr := s.beginExecution(c, uuid.NewString())
-				s.queueMu.Unlock()
-				if executionErr != nil {
-					s.setQueueError(c, executionErr)
-					return
-				}
 				s.setQueueStatus(c, domain.ScrollLockStatusWaiting, nil)
 				s.queueMu.Lock()
 				if time.Since(startedAt) < 30*time.Second {

@@ -202,9 +202,9 @@ commands:
 		"mounts":  []any{map[string]any{"path": "/workspace", "sub_path": "."}},
 		"command": []string{"sh", "-ec", "npm ci --include=optional && npm run build && test -s dist/app.wasm && test -s dist/app.openui"},
 	}}}})
-	accepted := call("run_command", map[string]any{"command": "build_fixture"})
+	call("run_command", map[string]any{"command": "build_fixture"})
 	for {
-		wait := call("wait_for_command", map[string]any{"command": "build_fixture", "execution_id": accepted["execution_id"], "timeout_seconds": 30})
+		wait := call("wait_for_command", map[string]any{"command": "build_fixture", "timeout_seconds": 30})
 		if wait["timed_out"] == true {
 			continue
 		}

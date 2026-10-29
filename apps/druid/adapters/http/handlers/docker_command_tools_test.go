@@ -37,7 +37,7 @@ func TestDockerToolsAreAnonymousWhileOwnerRoutesRemainProtected(t *testing.T) {
 	}
 	app := fiber.New(fiber.Config{DisableStartupMessage: true})
 	RegisterPublicRoutes(app, RouteHandlers{Server: NewRuntimeServer(NewHealthHandler(), NewScrollHandler(supervisor)), Websocket: NewWebsocketHandler()})
-	for _, path := range []string{"/one/api/v1/scroll", "/one/api/v1/queue", "/other/api/v1/queue"} {
+	for _, path := range []string{"/one/api/v1/scroll"} {
 		response, err := app.Test(httptest.NewRequest("GET", path, nil))
 		if err != nil {
 			t.Fatal(err)
@@ -52,8 +52,16 @@ func TestDockerToolsAreAnonymousWhileOwnerRoutesRemainProtected(t *testing.T) {
 		t.Fatal(err)
 	}
 	response.Body.Close()
-	if response.StatusCode != 401 {
-		t.Fatal("Docker MCP exemption reached owner REST publication")
+	if response.StatusCode != 200 {
+		t.Fatal("Docker HTTP publication unexpectedly requires credentials")
+	}
+	response, err = app.Test(httptest.NewRequest("GET", "/one/api/v1/commands", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != 200 {
+		t.Fatal("Docker HTTP tools unexpectedly require credentials")
 	}
 	server := httptest.NewServer(adaptor.FiberApp(app))
 	defer server.Close()

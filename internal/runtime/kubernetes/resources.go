@@ -14,7 +14,6 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
-	"github.com/highcard-dev/daemon/internal/workloadidentity"
 )
 
 func pvcSpec(namespace string, name string, storageClass string, storageRequest string) *corev1.PersistentVolumeClaim {
@@ -228,7 +227,7 @@ func procedureJobSpec(namespace string, root string, commandName string, procedu
 		Containers:    []corev1.Container{container},
 		Volumes:       []corev1.Volume{pvcVolume("data", pvc)},
 	}
-	applyCommandIdentity(&podSpec, labels, procedure.RuntimeIdentity)
+	applyCommandIdentity(&podSpec, procedure.RuntimeIdentity)
 	if registrySecret != "" {
 		podSpec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: registrySecret}}
 	}
@@ -337,7 +336,7 @@ func persistentStatefulSetSpec(namespace string, root string, commandName string
 		Containers:     []corev1.Container{container},
 		Volumes:        []corev1.Volume{pvcVolume("data", pvc)},
 	}
-	applyCommandIdentity(&podSpec, labels, mainProcedure.RuntimeIdentity)
+	applyCommandIdentity(&podSpec, mainProcedure.RuntimeIdentity)
 	if registrySecret != "" {
 		podSpec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: registrySecret}}
 	}
@@ -359,13 +358,9 @@ func persistentStatefulSetSpec(namespace string, root string, commandName string
 	}, nil
 }
 
-func applyCommandIdentity(pod *corev1.PodSpec, labels map[string]string, identity *domain.RuntimeCommandIdentity) {
+func applyCommandIdentity(pod *corev1.PodSpec, identity *domain.RuntimeCommandIdentity) {
 	pod.AutomountServiceAccountToken = ptrBool(false)
 	if identity == nil {
-		return
-	}
-	labels[workloadidentity.ExecutionLabel] = identity.ExecutionID
-	if !identity.Enabled {
 		return
 	}
 	pod.ServiceAccountName = commandServiceAccount

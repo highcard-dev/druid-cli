@@ -10,28 +10,21 @@ import (
 	"github.com/highcard-dev/daemon/internal/workloadidentity"
 )
 
-func TestHydratedIdentityCommandUsesExecutionStatusWithoutRecoveryFlags(t *testing.T) {
-	for _, execution := range []string{"existing-run", ""} {
-		t.Run("execution="+execution, func(t *testing.T) {
-			supervisor, backend, _ := commandToolsFixture(t)
-			session := supervisor.sessions["tools"]
-			session.workloadAPIURL = "http://runtime.local"
-			session.runtimeScroll.Procedures["agent"]["agent-console"] = domain.LockStatus{ExecutionID: execution, Status: domain.ScrollLockStatusRunning}
-			if err := session.HydrateFromState(session.Snapshot()); err != nil {
-				t.Fatal(err)
-			}
-			var seen ports.RuntimeCommand
-			backend.runCommand = func(command ports.RuntimeCommand) (*int, error) { seen = command; return nil, nil }
-			if err := session.runCommand("agent"); err != nil {
-				t.Fatal(err)
-			}
-			if seen.ExecutionID == "" || (execution != "" && seen.ExecutionID != execution) || !seen.Command.Procedures[0].RuntimeIdentity.Enabled {
-				t.Fatal("hydration lost execution identity or token projection")
-			}
-			if _, present := seen.ProcedureEnv["agent-console"]["DRUID_EXECUTION_ID"]; present {
-				t.Fatal("unused execution metadata leaked into workload environment")
-			}
-		})
+func TestHydratedIdentityCommandRetainsTokenProjection(t *testing.T) {
+	supervisor, backend, _ := commandToolsFixture(t)
+	session := supervisor.sessions["tools"]
+	session.workloadAPIURL = "http://runtime.local"
+	session.runtimeScroll.Procedures["agent"]["agent-console"] = domain.LockStatus{Status: domain.ScrollLockStatusRunning}
+	if err := session.HydrateFromState(session.Snapshot()); err != nil {
+		t.Fatal(err)
+	}
+	var seen ports.RuntimeCommand
+	backend.runCommand = func(command ports.RuntimeCommand) (*int, error) { seen = command; return nil, nil }
+	if err := session.runCommand("agent"); err != nil {
+		t.Fatal(err)
+	}
+	if seen.Command.Procedures[0].RuntimeIdentity == nil {
+		t.Fatal("hydration lost token projection")
 	}
 }
 

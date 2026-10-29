@@ -8,7 +8,6 @@ import (
 )
 
 const TokenFile = "/run/secrets/druid/token"
-const ExecutionLabel = "druid.execution-id"
 
 var ErrUnauthorized = errors.New("invalid workload credential")
 var ErrUnavailable = errors.New("workload identity verification is unavailable")

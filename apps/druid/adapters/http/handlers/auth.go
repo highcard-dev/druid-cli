@@ -8,6 +8,21 @@ import (
 
 const ownerLocal = "druid-owner-id"
 
+// Shared REST routes keep their owner handlers and accept permission-scoped workloads.
+func (h *ScrollHandler) ownerOrWorkload(workload fiber.Handler) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if c.Get("Authorization") == "" && h.allowUnauthenticatedPublic {
+			return c.Next()
+		}
+		if h.authorizer != nil {
+			if owner, err := h.authorizer.CheckHeader(c); err == nil && owner != nil {
+				return c.Next()
+			}
+		}
+		return workload(c)
+	}
+}
+
 func (h *ScrollHandler) PublicAuth(c *fiber.Ctx) error {
 	if h.authorizer == nil {
 		if h.allowUnauthenticatedPublic && c.Get("Authorization") == "" {

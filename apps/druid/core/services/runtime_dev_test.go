@@ -16,7 +16,7 @@ func (*rejectImplicitStopBackend) StopCommand(string, string) error {
 }
 
 func TestAddCommandUpdatesDefinitionWithoutStoppingExecution(t *testing.T) {
-	status := domain.LockStatus{ExecutionID: "current-run", Status: domain.ScrollLockStatusRunning}
+	status := domain.LockStatus{Status: domain.ScrollLockStatusRunning}
 	session := newRuntimeSessionForTest(t, map[string]domain.LockStatus{"start": status}, cachedScrollYAML(""))
 	session.runtimeBackend = &rejectImplicitStopBackend{&fakeWorkerBackend{}}
 	queued := &runtimeQueueItem{inFlight: true}

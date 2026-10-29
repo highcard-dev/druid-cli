@@ -36,6 +36,22 @@ func TestPublishUIDescriptionRequiresSeparateCustomerApproval(t *testing.T) {
 	t.Fatal("publish_ui tool is missing")
 }
 
+func TestCommandWaitSchemaUsesOnlyCommandNameAndTimeout(t *testing.T) {
+	for _, tool := range commandToolDefinitions() {
+		if tool.Name != "wait_for_command" {
+			continue
+		}
+		schema := tool.InputSchema.(map[string]any)
+		properties := schema["properties"].(map[string]any)
+		required := schema["required"].([]string)
+		if len(properties) != 2 || properties["command"] == nil || properties["timeout_seconds"] == nil || len(required) != 1 || required[0] != "command" {
+			t.Fatal("command waiting requires more than a name and optional timeout")
+		}
+		return
+	}
+	t.Fatal("wait tool missing")
+}
+
 func TestConcreteToolSchemaNormalizesMapValuesWithoutChangingRequiredFields(t *testing.T) {
 	schema := &jsonschema.Schema{Type: "object", Required: []string{"required"}, Properties: map[string]*jsonschema.Schema{
 		"required": {Types: []string{"string", "null"}},
@@ -126,6 +142,9 @@ func (b *toolRouteBackend) CreateUIPackageUpload(_ context.Context, action ports
 	return ports.RuntimeUIPackageUpload{UploadURL: "http://upload-private/wasm", DocumentUploadURL: "http://upload-private/document", URL: "http://packages/" + string(action.Scope) + "/app.wasm"}, nil
 }
 func (b *toolRouteBackend) StopCommand(string, string) error { return nil }
+func (b *toolRouteBackend) ExpectedPorts(string, map[string]*domain.CommandInstructionSet, []domain.Port) ([]domain.RuntimePortStatus, error) {
+	return nil, nil
+}
 func (b *toolRouteBackend) ReadConsoleLogs(context.Context, string, string, int, int64) (string, bool, error) {
 	return b.logs, false, nil
 }
@@ -156,7 +175,7 @@ func TestCommandToolsRealMCPClient(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend := &toolRouteBackend{}
-	backend.credentials.Store(token, workloadidentity.Identity{DeploymentID: "tools", Permissions: []string{"commands:list", "commands:create", "queue:read", "ui:publish", "logs:read"}})
+	backend.credentials.Store(token, workloadidentity.Identity{DeploymentID: "tools", Permissions: []string{"commands:list", "commands:create", "commands:remove", "queue:read", "ui:publish", "logs:read"}})
 	supervisor, err := appservices.NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), ports.RuntimeBackendFactoryFunc(func(ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) { return backend, nil }))
 	if err != nil {
 		t.Fatal(err)
@@ -179,6 +198,8 @@ func TestCommandToolsRealMCPClient(t *testing.T) {
 	RegisterPublicRoutes(app, RouteHandlers{Server: NewRuntimeServer(NewHealthHandler(), scrolls), Websocket: NewWebsocketHandler()})
 	for _, route := range []struct{ method, path string }{
 		{"GET", "/:id/api/v1/queue"},
+		{"POST", "/:id/api/v1/command"},
+		{"DELETE", "/:id/api/v1/scroll/commands/:command"},
 		{"POST", "/:id/api/v1/ui/packages/:scope/publish"},
 	} {
 		count := 0
@@ -188,29 +209,18 @@ func TestCommandToolsRealMCPClient(t *testing.T) {
 			}
 		}
 		if count != 1 {
-			t.Fatalf("owner REST route %s is registered %d times", route.path, count)
+			t.Fatalf("shared REST route %s is registered %d times", route.path, count)
 		}
 	}
-	for _, route := range []struct{ method, path string }{
-		{"GET", "/tools/api/v1/commands"},
-		{"POST", "/tools/api/v1/commands"},
-		{"POST", "/tools/api/v1/commands/agent"},
-		{"GET", "/tools/api/v1/commands/agent/executions/execution/wait"},
-		{"GET", "/tools/api/v1/consoles/agent.0/logs"},
-		{"POST", "/tools/api/v1/consoles/agent.0/logs/search"},
-		{"POST", "/tools/api/v1/consoles/agent.0/stdin"},
-		{"GET", "/tools/api/v1/status"},
-	} {
-		response, err := app.Test(httptest.NewRequest(route.method, route.path, nil))
-		if err != nil {
-			t.Fatal(err)
-		}
-		response.Body.Close()
-		if response.StatusCode != 404 {
-			t.Fatalf("removed agent REST route %s: %d", route.path, response.StatusCode)
-		}
+	response, err := app.Test(httptest.NewRequest("POST", "/tools/api/v1/tools/list_commands", strings.NewReader("{}")))
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, path := range []string{"/tools/api/v1/commands", "/other/api/v1/commands", "/tools/api/v1/token", "/tools/api/v1/scroll", "/tools/api/v1/queue", "/tools/api/v1/ui/packages/private/publish"} {
+	response.Body.Close()
+	if response.StatusCode != 404 {
+		t.Fatal("generic tool RPC route must not exist")
+	}
+	for _, path := range []string{"/other/api/v1/commands", "/tools/api/v1/token", "/tools/api/v1/scroll"} {
 		request := httptest.NewRequest("GET", path, nil)
 		request.Header.Set("Authorization", "Bearer "+string(token))
 		response, err := app.Test(request)
@@ -253,12 +263,16 @@ func TestCommandToolsRealMCPClient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(listed.Tools) != 7 {
+	if len(listed.Tools) != 8 {
 		t.Fatalf("permission-filtered discovery returned %d tools", len(listed.Tools))
 	}
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "list_commands", Arguments: map[string]any{}})
 	if err != nil || result.IsError {
 		t.Fatal("MCP command listing failed")
+	}
+	waited, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "wait_for_command", Arguments: map[string]any{"command": "agent", "timeout_seconds": 1}})
+	if err != nil || waited.IsError || !strings.Contains(waited.Content[0].(*mcp.TextContent).Text, `"timed_out":true`) {
+		t.Fatalf("MCP waiting by command name failed: %v, %v", waited, err)
 	}
 	t.Run("MCP sanitizes workload logs and tool errors", func(t *testing.T) {
 		jwt := "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJmaXh0dXJlIn0.c2ln"
@@ -330,6 +344,45 @@ func TestCommandToolsRealMCPClient(t *testing.T) {
 	if err != nil || signal.IsError {
 		t.Fatalf("signal procedure schema regressed: %v, %v", err, signal)
 	}
+	allToken := "all-tools-token"
+	var permissions []string
+	for _, permission := range appservices.ToolPermissions {
+		permissions = append(permissions, permission)
+	}
+	backend.credentials.Store(allToken, workloadidentity.Identity{DeploymentID: "tools", Permissions: permissions})
+	for _, test := range []struct{ method, path, body string }{
+		{"GET", "/tools/api/v1/commands", ""},
+		{"GET", "/tools/api/v1/queue", ""},
+		{"GET", "/tools/api/v1/status", ""},
+		{"GET", "/tools/api/v1/consoles/agent.0/logs", ""},
+		{"POST", "/tools/api/v1/consoles/agent.0/logs/search", `{"query":"application"}`},
+		{"POST", "/tools/api/v1/consoles/agent.0/stdin", `{"text":"hello\\n"}`},
+		{"POST", "/tools/api/v1/commands", `{"command":"http-created","instructions":{"procedures":[{"image":"busybox","command":["true"]}]}}`},
+		{"POST", "/tools/api/v1/command", `{"command":"http-created"}`},
+		{"GET", "/tools/api/v1/commands/http-created/wait?timeout_seconds=1", ""},
+		{"POST", "/tools/api/v1/ui/packages/private/publish", `{}`},
+		{"DELETE", "/tools/api/v1/scroll/commands/example-echo", ""},
+	} {
+		request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Authorization", "Bearer "+allToken)
+		response, err := app.Test(request, -1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, _ := io.ReadAll(response.Body)
+		response.Body.Close()
+		if response.StatusCode != 200 {
+			t.Fatalf("HTTP %s: %d, %s", test.path, response.StatusCode, data)
+		}
+		if strings.Contains(test.path, "/logs") && !strings.Contains(string(data), "[REDACTED]") {
+			t.Fatal("HTTP output was not sanitized like MCP output")
+		}
+	}
+	removed, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "remove_command", Arguments: map[string]any{"command": "http-created"}})
+	if err != nil || removed.IsError || !strings.Contains(removed.Content[0].(*mcp.TextContent).Text, `"removed":true`) {
+		t.Fatalf("MCP removal of HTTP-created command failed: %v, %v", removed, err)
+	}
 	// A credential with only commands:list must neither discover nor call creation.
 	limitedToken := "limited-token"
 	backend.credentials.Store(limitedToken, workloadidentity.Identity{DeploymentID: "tools", Permissions: []string{"commands:list"}})
@@ -341,6 +394,33 @@ func TestCommandToolsRealMCPClient(t *testing.T) {
 	limitedTools, err := limitedSession.ListTools(ctx, nil)
 	if err != nil || len(limitedTools.Tools) != 1 || limitedTools.Tools[0].Name != "list_commands" {
 		t.Fatal("creation leaked through filtered discovery")
+	}
+	for _, test := range []struct {
+		method, path, token, body string
+		status                    int
+	}{
+		{"GET", "/tools/api/v1/commands", "invalid", "", 401},
+		{"DELETE", "/other/api/v1/scroll/commands/agent", allToken, "", 401},
+		{"DELETE", "/tools/api/v1/scroll/commands/agent", limitedToken, "", 403},
+		{"POST", "/tools/api/v1/commands", allToken, `{}`, 400},
+		{"DELETE", "/tools/api/v1/scroll/commands/agent", allToken, `{"unknown":true}`, 400},
+		{"POST", "/tools/api/v1/commands", allToken, `{`, 400},
+	} {
+		request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
+		request.Header.Set("Authorization", "Bearer "+test.token)
+		request.Header.Set("Content-Type", "application/json")
+		response, err := app.Test(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != test.status {
+			t.Fatalf("HTTP denial %s: %d, want %d", test.path, response.StatusCode, test.status)
+		}
+	}
+	deniedRemove, err := limitedSession.CallTool(ctx, &mcp.CallToolParams{Name: "remove_command", Arguments: map[string]any{"command": "agent"}})
+	if err == nil && !deniedRemove.IsError {
+		t.Fatal("MCP accepted removal without permission")
 	}
 	deniedPublish, err := limitedSession.CallTool(ctx, &mcp.CallToolParams{Name: "publish_ui", Arguments: map[string]any{"scope": "private"}})
 	if err == nil && !deniedPublish.IsError {
@@ -356,12 +436,20 @@ func TestCommandToolsRealMCPClient(t *testing.T) {
 	}
 	// Existing dashboard REST endpoints still work with owner authentication.
 	scrolls.authorizer = ownerRouteAuth{}
-	for _, route := range []struct{ method, path string }{
-		{"GET", "/tools/api/v1/queue"},
-		{"POST", "/tools/api/v1/ui/packages/private/publish"},
-		{"POST", "/tools/api/v1/ui/packages/public/publish"},
+	if err := supervisor.AddCommand("tools", "owner-cleanup", &domain.CommandInstructionSet{Procedures: []*domain.Procedure{{Image: "busybox"}}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, route := range []struct {
+		method, path, body string
+		status             int
+	}{
+		{"GET", "/tools/api/v1/queue", `{}`, 200},
+		{"POST", "/tools/api/v1/ui/packages/private/publish", `{}`, 200},
+		{"POST", "/tools/api/v1/ui/packages/public/publish", `{}`, 200},
+		{"POST", "/tools/api/v1/command", `{"command":"owner-cleanup"}`, 200},
+		{"DELETE", "/tools/api/v1/scroll/commands/owner-cleanup", ``, 204},
 	} {
-		request := httptest.NewRequest(route.method, route.path, strings.NewReader(`{}`))
+		request := httptest.NewRequest(route.method, route.path, strings.NewReader(route.body))
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Authorization", "Bearer owner")
 		response, err := app.Test(request, -1)
@@ -369,7 +457,7 @@ func TestCommandToolsRealMCPClient(t *testing.T) {
 			t.Fatal(err)
 		}
 		response.Body.Close()
-		if response.StatusCode != 200 {
+		if response.StatusCode != route.status {
 			t.Fatalf("owner REST %s: %d", route.path, response.StatusCode)
 		}
 	}
