@@ -133,7 +133,7 @@ func (h *ScrollHandler) registerCommandTools(app *fiber.App) {
 					if err != nil {
 						return nil, err
 					}
-					return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: workloadidentity.Redact(string(data))}}}, nil
+					return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}, nil
 				})
 			}
 			return server

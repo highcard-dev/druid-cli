@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -104,6 +105,8 @@ func TestCreateCommandSchemaPreservesNestedTypesForOpenHands(t *testing.T) {
 type toolRouteBackend struct {
 	ports.RuntimeBackendInterface
 	credentials sync.Map
+	logs        string
+	uploadError error
 }
 
 func (b *toolRouteBackend) PrepareCommandIdentity(context.Context, workloadidentity.Record) error {
@@ -118,9 +121,18 @@ func (b *toolRouteBackend) AuthenticateCommandIdentity(_ context.Context, token 
 func (b *toolRouteBackend) Name() string                                  { return "fixture" }
 func (b *toolRouteBackend) RunCommand(ports.RuntimeCommand) (*int, error) { return nil, nil }
 func (b *toolRouteBackend) CreateUIPackageUpload(_ context.Context, action ports.RuntimeUIPackageUploadAction) (ports.RuntimeUIPackageUpload, error) {
+	if b.uploadError != nil {
+		return ports.RuntimeUIPackageUpload{}, b.uploadError
+	}
 	return ports.RuntimeUIPackageUpload{UploadURL: "http://upload-private/wasm", DocumentUploadURL: "http://upload-private/document", URL: "http://packages/" + string(action.Scope) + "/app.wasm"}, nil
 }
 func (b *toolRouteBackend) StopCommand(string, string) error { return nil }
+func (b *toolRouteBackend) ReadConsoleLogs(context.Context, string, string, int, int64) (string, bool, error) {
+	return b.logs, false, nil
+}
+func (b *toolRouteBackend) WriteConsoleInput(context.Context, string, string, []byte) (int, error) {
+	return 0, nil
+}
 
 type authenticatedTransport struct{ token string }
 
@@ -140,11 +152,12 @@ func TestCommandToolsHTTPAndRealMCPClient(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime := &domain.RuntimeScroll{ID: "tools", Root: t.TempDir(), ScrollName: "tools", ScrollYAML: "name: tools\ndesc: Tools fixture\nversion: 0.1.0\napp_version: 1.0\ncommands:\n  agent:\n    run: persistent\n    identity:\n      permissions: [commands:list, commands:create, queue:read, ui:publish]\n    procedures:\n      - image: busybox\n        env: {SECRET: must-not-leak}\n"}
+	runtime.Procedures = domain.ProcedureStatusMap{"agent": {"agent.0": {Status: domain.ScrollLockStatusRunning}}}
 	if err := store.CreateScroll(runtime); err != nil {
 		t.Fatal(err)
 	}
 	backend := &toolRouteBackend{}
-	backend.credentials.Store(token, workloadidentity.Record{ExecutionID: "execution", DeploymentID: "tools", Command: "agent", Permissions: []string{"commands:list", "commands:create", "queue:read", "ui:publish"}})
+	backend.credentials.Store(token, workloadidentity.Record{ExecutionID: "execution", DeploymentID: "tools", Command: "agent", Permissions: []string{"commands:list", "commands:create", "queue:read", "ui:publish", "logs:read"}})
 	supervisor, err := appservices.NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), ports.RuntimeBackendFactoryFunc(func(ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) { return backend, nil }))
 	if err != nil {
 		t.Fatal(err)
@@ -212,13 +225,63 @@ func TestCommandToolsHTTPAndRealMCPClient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(listed.Tools) != 5 {
+	if len(listed.Tools) != 7 {
 		t.Fatalf("permission-filtered discovery returned %d tools", len(listed.Tools))
 	}
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "list_commands", Arguments: map[string]any{}})
 	if err != nil || result.IsError {
 		t.Fatal("MCP command listing failed")
 	}
+	t.Run("HTTP and MCP sanitize workload logs and tool errors identically", func(t *testing.T) {
+		jwt := "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJmaXh0dXJlIn0.c2ln"
+		backend.logs = "application printed " + jwt
+		for _, test := range []struct {
+			tool, method, path, body string
+			arguments                map[string]any
+			failure                  bool
+		}{
+			{"read_logs", "GET", "/tools/api/v1/consoles/agent.0/logs", "", map[string]any{"console": "agent.0"}, false},
+			{"search_logs", "POST", "/tools/api/v1/consoles/agent.0/logs/search", `{"query":"application"}`, map[string]any{"console": "agent.0", "query": "application"}, false},
+			{"publish_ui", "POST", "/tools/api/v1/ui/packages/private/publish", `{}`, map[string]any{"scope": "private"}, true},
+		} {
+			if test.failure {
+				backend.uploadError = &appservices.ToolError{Status: 400, Message: "upstream error " + jwt}
+			}
+			request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
+			request.Header.Set("Authorization", "Bearer "+token)
+			request.Header.Set("Content-Type", "application/json")
+			response, err := app.Test(request, -1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := io.ReadAll(response.Body)
+			response.Body.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			mcpResult, err := session.CallTool(ctx, &mcp.CallToolParams{Name: test.tool, Arguments: test.arguments})
+			if err != nil || mcpResult.IsError != test.failure || len(mcpResult.Content) != 1 {
+				t.Fatalf("%s MCP response: %v, %v", test.tool, mcpResult, err)
+			}
+			text := mcpResult.Content[0].(*mcp.TextContent).Text
+			for _, output := range []string{string(data), text} {
+				if strings.Contains(output, jwt) || !strings.Contains(output, "[REDACTED]") {
+					t.Fatalf("%s did not sanitize workload content", test.tool)
+				}
+			}
+			if test.failure {
+				if response.StatusCode != 400 || string(data) != text {
+					t.Fatal("HTTP/MCP tool errors differ")
+				}
+			} else {
+				var httpValue, mcpValue any
+				if response.StatusCode != 200 || json.Unmarshal(data, &httpValue) != nil || json.Unmarshal([]byte(text), &mcpValue) != nil || !reflect.DeepEqual(httpValue, mcpValue) {
+					t.Fatal("HTTP/MCP log results differ")
+				}
+			}
+			backend.uploadError = nil
+		}
+	})
 	publication, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "publish_ui", Arguments: map[string]any{"scope": "private"}})
 	if err != nil || publication.IsError {
 		t.Fatalf("MCP publish failed: %v, %v", err, publication)

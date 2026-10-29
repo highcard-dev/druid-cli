@@ -12,7 +12,7 @@ const ExecutionLabel = "druid.execution-id"
 
 var ErrUnauthorized = errors.New("invalid workload credential")
 var ErrUnavailable = errors.New("workload identity verification is unavailable")
-var tokenPattern = regexp.MustCompile(`druid_wl_[A-Za-z0-9_-]{43}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`)
+var tokenPattern = regexp.MustCompile(`eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`)
 
 type Record struct {
 	RuntimeRoot  string   `json:"-"` // Backend runtime binding; not a daemon-session dependency.

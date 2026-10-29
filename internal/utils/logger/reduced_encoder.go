@@ -29,7 +29,7 @@ func NewReducedEncoder(level zapcore.Level) zapcore.Core {
 		}),
 	}
 
-	return zapcore.NewCore(credentialEncoder{reducedEncoder}, zapcore.AddSync(colorable.NewColorableStdout()), level)
+	return zapcore.NewCore(reducedEncoder, zapcore.AddSync(colorable.NewColorableStdout()), level)
 }
 func (e *ReducedEncoder) Clone() zapcore.Encoder {
 

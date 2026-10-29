@@ -20,5 +20,5 @@ func NewProductionEncoderForWriter(level zapcore.Level, writer zapcore.WriteSync
 	structuredEncoder.LevelKey = "severity"
 	structuredEncoder.MessageKey = "message"
 	structuredEncoder.EncodeTime = zapcore.ISO8601TimeEncoder
-	return zapcore.NewCore(credentialEncoder{zapcore.NewJSONEncoder(structuredEncoder)}, writer, level)
+	return zapcore.NewCore(zapcore.NewJSONEncoder(structuredEncoder), writer, level)
 }

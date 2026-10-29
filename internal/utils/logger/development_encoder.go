@@ -18,5 +18,5 @@ func NewDevelopmentEncoder(level zapcore.Level) zapcore.Core {
 	errEncoder.MessageKey = "message"
 	errEncoder.EncodeTime = zapcore.RFC3339TimeEncoder
 
-	return zapcore.NewCore(credentialEncoder{zapcore.NewConsoleEncoder(errEncoder)}, zapcore.AddSync(os.Stderr), level)
+	return zapcore.NewCore(zapcore.NewConsoleEncoder(errEncoder), zapcore.AddSync(os.Stderr), level)
 }
