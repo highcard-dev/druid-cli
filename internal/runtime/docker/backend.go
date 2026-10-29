@@ -8,9 +8,11 @@ import (
 
 	"github.com/docker/docker/client"
 	"github.com/highcard-dev/daemon/internal/core/ports"
+	"github.com/highcard-dev/daemon/internal/workloadidentity"
 )
 
 type Backend struct {
+	identities              workloadidentity.Registry
 	client                  *client.Client
 	procedureStatusObserver ports.ProcedureStatusObserver
 	config                  Config
@@ -19,6 +21,7 @@ type Backend struct {
 }
 
 type Config struct {
+	IdentityStateDir  string
 	WorkerImage       string
 	Network           string
 	Storage           string
@@ -114,13 +117,23 @@ func NewWithConfig(config Config, observer ports.ProcedureStatusObserver) (*Back
 	if err != nil {
 		return nil, err
 	}
+	var identities workloadidentity.Registry
+	if config.IdentityStateDir != "" {
+		identities, err = workloadidentity.NewFileRegistry(config.IdentityStateDir)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &Backend{
+		identities:              identities,
 		client:                  cli,
 		procedureStatusObserver: observer,
 		config:                  config,
 		containers:              map[string]string{},
 	}, nil
 }
+
+func (b *Backend) WorkloadIdentities() workloadidentity.Registry { return b.identities }
 
 func (b *Backend) Name() string {
 	return "docker"

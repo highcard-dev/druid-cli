@@ -1,0 +1,36 @@
+package kubernetes
+
+import (
+	"github.com/highcard-dev/daemon/internal/core/domain"
+	"github.com/highcard-dev/daemon/internal/workloadidentity"
+	"testing"
+)
+
+func TestCommandIdentityMountedInJobsAndPersistentProcedures(t *testing.T) {
+	identity := &domain.RuntimeCommandIdentity{ExecutionID: "execution", SecretName: "druid-workload-execution"}
+	procedure := &domain.Procedure{Image: "busybox", RuntimeIdentity: identity}
+	job, err := procedureJobSpec("runtime", ref("runtime", "data"), "automation", "automation.0", "job", 1, procedure, nil, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.Labels[workloadidentity.ExecutionLabel] != "execution" || job.Spec.Template.Labels[workloadidentity.ExecutionLabel] != "execution" {
+		t.Fatal("execution label missing")
+	}
+	pod := job.Spec.Template.Spec
+	if len(pod.Volumes) != 2 || pod.Volumes[1].Secret == nil || pod.Volumes[1].Secret.SecretName != identity.SecretName {
+		t.Fatal("execution Secret not mounted")
+	}
+	if mounts := pod.Containers[0].VolumeMounts; len(mounts) != 1 || mounts[0].MountPath != "/run/secrets/druid" || !mounts[0].ReadOnly {
+		t.Fatal("credential mount is not protected")
+	}
+	set, err := persistentStatefulSetSpec("runtime", ref("runtime", "data"), "automation", "set", &domain.CommandInstructionSet{Procedures: []*domain.Procedure{procedure, procedure}}, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(set.Spec.Template.Spec.InitContainers[0].VolumeMounts) != 1 || len(set.Spec.Template.Spec.Containers[0].VolumeMounts) != 1 {
+		t.Fatal("persistent command procedures did not share the execution credential")
+	}
+	if _, ok := set.Spec.Selector.MatchLabels[workloadidentity.ExecutionLabel]; ok {
+		t.Fatal("execution identity changed immutable StatefulSet selector")
+	}
+}

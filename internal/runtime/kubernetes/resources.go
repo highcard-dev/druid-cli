@@ -14,6 +14,7 @@ import (
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
+	"github.com/highcard-dev/daemon/internal/workloadidentity"
 )
 
 func pvcSpec(namespace string, name string, storageClass string, storageRequest string) *corev1.PersistentVolumeClaim {
@@ -227,6 +228,7 @@ func procedureJobSpec(namespace string, root string, commandName string, procedu
 		Containers:    []corev1.Container{container},
 		Volumes:       []corev1.Volume{pvcVolume("data", pvc)},
 	}
+	applyCommandIdentity(&podSpec, labels, procedure.RuntimeIdentity)
 	if registrySecret != "" {
 		podSpec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: registrySecret}}
 	}
@@ -335,6 +337,7 @@ func persistentStatefulSetSpec(namespace string, root string, commandName string
 		Containers:     []corev1.Container{container},
 		Volumes:        []corev1.Volume{pvcVolume("data", pvc)},
 	}
+	applyCommandIdentity(&podSpec, labels, mainProcedure.RuntimeIdentity)
 	if registrySecret != "" {
 		podSpec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: registrySecret}}
 	}
@@ -354,6 +357,24 @@ func persistentStatefulSetSpec(namespace string, root string, commandName string
 			},
 		},
 	}, nil
+}
+
+func applyCommandIdentity(pod *corev1.PodSpec, labels map[string]string, identity *domain.RuntimeCommandIdentity) {
+	if identity == nil {
+		return
+	}
+	labels[workloadidentity.ExecutionLabel] = identity.ExecutionID
+	if identity.SecretName == "" {
+		return
+	}
+	pod.Volumes = append(pod.Volumes, corev1.Volume{Name: "command-identity", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: identity.SecretName}}})
+	mount := corev1.VolumeMount{Name: "command-identity", MountPath: "/run/secrets/druid", ReadOnly: true}
+	for index := range pod.Containers {
+		pod.Containers[index].VolumeMounts = append(pod.Containers[index].VolumeMounts, mount)
+	}
+	for index := range pod.InitContainers {
+		pod.InitContainers[index].VolumeMounts = append(pod.InitContainers[index].VolumeMounts, mount)
+	}
 }
 
 func persistentInitContainerName(procedureName string) string {

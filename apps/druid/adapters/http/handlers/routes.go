@@ -6,6 +6,8 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/highcard-dev/daemon/internal/api"
 	"github.com/highcard-dev/daemon/internal/core/ports"
+	"github.com/highcard-dev/daemon/internal/workloadidentity"
+	"strings"
 )
 
 type RouteHandlers struct {
@@ -29,6 +31,12 @@ func RegisterRoutes(app *fiber.App, handlers RouteHandlers) {
 }
 
 func RegisterManagementRoutes(app *fiber.App, handlers RouteHandlers) {
+	app.Use(func(ctx *fiber.Ctx) error {
+		if strings.HasPrefix(bearer(ctx.Get("Authorization")), workloadidentity.TokenPrefix) {
+			return fiber.NewError(fiber.StatusForbidden, "command credentials cannot access management endpoints")
+		}
+		return ctx.Next()
+	})
 	if handlers.Authorizer != nil {
 		app.Use(func(ctx *fiber.Ctx) error {
 			if _, err := handlers.Authorizer.CheckHeader(ctx); err != nil {
@@ -57,6 +65,9 @@ func RegisterPublicRoutes(app *fiber.App, handlers RouteHandlers) {
 	app.Get("/health", handlers.Server.GetHealthAuth)
 	app.Get("/.well-known/jwks.json", RuntimeJWKS(authorizer))
 	app.Get("/:id/ws/v1/serve/:console", websocket.New(handlers.Websocket.AttachScrollConsole))
+	if handlers.Server != nil && handlers.Server.ScrollHandler != nil {
+		handlers.Server.ScrollHandler.registerCommandTools(app)
+	}
 	if handlers.Server != nil && handlers.Server.ScrollHandler != nil {
 		app.Use("/:id", handlers.Server.PublicAuth)
 	}

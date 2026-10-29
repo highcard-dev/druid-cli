@@ -4,11 +4,16 @@ import (
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/highcard-dev/daemon/internal/core/ports"
+	"github.com/highcard-dev/daemon/internal/workloadidentity"
+	"strings"
 )
 
 const ownerLocal = "druid-owner-id"
 
 func (h *ScrollHandler) PublicAuth(c *fiber.Ctx) error {
+	if strings.HasPrefix(bearer(c.Get("Authorization")), workloadidentity.TokenPrefix) {
+		return fiber.NewError(fiber.StatusForbidden, "workload credentials cannot access this endpoint")
+	}
 	if h.authorizer == nil {
 		if h.allowUnauthenticatedPublic {
 			return c.Next()
@@ -51,6 +56,9 @@ func (h *ScrollHandler) authorizeRuntimeOwner(id string, subject string) error {
 }
 
 func (h *WebsocketHandler) PublicQueryAuth(c *websocket.Conn) bool {
+	if strings.HasPrefix(c.Query("token"), workloadidentity.TokenPrefix) || strings.HasPrefix(bearer(c.Headers("Authorization")), workloadidentity.TokenPrefix) {
+		return false
+	}
 	if h.authorizer == nil {
 		return h.allowUnauthenticatedPublic
 	}

@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -12,6 +13,8 @@ import (
 // AddCommand persists a normal runtime command and makes it available to the
 // command scheduler. It is intentionally independent from development mode.
 func (s *RuntimeSupervisor) AddCommand(id string, command string, instruction *domain.CommandInstructionSet) error {
+	unlock := s.lockRuntimeOperation(id)
+	defer unlock()
 	session, err := s.sessionFor(id)
 	if err != nil {
 		return err
@@ -20,6 +23,8 @@ func (s *RuntimeSupervisor) AddCommand(id string, command string, instruction *d
 }
 
 func (s *RuntimeSupervisor) RemoveCommand(id string, command string) error {
+	unlock := s.lockRuntimeOperation(id)
+	defer unlock()
 	session, err := s.sessionFor(id)
 	if err != nil {
 		return err
@@ -36,7 +41,7 @@ func (s *RuntimeSession) AddCommand(command string, instruction *domain.CommandI
 		return fmt.Errorf("command instruction is required")
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	existing := s.scrollService.GetFile().Commands[command]
 	file := *s.scrollService.GetFile()
 	file.Commands = make(map[string]*domain.CommandInstructionSet, len(s.scrollService.GetFile().Commands)+1)
 	for name, existing := range s.scrollService.GetFile().Commands {
@@ -46,6 +51,7 @@ func (s *RuntimeSession) AddCommand(command string, instruction *domain.CommandI
 		file.Commands = map[string]*domain.CommandInstructionSet{}
 	}
 	file.Commands[command] = instruction
+	s.mu.Unlock()
 	data, err := yaml.Marshal(file)
 	if err != nil {
 		return err
@@ -54,6 +60,15 @@ func (s *RuntimeSession) AddCommand(command string, instruction *domain.CommandI
 	if err != nil {
 		return err
 	}
+	// A changed definition is a replacement, never an upgrade of the existing
+	// execution's permissions. Validate first, then stop and revoke that run.
+	if existing != nil && !reflect.DeepEqual(existing, instruction) {
+		if err := s.RemoveCommand(command); err != nil {
+			return err
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.runtimeScroll.ScrollYAML = string(data)
 	if err := s.store.UpdateScroll(s.runtimeScroll); err != nil {
 		return err
@@ -65,6 +80,9 @@ func (s *RuntimeSession) AddCommand(command string, instruction *domain.CommandI
 func (s *RuntimeSession) RemoveCommand(command string) error {
 	if command == "" {
 		return fmt.Errorf("command is required")
+	}
+	if err := s.revokeCommandIdentities(command); err != nil {
+		return err
 	}
 	s.runMu.Lock()
 	defer s.runMu.Unlock()

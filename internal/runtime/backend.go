@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"fmt"
+	"io"
+	"path/filepath"
 
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	"github.com/highcard-dev/daemon/internal/runtime/docker"
@@ -12,6 +14,13 @@ type Runtime struct {
 	Backend ports.RuntimeBackendInterface
 	Store   ports.RuntimeScrollStore
 	create  ports.RuntimeBackendFactoryFunc
+}
+
+func (r *Runtime) Close() error {
+	if closer, ok := r.Backend.(io.Closer); ok {
+		return closer.Close()
+	}
+	return nil
 }
 
 type Options struct {
@@ -56,6 +65,7 @@ func NewRuntime(name string, stateDir string, opts ...Option) (*Runtime, error) 
 		if err != nil {
 			return nil, err
 		}
+		options.Docker.IdentityStateDir = filepath.Join(store.StateDir(), "identities")
 		return &Runtime{
 			Store: dockerRuntimeStore{RuntimeScrollStore: store, config: options.Docker.WithDefaults()},
 			create: func(observer ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) {

@@ -14,6 +14,8 @@ import (
 // the command queue and cached scroll.yaml; storage and containers stay behind
 // the runtime backend.
 type RuntimeSession struct {
+	workloadAPIURL string
+	provisioning   sync.Map
 	store          ports.RuntimeScrollStore
 	runtimeScroll  *domain.RuntimeScroll
 	scrollService  *coreservices.ScrollService

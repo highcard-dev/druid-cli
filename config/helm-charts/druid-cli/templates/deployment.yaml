@@ -56,6 +56,8 @@ spec:
               containerPort: {{ .Values.service.workerCallbackPort }}
               protocol: TCP
           env:
+            - name: DRUID_WORKLOAD_API_URL
+              value: {{ .Values.runtime.workloadApiUrl | quote }}
             - name: DRUID_K8S_NAMESPACE
               value: {{ default .Release.Namespace .Values.runtime.namespaces.single | quote }}
             - name: DRUID_K8S_STORAGE_CLASS

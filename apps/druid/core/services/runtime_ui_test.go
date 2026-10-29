@@ -123,6 +123,9 @@ func TestUIPublishRequiresBothAssetsAndStopsOnUploadFailure(t *testing.T) {
 		wantUploads int
 	}{
 		{"missing document", false, false, true, 0},
+		{"missing wasm", true, false, true, 0},
+		{"empty wasm", true, false, true, 0},
+		{"empty document", true, false, true, 0},
 		{"document upload fails", true, true, true, 1},
 		{"complete package", true, false, false, 2},
 	} {
@@ -131,11 +134,21 @@ func TestUIPublishRequiresBothAssetsAndStopsOnUploadFailure(t *testing.T) {
 			if err := os.Mkdir(filepath.Join(dir, "private"), 0755); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(dir, "private", "app.wasm"), []byte("wasm"), 0644); err != nil {
-				t.Fatal(err)
+			if test.name != "missing wasm" {
+				data := []byte("wasm")
+				if test.name == "empty wasm" {
+					data = nil
+				}
+				if err := os.WriteFile(filepath.Join(dir, "private", "app.wasm"), data, 0644); err != nil {
+					t.Fatal(err)
+				}
 			}
 			if test.document {
-				if err := os.WriteFile(filepath.Join(dir, "private", "app.openui"), []byte("root = Text(\"Test\")"), 0644); err != nil {
+				data := []byte("root = Text(\"Test\")")
+				if test.name == "empty document" {
+					data = nil
+				}
+				if err := os.WriteFile(filepath.Join(dir, "private", "app.openui"), data, 0644); err != nil {
 					t.Fatal(err)
 				}
 			}

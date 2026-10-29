@@ -697,7 +697,7 @@ func TestRuntimeSupervisorCreateCanCreate(t *testing.T) {
 	if runtimeScroll.Status != domain.RuntimeScrollStatusCreated {
 		t.Fatalf("status = %s, want created", runtimeScroll.Status)
 	}
-	if got := runtimeScroll.ReservedPorts; len(got) != 3 || got[0] != (domain.Port{Name: "webdav", Port: 8084, Protocol: "http"}) || got[1] != (domain.Port{Name: "vscode", Port: 3333, Protocol: "http"}) || got[2] != (domain.Port{Name: "ssh", Port: 2222, Protocol: "tcp"}) {
+	if got := runtimeScroll.ReservedPorts; len(got) != 4 || got[3] != (domain.Port{Name: "openhands", Port: 8000, Protocol: "http"}) || got[0] != (domain.Port{Name: "webdav", Port: 8084, Protocol: "http"}) || got[1] != (domain.Port{Name: "vscode", Port: 3333, Protocol: "http"}) || got[2] != (domain.Port{Name: "ssh", Port: 2222, Protocol: "tcp"}) {
 		t.Fatalf("reserved developer ports = %#v", got)
 	}
 	if len(runtimeScroll.Procedures) != 0 {
@@ -1355,6 +1355,7 @@ func TestRuntimeSupervisorStartResumesMaintenanceStoppedQueue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(session.stopDeploymentQueue)
 	if err := session.StopRuntimeForMaintenance(); err != nil {
 		t.Fatal(err)
 	}

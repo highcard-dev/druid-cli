@@ -64,6 +64,7 @@ func (s *RuntimeSupervisor) startSession(runtimeScroll *domain.RuntimeScroll) (*
 	if err != nil {
 		return nil, err
 	}
+	session.workloadAPIURL = s.workloadAPIURL
 
 	s.mu.Lock()
 	if existing := s.sessions[runtimeScroll.ID]; existing != nil {

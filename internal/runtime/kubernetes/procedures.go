@@ -119,11 +119,12 @@ func (b *Backend) observeProcedureStatus(command ports.RuntimeCommand, procedure
 		return
 	}
 	b.procedureStatusObserver.ObserveProcedureStatus(ports.ProcedureStatusUpdate{
-		RuntimeID: command.ScrollID,
-		Command:   command.Name,
-		Procedure: procedure,
-		Status:    status,
-		ExitCode:  exitCode,
+		ExecutionID: command.ExecutionID,
+		RuntimeID:   command.ScrollID,
+		Command:     command.Name,
+		Procedure:   procedure,
+		Status:      status,
+		ExitCode:    exitCode,
 	})
 }
 

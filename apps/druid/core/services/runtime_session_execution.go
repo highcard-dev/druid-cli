@@ -1,12 +1,17 @@
 package services
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"github.com/google/uuid"
+	"net/url"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	coreservices "github.com/highcard-dev/daemon/internal/core/services"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
+	"github.com/highcard-dev/daemon/internal/workloadidentity"
 	"go.uber.org/zap"
 )
 
@@ -68,17 +73,74 @@ func (s *RuntimeSession) runCommand(cmd string, extraEnv ...map[string]map[strin
 			procedureEnv[procedure][key] = value
 		}
 	}
+	executionID := ""
+	s.queueMu.Lock()
+	recovering := s.queue[cmd] != nil && s.queue[cmd].recovered
+	s.queueMu.Unlock()
+	for _, status := range s.Snapshot()[cmd] {
+		if status.ExecutionID != "" {
+			executionID = status.ExecutionID
+			break
+		}
+	}
+	if executionID == "" {
+		if recovering && command.Identity != nil {
+			return fmt.Errorf("identity-enabled command requires a fresh execution")
+		}
+		executionID = uuid.NewString()
+		if err := s.assignExecutionIdentity(cmd, executionID); err != nil {
+			return err
+		}
+	}
+	identity := &domain.RuntimeCommandIdentity{ExecutionID: executionID}
+	s.provisioning.Store(executionID, true)
+	defer s.provisioning.Delete(executionID)
+	if command.Identity != nil {
+		registry := commandRegistry(s.runtimeBackend)
+		if registry == nil || s.workloadAPIURL == "" {
+			return fmt.Errorf("command identity requires a registry and workload API URL")
+		}
+		mount, err := registry.Ensure(context.Background(), workloadidentity.Record{RuntimeRoot: root, Recover: recovering, ExecutionID: executionID, DeploymentID: scrollID, Command: cmd, Permissions: command.Identity.Permissions})
+		if err != nil {
+			return err
+		}
+		identity.SecretName, identity.TokenPath = mount.Secret, mount.Path
+	}
+	// Never mutate the persisted Scroll or leak transient mount references.
+	copyCommand := *command
+	copyCommand.Procedures = make([]*domain.Procedure, len(command.Procedures))
+	for index, procedure := range command.Procedures {
+		copyProcedure := *procedure
+		copyProcedure.RuntimeIdentity = identity
+		copyCommand.Procedures[index] = &copyProcedure
+		name := domain.ProcedureName(cmd, index, procedure)
+		if procedureEnv[name] == nil {
+			procedureEnv[name] = map[string]string{}
+		}
+		procedureEnv[name]["DRUID_EXECUTION_ID"] = executionID
+		if command.Identity != nil {
+			procedureEnv[name]["DRUID_TOKEN_FILE"] = workloadidentity.TokenFile
+			procedureEnv[name]["DRUID_API_URL"] = s.workloadAPIURL + "/" + url.PathEscape(scrollID)
+		}
+	}
+	if command.Identity != nil && command.Run != domain.RunModePersistent {
+		defer s.revokeExecution(executionID)
+	}
 
 	exitCode, err := s.runtimeBackend.RunCommand(ports.RuntimeCommand{
+		ExecutionID:  executionID,
 		Name:         cmd,
 		ScrollID:     scrollID,
-		Command:      command,
+		Command:      &copyCommand,
 		Root:         root,
 		Ports:        runtimePorts,
 		Routing:      routing,
 		ProcedureEnv: procedureEnv,
 	})
 	if err != nil {
+		if command.Identity != nil {
+			_ = s.revokeExecution(executionID)
+		}
 		s.setCommandProcedureStatus(cmd, command, domain.ScrollLockStatusError, exitCode)
 		return err
 	}

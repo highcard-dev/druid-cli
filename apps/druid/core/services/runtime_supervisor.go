@@ -20,6 +20,7 @@ import (
 // truth and session lifetimes; Docker/Kubernetes resource details stay behind
 // the runtime backend.
 type RuntimeSupervisor struct {
+	workloadAPIURL    string
 	store             ports.RuntimeScrollStore
 	manager           *coreservices.RuntimeScrollManager
 	runtimeBackend    ports.RuntimeBackendInterface
@@ -48,6 +49,7 @@ var developerPorts = []domain.Port{
 	{Name: "webdav", Port: 8084, Protocol: "http"},
 	{Name: "vscode", Port: 3333, Protocol: "http"},
 	{Name: "ssh", Port: 2222, Protocol: "tcp"},
+	{Name: "openhands", Port: 8000, Protocol: "http"},
 }
 
 func fixedDeveloperPorts() []domain.Port {
@@ -88,7 +90,14 @@ func (s *RuntimeSupervisor) ObserveProcedureStatus(update ports.ProcedureStatusU
 		logger.Log().Warn("Ignoring procedure status for an unknown runtime", zap.String("runtime", update.RuntimeID), zap.String("command", update.Command), zap.String("procedure", update.Procedure), zap.String("status", string(update.Status)))
 		return
 	}
-	session.persistProcedureStatus(update.Command, update.Procedure, update.Status, update.ExitCode)
+	session.persistProcedureExecutionStatus(update.Command, update.Procedure, update.Status, update.ExitCode, update.ExecutionID)
+	command := session.scrollService.GetFile().Commands[update.Command]
+	if command != nil && command.Identity != nil && update.ExecutionID != "" && (update.Status == domain.ScrollLockStatusDone || update.Status == domain.ScrollLockStatusError) {
+		status, ok := deriveCommandStatus(session.Snapshot()[update.Command], update.Command, session.scrollService.GetFile().Commands[update.Command])
+		if ok && (status == domain.ScrollLockStatusDone || status == domain.ScrollLockStatusError) {
+			_ = session.revokeExecution(update.ExecutionID)
+		}
+	}
 }
 
 func (s *RuntimeSupervisor) SetWorkerCallbacks(callbacks *WorkerCallbackManager, callbackURL string) {

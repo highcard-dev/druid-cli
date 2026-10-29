@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"github.com/google/uuid"
 	"time"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -12,6 +13,8 @@ import (
 )
 
 type runtimeQueueItem struct {
+	recovered    bool
+	executionID  string
 	err          error
 	doneChan     chan struct{}
 	inFlight     bool
@@ -67,6 +70,10 @@ func (s *RuntimeSession) addQueueItemWithEnv(cmd string, options coreservices.Ad
 // enqueueQueueItem separates admission from waiting. Supervisors serialize
 // admission with maintenance without holding a lock while a command runs.
 func (s *RuntimeSession) enqueueQueueItem(cmd string, options coreservices.AddItemOptions, procedureEnv map[string]map[string]string) (func() error, error) {
+	return s.enqueueExecution(cmd, options, procedureEnv, uuid.NewString())
+}
+
+func (s *RuntimeSession) enqueueExecution(cmd string, options coreservices.AddItemOptions, procedureEnv map[string]map[string]string, executionID string) (func() error, error) {
 	logger.Log().Debug("Running command", zap.String("cmd", cmd))
 
 	command, err := s.scrollService.GetCommand(cmd)
@@ -93,7 +100,11 @@ func (s *RuntimeSession) enqueueQueueItem(cmd string, options coreservices.AddIt
 	if options.Wait {
 		doneChan = make(chan struct{})
 	}
-	item = &runtimeQueueItem{doneChan: doneChan, procedureEnv: procedureEnv}
+	item = &runtimeQueueItem{doneChan: doneChan, procedureEnv: procedureEnv, executionID: executionID}
+	if err := s.beginExecution(cmd, item.executionID); err != nil {
+		s.queueMu.Unlock()
+		return nil, err
+	}
 	s.queue[cmd] = item
 	s.setQueueStatusLocked(cmd, item, domain.ScrollLockStatusWaiting, nil)
 	s.queueMu.Unlock()
@@ -153,6 +164,13 @@ func (s *RuntimeSession) rememberHydratedItem(cmd string) {
 	item.err = nil
 	item.rememberDone = false
 	item.runRequested = true
+	item.recovered = true
+	for _, status := range s.Snapshot()[cmd] {
+		if status.ExecutionID != "" {
+			item.executionID = status.ExecutionID
+			break
+		}
+	}
 }
 
 func (s *RuntimeSession) triggerRunQueue() {
@@ -275,6 +293,15 @@ func (s *RuntimeSession) RunQueue() {
 			if isPersistentMode {
 				logger.Log().Info("Persistent command running", zap.String("command", c))
 			} else if isRestartMode {
+				s.queueMu.Lock()
+				i.executionID = uuid.NewString()
+				i.recovered = false
+				identityErr := s.beginExecution(c, i.executionID)
+				s.queueMu.Unlock()
+				if identityErr != nil {
+					s.setQueueError(c, identityErr)
+					return
+				}
 				s.setQueueStatus(c, domain.ScrollLockStatusWaiting, nil)
 				s.queueMu.Lock()
 				if time.Since(startedAt) < 30*time.Second {
