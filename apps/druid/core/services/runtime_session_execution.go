@@ -1,16 +1,12 @@
 package services
 
 import (
-	"context"
 	"errors"
-	"fmt"
-	"net/url"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	coreservices "github.com/highcard-dev/daemon/internal/core/services"
 	"github.com/highcard-dev/daemon/internal/utils/logger"
-	"github.com/highcard-dev/daemon/internal/workloadidentity"
 	"go.uber.org/zap"
 )
 
@@ -72,45 +68,15 @@ func (s *RuntimeSession) runCommand(cmd string, extraEnv ...map[string]map[strin
 			procedureEnv[procedure][key] = value
 		}
 	}
-	requiresIdentity := s.runtimeBackend.Name() != "docker"
-	var identity *domain.RuntimeCommandIdentity
-	if command.Identity != nil && requiresIdentity {
-		backend, ok := s.runtimeBackend.(ports.CommandIdentityBackend)
-		if !ok || s.workloadAPIURL == "" {
-			return fmt.Errorf("command identity requires runtime support and workload API URL")
-		}
-		if err := backend.PrepareCommandIdentity(context.Background(), root); err != nil {
-			return err
-		}
-		identity = &domain.RuntimeCommandIdentity{DeploymentID: scrollID, Permissions: command.Identity.Permissions}
-	}
-	// Never mutate the persisted Scroll or leak transient mount references.
-	copyCommand := *command
-	copyCommand.Procedures = make([]*domain.Procedure, len(command.Procedures))
-	for index, procedure := range command.Procedures {
-		copyProcedure := *procedure
-		copyProcedure.RuntimeIdentity = identity
-		copyCommand.Procedures[index] = &copyProcedure
-		name := domain.ProcedureName(cmd, index, procedure)
-		if procedureEnv[name] == nil {
-			procedureEnv[name] = map[string]string{}
-		}
-		if s.workloadAPIURL != "" && (command.Identity != nil || !requiresIdentity) {
-			procedureEnv[name]["DRUID_TOKEN_FILE"] = ""
-			if requiresIdentity {
-				procedureEnv[name]["DRUID_TOKEN_FILE"] = workloadidentity.TokenFile
-			}
-			procedureEnv[name]["DRUID_API_URL"] = s.workloadAPIURL + "/" + url.PathEscape(scrollID)
-		}
-	}
 	exitCode, err := s.runtimeBackend.RunCommand(ports.RuntimeCommand{
-		Name:         cmd,
-		ScrollID:     scrollID,
-		Command:      &copyCommand,
-		Root:         root,
-		Ports:        runtimePorts,
-		Routing:      routing,
-		ProcedureEnv: procedureEnv,
+		WorkloadAPIURL: s.workloadAPIURL,
+		Name:           cmd,
+		ScrollID:       scrollID,
+		Command:        command,
+		Root:           root,
+		Ports:          runtimePorts,
+		Routing:        routing,
+		ProcedureEnv:   procedureEnv,
 	})
 	if err != nil {
 		s.setCommandProcedureStatus(cmd, command, domain.ScrollLockStatusError, exitCode)

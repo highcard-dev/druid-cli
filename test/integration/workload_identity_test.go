@@ -81,6 +81,14 @@ func TestWorkloadIdentityRealRuntime(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = kubernetes.CoreV1().Namespaces().Delete(context.Background(), id, metav1.DeleteOptions{}) })
+		// This fixture creates runtime storage directly instead of materializing a Scroll.
+		// Provision the namespace accounts normally created during materialization.
+		for _, name := range []string{"druid-runtime-worker", "druid-workload-agent"} {
+			disabled := false
+			if _, err := kubernetes.CoreV1().ServiceAccounts(id).Create(ctx, &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: name}, AutomountServiceAccountToken: &disabled}, metav1.CreateOptions{}); err != nil {
+				t.Fatal(err)
+			}
+		}
 		// A dedicated kubeconfig prevents the backend from using a different
 		// current context than the explicitly selected local test client.
 		raw, err := config.RawConfig()

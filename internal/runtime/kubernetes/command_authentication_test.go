@@ -107,7 +107,7 @@ func TestCommandIdentityProvisioningOnlyCreatesAnUnprivilegedServiceAccount(t *t
 	client := fake.NewSimpleClientset()
 	backend := NewWithClient(Config{Namespace: "default"}, client)
 	for index := 0; index < 2; index++ {
-		if err := backend.PrepareCommandIdentity(context.Background(), ref("games", "data")); err != nil {
+		if err := backend.ensureRuntimeServiceAccounts(context.Background(), "games"); err != nil {
 			t.Fatal(err)
 		}
 	}

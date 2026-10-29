@@ -232,9 +232,6 @@ func TestRemoveCommandPermissionsBindingValidationAndStopFailure(t *testing.T) {
 	}
 }
 
-func (b *toolTestBackend) PrepareCommandIdentity(context.Context, string) error {
-	return nil
-}
 func (b *toolTestBackend) AuthenticateCommandIdentity(_ context.Context, token string) (workloadidentity.Identity, error) {
 	if record, ok := b.credentials.Load(token); ok {
 		b.authentications.Add(1)

@@ -92,7 +92,10 @@ func (b *Backend) ensureRuntimeServiceAccount(ctx context.Context, namespace str
 }
 
 func (b *Backend) ensureRuntimeServiceAccounts(ctx context.Context, namespace string) error {
-	return b.ensureRuntimeServiceAccount(ctx, namespace, runtimeWorkerServiceAccount)
+	if err := b.ensureRuntimeServiceAccount(ctx, namespace, runtimeWorkerServiceAccount); err != nil {
+		return err
+	}
+	return b.ensureRuntimeServiceAccount(ctx, namespace, commandServiceAccount)
 }
 
 func (b *Backend) isOperatorServiceAccount(namespace string, serviceAccount string) bool {

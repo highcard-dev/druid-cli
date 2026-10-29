@@ -528,8 +528,8 @@ func TestSpawnPullWorkerCreateUsesFinalPVCAndWorkerJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(accounts.Items) != 1 || accounts.Items[0].Name != runtimeWorkerServiceAccount {
-		t.Fatalf("service accounts = %#v, want worker identity", accounts.Items)
+	if len(accounts.Items) != 2 {
+		t.Fatalf("service accounts = %#v, want worker and agent identities", accounts.Items)
 	}
 	if len(jobs) != 1 {
 		t.Fatalf("jobs = %d, want 1", len(jobs))

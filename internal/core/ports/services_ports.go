@@ -95,6 +95,8 @@ type RuntimeScrollStore interface {
 }
 
 type RuntimeCommand struct {
+	// WorkloadAPIURL is the configured base URL for backend-provided workload tools.
+	WorkloadAPIURL string
 	// Name identifies the command within the Scroll.
 	Name string
 	// ScrollID identifies the runtime Scroll whose command is being executed.

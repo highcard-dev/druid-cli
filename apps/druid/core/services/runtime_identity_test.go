@@ -10,7 +10,7 @@ import (
 	"github.com/highcard-dev/daemon/internal/workloadidentity"
 )
 
-func TestHydratedIdentityCommandRetainsTokenProjection(t *testing.T) {
+func TestHydratedIdentityCommandPassesConfigurationToBackend(t *testing.T) {
 	supervisor, backend, _ := commandToolsFixture(t)
 	session := supervisor.sessions["tools"]
 	session.workloadAPIURL = "http://runtime.local"
@@ -23,8 +23,8 @@ func TestHydratedIdentityCommandRetainsTokenProjection(t *testing.T) {
 	if err := session.runCommand("agent"); err != nil {
 		t.Fatal(err)
 	}
-	if seen.Command.Procedures[0].RuntimeIdentity == nil {
-		t.Fatal("hydration lost token projection")
+	if seen.Command.Identity == nil || seen.WorkloadAPIURL != "http://runtime.local" || seen.Command.Procedures[0].RuntimeIdentity != nil {
+		t.Fatal("session must pass identity configuration without preparing credentials")
 	}
 }
 
@@ -38,9 +38,6 @@ func (b podIdentityBackend) AuthenticateCommandIdentity(context.Context, string)
 	return b.record, nil
 }
 
-func (b podIdentityBackend) PrepareCommandIdentity(context.Context, string) error {
-	return nil
-}
 func (b podIdentityBackend) Name() string {
 	if b.name != "" {
 		return b.name

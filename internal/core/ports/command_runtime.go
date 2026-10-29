@@ -8,7 +8,6 @@ import (
 // CommandIdentityBackend is implemented by runtimes that authenticate command workloads.
 // It does not replace infrastructure ServiceAccount authentication.
 type CommandIdentityBackend interface {
-	PrepareCommandIdentity(context.Context, string) error
 	AuthenticateCommandIdentity(context.Context, string) (workloadidentity.Identity, error)
 }
 
