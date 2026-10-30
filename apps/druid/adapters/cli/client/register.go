@@ -24,7 +24,7 @@ type RuntimeDaemon interface {
 	GetScrollRoutingTargets(ctx context.Context, id string) ([]api.RuntimeRoutingTarget, error)
 	ApplyScrollRouting(ctx context.Context, id string, assignments []api.RuntimeRouteAssignment) (*api.RuntimeScroll, error)
 	GetScrollUIPackages(ctx context.Context, id string) (map[string]api.RuntimeUIPackage, error)
-	PublishScrollUIPackage(ctx context.Context, id string, scope string, path string) (*api.RuntimeScroll, error)
+	PublishScrollUIPackage(ctx context.Context, id string, scope string, withBuild bool) (*api.RuntimeScroll, error)
 }
 
 type Config struct {

@@ -128,7 +128,7 @@ func TestPublishUIToolPermissionsProjectionAndPaths(t *testing.T) {
 		commands = append(commands, command.Name)
 		return nil, nil
 	}
-	for _, input := range []ToolInput{{Scope: "private"}, {Scope: "public"}, {Scope: "private", Path: "private/custom/widget.wasm"}} {
+	for _, input := range []ToolInput{{Scope: "private"}, {Scope: "public"}, {Scope: "private"}} {
 		result, err := s.CallCommandTool(ctx, token, "tools", "publish_ui", input)
 		if err != nil {
 			t.Fatal(err)
@@ -137,10 +137,7 @@ func TestPublishUIToolPermissionsProjectionAndPaths(t *testing.T) {
 		if !strings.Contains(data, `"published":true`) || !strings.Contains(data, `"updated_at"`) || strings.Contains(data, "uploads/") || strings.Contains(data, "ScrollYAML") || strings.Contains(data, token) {
 			t.Fatalf("unsafe or incomplete publication response: %s", data)
 		}
-		wantPath := input.Path
-		if wantPath == "" {
-			wantPath = input.Scope + "/dist/app.wasm"
-		}
+		wantPath := input.Scope + "/dist/app.wasm"
 		if !strings.Contains(data, wantPath) {
 			t.Fatal("wrong published path")
 		}
@@ -150,7 +147,7 @@ func TestPublishUIToolPermissionsProjectionAndPaths(t *testing.T) {
 			t.Fatalf("publication unexpectedly built: %s", command)
 		}
 	}
-	for _, input := range []ToolInput{{}, {Scope: "other"}, {Scope: "private", Path: "../outside.wasm"}, {Scope: "private", Path: "public/app.wasm"}, {Scope: "private", Path: "data/private/app.wasm"}, {Scope: "private", Path: "private/app.js"}} {
+	for _, input := range []ToolInput{{}, {Scope: "other"}} {
 		_, err := s.CallCommandTool(ctx, token, "tools", "publish_ui", input)
 		var failure *ToolError
 		if !errors.As(err, &failure) || failure.Status != 400 {
@@ -259,6 +256,9 @@ func commandToolsFixture(t *testing.T, permissions ...string) (*RuntimeSuperviso
 desc: Tools fixture
 version: 0.1.0
 app_version: "1.0"
+ui:
+  private: {wasm: private/dist/app.wasm, openui: private/view.openui}
+  public: {wasm: public/dist/app.wasm, openui: public/view.openui}
 commands:
   agent:
     run: persistent

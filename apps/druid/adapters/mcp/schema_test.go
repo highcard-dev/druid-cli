@@ -15,6 +15,13 @@ func TestPublishUIDescriptionRequiresSeparateCustomerApproval(t *testing.T) {
 	}
 }
 
+func TestPublishUISchemaUsesDeclaredArtifactsAndOptionalBuild(t *testing.T) {
+	properties := publishUITool().InputSchema.(map[string]any)["properties"].(map[string]any)
+	if len(properties) != 2 || properties["scope"] == nil || properties["with_build"] == nil || properties["path"] != nil {
+		t.Fatalf("unexpected publication schema: %#v", properties)
+	}
+}
+
 func TestCommandWaitSchemaUsesOnlyCommandNameAndTimeout(t *testing.T) {
 	tool := waitForCommandTool()
 	schema := tool.InputSchema.(map[string]any)

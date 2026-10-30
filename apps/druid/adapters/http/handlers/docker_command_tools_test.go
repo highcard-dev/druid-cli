@@ -26,7 +26,7 @@ func TestDockerToolsAreAnonymousWhileOwnerRoutesRemainProtected(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"one", "other"} {
-		if err := store.CreateScroll(&domain.RuntimeScroll{ID: id, Root: t.TempDir(), ScrollName: id, ScrollYAML: "name: fixture\ndesc: fixture\nversion: 0.1.0\napp_version: 1.0\ncommands:\n  echo:\n    procedures:\n      - image: busybox\n"}); err != nil {
+		if err := store.CreateScroll(&domain.RuntimeScroll{ID: id, Root: t.TempDir(), ScrollName: id, ScrollYAML: "name: fixture\ndesc: fixture\nversion: 0.1.0\napp_version: 1.0\nui:\n  private: {wasm: private/dist/app.wasm, openui: private/view.openui}\n  public: {wasm: public/dist/app.wasm, openui: public/view.openui}\ncommands:\n  echo:\n    procedures:\n      - image: busybox\n"}); err != nil {
 			t.Fatal(err)
 		}
 	}

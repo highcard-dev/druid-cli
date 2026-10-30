@@ -43,6 +43,7 @@ type options struct {
 	watchPaths     []string
 	watchWorkdir   string
 	watchCommand   []string
+	watchOutputs   []string
 }
 
 func NewRootCommand() *cobra.Command {
@@ -63,6 +64,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.Flags().StringArrayVar(&opt.watchPaths, "watch-path", nil, "Runtime-relative path to watch (repeatable)")
 	cmd.Flags().StringVar(&opt.watchWorkdir, "watch-working-directory", ".", "Runtime-relative working directory for the watcher command")
 	cmd.Flags().StringArrayVar(&opt.watchCommand, "watch-command", nil, "Watcher command argument (repeatable, preserves argument boundaries)")
+	cmd.Flags().StringArrayVar(&opt.watchOutputs, "watch-output", nil, "Built artifact path to notify without triggering another build")
 	_ = cmd.MarkFlagRequired("root")
 	return cmd
 }
@@ -85,7 +87,7 @@ func run(ctx context.Context, opt options) error {
 			return err
 		}
 	}
-	server := newDevServer(root, auth)
+	server := newDevServer(root, auth, opt.watchOutputs...)
 	watchRequest, err := startupWatchRequest(opt)
 	if err != nil {
 		return err
@@ -145,16 +147,16 @@ type devAuth struct {
 	ownerID   string
 }
 
-type noopQueue struct{}
+type buildQueue struct{ run func() error }
 
-func (noopQueue) AddTempItem(string) error                     { return nil }
-func (noopQueue) AddTempItemWithWait(string) error             { return nil }
-func (noopQueue) GetQueue() map[string]domain.ScrollLockStatus { return nil }
+func (q buildQueue) AddTempItem(string) error                     { return nil }
+func (q buildQueue) AddTempItemWithWait(string) error             { return q.run() }
+func (q buildQueue) GetQueue() map[string]domain.ScrollLockStatus { return nil }
 
 type noopScroll struct{}
 
 func (noopScroll) GetCommand(string) (*domain.CommandInstructionSet, error) {
-	return nil, fmt.Errorf("watcher does not run daemon commands")
+	return &domain.CommandInstructionSet{}, nil
 }
 func (noopScroll) GetCurrent() *domain.Scroll { return nil }
 func (noopScroll) GetFile() *domain.File      { return &domain.File{} }
@@ -178,10 +180,18 @@ type devServer struct {
 	config  watchConfig
 	cancel  context.CancelFunc
 	watchID uint64
+	build   func() error
 }
 
-func newDevServer(root string, auth devAuth) *devServer {
-	return &devServer{root: root, auth: auth, watch: coreservices.NewDevService(noopQueue{}, noopScroll{}), status: statusDisabled}
+func newDevServer(root string, auth devAuth, outputs ...string) *devServer {
+	server := &devServer{root: root, auth: auth, status: statusDisabled}
+	server.watch = coreservices.NewDevService(buildQueue{run: func() error {
+		server.mu.RLock()
+		build := server.build
+		server.mu.RUnlock()
+		return build()
+	}}, noopScroll{}, outputs...)
+	return server
 }
 
 func newApp(server *devServer) *fiber.App {
@@ -317,54 +327,36 @@ func (s *devServer) startWatch(request devapi.WatchModeRequest) error {
 	s.watchID++
 	watchID := s.watchID
 	s.mu.Unlock()
-	if err := s.watch.StartWatching(s.root, paths...); err != nil {
-		s.setWatchError(err)
-		logger.Log().Error("Failed to start Druid development watcher", zap.Error(err))
-		return err
-	}
 	ctx, cancel := context.WithCancel(context.Background())
-	child := exec.CommandContext(ctx, request.Command[0], request.Command[1:]...)
-	child.Dir = workdir
-	child.Stdout, child.Stderr = os.Stdout, os.Stderr
-	if err := child.Start(); err != nil {
-		cancel()
-		_ = s.watch.StopWatching()
-		s.setWatchError(err)
-		logger.Log().Error("Failed to start Druid development build process", zap.Error(err))
-		return err
-	}
-	logger.Log().Info("Druid development build process started",
-		zap.Int("pid", child.Process.Pid),
-		zap.String("working_directory", workdir),
-		zap.Strings("command", request.Command),
-	)
 	s.mu.Lock()
-	s.cancel = cancel
-	s.status = statusReady
-	s.mu.Unlock()
-	go func() {
-		err := child.Wait()
+	s.build = func() error {
+		child := exec.CommandContext(ctx, request.Command[0], request.Command[1:]...)
+		child.Dir = workdir
+		child.Stdout, child.Stderr = os.Stdout, os.Stderr
+		err := child.Run()
 		s.mu.Lock()
-		if s.watchID == watchID {
-			s.cancel = nil
-			if err != nil && ctx.Err() == nil {
-				s.status = statusError
-				s.lastErr = err.Error()
-			} else {
-				s.status = statusDisabled
-				s.lastErr = ""
+		if s.watchID == watchID && ctx.Err() == nil {
+			s.status, s.lastErr = statusReady, ""
+			if err != nil {
+				s.status, s.lastErr = statusError, err.Error()
 			}
 		}
 		s.mu.Unlock()
-		if err != nil && ctx.Err() == nil {
-			logger.Log().Error("Druid development build process exited with an error", zap.Error(err))
-		} else {
-			logger.Log().Info("Druid development build process stopped")
-		}
-		if ctx.Err() == nil {
-			_ = s.watch.StopWatching()
-		}
-	}()
+		return err
+	}
+	s.mu.Unlock()
+	if err := s.watch.SetHotReloadCommands([]string{"build"}); err != nil {
+		cancel()
+		return err
+	}
+	s.mu.Lock()
+	s.cancel, s.status = cancel, statusReady
+	s.mu.Unlock()
+	if err := s.watch.StartWatching(s.root, paths...); err != nil {
+		cancel()
+		s.setWatchError(err)
+		return err
+	}
 	return nil
 }
 

@@ -64,10 +64,13 @@ type File struct {
 
 type UIDeclaration struct {
 	Private *UIPackageDeclaration `yaml:"private,omitempty" json:"private,omitempty"`
+	Public  *UIPackageDeclaration `yaml:"public,omitempty" json:"public,omitempty"`
 }
 
 type UIPackageDeclaration struct {
-	Path string `yaml:"path" json:"path"`
+	BuildCommand string `yaml:"buildcommand,omitempty" json:"buildcommand,omitempty"`
+	WASM         string `yaml:"wasm" json:"wasm"`
+	OpenUI       string `yaml:"openui" json:"openui"`
 }
 
 type Scroll struct {
@@ -280,19 +283,28 @@ func (sc *Scroll) Validate(strict bool) error {
 		}
 	}
 	if sc.UI != nil {
-		if sc.UI.Private == nil {
-			return fmt.Errorf("ui.private declaration is required")
+		if sc.UI.Private == nil && sc.UI.Public == nil {
+			return fmt.Errorf("ui must declare a private or public package")
 		}
-		uiPath := sc.UI.Private.Path
-		cleaned := path.Clean(uiPath)
-		if uiPath == "" || path.IsAbs(uiPath) || cleaned != uiPath || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
-			return fmt.Errorf("private ui package path must be a normalized relative path")
-		}
-		if !strings.HasPrefix(cleaned, "private/") {
-			return fmt.Errorf("private ui package path must be rooted at private/")
-		}
-		if path.Ext(cleaned) != ".wasm" {
-			return fmt.Errorf("private ui package path must point to a .wasm file")
+		for scope, declaration := range map[string]*UIPackageDeclaration{"private": sc.UI.Private, "public": sc.UI.Public} {
+			if declaration == nil {
+				continue
+			}
+			if declaration.BuildCommand != "" && sc.Commands[declaration.BuildCommand] == nil {
+				return fmt.Errorf("%s ui buildcommand %q is not defined", scope, declaration.BuildCommand)
+			}
+			for extension, uiPath := range map[string]string{".wasm": declaration.WASM, ".openui": declaration.OpenUI} {
+				cleaned := path.Clean(uiPath)
+				if uiPath == "" || path.IsAbs(uiPath) || cleaned != uiPath || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+					return fmt.Errorf("%s ui package path must be a normalized relative path", scope)
+				}
+				if !strings.HasPrefix(cleaned, scope+"/") {
+					return fmt.Errorf("%s ui package path must be rooted at %s/", scope, scope)
+				}
+				if path.Ext(cleaned) != extension {
+					return fmt.Errorf("%s ui package path must point to a %s file", scope, extension)
+				}
+			}
 		}
 	}
 

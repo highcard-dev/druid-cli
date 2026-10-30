@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,6 +42,7 @@ type WatchService struct {
 	ctx               context.Context
 	cancel            context.CancelFunc
 	isWatching        bool
+	ignoredBuildPaths []string
 	hotReloadCommands []string
 	queueManager      ports.QueueManagerInterface
 	scrollService     ports.ScrollServiceInterface
@@ -50,13 +52,14 @@ type WatchService struct {
 }
 
 func NewDevService(
-	queueManager ports.QueueManagerInterface, scrollService ports.ScrollServiceInterface,
+	queueManager ports.QueueManagerInterface, scrollService ports.ScrollServiceInterface, ignoredBuildPaths ...string,
 ) ports.WatchServiceInterface {
 	return &WatchService{
-		watchPaths:    make([]string, 0),
-		isWatching:    false,
-		queueManager:  queueManager,
-		scrollService: scrollService,
+		watchPaths:        make([]string, 0),
+		ignoredBuildPaths: ignoredBuildPaths,
+		isWatching:        false,
+		queueManager:      queueManager,
+		scrollService:     scrollService,
 	}
 }
 
@@ -241,7 +244,7 @@ func (uds *WatchService) addWatchPath(path string) error {
 
 		if info.IsDir() {
 			// Skip node_modules directories
-			if info.Name() == "node_modules" {
+			if info.Name() == "node_modules" || info.Name() == "target" || info.Name() == ".git" {
 				return filepath.SkipDir
 			}
 			return uds.watcher.Add(walkPath)
@@ -343,6 +346,16 @@ func (uds *WatchService) handleFileEvent(event fsnotify.Event) {
 		}
 	}
 
+	for _, output := range uds.ignoredBuildPaths {
+		if filepath.Clean(relativePath) == filepath.Clean(output) {
+			return
+		}
+	}
+	for _, part := range strings.Split(filepath.ToSlash(relativePath), "/") {
+		if (part == "dist" && len(uds.ignoredBuildPaths) > 0) || part == "target" || part == "node_modules" || part == ".git" {
+			return
+		}
+	}
 	uds.scheduleHotReload()
 }
 

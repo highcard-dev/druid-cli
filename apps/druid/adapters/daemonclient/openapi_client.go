@@ -273,11 +273,8 @@ func (c *OpenAPIClient) GetScrollUIPackages(ctx context.Context, id string) (map
 	return *res.JSON200, nil
 }
 
-func (c *OpenAPIClient) PublishScrollUIPackage(ctx context.Context, id string, scope string, path string) (*api.RuntimeScroll, error) {
-	request := api.PublishUIPackageRequest{}
-	if path != "" {
-		request.Path = &path
-	}
+func (c *OpenAPIClient) PublishScrollUIPackage(ctx context.Context, id string, scope string, withBuild bool) (*api.RuntimeScroll, error) {
+	request := api.PublishUIPackageRequest{WithBuild: &withBuild}
 	res, err := c.client.PublishScrollUIPackageWithResponse(ctx, id, api.PublishScrollUIPackageParamsScope(scope), request)
 	if err != nil {
 		return nil, err

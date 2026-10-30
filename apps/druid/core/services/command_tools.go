@@ -17,7 +17,7 @@ import (
 
 type ToolInput struct {
 	Scope          string                        `json:"scope,omitempty"`
-	Path           string                        `json:"path,omitempty"`
+	WithBuild      bool                          `json:"with_build,omitempty"`
 	Instructions   *domain.CommandInstructionSet `json:"instructions,omitempty"`
 	Command        string                        `json:"command,omitempty"`
 	Console        string                        `json:"console,omitempty"`
@@ -58,11 +58,8 @@ func (s *RuntimeSupervisor) CallCommandTool(ctx context.Context, token, deployme
 	}
 	switch name {
 	case "publish_ui":
-		scope, path, err := normalizeUIPackageRequest(input.Scope, input.Path)
-		if err != nil {
-			return nil, toolError(400, err.Error())
-		}
-		updated, err := s.PublishUIPackage(deployment, string(scope), path)
+		scope := domain.RuntimeUIPackageScope(input.Scope)
+		updated, err := s.PublishUIPackage(deployment, input.Scope, input.WithBuild)
 		if err != nil {
 			return nil, err
 		}

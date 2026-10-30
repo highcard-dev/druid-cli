@@ -72,7 +72,7 @@ func TestCommandToolsRealMCPClient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtime := &domain.RuntimeScroll{ID: "tools", Root: t.TempDir(), ScrollName: "tools", ScrollYAML: "name: tools\ndesc: Tools fixture\nversion: 0.1.0\napp_version: 1.0\ncommands:\n  agent:\n    run: persistent\n    identity:\n      permissions: [commands:list, commands:create, queue:read, ui:publish]\n    procedures:\n      - image: busybox\n        env: {SECRET: must-not-leak}\n"}
+	runtime := &domain.RuntimeScroll{ID: "tools", Root: t.TempDir(), ScrollName: "tools", ScrollYAML: "name: tools\ndesc: Tools fixture\nversion: 0.1.0\napp_version: 1.0\nui:\n  private: {buildcommand: ui_build, wasm: private/dist/app.wasm, openui: private/view.openui}\n  public: {buildcommand: ui_build, wasm: public/dist/app.wasm, openui: public/view.openui}\ncommands:\n  ui_build:\n    procedures:\n      - image: busybox\n        command: [true]\n  agent:\n    run: persistent\n    identity:\n      permissions: [commands:list, commands:create, queue:read, ui:publish]\n    procedures:\n      - image: busybox\n        env: {SECRET: must-not-leak}\n"}
 	runtime.Procedures = domain.ProcedureStatusMap{"agent": {"agent.0": {Status: domain.ScrollLockStatusRunning}}}
 	if err := store.CreateScroll(runtime); err != nil {
 		t.Fatal(err)
@@ -203,7 +203,7 @@ func TestCommandToolsRealMCPClient(t *testing.T) {
 			backend.uploadError = nil
 		}
 	})
-	publication, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "publish_ui", Arguments: map[string]any{"scope": "private"}})
+	publication, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "publish_ui", Arguments: map[string]any{"scope": "private", "with_build": true}})
 	if err != nil || publication.IsError {
 		t.Fatalf("MCP publish failed: %v, %v", err, publication)
 	}
@@ -352,7 +352,7 @@ func TestCommandToolsRealMCPClient(t *testing.T) {
 		status             int
 	}{
 		{"GET", "/tools/api/v1/queue", `{}`, 200},
-		{"POST", "/tools/api/v1/ui/packages/private/publish", `{}`, 200},
+		{"POST", "/tools/api/v1/ui/packages/private/publish", `{"with_build":true}`, 200},
 		{"POST", "/tools/api/v1/ui/packages/public/publish", `{}`, 200},
 		{"POST", "/tools/api/v1/command", `{"command":"owner-cleanup"}`, 200},
 		{"DELETE", "/tools/api/v1/scroll/commands/owner-cleanup", ``, 204},

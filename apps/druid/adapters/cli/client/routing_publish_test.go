@@ -201,6 +201,6 @@ func (f *fakeRoutingDaemon) GetScrollUIPackages(ctx context.Context, id string) 
 	return map[string]api.RuntimeUIPackage{}, nil
 }
 
-func (f *fakeRoutingDaemon) PublishScrollUIPackage(ctx context.Context, id string, scope string, path string) (*api.RuntimeScroll, error) {
+func (f *fakeRoutingDaemon) PublishScrollUIPackage(ctx context.Context, id string, scope string, withBuild bool) (*api.RuntimeScroll, error) {
 	return &api.RuntimeScroll{Id: id, Status: api.RuntimeScrollStatusCreated}, nil
 }
