@@ -1,4 +1,4 @@
-package handlers
+package toolrequest
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 	"github.com/highcard-dev/daemon/internal/workloadidentity"
 )
 
-func commandToolStatus(err error) int {
+func Status(err error) int {
 	var failure *services.ToolError
 	if errors.As(err, &failure) {
 		return failure.Status
@@ -24,14 +24,14 @@ func commandToolStatus(err error) int {
 	return 500
 }
 
-func commandToolMessage(err error) string {
-	if commandToolStatus(err) == 500 {
+func Message(err error) string {
+	if Status(err) == 500 {
 		return "runtime tool failed"
 	}
 	return workloadidentity.Redact(err.Error())
 }
 
-func bearer(header string) string {
+func Bearer(header string) string {
 	parts := strings.Fields(header)
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
 		return ""
@@ -39,7 +39,7 @@ func bearer(header string) string {
 	return parts[1]
 }
 
-func commandToolInput(data []byte) (services.ToolInput, error) {
+func Decode(data []byte) (services.ToolInput, error) {
 	var input services.ToolInput
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()

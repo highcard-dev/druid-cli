@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"github.com/gofiber/fiber/v2"
+	"github.com/highcard-dev/daemon/apps/druid/adapters/toolrequest"
 	services "github.com/highcard-dev/daemon/apps/druid/core/services"
 )
 
@@ -9,7 +10,7 @@ func (h *ScrollHandler) callCommandToolHTTP(c *fiber.Ctx, name string) error {
 	var input services.ToolInput
 	if len(c.Body()) > 0 {
 		var err error
-		input, err = commandToolInput(c.Body())
+		input, err = toolrequest.Decode(c.Body())
 		if err != nil {
 			return fiber.NewError(400, "invalid tool request")
 		}
@@ -21,9 +22,9 @@ func (h *ScrollHandler) callCommandToolHTTP(c *fiber.Ctx, name string) error {
 		input.TailLines = c.QueryInt("tail_lines", 0)
 		input.TimeoutSeconds = c.QueryInt("timeout_seconds", 0)
 	}
-	result, err := h.supervisor.CallCommandTool(c.UserContext(), bearer(c.Get("Authorization")), c.Params("id"), name, input)
+	result, err := h.supervisor.CallCommandTool(c.UserContext(), toolrequest.Bearer(c.Get("Authorization")), c.Params("id"), name, input)
 	if err != nil {
-		return fiber.NewError(commandToolStatus(err), commandToolMessage(err))
+		return fiber.NewError(toolrequest.Status(err), toolrequest.Message(err))
 	}
 	return c.JSON(result)
 }

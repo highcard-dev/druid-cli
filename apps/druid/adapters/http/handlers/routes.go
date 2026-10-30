@@ -4,6 +4,7 @@ import (
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	commandmcp "github.com/highcard-dev/daemon/apps/druid/adapters/mcp"
 	"github.com/highcard-dev/daemon/internal/api"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 )
@@ -65,7 +66,7 @@ func RegisterPublicRoutes(app *fiber.App, handlers RouteHandlers) {
 	app.Get("/:id/ws/v1/serve/:console", websocket.New(handlers.Websocket.AttachScrollConsole))
 	if handlers.Server != nil && handlers.Server.ScrollHandler != nil {
 		h := handlers.Server.ScrollHandler
-		app.All("/:id/mcp", h.MCP)
+		app.All("/:id/mcp", commandmcp.NewHandler(h.supervisor))
 		app.Get("/:id/api/v1/commands", h.GetDaemonCommands)
 		app.Post("/:id/api/v1/commands", h.CreateDaemonCommand)
 		app.Get("/:id/api/v1/commands/:command/wait", h.WaitDaemonCommand)

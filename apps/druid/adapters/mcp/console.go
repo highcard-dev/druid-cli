@@ -1,4 +1,4 @@
-package handlers
+package commandmcp
 
 func (m *commandMCP) addConsole() {
 	m.add(commandMCPTool("read_logs", "Read a finite recent console snapshot (default 200 lines, maximum 64 KiB). Application logs may contain secrets.", map[string]any{"console": stringField("Console ID from list_commands"), "tail_lines": integerField(1000)}, "console"))

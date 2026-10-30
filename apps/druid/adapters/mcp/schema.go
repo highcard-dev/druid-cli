@@ -1,4 +1,4 @@
-package handlers
+package commandmcp
 
 import (
 	"github.com/google/jsonschema-go/jsonschema"

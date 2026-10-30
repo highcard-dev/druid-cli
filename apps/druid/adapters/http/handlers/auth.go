@@ -3,6 +3,7 @@ package handlers
 import (
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
+	"github.com/highcard-dev/daemon/apps/druid/adapters/toolrequest"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 )
 
@@ -68,7 +69,7 @@ func (h *ScrollHandler) authorizeRuntimeOwner(id string, subject string) error {
 func (h *WebsocketHandler) PublicQueryAuth(c *websocket.Conn) bool {
 	token := c.Query("token")
 	if token == "" {
-		token = bearer(c.Headers("Authorization"))
+		token = toolrequest.Bearer(c.Headers("Authorization"))
 	}
 	if h.authorizer == nil {
 		return h.allowUnauthenticatedPublic && token == "" && c.Headers("Authorization") == ""
