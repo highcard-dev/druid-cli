@@ -92,7 +92,7 @@ func TestAgentUIBuildAndPublish(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	supervisor, err := appservices.NewRuntimeSupervisor(runtime.Store, coreservices.NewRuntimeScrollManager(runtime.Store), runtime)
+	supervisor, err := appservices.NewRuntimeSupervisor(runtime.Store, coreservices.NewRuntimeScrollManager(runtime.Store), runtime, "http://host.docker.internal:8082")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,9 +156,6 @@ commands:
 			t.Errorf("cleanup: %v", err)
 		}
 	}()
-	if err := supervisor.SetWorkloadAPIURL("http://host.docker.internal:8082"); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := supervisor.Run(id, "agent"); err != nil {
 		t.Fatal(err)
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -60,16 +61,24 @@ func NewRuntimeSupervisor(
 	store ports.RuntimeScrollStore,
 	manager *coreservices.RuntimeScrollManager,
 	backendFactory ports.RuntimeBackendFactory,
+	workloadAPIURL string,
 ) (*RuntimeSupervisor, error) {
+	if workloadAPIURL != "" {
+		parsed, err := url.Parse(workloadAPIURL)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return nil, fmt.Errorf("workload API URL must be an explicit HTTP(S) base URL")
+		}
+	}
 	if backendFactory == nil {
 		return nil, fmt.Errorf("runtime backend factory is required")
 	}
 	supervisor := &RuntimeSupervisor{
-		store:         store,
-		manager:       manager,
-		workerTimeout: 20 * time.Minute,
-		sessions:      map[string]*RuntimeSession{},
-		operations:    map[string]*sync.Mutex{},
+		workloadAPIURL: strings.TrimRight(workloadAPIURL, "/"),
+		store:          store,
+		manager:        manager,
+		workerTimeout:  20 * time.Minute,
+		sessions:       map[string]*RuntimeSession{},
+		operations:     map[string]*sync.Mutex{},
 	}
 	runtimeBackend, err := backendFactory.Create(supervisor)
 	if err != nil {

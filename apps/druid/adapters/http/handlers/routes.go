@@ -64,7 +64,19 @@ func RegisterPublicRoutes(app *fiber.App, handlers RouteHandlers) {
 	app.Get("/.well-known/jwks.json", RuntimeJWKS(authorizer))
 	app.Get("/:id/ws/v1/serve/:console", websocket.New(handlers.Websocket.AttachScrollConsole))
 	if handlers.Server != nil && handlers.Server.ScrollHandler != nil {
-		handlers.Server.ScrollHandler.registerCommandTools(app)
+		h := handlers.Server.ScrollHandler
+		app.All("/:id/mcp", h.MCP)
+		app.Get("/:id/api/v1/commands", h.GetDaemonCommands)
+		app.Post("/:id/api/v1/commands", h.CreateDaemonCommand)
+		app.Get("/:id/api/v1/commands/:command/wait", h.WaitDaemonCommand)
+		app.Get("/:id/api/v1/consoles/:console/logs", h.ReadDaemonLogs)
+		app.Post("/:id/api/v1/consoles/:console/logs/search", h.SearchDaemonLogs)
+		app.Post("/:id/api/v1/consoles/:console/stdin", h.WriteDaemonStdin)
+		app.Get("/:id/api/v1/status", h.GetDaemonStatus)
+		app.Get("/:id/api/v1/queue", h.ownerOrWorkload(h.GetWorkloadQueue), h.PublicAuth, h.GetDaemonQueue)
+		app.Post("/:id/api/v1/command", h.ownerOrWorkload(h.RunWorkloadCommand), h.PublicAuth, h.RunDaemonCommand)
+		app.Delete("/:id/api/v1/scroll/commands/:command", h.ownerOrWorkload(h.RemoveWorkloadCommand), h.PublicAuth, h.RemoveDaemonCommand)
+		app.Post("/:id/api/v1/ui/packages/:scope/publish", h.ownerOrWorkload(h.PublishWorkloadUIPackage), h.PublicAuth, h.PublishDaemonUIPackage)
 		app.Use("/:id", handlers.Server.PublicAuth)
 	}
 	app.Get("/:id/api/v1/health", handlers.Server.GetHealthAuth)

@@ -31,7 +31,7 @@ func TestDockerToolsAreAnonymousWhileOwnerRoutesRemainProtected(t *testing.T) {
 		}
 	}
 	backend := &dockerToolRouteBackend{&toolRouteBackend{}}
-	supervisor, err := appservices.NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), ports.RuntimeBackendFactoryFunc(func(ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) { return backend, nil }))
+	supervisor, err := appservices.NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), ports.RuntimeBackendFactoryFunc(func(ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) { return backend, nil }), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,8 +73,13 @@ func TestDockerToolsAreAnonymousWhileOwnerRoutesRemainProtected(t *testing.T) {
 	}
 	defer session.Close()
 	tools, err := session.ListTools(ctx, nil)
-	if err != nil || len(tools.Tools) != len(commandToolDefinitions()) {
+	if err != nil || len(tools.Tools) != len(appservices.ToolPermissions) {
 		t.Fatalf("anonymous Docker discovery: %v, %v", tools, err)
+	}
+	for _, tool := range tools.Tools {
+		if _, known := appservices.ToolPermissions[tool.Name]; !known {
+			t.Fatalf("unexpected MCP tool %q", tool.Name)
+		}
 	}
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "create_command", Arguments: map[string]any{"command": "anonymous-created", "instructions": map[string]any{"procedures": []any{map[string]any{"image": "busybox", "command": []string{"true"}}}}}})
 	if err != nil || result.IsError {

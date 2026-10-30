@@ -106,7 +106,14 @@ func TestWorkloadIdentityRealRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	supervisor, err := appservices.NewRuntimeSupervisor(runtime.Store, coreservices.NewRuntimeScrollManager(runtime.Store), runtime)
+	listener, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	port := listener.Addr().(*net.TCPAddr).Port
+	workloadAPIURL := fmt.Sprintf("http://host.docker.internal:%d", port)
+	supervisor, err := appservices.NewRuntimeSupervisor(runtime.Store, coreservices.NewRuntimeScrollManager(runtime.Store), runtime, workloadAPIURL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,17 +164,9 @@ commands:
 		w.WriteHeader(response.StatusCode)
 		_, _ = io.Copy(w, response.Body)
 	}))
-	listener, err := net.Listen("tcp", "0.0.0.0:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server.Listener = listener
 	server.Start()
 	defer server.Close()
-	port := listener.Addr().(*net.TCPAddr).Port
-	if err := supervisor.SetWorkloadAPIURL(fmt.Sprintf("http://host.docker.internal:%d", port)); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := supervisor.Run(id, "agent"); err != nil {
 		t.Fatal(err)
 	}
@@ -365,11 +364,8 @@ commands:
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := appservices.NewRuntimeSupervisor(reattached.Store, coreservices.NewRuntimeScrollManager(reattached.Store), reattached)
+	second, err := appservices.NewRuntimeSupervisor(reattached.Store, coreservices.NewRuntimeScrollManager(reattached.Store), reattached, workloadAPIURL)
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := second.SetWorkloadAPIURL(fmt.Sprintf("http://host.docker.internal:%d", port)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := second.AuthenticateCommand(ctx, token, id); err != nil {

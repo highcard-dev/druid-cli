@@ -1637,7 +1637,7 @@ type fakeWorkerBackend struct {
 
 func newRuntimeSupervisorForTest(t *testing.T, store ports.RuntimeScrollStore, manager *coreservices.RuntimeScrollManager, factory ports.RuntimeBackendFactory) *RuntimeSupervisor {
 	t.Helper()
-	supervisor, err := NewRuntimeSupervisor(store, manager, factory)
+	supervisor, err := NewRuntimeSupervisor(store, manager, factory, "")
 	if err != nil {
 		t.Fatal(err)
 	}

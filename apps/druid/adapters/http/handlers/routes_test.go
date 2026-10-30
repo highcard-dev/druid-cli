@@ -127,7 +127,7 @@ func (missingOwnerAuth) CheckHeader(*fiber.Ctx) (*ports.AuthContext, error) { re
 func TestPublicReleaseRoutesEnforceOwnerBeforeReadingOrUpdating(t *testing.T) {
 	supervisor, err := appservices.NewRuntimeSupervisor(ownerRouteStore{}, nil, ports.RuntimeBackendFactoryFunc(func(ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) {
 		return ownerRouteBackend{}, nil
-	}))
+	}), "")
 	if err != nil {
 		t.Fatal(err)
 	}

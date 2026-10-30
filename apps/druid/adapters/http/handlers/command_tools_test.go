@@ -22,34 +22,22 @@ import (
 )
 
 func TestPublishUIDescriptionRequiresSeparateCustomerApproval(t *testing.T) {
-	for _, definition := range commandToolDefinitions() {
-		if definition.Name != "publish_ui" {
-			continue
+	definition := publishUITool()
+	for _, instruction := range []string{"focused previews", "end your turn and wait", "subsequent explicit customer reply", "original UI-change request is not approval", "Revisions require renewed approval", "failed previews", "behavior-only changes", "Do not bypass approval", "not a server-enforced approval check"} {
+		if !strings.Contains(definition.Description, instruction) {
+			t.Errorf("publish_ui description missing %q", instruction)
 		}
-		for _, instruction := range []string{"focused previews", "end your turn and wait", "subsequent explicit customer reply", "original UI-change request is not approval", "Revisions require renewed approval", "failed previews", "behavior-only changes", "Do not bypass approval", "not a server-enforced approval check"} {
-			if !strings.Contains(definition.Description, instruction) {
-				t.Errorf("publish_ui description missing %q", instruction)
-			}
-		}
-		return
 	}
-	t.Fatal("publish_ui tool is missing")
 }
 
 func TestCommandWaitSchemaUsesOnlyCommandNameAndTimeout(t *testing.T) {
-	for _, tool := range commandToolDefinitions() {
-		if tool.Name != "wait_for_command" {
-			continue
-		}
-		schema := tool.InputSchema.(map[string]any)
-		properties := schema["properties"].(map[string]any)
-		required := schema["required"].([]string)
-		if len(properties) != 2 || properties["command"] == nil || properties["timeout_seconds"] == nil || len(required) != 1 || required[0] != "command" {
-			t.Fatal("command waiting requires more than a name and optional timeout")
-		}
-		return
+	tool := waitForCommandTool()
+	schema := tool.InputSchema.(map[string]any)
+	properties := schema["properties"].(map[string]any)
+	required := schema["required"].([]string)
+	if len(properties) != 2 || properties["command"] == nil || properties["timeout_seconds"] == nil || len(required) != 1 || required[0] != "command" {
+		t.Fatal("command waiting requires more than a name and optional timeout")
 	}
-	t.Fatal("wait tool missing")
 }
 
 func TestConcreteToolSchemaNormalizesMapValuesWithoutChangingRequiredFields(t *testing.T) {
@@ -67,7 +55,7 @@ func TestConcreteToolSchemaNormalizesMapValuesWithoutChangingRequiredFields(t *t
 }
 
 func TestCreateCommandSchemaPreservesNestedTypesForOpenHands(t *testing.T) {
-	definition := commandToolDefinitions()[0]
+	definition := createCommandTool()
 	if definition.Name != "create_command" {
 		t.Fatal("creation tool missing")
 	}
@@ -176,7 +164,7 @@ func TestCommandToolsRealMCPClient(t *testing.T) {
 	}
 	backend := &toolRouteBackend{}
 	backend.credentials.Store(token, workloadidentity.Identity{DeploymentID: "tools", Permissions: []string{"commands:list", "commands:create", "commands:remove", "queue:read", "ui:publish", "logs:read"}})
-	supervisor, err := appservices.NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), ports.RuntimeBackendFactoryFunc(func(ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) { return backend, nil }))
+	supervisor, err := appservices.NewRuntimeSupervisor(store, coreservices.NewRuntimeScrollManager(store), ports.RuntimeBackendFactoryFunc(func(ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) { return backend, nil }), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +305,7 @@ func TestCommandToolsRealMCPClient(t *testing.T) {
 		t.Fatal("MCP metadata projection failed")
 	}
 	var arguments map[string]any
-	_, example, found := strings.Cut(commandToolDefinitions()[0].Description, "Example: ")
+	_, example, found := strings.Cut(createCommandTool().Description, "Example: ")
 	if !found || json.Unmarshal([]byte(example), &arguments) != nil {
 		t.Fatal("advertised example is not valid JSON")
 	}

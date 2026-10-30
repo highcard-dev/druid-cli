@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -45,9 +46,35 @@ func (b podIdentityBackend) Name() string {
 	return "fixture"
 }
 
+func TestSupervisorConfiguresWorkloadURLDuringConstruction(t *testing.T) {
+	for _, base := range []string{"", "http://runtime.local/", "https://runtime.local/prefix///"} {
+		supervisor, err := NewRuntimeSupervisor(nil, nil, ports.RuntimeBackendFactoryFunc(func(observer ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) {
+			// The backend receives an already configured supervisor.
+			if observer.(*RuntimeSupervisor).workloadAPIURL != strings.TrimRight(base, "/") {
+				t.Fatal("workload URL was not configured before backend creation")
+			}
+			return podIdentityBackend{}, nil
+		}), base)
+		if err != nil || supervisor.workloadAPIURL != strings.TrimRight(base, "/") {
+			t.Fatalf("base=%q supervisor=%+v err=%v", base, supervisor, err)
+		}
+	}
+	for _, base := range []string{"runtime.local", "ftp://runtime.local", "https://user:password@runtime.local", "https://runtime.local/?token=value", "https://runtime.local/#fragment", "http://%"} {
+		t.Run(base, func(t *testing.T) {
+			factory := ports.RuntimeBackendFactoryFunc(func(ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) {
+				t.Fatal("invalid configuration reached backend creation")
+				return nil, nil
+			})
+			if _, err := NewRuntimeSupervisor(nil, nil, factory, base); err == nil {
+				t.Fatal("invalid workload URL accepted")
+			}
+		})
+	}
+}
+
 func TestCommandAuthenticationNeedsNoDaemonState(t *testing.T) {
 	backend := podIdentityBackend{record: workloadidentity.Identity{DeploymentID: "deployment", Permissions: []string{"commands:list"}}}
-	supervisor, err := NewRuntimeSupervisor(nil, nil, ports.RuntimeBackendFactoryFunc(func(ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) { return backend, nil }))
+	supervisor, err := NewRuntimeSupervisor(nil, nil, ports.RuntimeBackendFactoryFunc(func(ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) { return backend, nil }), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +93,7 @@ func TestCommandAuthenticationNeedsNoDaemonState(t *testing.T) {
 
 func TestDockerToolsIgnoreCredentialsPermissionsAndDeploymentBinding(t *testing.T) {
 	backend := podIdentityBackend{name: "docker"}
-	supervisor, err := NewRuntimeSupervisor(nil, nil, ports.RuntimeBackendFactoryFunc(func(ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) { return backend, nil }))
+	supervisor, err := NewRuntimeSupervisor(nil, nil, ports.RuntimeBackendFactoryFunc(func(ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) { return backend, nil }), "")
 	if err != nil {
 		t.Fatal(err)
 	}
