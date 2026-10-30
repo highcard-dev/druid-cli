@@ -343,19 +343,14 @@ func (h *ScrollHandler) PublishScrollUIPackage(c *fiber.Ctx, id string, scope ap
 	if _, err := h.getScroll(id); err != nil {
 		return err
 	}
-	var request struct {
-		Path *string `json:"path,omitempty"`
-	}
+	var request api.PublishUIPackageRequest
 	if len(c.Body()) > 0 {
 		if err := c.BodyParser(&request); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, err.Error())
 		}
 	}
-	path := ""
-	if request.Path != nil {
-		path = *request.Path
-	}
-	runtimeScroll, err := h.supervisor.PublishUIPackage(id, string(scope), path)
+	withBuild := request.WithBuild != nil && *request.WithBuild
+	runtimeScroll, err := h.supervisor.PublishUIPackage(id, string(scope), withBuild)
 	if err != nil {
 		return err
 	}

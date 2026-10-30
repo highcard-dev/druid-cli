@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"net/url"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/highcard-dev/daemon/internal/core/domain"
@@ -18,6 +20,14 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 		env := command.ProcedureEnv[procedureName]
 		if env == nil {
 			env = procedure.Env
+		}
+		if command.WorkloadAPIURL != "" {
+			env = maps.Clone(env)
+			if env == nil {
+				env = make(map[string]string)
+			}
+			env["DRUID_TOKEN_FILE"] = ""
+			env["DRUID_API_URL"] = command.WorkloadAPIURL + "/" + url.PathEscape(command.ScrollID)
 		}
 		logger.Log().Info("Starting Docker procedure",
 			zap.String("scroll_id", command.ScrollID),

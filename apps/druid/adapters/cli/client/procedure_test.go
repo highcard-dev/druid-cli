@@ -156,6 +156,6 @@ func (f *fakeProcedureDaemon) GetScrollUIPackages(ctx context.Context, id string
 	return map[string]api.RuntimeUIPackage{}, nil
 }
 
-func (f *fakeProcedureDaemon) PublishScrollUIPackage(ctx context.Context, id string, scope string, path string) (*api.RuntimeScroll, error) {
+func (f *fakeProcedureDaemon) PublishScrollUIPackage(ctx context.Context, id string, scope string, withBuild bool) (*api.RuntimeScroll, error) {
 	return &api.RuntimeScroll{Id: id}, nil
 }

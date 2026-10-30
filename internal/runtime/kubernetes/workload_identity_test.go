@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	authv1 "k8s.io/api/authentication/v1"
@@ -12,6 +13,25 @@ import (
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 )
+
+func TestEnsureRuntimeServiceAccountsPropagatesFailures(t *testing.T) {
+	for _, failing := range []string{runtimeWorkerServiceAccount, commandServiceAccount} {
+		t.Run(failing, func(t *testing.T) {
+			client := k8sfake.NewSimpleClientset()
+			expected := errors.New("provisioning failed")
+			client.PrependReactor("create", "serviceaccounts", func(action k8stesting.Action) (bool, runtime.Object, error) {
+				if action.(k8stesting.CreateAction).GetObject().(*corev1.ServiceAccount).Name == failing {
+					return true, nil, expected
+				}
+				return false, nil, nil
+			})
+			backend := NewWithClient(Config{Namespace: "games"}, client)
+			if err := backend.ensureRuntimeServiceAccounts(context.Background(), "games"); !errors.Is(err, expected) {
+				t.Fatalf("error=%v", err)
+			}
+		})
+	}
+}
 
 func TestAuthenticateWorkloadRejectsUnrecognizedServiceAccount(t *testing.T) {
 	client := k8sfake.NewSimpleClientset(&corev1.Pod{
@@ -70,8 +90,8 @@ func TestEnsureRuntimeServiceAccountsCreatesBothAndIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(accounts.Items) != 1 {
-		t.Fatalf("service accounts = %#v, want one", accounts.Items)
+	if len(accounts.Items) != 2 {
+		t.Fatalf("service accounts = %#v, want two", accounts.Items)
 	}
 	for _, account := range accounts.Items {
 		if account.Labels[labelManagedBy] != "druid" || account.Labels[labelComponent] != "workload-identity" {

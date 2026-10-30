@@ -12,4 +12,5 @@ ENV PATH=/usr/local/cargo/bin:$PATH
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable \
     && rustup target add wasm32-unknown-unknown
 COPY --from=builder /out/druid-dev /usr/local/bin/druid-dev
+COPY scripts/build-ui.sh /usr/local/bin/druid-build-ui.sh
 ENTRYPOINT ["druid-dev"]

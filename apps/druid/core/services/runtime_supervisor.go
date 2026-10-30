@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,7 @@ import (
 // truth and session lifetimes; Docker/Kubernetes resource details stay behind
 // the runtime backend.
 type RuntimeSupervisor struct {
+	workloadAPIURL    string
 	store             ports.RuntimeScrollStore
 	manager           *coreservices.RuntimeScrollManager
 	runtimeBackend    ports.RuntimeBackendInterface
@@ -48,6 +50,7 @@ var developerPorts = []domain.Port{
 	{Name: "webdav", Port: 8084, Protocol: "http"},
 	{Name: "vscode", Port: 3333, Protocol: "http"},
 	{Name: "ssh", Port: 2222, Protocol: "tcp"},
+	{Name: "openhands", Port: 8000, Protocol: "http"},
 }
 
 func fixedDeveloperPorts() []domain.Port {
@@ -58,16 +61,24 @@ func NewRuntimeSupervisor(
 	store ports.RuntimeScrollStore,
 	manager *coreservices.RuntimeScrollManager,
 	backendFactory ports.RuntimeBackendFactory,
+	workloadAPIURL string,
 ) (*RuntimeSupervisor, error) {
+	if workloadAPIURL != "" {
+		parsed, err := url.Parse(workloadAPIURL)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return nil, fmt.Errorf("workload API URL must be an explicit HTTP(S) base URL")
+		}
+	}
 	if backendFactory == nil {
 		return nil, fmt.Errorf("runtime backend factory is required")
 	}
 	supervisor := &RuntimeSupervisor{
-		store:         store,
-		manager:       manager,
-		workerTimeout: 20 * time.Minute,
-		sessions:      map[string]*RuntimeSession{},
-		operations:    map[string]*sync.Mutex{},
+		workloadAPIURL: strings.TrimRight(workloadAPIURL, "/"),
+		store:          store,
+		manager:        manager,
+		workerTimeout:  20 * time.Minute,
+		sessions:       map[string]*RuntimeSession{},
+		operations:     map[string]*sync.Mutex{},
 	}
 	runtimeBackend, err := backendFactory.Create(supervisor)
 	if err != nil {
@@ -292,22 +303,32 @@ func (s *RuntimeSupervisor) applyMaterializedScroll(runtimeScroll *domain.Runtim
 	if err := s.store.UpdateScroll(runtimeScroll); err != nil {
 		return nil, err
 	}
-	if err := s.publishDeclaredPrivateUI(runtimeScroll, scroll); err != nil {
+	if err := s.publishDeclaredUI(runtimeScroll, scroll); err != nil {
 		return nil, err
 	}
 	return s.store.GetScroll(runtimeScroll.ID)
 }
 
-func (s *RuntimeSupervisor) publishDeclaredPrivateUI(runtimeScroll *domain.RuntimeScroll, scroll *domain.Scroll) error {
-	if scroll.UI == nil || scroll.UI.Private == nil {
+func (s *RuntimeSupervisor) publishDeclaredUI(runtimeScroll *domain.RuntimeScroll, scroll *domain.Scroll) error {
+	if scroll.UI == nil {
 		return nil
 	}
-	_, err := s.PublishUIPackage(runtimeScroll.ID, string(domain.RuntimeUIPackageScopePrivate), scroll.UI.Private.Path)
+	paths := map[domain.RuntimeUIPackageScope]*domain.UIPackageDeclaration{}
+	if scroll.UI.Private != nil {
+		paths[domain.RuntimeUIPackageScopePrivate] = scroll.UI.Private
+	}
+	if scroll.UI.Public != nil {
+		paths[domain.RuntimeUIPackageScopePublic] = scroll.UI.Public
+	}
+	if len(paths) == 0 {
+		return nil
+	}
+	_, err := s.publishUIPackages(runtimeScroll.ID, paths, false)
 	if err != nil {
 		runtimeScroll.Status = domain.RuntimeScrollStatusError
-		runtimeScroll.LastError = fmt.Sprintf("publish declared private UI: %v", err)
+		runtimeScroll.LastError = fmt.Sprintf("publish declared UI: %v", err)
 		_ = s.store.UpdateScroll(runtimeScroll)
-		return fmt.Errorf("publish declared private UI: %w", err)
+		return fmt.Errorf("publish declared UI: %w", err)
 	}
 	return nil
 }

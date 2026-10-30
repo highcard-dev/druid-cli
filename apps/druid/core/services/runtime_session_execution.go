@@ -68,15 +68,15 @@ func (s *RuntimeSession) runCommand(cmd string, extraEnv ...map[string]map[strin
 			procedureEnv[procedure][key] = value
 		}
 	}
-
 	exitCode, err := s.runtimeBackend.RunCommand(ports.RuntimeCommand{
-		Name:         cmd,
-		ScrollID:     scrollID,
-		Command:      command,
-		Root:         root,
-		Ports:        runtimePorts,
-		Routing:      routing,
-		ProcedureEnv: procedureEnv,
+		WorkloadAPIURL: s.workloadAPIURL,
+		Name:           cmd,
+		ScrollID:       scrollID,
+		Command:        command,
+		Root:           root,
+		Ports:          runtimePorts,
+		Routing:        routing,
+		ProcedureEnv:   procedureEnv,
 	})
 	if err != nil {
 		s.setCommandProcedureStatus(cmd, command, domain.ScrollLockStatusError, exitCode)

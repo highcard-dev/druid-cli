@@ -92,10 +92,42 @@ func (ownerRouteAuth) CheckHeader(c *fiber.Ctx) (*ports.AuthContext, error) {
 
 type ownerRouteBackend struct{ ports.RuntimeBackendInterface }
 
+func TestUnsafePublicAuthenticationNeverAcceptsSuppliedUnverifiedCredentials(t *testing.T) {
+	for _, authorizer := range []ports.AuthorizerServiceInterface{nil, missingOwnerAuth{}} {
+		handler := NewScrollHandler(nil, authorizer)
+		handler.SetAllowUnauthenticatedPublic(true)
+		app := fiber.New()
+		app.Use(handler.PublicAuth)
+		app.Get("/test", func(c *fiber.Ctx) error { return c.SendStatus(200) })
+		for _, header := range []string{"", "Bearer druid_wl_invalid", "Bearer eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJmaXh0dXJlIn0.c2ln", "Bearer invalid", "Basic invalid"} {
+			request := httptest.NewRequest(http.MethodGet, "/test", nil)
+			request.Header.Set("Authorization", header)
+			response, err := app.Test(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response.Body.Close()
+			want := 401
+			if header == "" {
+				want = 200
+			}
+			if response.StatusCode != want {
+				t.Fatalf("credential supplied=%v: got %d want %d", header != "", response.StatusCode, want)
+			}
+		}
+	}
+}
+
+type missingOwnerAuth struct {
+	ports.AuthorizerServiceInterface
+}
+
+func (missingOwnerAuth) CheckHeader(*fiber.Ctx) (*ports.AuthContext, error) { return nil, nil }
+
 func TestPublicReleaseRoutesEnforceOwnerBeforeReadingOrUpdating(t *testing.T) {
 	supervisor, err := appservices.NewRuntimeSupervisor(ownerRouteStore{}, nil, ports.RuntimeBackendFactoryFunc(func(ports.ProcedureStatusObserver) (ports.RuntimeBackendInterface, error) {
 		return ownerRouteBackend{}, nil
-	}))
+	}), "")
 	if err != nil {
 		t.Fatal(err)
 	}

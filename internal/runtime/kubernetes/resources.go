@@ -227,6 +227,7 @@ func procedureJobSpec(namespace string, root string, commandName string, procedu
 		Containers:    []corev1.Container{container},
 		Volumes:       []corev1.Volume{pvcVolume("data", pvc)},
 	}
+	applyCommandIdentity(&podSpec, procedure.RuntimeIdentity)
 	if registrySecret != "" {
 		podSpec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: registrySecret}}
 	}
@@ -240,7 +241,7 @@ func procedureJobSpec(namespace string, root string, commandName string, procedu
 			BackoffLimit:            &backoff,
 			TTLSecondsAfterFinished: finishedJobTTL(),
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				ObjectMeta: metav1.ObjectMeta{Labels: labels, Annotations: commandIdentityAnnotations(procedure.RuntimeIdentity, commandName)},
 				Spec:       podSpec,
 			},
 		},
@@ -335,6 +336,7 @@ func persistentStatefulSetSpec(namespace string, root string, commandName string
 		Containers:     []corev1.Container{container},
 		Volumes:        []corev1.Volume{pvcVolume("data", pvc)},
 	}
+	applyCommandIdentity(&podSpec, mainProcedure.RuntimeIdentity)
 	if registrySecret != "" {
 		podSpec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: registrySecret}}
 	}
@@ -349,11 +351,28 @@ func persistentStatefulSetSpec(namespace string, root string, commandName string
 			ServiceName: resourceName,
 			Selector:    &metav1.LabelSelector{MatchLabels: selectorLabels},
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				ObjectMeta: metav1.ObjectMeta{Labels: labels, Annotations: commandIdentityAnnotations(mainProcedure.RuntimeIdentity, commandName)},
 				Spec:       podSpec,
 			},
 		},
 	}, nil
+}
+
+func applyCommandIdentity(pod *corev1.PodSpec, identity *domain.RuntimeCommandIdentity) {
+	pod.AutomountServiceAccountToken = ptrBool(false)
+	if identity == nil {
+		return
+	}
+	pod.ServiceAccountName = commandServiceAccount
+	expiration := int64(3600)
+	pod.Volumes = append(pod.Volumes, corev1.Volume{Name: "command-identity", VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{Sources: []corev1.VolumeProjection{{ServiceAccountToken: &corev1.ServiceAccountTokenProjection{Audience: commandTokenAudience, ExpirationSeconds: &expiration, Path: "token"}}}}}})
+	mount := corev1.VolumeMount{Name: "command-identity", MountPath: "/run/secrets/druid", ReadOnly: true}
+	for index := range pod.Containers {
+		pod.Containers[index].VolumeMounts = append(pod.Containers[index].VolumeMounts, mount)
+	}
+	for index := range pod.InitContainers {
+		pod.InitContainers[index].VolumeMounts = append(pod.InitContainers[index].VolumeMounts, mount)
+	}
 }
 
 func persistentInitContainerName(procedureName string) string {
