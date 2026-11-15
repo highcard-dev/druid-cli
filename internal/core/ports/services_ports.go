@@ -95,6 +95,8 @@ type RuntimeScrollStore interface {
 }
 
 type RuntimeCommand struct {
+	// WorkloadAPIURL is the configured base URL for backend-provided workload tools.
+	WorkloadAPIURL string
 	// Name identifies the command within the Scroll.
 	Name string
 	// ScrollID identifies the runtime Scroll whose command is being executed.
@@ -224,15 +226,4 @@ type ColdStarterServerInterface interface {
 
 type UiServiceInterface interface {
 	GetIndex(filePath string) ([]string, error)
-}
-
-type WatchServiceInterface interface {
-	StartWatching(basePath string, paths ...string) error
-	StopWatching() error
-	Trigger()
-	Subscribe() chan *[]byte
-	Unsubscribe(client chan *[]byte)
-	GetWatchedPaths() []string
-	IsWatching() bool
-	SetHotReloadCommands(procs []string) error
 }

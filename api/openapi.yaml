@@ -242,9 +242,10 @@ components:
     PublishUIPackageRequest:
       type: object
       properties:
-        path:
-          type: string
-          description: Optional scroll-root-relative .wasm path. Defaults to private/dist/app.wasm or public/dist/app.wasm.
+        with_build:
+          type: boolean
+          default: false
+          description: Run the scope's declared buildcommand as a dependency before uploading its declared WASM/OpenUI pair.
 
     RuntimeUIPackage:
       type: object
@@ -252,10 +253,16 @@ components:
         - url
         - path
         - updated_at
+        - openui_url
+        - openui_path
       properties:
         url:
           type: string
         path:
+          type: string
+        openui_url:
+          type: string
+        openui_path:
           type: string
         updated_at:
           type: string

@@ -12,6 +12,8 @@ import (
 // AddCommand persists a normal runtime command and makes it available to the
 // command scheduler. It is intentionally independent from development mode.
 func (s *RuntimeSupervisor) AddCommand(id string, command string, instruction *domain.CommandInstructionSet) error {
+	unlock := s.lockRuntimeOperation(id)
+	defer unlock()
 	session, err := s.sessionFor(id)
 	if err != nil {
 		return err
@@ -20,6 +22,8 @@ func (s *RuntimeSupervisor) AddCommand(id string, command string, instruction *d
 }
 
 func (s *RuntimeSupervisor) RemoveCommand(id string, command string) error {
+	unlock := s.lockRuntimeOperation(id)
+	defer unlock()
 	session, err := s.sessionFor(id)
 	if err != nil {
 		return err

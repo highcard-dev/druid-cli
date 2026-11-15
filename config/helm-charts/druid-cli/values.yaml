@@ -50,6 +50,7 @@ ingress:
   tls: []
 
 runtime:
+  workloadApiUrl: ""
   backend: kubernetes
   stateDir: /var/lib/druid/runtime
   namespaces:

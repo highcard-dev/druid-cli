@@ -4,6 +4,7 @@ import (
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	commandmcp "github.com/highcard-dev/daemon/apps/druid/adapters/mcp"
 	"github.com/highcard-dev/daemon/internal/api"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 )
@@ -29,10 +30,16 @@ func RegisterRoutes(app *fiber.App, handlers RouteHandlers) {
 }
 
 func RegisterManagementRoutes(app *fiber.App, handlers RouteHandlers) {
+	app.Use(func(ctx *fiber.Ctx) error {
+		if ctx.Get("Authorization") != "" && ctx.Locals("druid-workload-identity") == nil && handlers.Authorizer == nil {
+			return fiber.NewError(fiber.StatusForbidden, "command credentials cannot access management endpoints")
+		}
+		return ctx.Next()
+	})
 	if handlers.Authorizer != nil {
 		app.Use(func(ctx *fiber.Ctx) error {
-			if _, err := handlers.Authorizer.CheckHeader(ctx); err != nil {
-				return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+			if auth, err := handlers.Authorizer.CheckHeader(ctx); err != nil || (ctx.Get("Authorization") != "" && auth == nil) {
+				return fiber.NewError(fiber.StatusUnauthorized, "invalid management credential")
 			}
 			return ctx.Next()
 		})
@@ -58,6 +65,19 @@ func RegisterPublicRoutes(app *fiber.App, handlers RouteHandlers) {
 	app.Get("/.well-known/jwks.json", RuntimeJWKS(authorizer))
 	app.Get("/:id/ws/v1/serve/:console", websocket.New(handlers.Websocket.AttachScrollConsole))
 	if handlers.Server != nil && handlers.Server.ScrollHandler != nil {
+		h := handlers.Server.ScrollHandler
+		app.All("/:id/mcp", commandmcp.NewHandler(h.supervisor))
+		app.Get("/:id/api/v1/commands", h.GetDaemonCommands)
+		app.Post("/:id/api/v1/commands", h.CreateDaemonCommand)
+		app.Get("/:id/api/v1/commands/:command/wait", h.WaitDaemonCommand)
+		app.Get("/:id/api/v1/consoles/:console/logs", h.ReadDaemonLogs)
+		app.Post("/:id/api/v1/consoles/:console/logs/search", h.SearchDaemonLogs)
+		app.Post("/:id/api/v1/consoles/:console/stdin", h.WriteDaemonStdin)
+		app.Get("/:id/api/v1/status", h.GetDaemonStatus)
+		app.Get("/:id/api/v1/queue", h.ownerOrWorkload(h.GetWorkloadQueue), h.PublicAuth, h.GetDaemonQueue)
+		app.Post("/:id/api/v1/command", h.ownerOrWorkload(h.RunWorkloadCommand), h.PublicAuth, h.RunDaemonCommand)
+		app.Delete("/:id/api/v1/scroll/commands/:command", h.ownerOrWorkload(h.RemoveWorkloadCommand), h.PublicAuth, h.RemoveDaemonCommand)
+		app.Post("/:id/api/v1/ui/packages/:scope/publish", h.ownerOrWorkload(h.PublishWorkloadUIPackage), h.PublicAuth, h.PublishDaemonUIPackage)
 		app.Use("/:id", handlers.Server.PublicAuth)
 	}
 	app.Get("/:id/api/v1/health", handlers.Server.GetHealthAuth)
@@ -66,11 +86,7 @@ func RegisterPublicRoutes(app *fiber.App, handlers RouteHandlers) {
 	app.Get("/:id/api/v1/release", func(c *fiber.Ctx) error { return handlers.Server.GetInstalledRelease(c, c.Params("id")) })
 	app.Post("/:id/api/v1/update", func(c *fiber.Ctx) error { return handlers.Server.UpdateScroll(c, c.Params("id")) })
 	app.Put("/:id/api/v1/scroll/commands/:command", handlers.Server.AddDaemonCommand)
-	app.Delete("/:id/api/v1/scroll/commands/:command", handlers.Server.RemoveDaemonCommand)
-	app.Post("/:id/api/v1/command", handlers.Server.RunDaemonCommand)
-	app.Get("/:id/api/v1/queue", handlers.Server.GetDaemonQueue)
 	app.Get("/:id/api/v1/consoles", handlers.Server.GetDaemonConsoles)
 	app.Get("/:id/api/v1/ports", handlers.Server.GetDaemonPorts)
 	app.Get("/:id/api/v1/ui/packages", handlers.Server.GetDaemonUIPackages)
-	app.Post("/:id/api/v1/ui/packages/:scope/publish", handlers.Server.PublishDaemonUIPackage)
 }

@@ -5,18 +5,15 @@ import (
 	"fmt"
 	"mime"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
 	runtimehandlers "github.com/highcard-dev/daemon/apps/druid/adapters/http/handlers"
-	"github.com/highcard-dev/daemon/internal/core/domain"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 	coreservices "github.com/highcard-dev/daemon/internal/core/services"
 	"github.com/highcard-dev/daemon/internal/devapi"
@@ -24,13 +21,6 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"golang.org/x/net/webdav"
-)
-
-const (
-	statusDisabled = "disabled"
-	statusStarting = "starting"
-	statusReady    = "ready"
-	statusError    = "error"
 )
 
 type options struct {
@@ -41,15 +31,13 @@ type options struct {
 	authJWKSURL    string
 	runtimeJWKSURL string
 	watchPaths     []string
-	watchWorkdir   string
-	watchCommand   []string
 }
 
 func NewRootCommand() *cobra.Command {
 	opt := options{}
 	cmd := &cobra.Command{
 		Use:   "druid-dev",
-		Short: "Run the standalone Druid development file and build server",
+		Short: "Run the standalone Druid development file server",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return run(cmd.Context(), opt)
 		},
@@ -60,9 +48,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opt.ownerID, "owner-id", "", "Runtime owner id")
 	cmd.Flags().StringVar(&opt.authJWKSURL, "auth-jwks-url", "", "JWKS URL for customer JWTs")
 	cmd.Flags().StringVar(&opt.runtimeJWKSURL, "runtime-jwks-url", "", "JWKS URL for short-lived runtime tokens")
-	cmd.Flags().StringArrayVar(&opt.watchPaths, "watch-path", nil, "Runtime-relative path to watch (repeatable)")
-	cmd.Flags().StringVar(&opt.watchWorkdir, "watch-working-directory", ".", "Runtime-relative working directory for the watcher command")
-	cmd.Flags().StringArrayVar(&opt.watchCommand, "watch-command", nil, "Watcher command argument (repeatable, preserves argument boundaries)")
+	cmd.Flags().StringArrayVar(&opt.watchPaths, "watch-path", nil, "Runtime-relative file to watch (repeatable)")
 	_ = cmd.MarkFlagRequired("root")
 	return cmd
 }
@@ -86,12 +72,8 @@ func run(ctx context.Context, opt options) error {
 		}
 	}
 	server := newDevServer(root, auth)
-	watchRequest, err := startupWatchRequest(opt)
-	if err != nil {
-		return err
-	}
-	if watchRequest != nil {
-		if err := server.startWatch(*watchRequest); err != nil {
+	if len(opt.watchPaths) > 0 {
+		if err := server.startWatch(opt.watchPaths); err != nil {
 			return fmt.Errorf("start configured watcher: %w", err)
 		}
 	}
@@ -106,7 +88,7 @@ func run(ctx context.Context, opt options) error {
 	go func() {
 		<-ctx.Done()
 		logger.Log().Info("Stopping Druid development server")
-		_ = server.stopWatch()
+		server.watch.StopWatching()
 		_ = app.Shutdown()
 	}()
 	err = app.Listen(opt.listen)
@@ -118,26 +100,6 @@ func run(ctx context.Context, opt options) error {
 	return err
 }
 
-func startupWatchRequest(opt options) (*devapi.WatchModeRequest, error) {
-	hasPaths := len(opt.watchPaths) > 0
-	hasCommand := len(opt.watchCommand) > 0
-	if hasPaths != hasCommand {
-		return nil, fmt.Errorf("watch-path and watch-command must be supplied together")
-	}
-	if !hasPaths {
-		return nil, nil
-	}
-	workdir := opt.watchWorkdir
-	if workdir == "" {
-		workdir = "."
-	}
-	return &devapi.WatchModeRequest{
-		WatchPaths:       opt.watchPaths,
-		WorkingDirectory: workdir,
-		Command:          opt.watchCommand,
-	}, nil
-}
-
 type devAuth struct {
 	user      ports.AuthorizerServiceInterface
 	runtime   ports.AuthorizerServiceInterface
@@ -145,43 +107,14 @@ type devAuth struct {
 	ownerID   string
 }
 
-type noopQueue struct{}
-
-func (noopQueue) AddTempItem(string) error                     { return nil }
-func (noopQueue) AddTempItemWithWait(string) error             { return nil }
-func (noopQueue) GetQueue() map[string]domain.ScrollLockStatus { return nil }
-
-type noopScroll struct{}
-
-func (noopScroll) GetCommand(string) (*domain.CommandInstructionSet, error) {
-	return nil, fmt.Errorf("watcher does not run daemon commands")
-}
-func (noopScroll) GetCurrent() *domain.Scroll { return nil }
-func (noopScroll) GetFile() *domain.File      { return &domain.File{} }
-func (noopScroll) GetDir() string             { return "" }
-func (noopScroll) GetCwd() string             { return "" }
-
-type watchConfig struct {
-	paths   string
-	workdir string
-	command string
-}
-
 type devServer struct {
 	root  string
 	auth  devAuth
-	watch ports.WatchServiceInterface
-
-	mu      sync.RWMutex
-	status  string
-	lastErr string
-	config  watchConfig
-	cancel  context.CancelFunc
-	watchID uint64
+	watch *coreservices.WatchService
 }
 
 func newDevServer(root string, auth devAuth) *devServer {
-	return &devServer{root: root, auth: auth, watch: coreservices.NewDevService(noopQueue{}, noopScroll{}), status: statusDisabled}
+	return &devServer{root: root, auth: auth, watch: coreservices.NewWatchService(root)}
 }
 
 func newApp(server *devServer) *fiber.App {
@@ -251,7 +184,7 @@ func (s *devServer) PutFile(c *fiber.Ctx, params devapi.PutFileParams) error {
 
 func (s *devServer) GetWatchStatus(c *fiber.Ctx) error { return c.JSON(s.watchResponse()) }
 func (s *devServer) DisableWatch(c *fiber.Ctx) error {
-	_ = s.stopWatch()
+	s.watch.StopWatching()
 	return c.JSON(s.watchResponse())
 }
 
@@ -260,111 +193,35 @@ func (s *devServer) EnableWatch(c *fiber.Ctx) error {
 	if err := c.BodyParser(&request); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
-	if err := s.startWatch(request); err != nil {
+	if err := s.startWatch(request.WatchPaths); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
 	return c.JSON(s.watchResponse())
 }
 
-func (s *devServer) startWatch(request devapi.WatchModeRequest) error {
-	if len(request.Command) == 0 {
-		return fmt.Errorf("command is required")
-	}
-	if len(request.WatchPaths) == 0 {
+func (s *devServer) startWatch(watchPaths []string) error {
+	if len(watchPaths) == 0 {
 		return fmt.Errorf("watch_paths is required")
 	}
-	workdir, err := s.directoryPath(request.WorkingDirectory)
-	if err != nil {
-		return err
-	}
-	paths := make([]string, 0, len(request.WatchPaths))
-	for _, path := range request.WatchPaths {
-		fullPath, err := s.directoryPath(path)
+	paths := make([]string, 0, len(watchPaths))
+	for _, path := range watchPaths {
+		if filepath.IsAbs(path) {
+			return fmt.Errorf("watch path %q must be relative", path)
+		}
+		fullPath, err := s.filePath(path)
 		if err != nil {
 			return err
 		}
 		info, err := os.Stat(fullPath)
-		if err != nil {
+		if err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("watch path %q: %w", path, err)
 		}
-		if !info.IsDir() {
-			return fmt.Errorf("watch path %q is not a directory", path)
+		if info != nil && !info.Mode().IsRegular() {
+			return fmt.Errorf("watch path %q must be a file", path)
 		}
-		paths = append(paths, path)
+		paths = append(paths, filepath.ToSlash(filepath.Clean(path)))
 	}
-	config := watchConfig{paths: strings.Join(paths, "\x00"), workdir: request.WorkingDirectory, command: strings.Join(request.Command, "\x00")}
-	s.mu.RLock()
-	same := s.status == statusReady && s.config == config
-	s.mu.RUnlock()
-	if same {
-		logger.Log().Info("Druid development watcher is already running with the requested configuration",
-			zap.Strings("watch_paths", request.WatchPaths),
-			zap.String("working_directory", request.WorkingDirectory),
-			zap.Strings("command", request.Command),
-		)
-		return nil
-	}
-	_ = s.stopWatch()
-	logger.Log().Info("Starting Druid development watcher",
-		zap.Strings("watch_paths", request.WatchPaths),
-		zap.String("working_directory", request.WorkingDirectory),
-		zap.Strings("command", request.Command),
-	)
-	s.mu.Lock()
-	s.status = statusStarting
-	s.lastErr = ""
-	s.config = config
-	s.watchID++
-	watchID := s.watchID
-	s.mu.Unlock()
-	if err := s.watch.StartWatching(s.root, paths...); err != nil {
-		s.setWatchError(err)
-		logger.Log().Error("Failed to start Druid development watcher", zap.Error(err))
-		return err
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	child := exec.CommandContext(ctx, request.Command[0], request.Command[1:]...)
-	child.Dir = workdir
-	child.Stdout, child.Stderr = os.Stdout, os.Stderr
-	if err := child.Start(); err != nil {
-		cancel()
-		_ = s.watch.StopWatching()
-		s.setWatchError(err)
-		logger.Log().Error("Failed to start Druid development build process", zap.Error(err))
-		return err
-	}
-	logger.Log().Info("Druid development build process started",
-		zap.Int("pid", child.Process.Pid),
-		zap.String("working_directory", workdir),
-		zap.Strings("command", request.Command),
-	)
-	s.mu.Lock()
-	s.cancel = cancel
-	s.status = statusReady
-	s.mu.Unlock()
-	go func() {
-		err := child.Wait()
-		s.mu.Lock()
-		if s.watchID == watchID {
-			s.cancel = nil
-			if err != nil && ctx.Err() == nil {
-				s.status = statusError
-				s.lastErr = err.Error()
-			} else {
-				s.status = statusDisabled
-				s.lastErr = ""
-			}
-		}
-		s.mu.Unlock()
-		if err != nil && ctx.Err() == nil {
-			logger.Log().Error("Druid development build process exited with an error", zap.Error(err))
-		} else {
-			logger.Log().Info("Druid development build process stopped")
-		}
-		if ctx.Err() == nil {
-			_ = s.watch.StopWatching()
-		}
-	}()
+	s.watch.StartWatching(paths)
 	return nil
 }
 
@@ -400,37 +257,11 @@ func (s *devServer) WatchNotifications(c *fiber.Ctx) error {
 	})(c)
 }
 
-func (s *devServer) stopWatch() error {
-	s.mu.Lock()
-	cancel := s.cancel
-	s.cancel = nil
-	s.watchID++
-	s.status = statusDisabled
-	s.lastErr = ""
-	s.mu.Unlock()
-	if cancel != nil || s.watch.IsWatching() {
-		logger.Log().Info("Stopping Druid development watcher")
-	}
-	if cancel != nil {
-		cancel()
-	}
-	return s.watch.StopWatching()
-}
-func (s *devServer) setWatchError(err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.status = statusError
-	s.lastErr = err.Error()
-	logger.Log().Error("Druid development watcher entered an error state", zap.Error(err))
-}
 func (s *devServer) watchResponse() devapi.WatchModeResponse {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	response := devapi.WatchModeResponse{Status: devapi.WatchModeResponseStatus(s.status)}
-	if s.lastErr != "" {
-		response.Error = &s.lastErr
+	if s.watch.IsWatching() {
+		return devapi.WatchModeResponse{Status: devapi.Ready}
 	}
-	return response
+	return devapi.WatchModeResponse{Status: devapi.Disabled}
 }
 
 func (s *devServer) sendFile(c *fiber.Ctx, raw string) error {
@@ -468,11 +299,10 @@ func (s *devServer) writeFile(c *fiber.Ctx, raw string) error {
 	logger.Log().Info("Druid development file written", zap.String("path", raw), zap.Int("bytes", len(c.Body())))
 	return c.SendStatus(fiber.StatusNoContent)
 }
-func (s *devServer) filePath(raw string) (string, error)      { return safePath(s.root, raw, false) }
-func (s *devServer) directoryPath(raw string) (string, error) { return safePath(s.root, raw, true) }
-func safePath(root, raw string, allowRoot bool) (string, error) {
+func (s *devServer) filePath(raw string) (string, error) { return safePath(s.root, raw) }
+func safePath(root, raw string) (string, error) {
 	cleaned := filepath.Clean(strings.TrimPrefix(raw, "/"))
-	if (cleaned == "." && !allowRoot) || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
 		return "", fmt.Errorf("invalid path %q", raw)
 	}
 	full := filepath.Join(root, filepath.FromSlash(cleaned))

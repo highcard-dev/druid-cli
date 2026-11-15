@@ -64,10 +64,13 @@ type File struct {
 
 type UIDeclaration struct {
 	Private *UIPackageDeclaration `yaml:"private,omitempty" json:"private,omitempty"`
+	Public  *UIPackageDeclaration `yaml:"public,omitempty" json:"public,omitempty"`
 }
 
 type UIPackageDeclaration struct {
-	Path string `yaml:"path" json:"path"`
+	BuildCommand string `yaml:"buildcommand,omitempty" json:"buildcommand,omitempty"`
+	WASM         string `yaml:"wasm" json:"wasm"`
+	OpenUI       string `yaml:"openui" json:"openui"`
 }
 
 type Scroll struct {
@@ -83,18 +86,19 @@ const (
 )
 
 type Procedure struct {
-	Type          ProcedureType     `yaml:"type,omitempty" json:"type,omitempty"`
-	Id            *string           `yaml:"id,omitempty" json:"id,omitempty"`
-	IgnoreFailure bool              `yaml:"ignore_failure" json:"ignore_failure"`
-	Image         string            `yaml:"image,omitempty" json:"image,omitempty"`
-	Command       []string          `yaml:"command,omitempty" json:"command,omitempty"`
-	WorkingDir    string            `yaml:"working_dir,omitempty" json:"working_dir,omitempty"`
-	Env           map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
-	ExpectedPorts []ExpectedPort    `yaml:"expectedPorts,omitempty" json:"expectedPorts,omitempty"`
-	Mounts        []Mount           `yaml:"mounts,omitempty" json:"mounts,omitempty"`
-	Target        string            `yaml:"target,omitempty" json:"target,omitempty"`
-	Signal        string            `yaml:"signal,omitempty" json:"signal,omitempty"`
-	TTY           bool              `yaml:"tty,omitempty" json:"tty,omitempty"`
+	RuntimeIdentity *RuntimeCommandIdentity `yaml:"-" json:"-"`
+	Type            ProcedureType           `yaml:"type,omitempty" json:"type,omitempty" jsonschema:"Procedure kind; omitted means container."`
+	Id              *string                 `yaml:"id,omitempty" json:"id,omitempty" jsonschema:"Optional unique procedure identifier, not name. Omission uses command.index."`
+	IgnoreFailure   bool                    `yaml:"ignore_failure" json:"ignore_failure"`
+	Image           string                  `yaml:"image,omitempty" json:"image,omitempty" jsonschema:"Container image, required for container procedures."`
+	Command         []string                `yaml:"command,omitempty" json:"command,omitempty" jsonschema:"Executable and arguments as a string array, not a command string. For shell syntax, explicitly invoke sh -c."`
+	WorkingDir      string                  `yaml:"working_dir,omitempty" json:"working_dir,omitempty"`
+	Env             map[string]string       `yaml:"env,omitempty" json:"env,omitempty" jsonschema:"Environment variables as a string-to-string map."`
+	ExpectedPorts   []ExpectedPort          `yaml:"expectedPorts,omitempty" json:"expectedPorts,omitempty" jsonschema:"References existing deployment port names; this does not declare or expose new ports."`
+	Mounts          []Mount                 `yaml:"mounts,omitempty" json:"mounts,omitempty" jsonschema:"Mount deployment data into a container; sub_path is relative to deployment data, not a host path."`
+	Target          string                  `yaml:"target,omitempty" json:"target,omitempty" jsonschema:"Existing procedure identifier to signal; required for signal procedures."`
+	Signal          string                  `yaml:"signal,omitempty" json:"signal,omitempty" jsonschema:"Signal to send, e.g. SIGTERM; required for signal procedures."`
+	TTY             bool                    `yaml:"tty,omitempty" json:"tty,omitempty"`
 
 	Mode string      `yaml:"mode,omitempty" json:"-"`
 	Wait interface{} `yaml:"wait,omitempty" json:"-"`
@@ -199,9 +203,10 @@ func ParseKeepAliveTraffic(value string) (*TrafficThreshold, error) {
 }
 
 type CommandInstructionSet struct {
-	Procedures []*Procedure `yaml:"procedures" json:"procedures"`
-	Needs      []string     `yaml:"needs,omitempty" json:"needs,omitempty"`
-	Run        RunMode      `yaml:"run,omitempty" json:"run,omitempty"`
+	Identity   *CommandIdentity `yaml:"identity,omitempty" json:"identity,omitempty"`
+	Procedures []*Procedure     `yaml:"procedures" json:"procedures" jsonschema:"One or more procedures. Container procedures require image; signal procedures require target and signal."`
+	Needs      []string         `yaml:"needs,omitempty" json:"needs,omitempty" jsonschema:"Existing command names to schedule as dependencies."`
+	Run        RunMode          `yaml:"run,omitempty" json:"run,omitempty" jsonschema:"Scheduling mode, NOT a shell command. Omitted means always; persistent survives daemon restart."`
 }
 
 var ErrScrollDoesNotExist = fmt.Errorf("scroll does not exist")
@@ -278,19 +283,28 @@ func (sc *Scroll) Validate(strict bool) error {
 		}
 	}
 	if sc.UI != nil {
-		if sc.UI.Private == nil {
-			return fmt.Errorf("ui.private declaration is required")
+		if sc.UI.Private == nil && sc.UI.Public == nil {
+			return fmt.Errorf("ui must declare a private or public package")
 		}
-		uiPath := sc.UI.Private.Path
-		cleaned := path.Clean(uiPath)
-		if uiPath == "" || path.IsAbs(uiPath) || cleaned != uiPath || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
-			return fmt.Errorf("private ui package path must be a normalized relative path")
-		}
-		if !strings.HasPrefix(cleaned, "private/") {
-			return fmt.Errorf("private ui package path must be rooted at private/")
-		}
-		if path.Ext(cleaned) != ".wasm" {
-			return fmt.Errorf("private ui package path must point to a .wasm file")
+		for scope, declaration := range map[string]*UIPackageDeclaration{"private": sc.UI.Private, "public": sc.UI.Public} {
+			if declaration == nil {
+				continue
+			}
+			if declaration.BuildCommand != "" && sc.Commands[declaration.BuildCommand] == nil {
+				return fmt.Errorf("%s ui buildcommand %q is not defined", scope, declaration.BuildCommand)
+			}
+			for extension, uiPath := range map[string]string{".wasm": declaration.WASM, ".openui": declaration.OpenUI} {
+				cleaned := path.Clean(uiPath)
+				if uiPath == "" || path.IsAbs(uiPath) || cleaned != uiPath || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+					return fmt.Errorf("%s ui package path must be a normalized relative path", scope)
+				}
+				if !strings.HasPrefix(cleaned, scope+"/") {
+					return fmt.Errorf("%s ui package path must be rooted at %s/", scope, scope)
+				}
+				if path.Ext(cleaned) != extension {
+					return fmt.Errorf("%s ui package path must point to a %s file", scope, extension)
+				}
+			}
 		}
 	}
 
@@ -311,6 +325,13 @@ func (sc *Scroll) Validate(strict bool) error {
 		}
 		if cis == nil {
 			return fmt.Errorf("command instruction set is required")
+		}
+		if cis.Identity != nil {
+			for _, permission := range cis.Identity.Permissions {
+				if !ValidCommandPermission(permission) {
+					return fmt.Errorf("command %s requests unknown identity permission %q", cmd, permission)
+				}
+			}
 		}
 		if len(cis.Procedures) == 0 {
 			return fmt.Errorf("command procedures are required")

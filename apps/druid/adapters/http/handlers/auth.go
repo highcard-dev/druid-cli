@@ -3,24 +3,40 @@ package handlers
 import (
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
+	"github.com/highcard-dev/daemon/apps/druid/adapters/toolrequest"
 	"github.com/highcard-dev/daemon/internal/core/ports"
 )
 
 const ownerLocal = "druid-owner-id"
 
+// Shared REST routes keep their owner handlers and accept permission-scoped workloads.
+func (h *ScrollHandler) ownerOrWorkload(workload fiber.Handler) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if c.Get("Authorization") == "" && h.allowUnauthenticatedPublic {
+			return c.Next()
+		}
+		if h.authorizer != nil {
+			if owner, err := h.authorizer.CheckHeader(c); err == nil && owner != nil {
+				return c.Next()
+			}
+		}
+		return workload(c)
+	}
+}
+
 func (h *ScrollHandler) PublicAuth(c *fiber.Ctx) error {
 	if h.authorizer == nil {
-		if h.allowUnauthenticatedPublic {
+		if h.allowUnauthenticatedPublic && c.Get("Authorization") == "" {
 			return c.Next()
 		}
 		return fiber.NewError(fiber.StatusUnauthorized, "public authentication is not configured")
 	}
 	auth, err := h.authorizer.CheckHeader(c)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		return fiber.NewError(fiber.StatusUnauthorized, "invalid owner credential")
 	}
 	if auth == nil {
-		if h.allowUnauthenticatedPublic {
+		if h.allowUnauthenticatedPublic && c.Get("Authorization") == "" {
 			return c.Next()
 		}
 		return fiber.NewError(fiber.StatusUnauthorized, "missing authorization token")
@@ -51,14 +67,18 @@ func (h *ScrollHandler) authorizeRuntimeOwner(id string, subject string) error {
 }
 
 func (h *WebsocketHandler) PublicQueryAuth(c *websocket.Conn) bool {
-	if h.authorizer == nil {
-		return h.allowUnauthenticatedPublic
+	token := c.Query("token")
+	if token == "" {
+		token = toolrequest.Bearer(c.Headers("Authorization"))
 	}
-	auth, err := h.authorizer.CheckQuery(c.Params("id"), c.Query("token"))
+	if h.authorizer == nil {
+		return h.allowUnauthenticatedPublic && token == "" && c.Headers("Authorization") == ""
+	}
+	auth, err := h.authorizer.CheckQuery(c.Params("id"), token)
 	if err != nil {
 		return false
 	}
-	return auth != nil || h.allowUnauthenticatedPublic
+	return auth != nil || (h.allowUnauthenticatedPublic && token == "" && c.Headers("Authorization") == "")
 }
 
 type jwksProvider interface {

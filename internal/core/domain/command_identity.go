@@ -1,0 +1,20 @@
+package domain
+
+// CommandIdentity is an opt-in permission request, never a credential.
+type CommandIdentity struct {
+	Permissions []string `yaml:"permissions" json:"permissions"`
+}
+
+// RuntimeCommandIdentity is transient mount metadata, never serialized in a Scroll.
+type RuntimeCommandIdentity struct {
+	DeploymentID string
+	Permissions  []string
+}
+
+func ValidCommandPermission(permission string) bool {
+	switch permission {
+	case "commands:list", "commands:run", "commands:create", "commands:remove", "queue:read", "logs:read", "console:write", "runtime:read", "ui:publish":
+		return true
+	}
+	return false
+}

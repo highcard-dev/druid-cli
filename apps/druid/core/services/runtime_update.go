@@ -116,7 +116,7 @@ func (s *RuntimeSupervisor) updateExistingScroll(runtimeScroll *domain.RuntimeSc
 	if err := s.store.UpdateScroll(runtimeScroll); err != nil {
 		return nil, err
 	}
-	if err := s.publishDeclaredPrivateUI(runtimeScroll, scroll); err != nil {
+	if err := s.publishDeclaredUI(runtimeScroll, scroll); err != nil {
 		return nil, err
 	}
 	if wasRunning {

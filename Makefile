@@ -15,6 +15,8 @@ WSL_HOST_IP ?= $(word 1,$(shell hostname -I 2>/dev/null))
 DRUID_WORKER_CALLBACK_URL_WINDOWS ?= http://$(WSL_HOST_IP):8083
 DRUID_WATCH_ARGS ?= daemon --runtime kubernetes --listen 127.0.0.1:8081 --public-listen 127.0.0.1:8082 --worker-callback-listen $(DRUID_WORKER_CALLBACK_LISTEN) --worker-callback-url $(DRUID_WORKER_CALLBACK_URL) --unsafe-allow-unauthenticated-management --unsafe-allow-unauthenticated-public --k8s-namespace $(DRUID_K8S_NAMESPACE) --k8s-pull-image $(DRUID_K8S_PULL_IMAGE)
 export DRUID_K8S_UI_S3_BUCKET ?= druid-ui
+export DRUID_WORKLOAD_API_URL ?= http://host.docker.internal:8082
+DRUID_AUTH_JWKS_URL ?= http://127.0.0.1:3010/v2/jwks
 export DRUID_K8S_UI_S3_PUBLIC_BASE_URL ?= http://127.0.0.1:9000/druid-ui
 export DRUID_K8S_UI_S3_REGION ?= us-east-1
 export DRUID_K8S_UI_S3_ENDPOINT ?= http://host.docker.internal:9000
@@ -74,7 +76,7 @@ run: ## Run Daemon
 
 watch: k3d-build-local-images ## Build local runtime images, then run Daemon with auto reload.
 	@command -v air >/dev/null 2>&1 || go install github.com/air-verse/air@latest
-	air --build.cmd "CGO_ENABLED=0 go build -ldflags '-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)' -o ./bin/druid ./apps/druid" --build.full_bin "DRUID_REGISTRY_PLAIN_HTTP=true ./bin/druid $(DRUID_WATCH_ARGS)"
+	DRUID_AUTH_JWKS_URL="$(DRUID_AUTH_JWKS_URL)" air --build.cmd "CGO_ENABLED=0 go build -ldflags '-X github.com/highcard-dev/daemon/internal.Version=$(VERSION)' -o ./bin/druid ./apps/druid" --build.full_bin "DRUID_REGISTRY_PLAIN_HTTP=true ./bin/druid $(DRUID_WATCH_ARGS)"
 
 watch-windows: ## Build local runtime images, then run the daemon with auto reload inside WSL2.
 	@grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null || (echo "watch-windows must run inside WSL2; use make watch on Linux or macOS." >&2; exit 1)

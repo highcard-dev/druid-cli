@@ -42,6 +42,7 @@ var k8sServiceAccountAudience string
 var k8sOperatorServiceAccount string
 var runtimeListen string
 var runtimePublicListen string
+var runtimeWorkloadAPIURL string
 var runtimeAllowUnauthenticatedPublic bool
 var runtimeAllowUnauthenticatedManagement bool
 var runtimeWorkerTimeout time.Duration
@@ -77,6 +78,7 @@ func init() {
 	DaemonCommand.Flags().StringVar(&runtimeSocket, "socket", utils.DefaultRuntimeSocketPath(), "Runtime daemon Unix socket path")
 	DaemonCommand.Flags().StringVar(&runtimeListen, "listen", "", "Optional management HTTP listen address, for example :8081")
 	DaemonCommand.Flags().StringVar(&runtimePublicListen, "public-listen", "", "Optional public dashboard HTTP listen address, for example :8082")
+	DaemonCommand.Flags().StringVar(&runtimeWorkloadAPIURL, "workload-api-url", os.Getenv("DRUID_WORKLOAD_API_URL"), "Workload-reachable public API base URL (required for command identities)")
 	DaemonCommand.Flags().BoolVar(&runtimeAllowUnauthenticatedPublic, "unsafe-allow-unauthenticated-public", false, "Allow unauthenticated public HTTP routes without --auth-jwks-url")
 	DaemonCommand.Flags().BoolVar(&runtimeAllowUnauthenticatedManagement, "unsafe-allow-unauthenticated-management", false, "Allow unauthenticated management HTTP routes; local Docker development only")
 	DaemonCommand.Flags().DurationVar(&runtimeWorkerTimeout, "worker-timeout", 20*time.Minute, "Maximum time for runtime materialization workers")
@@ -143,7 +145,7 @@ func runRuntimeDaemon() error {
 		return err
 	}
 	manager := services.NewRuntimeScrollManager(runtime.Store)
-	supervisor, err := appservices.NewRuntimeSupervisor(runtime.Store, manager, runtime)
+	supervisor, err := appservices.NewRuntimeSupervisor(runtime.Store, manager, runtime, runtimeWorkloadAPIURL)
 	if err != nil {
 		return err
 	}

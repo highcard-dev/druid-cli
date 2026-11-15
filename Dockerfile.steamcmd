@@ -1,6 +1,6 @@
 ARG VERSION=latest
 FROM artifacts.druid.gg/druid-team/druid:${VERSION} AS base
-FROM gameservermanagers/steamcmd:ubuntu-24.04
+FROM gameservermanagers/steamcmd:ubuntu-24.04@sha256:b180c05a5b34a0d06c0d34180ecf6230c26f76cbf207162aba7efb38861ff393
 
 RUN mkdir -p /tmp/steamcmd-seed && \
     cp -a /home/steam/.local/share/Steam/steamcmd /tmp/steamcmd-seed/steamcmd && \

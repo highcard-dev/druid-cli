@@ -19,6 +19,11 @@ func (b *Backend) RunCommand(command ports.RuntimeCommand) (*int, error) {
 		logger.Log().Error("Cannot run Kubernetes command", zap.String("scroll_id", command.ScrollID), zap.String("command", command.Name), zap.Error(err))
 		return nil, err
 	}
+	var err error
+	command, err = prepareCommandIdentity(command)
+	if err != nil {
+		return nil, err
+	}
 	logger.Log().Info("Running Kubernetes command",
 		zap.String("scroll_id", command.ScrollID),
 		zap.String("command", command.Name),

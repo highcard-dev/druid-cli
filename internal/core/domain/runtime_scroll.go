@@ -83,7 +83,9 @@ const (
 type RuntimeUIPackages map[RuntimeUIPackageScope]RuntimeUIPackage
 
 type RuntimeUIPackage struct {
-	URL       string    `json:"url"`
-	Path      string    `json:"path"`
-	UpdatedAt time.Time `json:"updated_at"`
+	URL        string    `json:"url"`
+	Path       string    `json:"path"`
+	OpenUIURL  string    `json:"openui_url"`
+	OpenUIPath string    `json:"openui_path"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
