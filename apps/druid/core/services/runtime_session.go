@@ -18,7 +18,6 @@ type RuntimeSession struct {
 	store          ports.RuntimeScrollStore
 	runtimeScroll  *domain.RuntimeScroll
 	scrollService  *coreservices.ScrollService
-	watchService   ports.WatchServiceInterface
 	runtimeBackend ports.RuntimeBackendInterface
 	queue          map[string]*runtimeQueueItem
 	workWg         sync.WaitGroup

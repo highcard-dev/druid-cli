@@ -1,437 +1,139 @@
 package services
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+	"slices"
 	"sync"
 	"time"
 
-	"github.com/fsnotify/fsnotify"
 	"github.com/highcard-dev/daemon/internal/core/domain"
-	"github.com/highcard-dev/daemon/internal/core/ports"
-	"github.com/highcard-dev/daemon/internal/utils/logger"
-	"go.uber.org/zap"
 )
 
-// FileChangeEvent represents a file system change event
+const fileWatchInterval = 250 * time.Millisecond
+
 type FileChangeEvent struct {
 	Path      string    `json:"path"`
 	Operation string    `json:"operation"`
 	Timestamp time.Time `json:"timestamp"`
 }
 
-type CommandDoneEvent struct {
-	CommandKey string    `json:"command_key"`
-	Timestamp  time.Time `json:"timestamp"`
-}
-
-const hotReloadDebounce = 300 * time.Millisecond
-
-// WatchService handles local dev file watching and command triggers.
+// WatchService detects changes to specific files, including files created or
+// atomically replaced after the watcher starts.
 type WatchService struct {
-	watcher           *fsnotify.Watcher
-	broadcastChannel  *domain.BroadcastChannel
-	watchPaths        []string
-	basePath          string // Base path for making relative paths
-	mu                sync.RWMutex
-	ctx               context.Context
-	cancel            context.CancelFunc
-	isWatching        bool
-	ignoredBuildPaths []string
-	hotReloadCommands []string
-	queueManager      ports.QueueManagerInterface
-	scrollService     ports.ScrollServiceInterface
-	buildActive       bool
-	changeAfterBuild  bool
-	hotReloadTimer    *time.Timer
+	root  string
+	mu    sync.Mutex
+	hub   *domain.BroadcastChannel
+	stop  chan struct{}
+	paths []string
 }
 
-func NewDevService(
-	queueManager ports.QueueManagerInterface, scrollService ports.ScrollServiceInterface, ignoredBuildPaths ...string,
-) ports.WatchServiceInterface {
-	return &WatchService{
-		watchPaths:        make([]string, 0),
-		ignoredBuildPaths: ignoredBuildPaths,
-		isWatching:        false,
-		queueManager:      queueManager,
-		scrollService:     scrollService,
-	}
+func NewWatchService(root string) *WatchService {
+	return &WatchService{root: root}
 }
 
-func (uds *WatchService) SetHotReloadCommands(commands []string) error {
-
-	// Validate commands
-	for _, cmd := range commands {
-		_, err := uds.scrollService.GetCommand(cmd)
-		if err != nil {
-			return fmt.Errorf("invalid command '%s': %w", cmd, err)
-		}
-	}
-
-	uds.mu.Lock()
-	defer uds.mu.Unlock()
-	uds.hotReloadCommands = commands
-
-	return nil
-}
-
-// StartWatching initializes the file watcher and starts monitoring specified paths
-func (uds *WatchService) StartWatching(basePath string, paths ...string) error {
-	uds.mu.Lock()
-	defer uds.mu.Unlock()
-
-	if uds.isWatching {
-		logger.Log().Info("File watcher is already running")
-		return nil
-	}
-
-	// Create new context and cancel function for this session
-	uds.ctx, uds.cancel = context.WithCancel(context.Background())
-
-	// Create new broadcast channel for this session
-	uds.broadcastChannel = domain.NewHub()
-
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		logger.Log().Error("Failed to create file watcher", zap.Error(err))
-		return err
-	}
-
-	uds.watcher = watcher
-	uds.isWatching = true
-
-	// Set base path for relative path calculation
-	uds.basePath = basePath
-
-	// Add default paths if none provided
-	if len(paths) == 0 {
-		return errors.New("no paths provided to watch")
-	}
-
-	// Add paths to watcher
-	for _, path := range paths {
-		// Join relative paths with base path
-		fullPath := path
-		if !filepath.IsAbs(path) {
-			fullPath = filepath.Join(basePath, path)
-		}
-		if err := uds.addWatchPath(fullPath); err != nil {
-			logger.Log().Warn("Failed to watch path", zap.String("path", fullPath), zap.Error(err))
-		} else {
-			uds.watchPaths = append(uds.watchPaths, fullPath)
-			logger.Log().Info("Watching path", zap.String("path", fullPath))
-		}
-	}
-
-	// Start the event processing goroutine
-	go uds.processEvents(uds.ctx, watcher)
-
-	// Start the broadcast hub
-	go uds.broadcastChannel.Run()
-
-	// run hot reload commands initially
-	go uds.runHotReloadCommand()
-
-	logger.Log().Info("Dev file watcher started")
-	return nil
-}
-
-// StopWatching stops the file watcher and cleans up resources
-func (uds *WatchService) StopWatching() error {
-	uds.mu.Lock()
-	defer uds.mu.Unlock()
-
-	if !uds.isWatching {
-		return nil
-	}
-
-	// Cancel context to stop goroutines
-	if uds.cancel != nil {
-		uds.cancel()
-	}
-
-	// Close the file watcher
-	if uds.watcher != nil {
-		err := uds.watcher.Close()
-		uds.watcher = nil
-		if err != nil {
-			logger.Log().Error("Failed to close file watcher", zap.Error(err))
-			return err
-		}
-	}
-	if uds.hotReloadTimer != nil {
-		uds.hotReloadTimer.Stop()
-		uds.hotReloadTimer = nil
-	}
-
-	// Close the broadcast channel to clean up subscribers
-	if uds.broadcastChannel != nil {
-		uds.broadcastChannel.Close()
-		uds.broadcastChannel = nil
-	}
-
-	uds.isWatching = false
-	uds.watchPaths = make([]string, 0)
-	uds.ctx = nil
-	uds.cancel = nil
-
-	logger.Log().Info("Dev file watcher stopped")
-	return nil
-}
-
-func (uds *WatchService) Trigger() {
-	go uds.runHotReloadCommand()
-}
-
-// Subscribe returns a channel for receiving file change notifications
-func (uds *WatchService) Subscribe() chan *[]byte {
-	uds.mu.RLock()
-	defer uds.mu.RUnlock()
-
-	if uds.broadcastChannel == nil {
-		logger.Log().Warn("Cannot subscribe: broadcast channel not initialized. Start watching first.")
-		return nil
-	}
-
-	return uds.broadcastChannel.Subscribe()
-}
-
-// Unsubscribe removes a client from receiving file change notifications
-func (uds *WatchService) Unsubscribe(client chan *[]byte) {
-	uds.mu.RLock()
-	defer uds.mu.RUnlock()
-
-	if uds.broadcastChannel != nil && client != nil {
-		uds.broadcastChannel.Unsubscribe(client)
-	}
-}
-
-// GetWatchedPaths returns the list of currently watched paths (relative to base path)
-func (uds *WatchService) GetWatchedPaths() []string {
-	uds.mu.RLock()
-	defer uds.mu.RUnlock()
-
-	paths := make([]string, len(uds.watchPaths))
-	for i, path := range uds.watchPaths {
-		if relPath, err := filepath.Rel(uds.basePath, path); err == nil {
-			paths[i] = relPath
-		} else {
-			// Fallback to original path if relative path calculation fails
-			paths[i] = path
-		}
-	}
-	return paths
-}
-
-// IsWatching returns whether the file watcher is currently active
-func (uds *WatchService) IsWatching() bool {
-	uds.mu.RLock()
-	defer uds.mu.RUnlock()
-	return uds.isWatching
-}
-
-// addWatchPath adds a path to the file watcher, including subdirectories
-func (uds *WatchService) addWatchPath(path string) error {
-	return filepath.Walk(path, func(walkPath string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil // Skip paths that can't be accessed
-		}
-
-		if info.IsDir() {
-			// Skip node_modules directories
-			if info.Name() == "node_modules" || info.Name() == "target" || info.Name() == ".git" {
-				return filepath.SkipDir
-			}
-			return uds.watcher.Add(walkPath)
-		}
-		return uds.watcher.Add(walkPath)
-	})
-}
-
-// processEvents handles file system events and broadcasts them to subscribers
-func (uds *WatchService) processEvents(ctx context.Context, watcher *fsnotify.Watcher) {
-	defer func() {
-		if r := recover(); r != nil {
-			logger.Log().Error("File watcher panic recovered", zap.Any("error", r))
-		}
-	}()
-
-	for {
-		select {
-		case <-ctx.Done():
-			logger.Log().Info("File watcher context cancelled")
-			return
-
-		case event, ok := <-watcher.Events:
-			if !ok {
-				logger.Log().Info("File watcher events channel closed")
-				return
-			}
-			if event.Op&fsnotify.Chmod == fsnotify.Chmod {
-				// Ignore chmod events
-				continue
-			}
-			uds.handleFileEvent(event)
-
-		case err, ok := <-watcher.Errors:
-			if !ok {
-				logger.Log().Info("File watcher errors channel closed")
-				return
-			}
-
-			logger.Log().Error("File watcher error", zap.Error(err))
-		}
-	}
-}
-
-// handleFileEvent processes a single file system event and broadcasts it
-func (uds *WatchService) handleFileEvent(event fsnotify.Event) {
-	// Convert absolute path to relative path
-	uds.mu.RLock()
-	basePath := uds.basePath
-	broadcastChannel := uds.broadcastChannel
-	uds.mu.RUnlock()
-
-	relativePath := event.Name
-	if basePath != "" {
-		if relPath, err := filepath.Rel(basePath, event.Name); err == nil {
-			relativePath = relPath
-		}
-	}
-	logger.Log().Info("Druid development file change detected",
-		zap.String("path", relativePath),
-		zap.String("operation", event.Op.String()),
-	)
-
-	changeEvent := FileChangeEvent{
-		Path:      relativePath,
-		Operation: event.Op.String(),
-		Timestamp: time.Now(),
-	}
-
-	// Convert to JSON for broadcasting
-	eventData, err := json.Marshal(changeEvent)
-	if err != nil {
-		logger.Log().Error("Failed to marshal file change event", zap.Error(err))
+func (s *WatchService) StartWatching(paths []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.hub != nil && slices.Equal(paths, s.paths) {
 		return
 	}
+	s.stopWatching()
 
-	// Broadcast the event to all subscribers
-	if broadcastChannel != nil {
-		if !broadcastChannel.Broadcast(eventData) {
-			// Silently drop if channel is full - this is normal during high activity
-			logger.Log().Debug("Dropped file change event (channel busy)", zap.String("path", event.Name))
-		}
+	paths = slices.Clone(paths)
+	files := make([]os.FileInfo, len(paths))
+	for i, path := range paths {
+		files[i] = s.statFile(path)
 	}
+	s.hub = domain.NewHub()
+	s.stop = make(chan struct{})
+	s.paths = paths
+	go s.hub.Run()
+	go s.watchFiles(s.stop, s.hub, paths, files)
+}
 
-	// Handle directory creation - add new directories to watcher
-	if event.Op&fsnotify.Create == fsnotify.Create {
-		if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
-			uds.mu.RLock()
-			watcher := uds.watcher
-			uds.mu.RUnlock()
+func (s *WatchService) StopWatching() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.stopWatching()
+}
 
-			if watcher != nil {
-				if err := watcher.Add(event.Name); err != nil {
-					logger.Log().Warn("Failed to add new directory to watcher", zap.String("path", event.Name), zap.Error(err))
-				} else {
-					logger.Log().Info("Added new directory to watcher", zap.String("path", event.Name))
+func (s *WatchService) stopWatching() {
+	if s.hub != nil {
+		close(s.stop)
+		s.hub.Close()
+		s.hub = nil
+		s.stop = nil
+		s.paths = nil
+	}
+}
+
+func (s *WatchService) IsWatching() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.hub != nil
+}
+
+func (s *WatchService) Subscribe() chan *[]byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.hub == nil {
+		return nil
+	}
+	return s.hub.Subscribe()
+}
+
+func (s *WatchService) Unsubscribe(client chan *[]byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.hub != nil {
+		s.hub.Unsubscribe(client)
+	}
+}
+
+func (s *WatchService) statFile(path string) os.FileInfo {
+	info, err := os.Stat(filepath.Join(s.root, filepath.FromSlash(path)))
+	if err != nil || !info.Mode().IsRegular() {
+		return nil
+	}
+	return info
+}
+
+func (s *WatchService) watchFiles(stop <-chan struct{}, hub *domain.BroadcastChannel, paths []string, files []os.FileInfo) {
+	ticker := time.NewTicker(fileWatchInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case now := <-ticker.C:
+			for i, path := range paths {
+				current := s.statFile(path)
+				operation := fileChangeOperation(files[i], current)
+				files[i] = current
+				if operation == "" {
+					continue
+				}
+				data, err := json.Marshal(FileChangeEvent{Path: path, Operation: operation, Timestamp: now})
+				if err == nil {
+					hub.Broadcast(data)
 				}
 			}
 		}
 	}
-
-	for _, output := range uds.ignoredBuildPaths {
-		if filepath.Clean(relativePath) == filepath.Clean(output) {
-			return
-		}
-	}
-	for _, part := range strings.Split(filepath.ToSlash(relativePath), "/") {
-		if (part == "dist" && len(uds.ignoredBuildPaths) > 0) || part == "target" || part == "node_modules" || part == ".git" {
-			return
-		}
-	}
-	uds.scheduleHotReload()
 }
 
-func (uds *WatchService) scheduleHotReload() {
-	uds.mu.Lock()
-	if !uds.isWatching {
-		uds.mu.Unlock()
-		return
-	}
-	if uds.hotReloadTimer != nil {
-		uds.hotReloadTimer.Stop()
-	}
-	ctx := uds.ctx
-	uds.hotReloadTimer = time.AfterFunc(hotReloadDebounce, func() {
-		uds.mu.Lock()
-		if !uds.isWatching || uds.ctx != ctx {
-			uds.mu.Unlock()
-			return
-		}
-		uds.hotReloadTimer = nil
-		uds.mu.Unlock()
-		uds.runHotReloadCommand()
-	})
-	uds.mu.Unlock()
-}
-
-func (uds *WatchService) runHotReloadCommand() {
-	uds.mu.Lock()
-	if uds.buildActive {
-		uds.changeAfterBuild = true
-		uds.mu.Unlock()
-		return
-	}
-	if len(uds.hotReloadCommands) == 0 {
-		uds.mu.Unlock()
-		return
-	}
-	uds.buildActive = true
-	commands := append([]string(nil), uds.hotReloadCommands...)
-	broadcastChannel := uds.broadcastChannel
-	uds.mu.Unlock()
-
-	broadcastEvent := func(name string) {
-		if broadcastChannel == nil {
-			return
-		}
-		var cmdDoneEvent = CommandDoneEvent{
-			CommandKey: name,
-			Timestamp:  time.Now(),
-		}
-		eventCmdData, err := json.Marshal(cmdDoneEvent)
-		if err != nil {
-			logger.Log().Error("Failed to marshal command done event", zap.Error(err))
-			return
-		}
-		broadcastChannel.Broadcast(eventCmdData)
-	}
-
-	for {
-		for _, key := range commands {
-			broadcastEvent("build-started")
-			if err := uds.queueManager.AddTempItemWithWait(key); err != nil {
-				logger.Log().Error("Hot reload build failed", zap.String("command", key), zap.Error(err))
-				broadcastEvent("build-failed")
-				continue
-			}
-			broadcastEvent("build-ended")
-		}
-
-		uds.mu.Lock()
-		if !uds.changeAfterBuild {
-			uds.buildActive = false
-			uds.mu.Unlock()
-			return
-		}
-		uds.changeAfterBuild = false
-		uds.mu.Unlock()
+func fileChangeOperation(previous, current os.FileInfo) string {
+	switch {
+	case previous == nil && current != nil:
+		return "CREATE"
+	case previous != nil && current == nil:
+		return "REMOVE"
+	case previous != nil && current != nil &&
+		(!os.SameFile(previous, current) || previous.Size() != current.Size() || !previous.ModTime().Equal(current.ModTime())):
+		return "WRITE"
+	default:
+		return ""
 	}
 }

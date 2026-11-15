@@ -95,7 +95,7 @@ paths:
     get:
       operationId: watchNotifications
       tags: [watch]
-      summary: Subscribe to file change and build notifications
+      summary: Subscribe to file change notifications
       responses:
         '101':
           description: WebSocket upgrade accepted
@@ -103,7 +103,7 @@ paths:
     get:
       operationId: getWatchStatus
       tags: [watch]
-      summary: Get the in-container build watcher status
+      summary: Get the file watcher status
       responses:
         '200':
           description: Watcher status
@@ -115,7 +115,7 @@ paths:
     post:
       operationId: enableWatch
       tags: [watch]
-      summary: Start or reconfigure the in-container build watcher
+      summary: Start or reconfigure the file watcher
       requestBody:
         required: true
         content:
@@ -135,7 +135,7 @@ paths:
     post:
       operationId: disableWatch
       tags: [watch]
-      summary: Stop the in-container build watcher
+      summary: Stop the file watcher
       responses:
         '200':
           description: Watcher stopped
@@ -147,23 +147,14 @@ components:
   schemas:
     WatchModeRequest:
       type: object
-      required: [watch_paths, working_directory, command]
+      required: [watch_paths]
       properties:
         watch_paths:
           type: array
           minItems: 1
           items:
             type: string
-          description: Paths relative to the mounted runtime root.
-        working_directory:
-          type: string
-          description: Working directory relative to the mounted runtime root.
-        command:
-          type: array
-          minItems: 1
-          items:
-            type: string
-          description: Executable followed by its arguments.
+          description: Individual file paths relative to the mounted runtime root. Files can be created after the watcher starts.
     WatchModeResponse:
       type: object
       required: [status]

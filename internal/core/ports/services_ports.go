@@ -227,14 +227,3 @@ type ColdStarterServerInterface interface {
 type UiServiceInterface interface {
 	GetIndex(filePath string) ([]string, error)
 }
-
-type WatchServiceInterface interface {
-	StartWatching(basePath string, paths ...string) error
-	StopWatching() error
-	Trigger()
-	Subscribe() chan *[]byte
-	Unsubscribe(client chan *[]byte)
-	GetWatchedPaths() []string
-	IsWatching() bool
-	SetHotReloadCommands(procs []string) error
-}

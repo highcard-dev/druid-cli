@@ -31,14 +31,8 @@ const (
 
 // WatchModeRequest defines model for WatchModeRequest.
 type WatchModeRequest struct {
-	// Command Executable followed by its arguments.
-	Command []string `json:"command"`
-
-	// WatchPaths Paths relative to the mounted runtime root.
+	// WatchPaths Individual file paths relative to the mounted runtime root. Files can be created after the watcher starts.
 	WatchPaths []string `json:"watch_paths"`
-
-	// WorkingDirectory Working directory relative to the mounted runtime root.
-	WorkingDirectory string `json:"working_directory"`
 }
 
 // WatchModeResponse defines model for WatchModeResponse.
@@ -1212,19 +1206,19 @@ type ServerInterface interface {
 	// Write a file into the runtime root; an optional If-Match SHA-256 ETag serializes Druid-managed writes
 	// (PUT /api/v1/files)
 	PutFile(c *fiber.Ctx, params PutFileParams) error
-	// Stop the in-container build watcher
+	// Stop the file watcher
 	// (POST /api/v1/watch/disable)
 	DisableWatch(c *fiber.Ctx) error
-	// Start or reconfigure the in-container build watcher
+	// Start or reconfigure the file watcher
 	// (POST /api/v1/watch/enable)
 	EnableWatch(c *fiber.Ctx) error
-	// Get the in-container build watcher status
+	// Get the file watcher status
 	// (GET /api/v1/watch/status)
 	GetWatchStatus(c *fiber.Ctx) error
 	// Check dev server health
 	// (GET /health)
 	GetHealth(c *fiber.Ctx) error
-	// Subscribe to file change and build notifications
+	// Subscribe to file change notifications
 	// (GET /ws/v1/watch/notify)
 	WatchNotifications(c *fiber.Ctx) error
 }
@@ -1438,27 +1432,26 @@ func RegisterHandlersWithOptions(router fiber.Router, si ServerInterface, option
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file
